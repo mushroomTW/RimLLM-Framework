@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>RimLLM Framework</name>
+  <author>綠菇</author>
+  <packageId>Green_Mushroom.RimLLMFramework</packageId>
+  <modVersion>2026.06.03.1</modVersion>
+  <supportedVersions>
+    <li>1.6</li>
+  </supportedVersions>
+  <description>RimLLM Framework - 統一 RimWorld 的 LLM 介面與核心基礎框架。</description>
+  <loadAfter>
+    <li>brrainz.harmony</li>
+    <li>Ludeon.RimWorld</li>
+  </loadAfter>
+</ModMetaData>

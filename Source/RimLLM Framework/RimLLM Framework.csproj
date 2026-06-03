@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>RimLLM Framework</AssemblyName>
+    <RootNamespace>RimLLM_Framework</RootNamespace>
+    <!-- 確保建置時不會自動在路徑後附加 net472/ 資料夾 -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>..\..\Assemblies\</OutputPath>
+    <Deterministic>true</Deterministic>
+    <!-- 避免與原本 Properties/AssemblyInfo.cs 產生屬性重複衝突 -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!-- 啟用 C# 8.0 語言版本，以支援非同步資料流 (IAsyncEnumerable) -->
+    <LangVersion>8.0</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4633" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+</Project>
