@@ -32,16 +32,16 @@ namespace RimLLM_Framework.Core
                     if (existingAssembly != callingAssembly)
                     {
                         throw new InvalidOperationException(
-                            $"[ArchotechNexus] 安全衝突：ModId '{modId}' 已經被其他組件 ({existingAssembly.GetName().Name}) 註冊，組件 ({callingAssembly.GetName().Name}) 試圖重複註冊。");
+                            $"[RimLLM] 安全衝突：ModId '{modId}' 已經被其他組件 ({existingAssembly.GetName().Name}) 註冊，組件 ({callingAssembly.GetName().Name}) 試圖重複註冊。");
                     }
                     return;
                 }
-
+ 
                 RegisteredClients[modId] = callingAssembly;
-                ArchotechLog.Message($"[ArchotechNexus] 註冊客戶端 Mod: {modId} (組件: {callingAssembly.GetName().Name})");
+                RimLLMLog.Message($"[RimLLM] 註冊客戶端 Mod: {modId} (組件: {callingAssembly.GetName().Name})");
             }
         }
-
+ 
         /// <summary>
         /// 校驗目前呼叫者的 Assembly 是否與註冊的 Mod ID 吻合。
         /// </summary>
@@ -52,19 +52,19 @@ namespace RimLLM_Framework.Core
         {
             if (string.IsNullOrEmpty(modId))
                 return false;
-
+ 
             if (callingAssembly == null)
                 return false;
-
+ 
             lock (LockObj)
             {
                 if (RegisteredClients.TryGetValue(modId, out Assembly registeredAssembly))
                 {
                     return registeredAssembly == callingAssembly;
                 }
-
+ 
                 RegisteredClients[modId] = callingAssembly;
-                ArchotechLog.Message($"[ArchotechNexus] 偵測到未註冊的 API 調用，已自動補註冊 Mod: {modId} (組件: {callingAssembly.GetName().Name})");
+                RimLLMLog.Message($"[RimLLM] 偵測到未註冊的 API 調用，已自動補註冊 Mod: {modId} (組件: {callingAssembly.GetName().Name})");
                 return true;
             }
         }

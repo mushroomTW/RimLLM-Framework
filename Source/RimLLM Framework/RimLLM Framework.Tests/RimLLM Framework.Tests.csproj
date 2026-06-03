@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>RimLLM_Framework.Tests</RootNamespace>
+    <AssemblyName>RimLLM Framework.Tests</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.5.0" />
+    <PackageReference Include="NUnit" Version="3.13.3" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.4.2" />
+    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4633" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RimLLM Framework.csproj" />
+  </ItemGroup>
+
+  <!-- 建置後僅複製 RimWorld 與 UnityEngine 相關的實體 DLL 到測試輸出目錄，排除 mscorlib、System 等基礎類別庫，防止 CLR runtime 衝突 -->
+  <Target Name="CopyRimWorldAssemblies" AfterTargets="Build">
+    <Message Text="====== Copying necessary RimWorld &amp; Unity DLLs to $(TargetDir) ======" Importance="high" />
+    <ItemGroup>
+      <RimWorldAssemblies Include="c:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\Assembly-CSharp*.dll" />
+      <RimWorldAssemblies Include="c:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\UnityEngine*.dll" />
+      <RimWorldAssemblies Include="c:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\Unity.*.dll" />
+      <RimWorldAssemblies Include="c:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\netstandard.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(RimWorldAssemblies)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

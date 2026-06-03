@@ -7,7 +7,15 @@
   <supportedVersions>
     <li>1.6</li>
   </supportedVersions>
-  <description>RimLLM Framework - 統一 RimWorld 的 LLM 介面與核心基礎框架。</description>
+  <description><![CDATA[RimLLM Framework - 統一 RimWorld 的 LLM 介面與核心基礎框架。
+
+<b>主要功能與特色：</b>
+1. <b>多供應商支援 (Multi-Provider)</b>：支援 Gemini (Google)、OpenAI 以及本地相容接口 (OpenAI Compatible，如 LM Studio、Ollama)，提供彈性的自訂 API Endpoint 配置（預設本地接口為 http://localhost:1234/v1 ）。
+2. <b>自動故障轉移機制 (Model Fallback)</b>：允許玩家自訂主模型與多個備用模型，當請求發生異常或連線失敗時，自動且依序切換備用模型，確保遊戲中的 LLM 呼叫不中斷。
+3. <b>安全金鑰加密 (AES-256)</b>：採用 AES-256 安全加密保存玩家的 API 金鑰與敏感設定資訊，防範金鑰以純文字方式存檔外洩。
+4. <b>精緻的模型快取管理 GUI</b>：支援一鍵獲取供應商模型清單，並以直覺的 Flow Grid 標籤網格展示，附有 Hover 高亮與完整名稱氣泡提示 (Tooltip)，並提供 API 金鑰未填時的防呆紅色警告。
+5. <b>連線一鍵測試 (Connection Test)</b>：在 Mod 設定介面中提供一鍵測試按鈕，方便即時確認供應商 API 通訊與連線狀態。
+6. <b>開發者 SDK 支援</b>：提供統一簡潔的 API 介面與 Action Callback 串流設計，高度相容於 Unity/RimWorld 運行與測試環境，方便其他模組快速且無縫地對接 LLM 服務。]]></description>
   <loadAfter>
     <li>brrainz.harmony</li>
     <li>Ludeon.RimWorld</li>

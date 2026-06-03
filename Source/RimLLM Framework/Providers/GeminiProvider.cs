@@ -21,7 +21,7 @@ namespace RimLLM_Framework.Providers
 
         public override async Task<string> GenerateAsync(LLMRequest request, string model)
         {
-            var settings = ArchotechNexusMod.Settings;
+            var settings = RimLLMFrameworkMod.Settings;
             string apiKey = settings.GetApiKey(ProviderId);
             string baseEndpoint = settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             string url = $"{baseEndpoint}/models/{model}:generateContent?key={apiKey}";
@@ -66,19 +66,19 @@ namespace RimLLM_Framework.Providers
                 var text = responseObj["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
                 if (text == null)
                 {
-                    throw new ArchotechException(LLMError.InvalidResponse, "Gemini 回傳的 JSON 中缺少 text 欄位");
+                    throw new RimLLMException(LLMError.InvalidResponse, "Gemini 回傳的 JSON 中缺少 text 欄位");
                 }
                 return text;
             }
-            catch (Exception ex) when (!(ex is ArchotechException))
+            catch (Exception ex) when (!(ex is RimLLMException))
             {
-                throw new ArchotechException(LLMError.InvalidResponse, $"解析 Gemini 回應失敗: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"解析 Gemini 回應失敗: {ex.Message}", ex);
             }
         }
 
-        public override async IAsyncEnumerable<string> StreamAsync(LLMRequest request, string model)
+        public override async Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
         {
-            var settings = ArchotechNexusMod.Settings;
+            var settings = RimLLMFrameworkMod.Settings;
             string apiKey = settings.GetApiKey(ProviderId);
             string baseEndpoint = settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             string url = $"{baseEndpoint}/models/{model}:streamGenerateContent?key={apiKey}";
@@ -127,7 +127,7 @@ namespace RimLLM_Framework.Providers
             catch (Exception ex)
             {
                 response?.Dispose();
-                throw new ArchotechException(LLMError.NetworkError, $"Gemini Stream 請求失敗: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.NetworkError, $"Gemini Stream 請求失敗: {ex.Message}", ex);
             }
 
             // Gemini 的 streamGenerateContent 返回一個 JSON 陣列格式。
@@ -150,7 +150,7 @@ namespace RimLLM_Framework.Providers
                         string unescapedText = Regex.Unescape(rawText);
                         if (!string.IsNullOrEmpty(unescapedText))
                         {
-                            yield return unescapedText;
+                            onChunkReceived?.Invoke(unescapedText);
                         }
                     }
                 }
@@ -159,7 +159,7 @@ namespace RimLLM_Framework.Providers
 
         public override async Task<TestResult> TestConnectionAsync()
         {
-            var settings = ArchotechNexusMod.Settings;
+            var settings = RimLLMFrameworkMod.Settings;
             string apiKey = settings.GetApiKey(ProviderId);
             if (string.IsNullOrEmpty(apiKey))
             {
@@ -181,7 +181,7 @@ namespace RimLLM_Framework.Providers
                 result.Model = testModel;
                 result.LatencyMs = stopwatch.ElapsedMilliseconds;
             }
-            catch (ArchotechException ex)
+            catch (RimLLMException ex)
             {
                 stopwatch.Stop();
                 result.Success = false;
@@ -199,6 +199,40 @@ namespace RimLLM_Framework.Providers
             }
 
             return result;
+        }
+
+        public override async Task<List<string>> FetchAvailableModelsAsync()
+        {
+            var settings = RimLLMFrameworkMod.Settings;
+            string apiKey = settings.GetApiKey(ProviderId);
+            string baseEndpoint = settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
+            string url = $"{baseEndpoint.TrimEnd('/')}/models?key={apiKey}";
+
+            string responseJson = await SendGetAsync(url, apiKey, "Gemini").ConfigureAwait(false);
+            var list = new List<string>();
+            try
+            {
+                var obj = JObject.Parse(responseJson);
+                var modelsArray = obj["models"] as JArray;
+                if (modelsArray != null)
+                {
+                    foreach (var item in modelsArray)
+                    {
+                        string name = item["name"]?.ToString();
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            // 剝離 models/ 前綴
+                            string cleanName = name.Replace("models/", "");
+                            list.Add(cleanName);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new RimLLMException(LLMError.InvalidResponse, $"獲取 Gemini 模型列表失敗: {ex.Message}", ex);
+            }
+            return list;
         }
     }
 }

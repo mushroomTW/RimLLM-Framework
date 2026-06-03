@@ -16,7 +16,7 @@ namespace RimLLM_Framework.Providers
 
         public override async Task<TestResult> TestConnectionAsync()
         {
-            var settings = ArchotechNexusMod.Settings;
+            var settings = RimLLMFrameworkMod.Settings;
             // 本地相容 API 通常不需要 API 金鑰，故此處放寬檢查，不強制要求 API Key 必須存在。
 
             var result = new TestResult { Provider = ProviderId };
@@ -35,7 +35,7 @@ namespace RimLLM_Framework.Providers
                 result.Model = testModel;
                 result.LatencyMs = stopwatch.ElapsedMilliseconds;
             }
-            catch (ArchotechException ex)
+            catch (RimLLMException ex)
             {
                 stopwatch.Stop();
                 result.Success = false;

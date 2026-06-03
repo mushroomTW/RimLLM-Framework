@@ -20,9 +20,13 @@ namespace RimLLM_Framework.Providers
 
         public override async Task<string> GenerateAsync(LLMRequest request, string model)
         {
-            var settings = ArchotechNexusMod.Settings;
+            var settings = RimLLMFrameworkMod.Settings;
             string apiKey = settings.GetApiKey(ProviderId);
             string endpoint = settings.GetEndpoint(ProviderId, "https://api.openai.com/v1/chat/completions");
+            if (!endpoint.EndsWith("/chat/completions"))
+            {
+                endpoint = endpoint.TrimEnd('/') + "/chat/completions";
+            }
 
             var messages = new JArray();
             if (!string.IsNullOrEmpty(request.SystemPrompt))
@@ -55,21 +59,25 @@ namespace RimLLM_Framework.Providers
                 var content = responseObj["choices"]?[0]?["message"]?["content"]?.ToString();
                 if (content == null)
                 {
-                    throw new ArchotechException(LLMError.InvalidResponse, "OpenAI 回傳的 JSON 中缺少 content 欄位");
+                    throw new RimLLMException(LLMError.InvalidResponse, "OpenAI 回傳的 JSON 中缺少 content 欄位");
                 }
                 return content;
             }
-            catch (Exception ex) when (!(ex is ArchotechException))
+            catch (Exception ex) when (!(ex is RimLLMException))
             {
-                throw new ArchotechException(LLMError.InvalidResponse, $"解析 OpenAI 回應失敗: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"解析 OpenAI 回應失敗: {ex.Message}", ex);
             }
         }
 
-        public override async IAsyncEnumerable<string> StreamAsync(LLMRequest request, string model)
+        public override async Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
         {
-            var settings = ArchotechNexusMod.Settings;
+            var settings = RimLLMFrameworkMod.Settings;
             string apiKey = settings.GetApiKey(ProviderId);
             string endpoint = settings.GetEndpoint(ProviderId, "https://api.openai.com/v1/chat/completions");
+            if (!endpoint.EndsWith("/chat/completions"))
+            {
+                endpoint = endpoint.TrimEnd('/') + "/chat/completions";
+            }
 
             var messages = new JArray();
             if (!string.IsNullOrEmpty(request.SystemPrompt))
@@ -108,7 +116,7 @@ namespace RimLLM_Framework.Providers
             catch (Exception ex)
             {
                 response?.Dispose();
-                throw new ArchotechException(LLMError.NetworkError, $"OpenAI Stream 請求失敗: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.NetworkError, $"OpenAI Stream 請求失敗: {ex.Message}", ex);
             }
 
             using (response)
@@ -140,7 +148,7 @@ namespace RimLLM_Framework.Providers
 
                         if (!string.IsNullOrEmpty(content))
                         {
-                            yield return content;
+                            onChunkReceived?.Invoke(content);
                         }
                     }
                 }
@@ -149,7 +157,7 @@ namespace RimLLM_Framework.Providers
 
         public override async Task<TestResult> TestConnectionAsync()
         {
-            var settings = ArchotechNexusMod.Settings;
+            var settings = RimLLMFrameworkMod.Settings;
             string apiKey = settings.GetApiKey(ProviderId);
             if (string.IsNullOrEmpty(apiKey))
             {
@@ -171,7 +179,7 @@ namespace RimLLM_Framework.Providers
                 result.Model = testModel;
                 result.LatencyMs = stopwatch.ElapsedMilliseconds;
             }
-            catch (ArchotechException ex)
+            catch (RimLLMException ex)
             {
                 stopwatch.Stop();
                 result.Success = false;
@@ -189,6 +197,47 @@ namespace RimLLM_Framework.Providers
             }
 
             return result;
+        }
+
+        public override async Task<List<string>> FetchAvailableModelsAsync()
+        {
+            var settings = RimLLMFrameworkMod.Settings;
+            string apiKey = settings.GetApiKey(ProviderId);
+            string endpoint = settings.GetEndpoint(ProviderId, "https://api.openai.com/v1/chat/completions");
+
+            string url = endpoint;
+            if (url.EndsWith("/chat/completions"))
+            {
+                url = url.Replace("/chat/completions", "/models");
+            }
+            else if (!url.EndsWith("/models"))
+            {
+                url = url.TrimEnd('/') + "/models";
+            }
+
+            string responseJson = await SendGetAsync(url, apiKey).ConfigureAwait(false);
+            var list = new List<string>();
+            try
+            {
+                var obj = JObject.Parse(responseJson);
+                var data = obj["data"] as JArray;
+                if (data != null)
+                {
+                    foreach (var item in data)
+                    {
+                        string id = item["id"]?.ToString();
+                        if (!string.IsNullOrEmpty(id))
+                        {
+                            list.Add(id);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new RimLLMException(LLMError.InvalidResponse, $"獲取 {ProviderId} 模型列表失敗: {ex.Message}", ex);
+            }
+            return list;
         }
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using RimLLM_Framework.SDK;
@@ -27,13 +28,19 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         /// <param name="request">請求參數</param>
         /// <param name="model">要使用的模型名稱</param>
-        /// <returns>非同步字串片段串流</returns>
-        IAsyncEnumerable<string> StreamAsync(LLMRequest request, string model);
+        /// <param name="onChunkReceived">收到字串片段時的回呼函式</param>
+        Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived);
 
         /// <summary>
         /// 測試此供應商的 API 金鑰與連線狀態。
         /// </summary>
         /// <returns>連線測試結果</returns>
         Task<TestResult> TestConnectionAsync();
+
+        /// <summary>
+        /// 從 API 伺服器獲取可用模型列表。
+        /// </summary>
+        /// <returns>模型名稱清單</returns>
+        Task<List<string>> FetchAvailableModelsAsync();
     }
 }

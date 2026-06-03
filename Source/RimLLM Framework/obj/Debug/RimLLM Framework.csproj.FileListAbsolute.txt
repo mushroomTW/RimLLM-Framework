@@ -6,3 +6,4 @@ C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Mods\RimLLM Framework\Ass
 C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Mods\RimLLM Framework\Source\RimLLM Framework\obj\Debug\RimLLM F.C86A5E64.Up2Date
 C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Mods\RimLLM Framework\Source\RimLLM Framework\obj\Debug\RimLLM Framework.dll
 C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Mods\RimLLM Framework\Source\RimLLM Framework\obj\Debug\RimLLM Framework.pdb
+C:\Program Files (x86)\Steam\steamapps\common\RimWorld\Mods\RimLLM Framework\Source\RimLLM Framework\obj\Debug\RimLLM Framework.sourcelink.json

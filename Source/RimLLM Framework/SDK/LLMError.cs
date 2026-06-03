@@ -1,7 +1,7 @@
 namespace RimLLM_Framework.SDK
 {
     /// <summary>
-    /// Archotech Nexus 統一錯誤碼列舉。
+    /// RimLLM 統一錯誤碼列舉。
     /// </summary>
     public enum LLMError
     {

@@ -33,9 +33,14 @@ namespace RimLLM_Framework.Providers
 
         public abstract Task<string> GenerateAsync(LLMRequest request, string model);
         
-        public abstract IAsyncEnumerable<string> StreamAsync(LLMRequest request, string model);
+        public abstract Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived);
 
         public abstract Task<TestResult> TestConnectionAsync();
+
+        /// <summary>
+        /// 從 API 伺服器獲取可用模型列表。
+        /// </summary>
+        public abstract Task<List<string>> FetchAvailableModelsAsync();
 
         /// <summary>
         /// 統一的 HTTP POST 請求發送方法，包含異常處理與 LLMError 對照。
@@ -76,36 +81,106 @@ namespace RimLLM_Framework.Providers
                         int statusCode = (int)response.StatusCode;
                         if (statusCode == 401 || statusCode == 403)
                         {
-                            throw new ArchotechException(LLMError.InvalidKey, $"API 金鑰無效或授權失敗 (HTTP {statusCode}): {responseBody}");
+                            throw new RimLLMException(LLMError.InvalidKey, $"API 金鑰無效或授權失敗 (HTTP {statusCode}): {responseBody}");
                         }
                         if (statusCode == 429)
                         {
-                            throw new ArchotechException(LLMError.RateLimit, $"觸發頻率限制 (HTTP 429): {responseBody}");
+                            throw new RimLLMException(LLMError.RateLimit, $"觸發頻率限制 (HTTP 429): {responseBody}");
                         }
                         if (statusCode >= 500)
                         {
-                            throw new ArchotechException(LLMError.ProviderOffline, $"伺服器內部錯誤 (HTTP {statusCode}): {responseBody}");
+                            throw new RimLLMException(LLMError.ProviderOffline, $"伺服器內部錯誤 (HTTP {statusCode}): {responseBody}");
                         }
-
-                        throw new ArchotechException(LLMError.Unknown, $"API 請求失敗 (HTTP {statusCode}): {responseBody}");
+ 
+                        throw new RimLLMException(LLMError.Unknown, $"API 請求失敗 (HTTP {statusCode}): {responseBody}");
                     }
                 }
             }
             catch (TaskCanceledException ex)
             {
-                throw new ArchotechException(LLMError.Timeout, "請求超時", ex);
+                throw new RimLLMException(LLMError.Timeout, "請求超時", ex);
             }
             catch (HttpRequestException ex)
             {
-                throw new ArchotechException(LLMError.NetworkError, "網路連線異常，無法連線至 API 伺服器", ex);
+                throw new RimLLMException(LLMError.NetworkError, "網路連線異常，無法連線至 API 伺服器", ex);
             }
-            catch (ArchotechException)
+            catch (RimLLMException)
             {
                 throw;
             }
             catch (Exception ex)
             {
-                throw new ArchotechException(LLMError.Unknown, $"發送 API 請求時發生未預期錯誤: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.Unknown, $"發送 API 請求時發生未預期錯誤: {ex.Message}", ex);
+            }
+        }
+ 
+        /// <summary>
+        /// 統一的 HTTP GET 請求發送方法，包含異常處理與 LLMError 對照。
+        /// </summary>
+        protected async Task<string> SendGetAsync(string url, string apiKey, string authScheme = "Bearer")
+        {
+            try
+            {
+                using (var httpRequest = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    if (!string.IsNullOrEmpty(apiKey))
+                    {
+                        if (authScheme == "Bearer")
+                        {
+                            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                        }
+                        else if (authScheme == "Gemini")
+                        {
+                            // Gemini 使用 API key 作為 URL 參數
+                        }
+                        else
+                        {
+                            httpRequest.Headers.Add(authScheme, apiKey);
+                        }
+                    }
+ 
+                    using (HttpResponseMessage response = await HttpClient.SendAsync(httpRequest).ConfigureAwait(false))
+                    {
+                        string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+ 
+                        if (response.IsSuccessStatusCode)
+                        {
+                            return responseBody;
+                        }
+ 
+                        int statusCode = (int)response.StatusCode;
+                        if (statusCode == 401 || statusCode == 403)
+                        {
+                            throw new RimLLMException(LLMError.InvalidKey, $"API 金鑰無效或授權失敗 (HTTP {statusCode}): {responseBody}");
+                        }
+                        if (statusCode == 429)
+                        {
+                            throw new RimLLMException(LLMError.RateLimit, $"觸發頻率限制 (HTTP 429): {responseBody}");
+                        }
+                        if (statusCode >= 500)
+                        {
+                            throw new RimLLMException(LLMError.ProviderOffline, $"伺服器內部錯誤 (HTTP {statusCode}): {responseBody}");
+                        }
+ 
+                        throw new RimLLMException(LLMError.Unknown, $"API 請求失敗 (HTTP {statusCode}): {responseBody}");
+                    }
+                }
+            }
+            catch (TaskCanceledException ex)
+            {
+                throw new RimLLMException(LLMError.Timeout, "請求超時", ex);
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new RimLLMException(LLMError.NetworkError, "網路連線異常，無法連線至 API 伺服器", ex);
+            }
+            catch (RimLLMException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new RimLLMException(LLMError.Unknown, $"發送 API 請求時發生未預期錯誤: {ex.Message}", ex);
             }
         }
     }

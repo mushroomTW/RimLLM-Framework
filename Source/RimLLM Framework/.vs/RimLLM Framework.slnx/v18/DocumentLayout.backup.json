@@ -3,6 +3,10 @@
   "WorkspaceRootPath": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\RimLLM Framework\\Source\\RimLLM Framework\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{BABC0EE4-79AE-31AA-EBDC-6A9F85184447}|RimLLM Framework.csproj|c:\\program files (x86)\\steam\\steamapps\\common\\rimworld\\mods\\rimllm framework\\source\\rimllm framework\\providers\\basehttpprovider.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{BABC0EE4-79AE-31AA-EBDC-6A9F85184447}|RimLLM Framework.csproj|solutionrelative:providers\\basehttpprovider.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{BABC0EE4-79AE-31AA-EBDC-6A9F85184447}|RimLLM Framework.csproj|c:\\program files (x86)\\steam\\steamapps\\common\\rimworld\\mods\\rimllm framework\\source\\rimllm framework\\core\\archotechdispatcher.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{BABC0EE4-79AE-31AA-EBDC-6A9F85184447}|RimLLM Framework.csproj|solutionrelative:core\\archotechdispatcher.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
@@ -23,15 +27,27 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
+              "Title": "BaseHttpProvider.cs",
+              "DocumentMoniker": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\RimLLM Framework\\Source\\RimLLM Framework\\Providers\\BaseHttpProvider.cs",
+              "RelativeDocumentMoniker": "Providers\\BaseHttpProvider.cs",
+              "ToolTip": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\RimLLM Framework\\Source\\RimLLM Framework\\Providers\\BaseHttpProvider.cs",
+              "RelativeToolTip": "Providers\\BaseHttpProvider.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA8AAAA4AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-03T12:04:38.393Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
               "Title": "ArchotechDispatcher.cs",
               "DocumentMoniker": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\RimLLM Framework\\Source\\RimLLM Framework\\Core\\ArchotechDispatcher.cs",
               "RelativeDocumentMoniker": "Core\\ArchotechDispatcher.cs",
               "ToolTip": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\RimWorld\\Mods\\RimLLM Framework\\Source\\RimLLM Framework\\Core\\ArchotechDispatcher.cs",
               "RelativeToolTip": "Core\\ArchotechDispatcher.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABIAAAAyAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-06-03T12:04:00.776Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-06-03T12:04:00.776Z"
             }
           ]
         }
