@@ -3,6 +3,17 @@ using System;
 namespace RimLLM_Framework.SDK
 {
     /// <summary>
+    /// LLM 思考強度 (Reasoning Effort / Thinking Budget) 等級。
+    /// </summary>
+    public enum LLMReasoningEffort
+    {
+        None,   // 不調整 / 預設 / 關閉思考
+        Low,    // 低強度 (OpenAI: low, Anthropic/DeepSeek/Gemini: 1024 tokens)
+        Medium, // 中強度 (OpenAI: medium, Anthropic/DeepSeek/Gemini: 2048 tokens)
+        High    // 高強度 (OpenAI: high, Anthropic/DeepSeek/Gemini: 4096 tokens)
+    }
+
+    /// <summary>
     /// LLM 請求結構定義，描述發送給語言模型的各項參數。
     /// </summary>
     public class LLMRequest
@@ -47,5 +58,59 @@ namespace RimLLM_Framework.SDK
         /// 最低相容模型等級，供 Fallback 決定降級下限。
         /// </summary>
         public string MinFallbackLevel { get; set; }
+
+        /// <summary>
+        /// 非同步請求取消 Token。
+        /// </summary>
+        public System.Threading.CancellationToken CancellationToken { get; set; } = default;
+
+        /// <summary>
+        /// 請求進入佇列的時間戳記，供日誌與外部統計參考（實際調度以 QueueEntry.EnqueueTime 為準）。
+        /// </summary>
+        public DateTime RequestTime { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// 是否啟用長上下文快取 (Context Caching)。
+        /// </summary>
+        public bool EnableContextCaching { get; set; } = false;
+
+        /// <summary>
+        /// 推理性模型的思考強度 (Reasoning Effort / Thinking Budget)。
+        /// </summary>
+        public LLMReasoningEffort ReasoningEffort { get; set; } = LLMReasoningEffort.None;
+
+        /// <summary>
+        /// 是否啟用串流輸出 (Streaming)。
+        /// </summary>
+        public bool EnableStreaming { get; set; } = false;
+
+        /// <summary>
+        /// 當啟用串流且收到新的文字片段時的呼叫回呼。
+        /// </summary>
+        public Action<string> OnChunkReceived { get; set; }
+
+        /// <summary>
+        /// 創建當前 Request 的深拷貝，避免在傳遞與修復過程中產生全域副作用。
+        /// </summary>
+        public LLMRequest Clone()
+        {
+            return new LLMRequest
+            {
+                ModId = this.ModId,
+                Prompt = this.Prompt,
+                SystemPrompt = this.SystemPrompt,
+                Temperature = this.Temperature,
+                MaxTokens = this.MaxTokens,
+                ResponseType = this.ResponseType,
+                Priority = this.Priority,
+                MinFallbackLevel = this.MinFallbackLevel,
+                CancellationToken = this.CancellationToken,
+                RequestTime = this.RequestTime,
+                EnableContextCaching = this.EnableContextCaching,
+                ReasoningEffort = this.ReasoningEffort,
+                EnableStreaming = this.EnableStreaming,
+                OnChunkReceived = this.OnChunkReceived
+            };
+        }
     }
 }

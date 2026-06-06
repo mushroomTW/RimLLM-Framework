@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <RimLLM_MainMenu><b>主菜单</b></RimLLM_MainMenu>
+  <RimLLM_TabProviders>供应商设置</RimLLM_TabProviders>
+  <RimLLM_TabFallback>Fallback 链</RimLLM_TabFallback>
+  <RimLLM_TabGlobalConfig>全局请求配置</RimLLM_TabGlobalConfig>
+  
+  <RimLLM_ApiProviders><b>API 供应商</b></RimLLM_ApiProviders>
+  <RimLLM_StatusEnabled>● 已启用</RimLLM_StatusEnabled>
+  <RimLLM_StatusDisabled>○ 未启用</RimLLM_StatusDisabled>
+  <RimLLM_ModelsCount>{0} 模型</RimLLM_ModelsCount>
+  
+  <RimLLM_TitleProviderSettings>供应商设置 - {0}</RimLLM_TitleProviderSettings>
+  <RimLLM_TitleFallback>全局 Fallback 链设置</RimLLM_TitleFallback>
+  <RimLLM_TitleGlobalConfig>全局请求与重试配置</RimLLM_TitleGlobalConfig>
+  
+  <RimLLM_EnableProvider>启用此 API 供应商</RimLLM_EnableProvider>
+  <RimLLM_ApiKey>API 密钥列表 (API Keys):</RimLLM_ApiKey>
+  <RimLLM_AddApiKeyBtn>新增密钥 (+)</RimLLM_AddApiKeyBtn>
+  <RimLLM_ApiEndpoint>API Endpoint:</RimLLM_ApiEndpoint>
+  <RimLLM_ChinaEndpointToggle>使用中国专用连接端点 (默认关闭，使用全球版端點)</RimLLM_ChinaEndpointToggle>
+  
+  <RimLLM_AvailableModelsTitle><b>可用模型列表配置</b></RimLLM_AvailableModelsTitle>
+  <RimLLM_NoCachedModels>&lt;color=gray&gt;无缓存的模型清单（请先获取）&lt;/color&gt;</RimLLM_NoCachedModels>
+  <RimLLM_Fetching>获取中...</RimLLM_Fetching>
+  <RimLLM_FetchModelsBtn>获取可用模型清单</RimLLM_FetchModelsBtn>
+  <RimLLM_FetchStatusNotRun>未执行获取</RimLLM_FetchStatusNotRun>
+  <RimLLM_FetchSuccess>&lt;color=green&gt;获取成功&lt;/color&gt;</RimLLM_FetchSuccess>
+  <RimLLM_FetchSuccessCount>&lt;color=green&gt;获取成功&lt;/color&gt; (共获取到 {0} 个模型)</RimLLM_FetchSuccessCount>
+  <RimLLM_FetchSuccessEmpty>&lt;color=yellow&gt;获取成功，但返回清单为空&lt;/color&gt;</RimLLM_FetchSuccessEmpty>
+  <RimLLM_FetchFailed>&lt;color=red&gt;获取失败&lt;/color&gt;</RimLLM_FetchFailed>
+  
+  <RimLLM_ConnectionTestTitle><b>供应商连接测试</b></RimLLM_ConnectionTestTitle>
+  <RimLLM_Testing>连接测试中...</RimLLM_Testing>
+  <RimLLM_TestConnectionBtn>测试 API 连接</RimLLM_TestConnectionBtn>
+  <RimLLM_TestResult>测试结果: {0}</RimLLM_TestResult>
+  <RimLLM_TestStatusNotRun>未测试</RimLLM_TestStatusNotRun>
+  <RimLLM_TestStatusSuccess>&lt;color=green&gt;成功&lt;/color&gt; (延迟: {0}ms, 模组: {1})</RimLLM_TestStatusSuccess>
+  <RimLLM_TestStatusFailed>&lt;color=red&gt;失败&lt;/color&gt; ({0})</RimLLM_TestStatusFailed>
+  <RimLLM_TestStatusError>&lt;color=red&gt;异常&lt;/color&gt; ({0})</RimLLM_TestStatusError>
+  
+  <RimLLM_FallbackExplanation>当调用 SDK 时，框架将依此清单顺序尝试，前一项失败则尝试下一项。</RimLLM_FallbackExplanation>
+  <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;目前 Fallback 链为空，请从下方选择模型新增！&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
+  <RimLLM_AddToFallbackTitle><b>新增模型至 Fallback 链</b></RimLLM_AddToFallbackTitle>
+  <RimLLM_SelectProviderBtn>供应商: {0}</RimLLM_SelectProviderBtn>
+  <RimLLM_SelectModelBtn>模型: {0}</RimLLM_SelectModelBtn>
+  <RimLLM_SelectModelPlaceholder>请选择模型</RimLLM_SelectModelPlaceholder>
+  <RimLLM_AddBtn>新增</RimLLM_AddBtn>
+  
+  <RimLLM_MsgNoCachedModels>该供应商 {0} 尚无缓存的模型清单，请先至该供应商设置页面点选「获取可用模型清单」。</RimLLM_MsgNoCachedModels>
+  <RimLLM_MsgSelectModelFirst>请先选择要新增的模型名称！</RimLLM_MsgSelectModelFirst>
+  <RimLLM_MsgModelExists>该模型组合已存在于 Fallback 链中！</RimLLM_MsgModelExists>
+  <RimLLM_MsgModelAdded>已新增 {0} 至 Fallback 链！</RimLLM_MsgModelAdded>
+  
+  <RimLLM_ApiTimeoutLabel>API 超时时间: {0} 秒</RimLLM_ApiTimeoutLabel>
+  <RimLLM_MaxRetriesLabel>单模型最多重试次数: {0} 次</RimLLM_MaxRetriesLabel>
+  <RimLLM_RetryDelayLabel>重试间隔: {0} 秒</RimLLM_RetryDelayLabel>
+  <RimLLM_EnterApiKey>&lt;color=red&gt;请先输入 API 密钥 (Key)&lt;/color&gt;</RimLLM_EnterApiKey>
+  <RimLLM_DetailedLogging>詳細日志</RimLLM_DetailedLogging>
+  <RimLLM_DetailedLoggingExplanation>開啟模組詳細日志，包含 API 呼叫記錄、重試與串流事件。</RimLLM_DetailedLoggingExplanation>
+  <RimLLM_TabChatTest>模型对话</RimLLM_TabChatTest>
+  <RimLLM_TabDebug>Debug</RimLLM_TabDebug>
+  <RimLLM_TitleDebug>Debug 设置</RimLLM_TitleDebug>
+  <RimLLM_TitleDebugExplanation>模组侦错与诊断工具</RimLLM_TitleDebugExplanation>
+  <RimLLM_PureProviderFallback>(纯供应商 / 内建 Fallback)</RimLLM_PureProviderFallback>
+  <RimLLM_ExportDiag>导出诊断信息 (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
+  <RimLLM_RecentRequests>最近请求历史记录 (最近 {0} 笔)</RimLLM_RecentRequests>
+  <RimLLM_NoRequests>&lt;color=gray&gt;目前无请求记录。&lt;/color&gt;</RimLLM_NoRequests>
+  <RimLLM_ChatTitle>模型对话测试界面 (支持 /clear 清空)</RimLLM_ChatTitle>
+  <RimLLM_Send>发送</RimLLM_Send>
+  <RimLLM_ClearBtn>清空</RimLLM_ClearBtn>
+  <RimLLM_AiThinking>AI 正在思考中</RimLLM_AiThinking>
+  <RimLLM_ChatUser>&lt;b&gt;[我]:&lt;/b&gt;</RimLLM_ChatUser>
+  <RimLLM_ChatAi>&lt;b&gt;[AI]:&lt;/b&gt;</RimLLM_ChatAi>
+  <RimLLM_ChatAiError>&lt;b&gt;[AI 错误]:&lt;/b&gt;</RimLLM_ChatAiError>
+  <RimLLM_MaxConcurrentRequestsLabel>最大并行请求限制: {0}</RimLLM_MaxConcurrentRequestsLabel>
+  <RimLLM_LocalCompatibleMode> (本地模型 / 相容界面)</RimLLM_LocalCompatibleMode>
+  <RimLLM_ExportDiagSuccess>诊断信息已成功导出至: {0}</RimLLM_ExportDiagSuccess>
+  <RimLLM_ExportDiagFailed>导出诊断失败: {0}</RimLLM_ExportDiagFailed>
+  
+  <RimLLM_ReasoningEffortLabel>預设思考强度 (Reasoning Effort): </RimLLM_ReasoningEffortLabel>
+  <RimLLM_ReasoningEffort_None>关闭 / 預设</RimLLM_ReasoningEffort_None>
+  <RimLLM_ReasoningEffort_Low>低</RimLLM_ReasoningEffort_Low>
+  <RimLLM_ReasoningEffort_Medium>中</RimLLM_ReasoningEffort_Medium>
+  <RimLLM_ReasoningEffort_High>高</RimLLM_ReasoningEffort_High>
+  <RimLLM_ReasoningEffortSelectBtn>思考强度: {0}</RimLLM_ReasoningEffortSelectBtn>
+  <RimLLM_SettingsIntro>在此配置 API 供应商、模型备用链、全局并行限制，以及测试模型对话。</RimLLM_SettingsIntro>
+  <RimLLM_OpenSettingsBtn>打开高级设置窗口</RimLLM_OpenSettingsBtn>
+</LanguageData>

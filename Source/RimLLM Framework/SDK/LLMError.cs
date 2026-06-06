@@ -46,6 +46,21 @@ namespace RimLLM_Framework.SDK
         ModelNotFound,
 
         /// <summary>
+        /// 因安全策略或內容過濾遭到拒絕。
+        /// </summary>
+        ContentFilter,
+
+        /// <summary>
+        /// API 帳戶餘額或配額已耗盡。
+        /// </summary>
+        QuotaExceeded,
+
+        /// <summary>
+        /// 操作被使用者或系統取消。
+        /// </summary>
+        Cancelled,
+
+        /// <summary>
         /// 未知錯誤。
         /// </summary>
         Unknown

@@ -11,23 +11,77 @@ namespace RimLLM_Framework.Core
     public static class EncryptionUtility
     {
         // 混淆金鑰與初始化向量
-        private static readonly byte[] Key;
-        private static readonly byte[] Iv;
+        private static byte[] Key;
+        private static byte[] Iv;
+        private static readonly object CryptLock = new object();
+
+        // 允許單元測試注入自訂的 Salt
+        private static string _customSalt = null;
+        public static string CustomSalt
+        {
+            get
+            {
+                lock (CryptLock)
+                {
+                    return _customSalt;
+                }
+            }
+            set
+            {
+                lock (CryptLock)
+                {
+                    _customSalt = value;
+                }
+            }
+        }
 
         static EncryptionUtility()
         {
-            // 使用固定的混淆字串與 SHA256/MD5 來產生金鑰與 IV，避免程式碼中直接存在明文 Byte 陣列
-            string rawKeySeed = "RimLLMSecretKeySeed2026";
-            string rawIvSeed = "RimLLMSecretIvSeed2026";
- 
-            using (SHA256 sha256 = SHA256.Create())
+            InitializeKeyAndIv();
+        }
+
+        public static void InitializeKeyAndIv()
+        {
+            lock (CryptLock)
             {
-                Key = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawKeySeed));
-            }
+                // 使用固定的混淆字串與 SHA256/MD5 來產生金鑰與 IV，避免程式碼中直接存在明文 Byte 陣列
+                string rawKeySeed = "RimLLMSecretKeySeed2026";
+                string rawIvSeed = "RimLLMSecretIvSeed2026";
+
+                string hardwareSalt = "";
+                try
+                {
+                    if (!string.IsNullOrEmpty(_customSalt))
+                    {
+                        hardwareSalt = _customSalt;
+                    }
+                    else
+                    {
+                        hardwareSalt = UnityEngine.SystemInfo.deviceUniqueIdentifier;
+                    }
+                }
+                catch
+                {
+                    hardwareSalt = "UnityMockEnvironmentSalt";
+                }
+
+                if (string.IsNullOrEmpty(hardwareSalt) || hardwareSalt == "n/a")
+                {
+                    hardwareSalt = "DefaultHardwareSaltFallback";
+                }
+
+                rawKeySeed += hardwareSalt;
+                rawIvSeed += hardwareSalt;
  
-            using (MD5 md5 = MD5.Create())
-            {
-                Iv = md5.ComputeHash(Encoding.UTF8.GetBytes(rawIvSeed));
+                using (SHA256 sha256 = SHA256.Create())
+                {
+                    Key = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawKeySeed));
+                }
+ 
+                using (MD5 md5 = MD5.Create())
+                {
+                    Iv = md5.ComputeHash(Encoding.UTF8.GetBytes(rawIvSeed));
+                }
             }
         }
  
@@ -39,32 +93,34 @@ namespace RimLLM_Framework.Core
             if (string.IsNullOrEmpty(plainText))
                 return string.Empty;
  
-            try
+            lock (CryptLock)
             {
-                using (Aes aes = Aes.Create())
+                try
                 {
-                    aes.Key = Key;
-                    aes.IV = Iv;
- 
-                    ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
- 
-                    using (MemoryStream ms = new MemoryStream())
+                    using (Aes aes = Aes.Create())
                     {
-                        using (CryptoStream cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+                        aes.Key = Key;
+                        aes.IV = Iv;
+ 
+                        using (ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
+                        using (MemoryStream ms = new MemoryStream())
                         {
-                            using (StreamWriter sw = new StreamWriter(cs))
+                            using (CryptoStream cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
                             {
-                                sw.Write(plainText);
+                                using (StreamWriter sw = new StreamWriter(cs))
+                                {
+                                    sw.Write(plainText);
+                                }
                             }
+                            return Convert.ToBase64String(ms.ToArray());
                         }
-                        return Convert.ToBase64String(ms.ToArray());
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                RimLLMLog.Error($"[RimLLM] 加密金鑰時發生異常: {ex.Message}");
-                return string.Empty;
+                catch (Exception ex)
+                {
+                    RimLLMLog.Error($"[RimLLM] 加密金鑰時發生異常: {ex.Message}");
+                    throw new RimLLM_Framework.SDK.RimLLMException(RimLLM_Framework.SDK.LLMError.Unknown, $"Encryption failed: {ex.Message}", ex);
+                }
             }
         }
  
@@ -76,33 +132,35 @@ namespace RimLLM_Framework.Core
             if (string.IsNullOrEmpty(cipherText))
                 return string.Empty;
  
-            try
+            lock (CryptLock)
             {
-                byte[] buffer = Convert.FromBase64String(cipherText);
- 
-                using (Aes aes = Aes.Create())
+                try
                 {
-                    aes.Key = Key;
-                    aes.IV = Iv;
+                    byte[] buffer = Convert.FromBase64String(cipherText);
  
-                    ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
- 
-                    using (MemoryStream ms = new MemoryStream(buffer))
+                    using (Aes aes = Aes.Create())
                     {
-                        using (CryptoStream cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
+                        aes.Key = Key;
+                        aes.IV = Iv;
+ 
+                        using (ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
+                        using (MemoryStream ms = new MemoryStream(buffer))
                         {
-                            using (StreamReader sr = new StreamReader(cs))
+                            using (CryptoStream cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
                             {
-                                return sr.ReadToEnd();
+                                using (StreamReader sr = new StreamReader(cs))
+                                {
+                                    return sr.ReadToEnd();
+                                }
                             }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                RimLLMLog.Warning($"[RimLLM] 解密金鑰失敗 (可能格式錯誤或金鑰受損): {ex.Message}");
-                return string.Empty;
+                catch (Exception ex)
+                {
+                    RimLLMLog.Warning($"[RimLLM] 解密金鑰失敗 (可能格式錯誤或金鑰受損): {ex.Message}");
+                    return string.Empty;
+                }
             }
         }
     }

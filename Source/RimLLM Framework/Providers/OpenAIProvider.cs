@@ -7,7 +7,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
-using RimLLM_Framework.Mod;
 
 namespace RimLLM_Framework.Providers
 {
@@ -17,17 +16,14 @@ namespace RimLLM_Framework.Providers
     public class OpenAIProvider : BaseHttpProvider
     {
         public override string ProviderId => "OpenAI";
+        protected virtual string DefaultEndpoint => "https://api.openai.com/v1/chat/completions";
 
-        public override async Task<string> GenerateAsync(LLMRequest request, string model)
+        public OpenAIProvider(IRimLLMSettings settings) : base(settings)
         {
-            var settings = RimLLMFrameworkMod.Settings;
-            string apiKey = settings.GetApiKey(ProviderId);
-            string endpoint = settings.GetEndpoint(ProviderId, "https://api.openai.com/v1/chat/completions");
-            if (!endpoint.EndsWith("/chat/completions"))
-            {
-                endpoint = endpoint.TrimEnd('/') + "/chat/completions";
-            }
+        }
 
+        protected virtual JObject BuildPayload(LLMRequest request, string model, bool stream = false)
+        {
             var messages = new JArray();
             if (!string.IsNullOrEmpty(request.SystemPrompt))
             {
@@ -46,164 +42,184 @@ namespace RimLLM_Framework.Providers
             var payload = new JObject
             {
                 ["model"] = model,
-                ["messages"] = messages,
-                ["temperature"] = request.Temperature,
-                ["max_tokens"] = request.MaxTokens
+                ["messages"] = messages
             };
 
-            string responseJson = await SendPostAsync(endpoint, payload.ToString(), apiKey).ConfigureAwait(false);
+            if (IsOpenAiReasoningModel(model))
+            {
+                payload["max_completion_tokens"] = request.MaxTokens;
+                if (request.ReasoningEffort != LLMReasoningEffort.None)
+                {
+                    payload["reasoning_effort"] = request.ReasoningEffort.ToString().ToLower();
+                }
+            }
+            else
+            {
+                payload["temperature"] = request.Temperature;
+                payload["max_tokens"] = request.MaxTokens;
+            }
+
+            if (stream)
+            {
+                payload["stream"] = true;
+            }
+
+            return payload;
+        }
+
+        protected bool IsOpenAiReasoningModel(string modelName)
+        {
+            if (string.IsNullOrEmpty(modelName)) return false;
+            string name = modelName.Contains("/") ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
+            name = name.ToLowerInvariant();
+            return name.StartsWith("o1") || name.StartsWith("o3");
+        }
+
+        public override async Task<string> GenerateAsync(LLMRequest request, string model)
+        {
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
+            if (!endpoint.EndsWith("/chat/completions"))
+            {
+                endpoint = endpoint.TrimEnd(new char[] { '/' }) + "/chat/completions";
+            }
+
+            var payload = BuildPayload(request, model, false);
+            string responseJson = await SendPostAsync(endpoint, payload.ToString(), apiKey, cancellationToken: request.CancellationToken).ConfigureAwait(false);
 
             try
             {
                 var responseObj = JObject.Parse(responseJson);
-                var content = responseObj["choices"]?[0]?["message"]?["content"]?.ToString();
-                if (content == null)
+                var message = responseObj["choices"]?[0]?["message"];
+                if (message == null)
                 {
-                    throw new RimLLMException(LLMError.InvalidResponse, "OpenAI 回傳的 JSON 中缺少 content 欄位");
+                    throw new RimLLMException(LLMError.InvalidResponse, "OpenAI response JSON is missing message field");
+                }
+                var content = message["content"]?.ToString() ?? "";
+                var reasoning = message["reasoning_content"]?.ToString();
+                if (string.IsNullOrEmpty(content) && string.IsNullOrEmpty(reasoning))
+                {
+                    throw new RimLLMException(LLMError.InvalidResponse, "OpenAI response JSON is missing both content and reasoning_content fields");
+                }
+                if (!string.IsNullOrEmpty(reasoning))
+                {
+                    if (!string.IsNullOrEmpty(content))
+                    {
+                        return $"<think>\n{reasoning}\n</think>\n\n{content}";
+                    }
+                    return $"<think>\n{reasoning}\n</think>";
                 }
                 return content;
             }
             catch (Exception ex) when (!(ex is RimLLMException))
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"解析 OpenAI 回應失敗: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse OpenAI response: {ex.Message}", ex);
             }
         }
 
         public override async Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
         {
-            var settings = RimLLMFrameworkMod.Settings;
-            string apiKey = settings.GetApiKey(ProviderId);
-            string endpoint = settings.GetEndpoint(ProviderId, "https://api.openai.com/v1/chat/completions");
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
             if (!endpoint.EndsWith("/chat/completions"))
             {
-                endpoint = endpoint.TrimEnd('/') + "/chat/completions";
+                endpoint = endpoint.TrimEnd(new char[] { '/' }) + "/chat/completions";
             }
 
-            var messages = new JArray();
-            if (!string.IsNullOrEmpty(request.SystemPrompt))
+            var payload = BuildPayload(request, model, true);
+
+            float timeoutSeconds = Settings?.ApiTimeout ?? 30f;
+            float streamTimeout = Math.Max(timeoutSeconds * 2f, 120f); // 串流給予寬鬆的超時保護
+
+            using (var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(streamTimeout)))
+            using (var cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, request.CancellationToken))
+            using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint))
             {
-                messages.Add(new JObject
+                httpRequest.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+                httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+                HttpResponseMessage response = null;
+                try
                 {
-                    ["role"] = "system",
-                    ["content"] = request.SystemPrompt
-                });
-            }
-            messages.Add(new JObject
-            {
-                ["role"] = "user",
-                ["content"] = request.Prompt
-            });
-
-            var payload = new JObject
-            {
-                ["model"] = model,
-                ["messages"] = messages,
-                ["temperature"] = request.Temperature,
-                ["max_tokens"] = request.MaxTokens,
-                ["stream"] = true
-            };
-
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
-            httpRequest.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
-            httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-
-            HttpResponseMessage response = null;
-            try
-            {
-                response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
-            }
-            catch (Exception ex)
-            {
-                response?.Dispose();
-                throw new RimLLMException(LLMError.NetworkError, $"OpenAI Stream 請求失敗: {ex.Message}", ex);
-            }
-
-            using (response)
-            using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
-            using (var reader = new StreamReader(stream))
-            {
-                while (!reader.EndOfStream)
+                    response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
+                    response.EnsureSuccessStatusCode();
+                }
+                catch (Exception ex)
                 {
-                    string line = await reader.ReadLineAsync().ConfigureAwait(false);
-                    if (line == null) continue;
-                    line = line.Trim();
+                    response?.Dispose();
+                    throw new RimLLMException(LLMError.NetworkError, $"OpenAI stream request failed: {ex.Message}", ex);
+                }
 
-                    if (line == "data: [DONE]")
-                        break;
-
-                    if (line.StartsWith("data: "))
+                using (response)
+                using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                using (var reader = new StreamReader(stream))
+                {
+                    bool inReasoning = false;
+                    while (!reader.EndOfStream)
                     {
-                        string json = line.Substring(6);
-                        string content = null;
-                        try
+                        if (cts.Token.IsCancellationRequested)
                         {
-                            var token = JObject.Parse(json);
-                            content = token["choices"]?[0]?["delta"]?["content"]?.ToString();
-                        }
-                        catch
-                        {
-                            // 忽略損毀或心跳包等非 JSON 片段
+                            throw new RimLLMException(LLMError.Timeout, "Stream request timed out");
                         }
 
-                        if (!string.IsNullOrEmpty(content))
+                        string line = await reader.ReadLineAsync().ConfigureAwait(false);
+                        if (line == null) continue;
+                        line = line.Trim();
+
+                        if (line == "data: [DONE]")
+                            break;
+
+                        if (line.StartsWith("data: "))
                         {
-                            onChunkReceived?.Invoke(content);
+                            string json = line.Substring(6);
+                            string content = null;
+                            string reasoning = null;
+                            try
+                            {
+                                var token = JObject.Parse(json);
+                                content = token["choices"]?[0]?["delta"]?["content"]?.ToString();
+                                reasoning = token["choices"]?[0]?["delta"]?["reasoning_content"]?.ToString();
+                            }
+                            catch
+                            {
+                                // 忽略損毀或心跳包等非 JSON 片段
+                            }
+
+                            if (!string.IsNullOrEmpty(reasoning))
+                            {
+                                if (!inReasoning)
+                                {
+                                    inReasoning = true;
+                                    onChunkReceived?.Invoke("<think>");
+                                }
+                                onChunkReceived?.Invoke(reasoning);
+                            }
+
+                            if (!string.IsNullOrEmpty(content))
+                            {
+                                if (inReasoning)
+                                {
+                                    inReasoning = false;
+                                    onChunkReceived?.Invoke("</think>");
+                                }
+                                onChunkReceived?.Invoke(content);
+                            }
                         }
+                    }
+                    if (inReasoning)
+                    {
+                        onChunkReceived?.Invoke("</think>");
                     }
                 }
             }
         }
 
-        public override async Task<TestResult> TestConnectionAsync()
-        {
-            var settings = RimLLMFrameworkMod.Settings;
-            string apiKey = settings.GetApiKey(ProviderId);
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                return new TestResult { Success = false, Provider = ProviderId, ErrorMessage = "未設定 API 金鑰", ErrorCode = LLMError.InvalidKey };
-            }
-
-            var result = new TestResult { Provider = ProviderId };
-            var stopwatch = Stopwatch.StartNew();
-
-            try
-            {
-                var request = new LLMRequest { Prompt = "ping", MaxTokens = 5 };
-                string testModel = settings.GetDefaultModel(ProviderId, "gpt-4o-mini");
-
-                string content = await GenerateAsync(request, testModel).ConfigureAwait(false);
-                stopwatch.Stop();
-
-                result.Success = true;
-                result.Model = testModel;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-            catch (RimLLMException ex)
-            {
-                stopwatch.Stop();
-                result.Success = false;
-                result.ErrorMessage = ex.Message;
-                result.ErrorCode = ex.Error;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-            catch (Exception ex)
-            {
-                stopwatch.Stop();
-                result.Success = false;
-                result.ErrorMessage = ex.Message;
-                result.ErrorCode = LLMError.Unknown;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-
-            return result;
-        }
+        protected override string DefaultTestModel => "gpt-4o-mini";
 
         public override async Task<List<string>> FetchAvailableModelsAsync()
         {
-            var settings = RimLLMFrameworkMod.Settings;
-            string apiKey = settings.GetApiKey(ProviderId);
-            string endpoint = settings.GetEndpoint(ProviderId, "https://api.openai.com/v1/chat/completions");
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
 
             string url = endpoint;
             if (url.EndsWith("/chat/completions"))
@@ -212,7 +228,7 @@ namespace RimLLM_Framework.Providers
             }
             else if (!url.EndsWith("/models"))
             {
-                url = url.TrimEnd('/') + "/models";
+                url = url.TrimEnd(new char[] { '/' }) + "/models";
             }
 
             string responseJson = await SendGetAsync(url, apiKey).ConfigureAwait(false);
@@ -235,7 +251,7 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex)
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"獲取 {ProviderId} 模型列表失敗: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch {ProviderId} models list: {ex.Message}", ex);
             }
             return list;
         }

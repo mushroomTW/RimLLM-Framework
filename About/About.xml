@@ -3,19 +3,22 @@
   <name>RimLLM Framework</name>
   <author>綠菇</author>
   <packageId>Green_Mushroom.RimLLMFramework</packageId>
-  <modVersion>2026.06.03.1</modVersion>
+  <modVersion>2026.06.06.1</modVersion>
   <supportedVersions>
     <li>1.6</li>
   </supportedVersions>
   <description><![CDATA[RimLLM Framework - 統一 RimWorld 的 LLM 介面與核心基礎框架。
 
+此模組旨在統一管理API key、模型快取與供應商配置，提供一個穩定且彈性的基礎架構，各個模組就不用重複造車輪了，讓其他模組能夠無縫對接各大 LLM 服務（如 Gemini、OpenAI 以及本地相容接口），並確保在遊戲中 LLM 呼叫的穩定性與安全性。
+
 <b>主要功能與特色：</b>
-1. <b>多供應商支援 (Multi-Provider)</b>：支援 Gemini (Google)、OpenAI 以及本地相容接口 (OpenAI Compatible，如 LM Studio、Ollama)，提供彈性的自訂 API Endpoint 配置（預設本地接口為 http://localhost:1234/v1 ）。
-2. <b>自動故障轉移機制 (Model Fallback)</b>：允許玩家自訂主模型與多個備用模型，當請求發生異常或連線失敗時，自動且依序切換備用模型，確保遊戲中的 LLM 呼叫不中斷。
-3. <b>安全金鑰加密 (AES-256)</b>：採用 AES-256 安全加密保存玩家的 API 金鑰與敏感設定資訊，防範金鑰以純文字方式存檔外洩。
-4. <b>精緻的模型快取管理 GUI</b>：支援一鍵獲取供應商模型清單，並以直覺的 Flow Grid 標籤網格展示，附有 Hover 高亮與完整名稱氣泡提示 (Tooltip)，並提供 API 金鑰未填時的防呆紅色警告。
-5. <b>連線一鍵測試 (Connection Test)</b>：在 Mod 設定介面中提供一鍵測試按鈕，方便即時確認供應商 API 通訊與連線狀態。
-6. <b>開發者 SDK 支援</b>：提供統一簡潔的 API 介面與 Action Callback 串流設計，高度相容於 Unity/RimWorld 運行與測試環境，方便其他模組快速且無縫地對接 LLM 服務。]]></description>
+1. <b>多供應商支援 (Multi-Provider)</b>：原生支援 Gemini (Google)、OpenAI、DeepSeek、Groq、Anthropic (Claude)、OpenRouter、Kimi、MiniMax、Qwen 與本地相容接口 (OpenAI Compatible，如 LM Studio、Ollama)。
+2. <b>自動故障轉移機制 (Model Fallback)</b>：已重構為純模型級的精確故障轉移鏈。允許玩家自訂主模型與多個精確備用模型，當請求發生異常時自動依序切換，確保遊戲中的 LLM 呼叫不中斷。
+3. <b>安全金鑰加密與強固性 (AES-256 & Hardened Security)</b>：採用 AES-256 對稱加密保存 API 金鑰；<b>移除自動補註冊機制並重構 async 調用端組件校驗</b>，徹底防範惡意模組隨意偽造 ModId 越權調用。
+4. <b>線程安全與 Scribe 存檔優化</b>：所有字典操作加入多線程鎖保護；<b>RecordLog 寫入改為透過 Dispatcher 派遣回 Unity 主線程執行，並加入 15 秒定時節流寫入</b>，避免背景存檔導致 RimWorld 隨機崩潰或產生 TPS 抖動。
+5. <b>推理性思考模型與思維鏈高亮 (Reasoning Models & <think> Tagging)</b>：原生支援 DeepSeek-R1、Gemini 2.0/2.5 Thinking、Claude 3.7 等思考模型，底層自動提取 `reasoning_content`、`thought` 與 `thinking` 區塊，統一以 `<think>...</think>` 標記進行封裝並回傳，GUI 聊天測試頁面會自動將其渲染為精緻的灰色斜體思考過程；連線測試 (Connection Test) 於基類高度整合。
+6. <b>開發者 SDK 支援</b>：提供統一簡潔的 API 介面、動態串流（Streaming）控制、以及基於反射與遞迴的 JSON Schema 快取預熱優化，方便其他模組快速、安全且無縫地對接 LLM 服務與建構 Agent 工具。]]>
+  </description>
   <loadAfter>
     <li>brrainz.harmony</li>
     <li>Ludeon.RimWorld</li>

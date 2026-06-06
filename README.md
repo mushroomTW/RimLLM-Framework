@@ -1,6 +1,6 @@
 # RimLLM Framework
 
-`RimLLM Framework` 是一個統一 RimWorld 模組大型語言模型 (LLM) 呼叫介面與底層核心的基礎框架。它為其他 RimWorld AI 模組提供穩健、安全、高效且開箱即用的 SDK 支援，免去模組開發者重複造輪子的煩惱。
+`RimLLM Framework` 是一個 RimWorld 模組大型語言模型 (LLM) 呼叫介面與底層核心的基礎框架。它為其他 RimWorld AI 模組提供穩健、安全、高效且開箱即用的 SDK 支援，免去模組開發者重複造輪子的煩惱。
 
 ---
 
@@ -8,11 +8,10 @@
 
 ### 1. 引用命名空間
 
-請在您的 RimWorld 模組 C# 專案中引用以下命名空間：
+請在您的 RimWorld 模組 C# 專案中引用以下命名空間即可：
 
 ```csharp
 using RimLLM_Framework.SDK;
-using RimLLM_Framework.Core;
 ```
 
 ### 2. 註冊您的客戶端 Mod
@@ -29,6 +28,9 @@ public class MyAIMod : Verse.Mod
     }
 }
 ```
+
+> [!IMPORTANT]
+> 為了防範安全漏洞，自 2026.06.05 版本起已**移除了「自動補註冊」機制**。所有呼叫端 Mod 必須在進行任何 API 呼叫前，明確呼叫一次 `RimLLMProvider.RegisterClient` 進行安全性註冊綁定，否則 API 呼叫將會因安全性驗證失敗而拋出異常。
 
 ### 3. 文字生成 (Text Generation)
 
@@ -90,7 +92,7 @@ public async void MakeIncidentDecision()
         Log.Message($" Randy 決定事件: {decision.IncidentDefName} ({decision.RandyReasoning})");
     }
     catch (RimLLMException ex)
-    {
+    {1
         Log.Error($"結構化決策生成失敗: {ex.Message}");
     }
 }
@@ -98,8 +100,41 @@ public async void MakeIncidentDecision()
 
 ### 5. 串流生成 (Streaming)
 
-若需要像是打字機一般即時渲染模型回傳的文字片段，使用 `StreamAsync` 並結合 Action Callback。
-**注意：Callback 會自動由 `RimLLMDispatcher` 分發回 Unity 主線程執行，您可以放心地直接在 Callback 中更新 UI 或操作 Unity API！**
+若需要像是打字機一般即時渲染模型回傳的文字片段，本框架提供兩種使用方式：
+
+#### 📌 方式 A：統一使用 `GenerateAsync`（推薦：支援動態切換與直接取得完整回覆）
+
+您可以在 `LLMRequest` 中直接設定 `EnableStreaming = true` 並提供 `OnChunkReceived` 回呼。如此一來，您可以用單一的 `await GenerateAsync` 來同時獲得**即時 UI 渲染**與**最終完整字串**，免去另外編寫異步 Task 的麻煩：
+
+```csharp
+public async void StreamResponseUnified()
+{
+    try
+    {
+        var request = new LLMRequest
+        {
+            ModId = "myai.mod",
+            Prompt = "寫一首關於環世界中被松鼠襲擊的悲壯詩歌。",
+            EnableStreaming = true,
+            OnChunkReceived = (chunk) => 
+            {
+                // 此處程式碼保證在 Unity 主線程中執行，可安全更新遊戲 UI
+                MyGameUI.AppendText(chunk);
+            }
+        };
+
+        // 呼叫 GenerateAsync 將會以串流執行，並在完成後回傳完整的字串
+        string fullResponse = await RimLLMProvider.Instance.GenerateAsync(request);
+        Log.Message($"[Completed] {fullResponse}");
+    }
+    catch (RimLLMException ex)
+    {
+        Log.Error($"串流生成失敗: {ex.Message}");
+    }
+}
+```
+
+#### 📌 方式 B：使用 `StreamAsync` 專用方法（傳統做法）
 
 ```csharp
 public void StreamResponse()
@@ -125,22 +160,66 @@ public void StreamResponse()
 }
 ```
 
+### 6. 上下文快取節省 Token (Context Caching)
+
+若您的 Mod 擁有非常龐大的 `SystemPrompt`（例如包含遊戲世界狀態、詳細的角色屬性列表或 XML Schema 等），且需要高頻率呼叫 API，您可以啟用 **上下文快取 (Context Caching)**。
+
+這會自動利用 API 供應商（如 Google Gemini 或 Anthropic Claude）的快取機制，避免每次呼叫都重新計算 System Prompt 的 Token，進而大幅降低 Token 費用與響應延遲：
+
+```csharp
+public async void CallWithCaching()
+{
+    var request = new LLMRequest
+    {
+        ModId = "myai.mod",
+        Prompt = "分析此殖民地成員的心理健康狀態。",
+        
+        // 設定龐大的系統提示詞
+        SystemPrompt = "你是一個 RimWorld 心理分析大師... (此處可能有數千字的角色設定與遊戲資料)",
+        
+        // 啟用快取節省 Token 功能
+        EnableContextCaching = true 
+    };
+
+    string response = await RimLLMProvider.Instance.GenerateAsync(request);
+    Log.Message(response);
+}
+```
+
+> [!NOTE]
+>
+> * **Gemini** 預設會將系統提示詞以 `cachedContents` 方式快取 5 分鐘（TTL 300s），後續相同 `SystemPrompt` 的請求會自動對齊該快取。
+> * **Anthropic (Claude)** 則會套用 `ephemeral` 快取標記，對重複輸入的 Prompt 提供高達 90% 的費用折扣。
+
 ---
 
 ## 📖 主要功能與特色
 
 1. **多供應商支援 (Multi-Provider Support)**
-   * 原生支援 Google **Gemini** 與 **OpenAI** 雲端 API。
-   * 支援 **OpenAI Compatible API**，可配置任何本地或第三方 LLM 接口（如 LM Studio、Ollama、LocalAI、vLLM 等）。
-2. **故障轉移與輪詢備用機制 (Model Fallback)**
-   * 支援配置「主模型」與多個「備用模型」鏈。當主模型請求超時、受限 (Rate Limit) 或斷線時，底層將自動且無縫地進行輪詢切換，確保遊戲體驗不中斷。
-3. **AES-256 安全加密**
-   * 使用 AES-256 對稱加密保存玩家敏感的 API 金鑰 (API Keys)，杜絕金鑰以純文字檔案外洩的安全隱患。
-4. **精緻的模型快取管理 GUI**
-   * 直覺的 Flow Grid 標籤網格展示，支援滑鼠懸浮高亮與模型名稱完整的 Tooltip 氣泡提示。
-   * 自動進行 API 金鑰輸入檢測，若未填寫則給予防呆紅色警示。
-5. **一鍵連線測試 (Connection Test)**
-   * 在 Mod 設定介面中提供一鍵測試功能，即時量測連線延遲 (Latency) 並檢驗 API 與模型有效性。
+   * 原生支援 Google **Gemini**、**OpenAI**、**DeepSeek**、**Groq**、**Anthropic (Claude)**、**OpenRouter**、**Kimi**、**MiniMax** 與 **Qwen**。
+   * 支援 **OpenAI Compatible API**，可自訂配置任何本地或第三方相容介面（如 LM Studio、Ollama、LocalAI、vLLM 等），預設 Endpoint 為 `http://localhost:1234/v1` 且支援 API 金鑰。
+   * 針對 **Kimi**、**MiniMax**、**Qwen** 提供「使用中國專用端點 (預設關閉)」一鍵切換，保證優質連線。
+2. **故障轉移與雙重備用機制 (Model Fallback)**
+   * **客戶端 Fallback 鏈**：支援配置由「主模型」與多個「精確備用模型」組成的輪詢鏈。當前模型遇到請求超時、限流 (Rate Limit 429) 或斷線時，底層自動無縫降級切換。移除了先前不穩定的純供應商無模型 Fallback，當玩家在 UI 中切換供應商時，系統會自動在模型列表中預設選取第一個可用模型。
+   * **OpenRouter 服務端自動回退 (openrouter/auto)**：支援在 Fallback 鏈中使用 OpenRouter 官方的 `openrouter/auto` 模型，由 OpenRouter 服務端在多個推薦模型間自動執行備用降級，提供更簡便的模型回退體驗。
+3. **AES-256 安全加密與身分安全加固**
+   * 使用 AES-256 對稱加密安全保存敏感的 API 金鑰 (API Keys)，杜絕任何純文字儲存外洩的安全隱患。
+   * **安全驗證加固**：移除自動補註冊機制，防範假冒 ModId 的安全漏洞；對 async 調用層進行同步外殼與 `NoInlining` 封裝，保障調用端身份識別安全。
+4. **精緻的可滾動分欄 GUI**
+   * 直覺的 Flow Grid 標籤展示可用模型清單，具備高亮選取與完整模型 Tooltip 提示。
+5. **獨立偵錯 (Debug) 分頁與詳細日誌控制**
+   * 新增獨立的 **Debug** 設定分頁。提供「詳細日誌 (Detailed Logging)」核取方塊，可自由開啟或關閉本模組的日誌輸出，便於 Mod 開發者與玩家進行排錯。
+6. **一鍵連線測試 (Connection Test)**
+   * 提供即時的一鍵連線檢測，量測 Latency 延遲並檢驗 API 與模型有效性。在基底類別中高度整合統一實作。
+7. **線程安全與主線程 Scribe 調度**
+   * 遊戲運行中所有設定字典皆具備同步鎖機制防範多線程並行讀寫衝突。
+   * 所有日誌寫入 `RecordLog` 中的 Scribe 存檔均以 `RimLLMDispatcher` 調度回 Unity 主線程執行，並加入 15 秒寫入節流 (Throttle)，避免背景存檔導致遊戲崩潰或 TPS 抖動。
+8. **推理性思考模型與思維鏈高亮 (Reasoning Models & think Tagging)**
+   * 原生支援 **DeepSeek-R1**、**Gemini 2.0/2.5 Thinking**、**Claude 3.7** 等推理性思考模型。
+   * 底層自動擷取 API 返回的思維鏈（如 OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位、Anthropic 的 `thinking` 區塊），並統一以 XML 標記 `<think>...</think>` 封裝回傳。
+   * GUI 聊天測試頁面會自動解析該標記，將其渲染為精緻的灰色斜體思考過程；呼叫端 Mod 亦能極易使用正則表達式剝離或保留思維鏈，確保高相容性。
+9. **智慧上下文快取與 Prompt Caching (Context Caching)**
+   * 原生支援 **Gemini Context Caching** 與 **Anthropic Prompt Caching (Ephemeral)**。開發者只需在 `LLMRequest` 中設定 `EnableContextCaching = true`，底層即會自動將長系統提示詞 (System Prompt) 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
 
 ---
 
@@ -153,7 +232,8 @@ public void StreamResponse()
 ### 2. 呼叫端來源身分驗證 (`ClientRegistry`)
 
 * 為了防止遊戲內惡意模組假冒其他合法模組的 ID 竊取 API 金鑰使用權，框架引入了呼叫端組件校驗。
-* 在註冊/調用時，底層會自動檢索呼叫端的 `Assembly`，將其與 `ModId` 進行安全鎖定繫結。若有其他組件企圖冒用該 `ModId`，框架將直接予以阻斷。
+* **已移除自動補註冊機制**：所有呼叫端 Mod 必須手動呼叫 `RegisterClient`。在 API 調用時，底層會檢索當前呼叫端組件的 `Assembly` 並進行強一致性校驗，若該 `ModId` 未經註冊，或註冊的 Assembly 與實際呼叫者不符，將直接予以阻斷，防止越權使用 API 金鑰。
+* **async 調用端堆疊保護**：為防止 C# 異步狀態機將調用端組件編譯為 `mscorlib` 造成安全檢驗誤判，本框架對入口層（如 `GenerateObjectAsync` 與 `StreamAsync`）進行了同步外殼包裝，並加入 `[MethodImplOptions.NoInlining]` 屬性防範 JIT 內聯。
 
 ### 3. Unity 主線程派遣器 (`RimLLMDispatcher`)
 

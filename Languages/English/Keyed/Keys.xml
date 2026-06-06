@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <RimLLM_MainMenu><b>Main Menu</b></RimLLM_MainMenu>
+  <RimLLM_TabProviders>Provider Settings</RimLLM_TabProviders>
+  <RimLLM_TabFallback>Fallback Chain</RimLLM_TabFallback>
+  <RimLLM_TabGlobalConfig>Global Config</RimLLM_TabGlobalConfig>
+  
+  <RimLLM_ApiProviders><b>API Providers</b></RimLLM_ApiProviders>
+  <RimLLM_StatusEnabled>● Enabled</RimLLM_StatusEnabled>
+  <RimLLM_StatusDisabled>○ Disabled</RimLLM_StatusDisabled>
+  <RimLLM_ModelsCount>{0} Models</RimLLM_ModelsCount>
+  
+  <RimLLM_TitleProviderSettings>Provider Settings - {0}</RimLLM_TitleProviderSettings>
+  <RimLLM_TitleFallback>Global Fallback Chain Settings</RimLLM_TitleFallback>
+  <RimLLM_TitleGlobalConfig>Global Request and Retry Configuration</RimLLM_TitleGlobalConfig>
+  
+  <RimLLM_EnableProvider>Enable this API Provider</RimLLM_EnableProvider>
+  <RimLLM_ApiKey>API Keys List:</RimLLM_ApiKey>
+  <RimLLM_AddApiKeyBtn>Add Key (+)</RimLLM_AddApiKeyBtn>
+  <RimLLM_ApiEndpoint>API Endpoint:</RimLLM_ApiEndpoint>
+  <RimLLM_ChinaEndpointToggle>Use China-specific connection endpoint (Default closed, use global endpoint)</RimLLM_ChinaEndpointToggle>
+  
+  <RimLLM_AvailableModelsTitle><b>Available Models List Configuration</b></RimLLM_AvailableModelsTitle>
+  <RimLLM_NoCachedModels>&lt;color=gray&gt;No cached model list (please fetch first)&lt;/color&gt;</RimLLM_NoCachedModels>
+  <RimLLM_Fetching>Fetching...</RimLLM_Fetching>
+  <RimLLM_FetchModelsBtn>Fetch Available Models</RimLLM_FetchModelsBtn>
+  <RimLLM_FetchStatusNotRun>Not Fetched</RimLLM_FetchStatusNotRun>
+  <RimLLM_FetchSuccess>&lt;color=green&gt;Fetch Successful&lt;/color&gt;</RimLLM_FetchSuccess>
+  <RimLLM_FetchSuccessCount>&lt;color=green&gt;Fetch Successful&lt;/color&gt; ({0} models fetched)</RimLLM_FetchSuccessCount>
+  <RimLLM_FetchSuccessEmpty>&lt;color=yellow&gt;Fetch Successful, but list is empty&lt;/color&gt;</RimLLM_FetchSuccessEmpty>
+  <RimLLM_FetchFailed>&lt;color=red&gt;Fetch Failed&lt;/color&gt;</RimLLM_FetchFailed>
+  
+  <RimLLM_ConnectionTestTitle><b>Provider Connection Test</b></RimLLM_ConnectionTestTitle>
+  <RimLLM_Testing>Testing connection...</RimLLM_Testing>
+  <RimLLM_TestConnectionBtn>Test API Connection</RimLLM_TestConnectionBtn>
+  <RimLLM_TestResult>Test Result: {0}</RimLLM_TestResult>
+  <RimLLM_TestStatusNotRun>Untested</RimLLM_TestStatusNotRun>
+  <RimLLM_TestStatusSuccess>&lt;color=green&gt;Success&lt;/color&gt; (Latency: {0}ms, Model: {1})</RimLLM_TestStatusSuccess>
+  <RimLLM_TestStatusFailed>&lt;color=red&gt;Failed&lt;/color&gt; ({0})</RimLLM_TestStatusFailed>
+  <RimLLM_TestStatusError>&lt;color=red&gt;Error&lt;/color&gt; ({0})</RimLLM_TestStatusError>
+  
+  <RimLLM_FallbackExplanation>When calling the SDK, the framework will try in this order. If the previous one fails, it tries the next one.</RimLLM_FallbackExplanation>
+  <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;Fallback chain is currently empty, please select a model below to add!&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
+  <RimLLM_AddToFallbackTitle><b>Add Model to Fallback Chain</b></RimLLM_AddToFallbackTitle>
+  <RimLLM_SelectProviderBtn>Provider: {0}</RimLLM_SelectProviderBtn>
+  <RimLLM_SelectModelBtn>Model: {0}</RimLLM_SelectModelBtn>
+  <RimLLM_SelectModelPlaceholder>Select Model</RimLLM_SelectModelPlaceholder>
+  <RimLLM_AddBtn>Add</RimLLM_AddBtn>
+  
+  <RimLLM_MsgNoCachedModels>Provider {0} has no cached models. Please fetch available models first in the settings page.</RimLLM_MsgNoCachedModels>
+  <RimLLM_MsgSelectModelFirst>Please select a model name to add first!</RimLLM_MsgSelectModelFirst>
+  <RimLLM_MsgModelExists>This model combination already exists in the Fallback chain!</RimLLM_MsgModelExists>
+  <RimLLM_MsgModelAdded>Added {0} to Fallback chain!</RimLLM_MsgModelAdded>
+  
+  <RimLLM_ApiTimeoutLabel>API Timeout: {0} seconds</RimLLM_ApiTimeoutLabel>
+  <RimLLM_MaxRetriesLabel>Max Retries per Model: {0} times</RimLLM_MaxRetriesLabel>
+  <RimLLM_RetryDelayLabel>Retry Delay: {0} seconds</RimLLM_RetryDelayLabel>
+  <RimLLM_EnterApiKey>&lt;color=red&gt;Please enter API Key (Key) first&lt;/color&gt;</RimLLM_EnterApiKey>
+  <RimLLM_DetailedLogging>Detailed Logging</RimLLM_DetailedLogging>
+  <RimLLM_DetailedLoggingExplanation>Enable detailed logging for call history, retries and stream events.</RimLLM_DetailedLoggingExplanation>
+  <RimLLM_TabChatTest>Chat Test</RimLLM_TabChatTest>
+  <RimLLM_TabDebug>Debug</RimLLM_TabDebug>
+  <RimLLM_TitleDebug>Debug Settings</RimLLM_TitleDebug>
+  <RimLLM_TitleDebugExplanation>Mod Debugging and Diagnostics</RimLLM_TitleDebugExplanation>
+  <RimLLM_PureProviderFallback>(Pure Provider / Built-in Fallback)</RimLLM_PureProviderFallback>
+  <RimLLM_ExportDiag>Export Diagnostics (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
+  <RimLLM_RecentRequests>Recent Request History (Last {0})</RimLLM_RecentRequests>
+  <RimLLM_NoRequests>&lt;color=gray&gt;No request history currently.&lt;/color&gt;</RimLLM_NoRequests>
+  <RimLLM_ChatTitle>Model Chat Interface (Supports /clear to reset)</RimLLM_ChatTitle>
+  <RimLLM_Send>Send</RimLLM_Send>
+  <RimLLM_ClearBtn>Clear</RimLLM_ClearBtn>
+  <RimLLM_AiThinking>AI is thinking</RimLLM_AiThinking>
+  <RimLLM_ChatUser>&lt;b&gt;[Me]:&lt;/b&gt;</RimLLM_ChatUser>
+  <RimLLM_ChatAi>&lt;b&gt;[AI]:&lt;/b&gt;</RimLLM_ChatAi>
+  <RimLLM_ChatAiError>&lt;b&gt;[AI Error]:&lt;/b&gt;</RimLLM_ChatAiError>
+  <RimLLM_MaxConcurrentRequestsLabel>Max Concurrent Requests: {0}</RimLLM_MaxConcurrentRequestsLabel>
+  <RimLLM_LocalCompatibleMode> (Local Model / Compatible Mode)</RimLLM_LocalCompatibleMode>
+  <RimLLM_ExportDiagSuccess>Diagnostics successfully exported to: {0}</RimLLM_ExportDiagSuccess>
+  <RimLLM_ExportDiagFailed>Failed to export diagnostics: {0}</RimLLM_ExportDiagFailed>
+  
+  <RimLLM_ReasoningEffortLabel>Default Reasoning Effort: </RimLLM_ReasoningEffortLabel>
+  <RimLLM_ReasoningEffort_None>Disabled / Default</RimLLM_ReasoningEffort_None>
+  <RimLLM_ReasoningEffort_Low>Low</RimLLM_ReasoningEffort_Low>
+  <RimLLM_ReasoningEffort_Medium>Medium</RimLLM_ReasoningEffort_Medium>
+  <RimLLM_ReasoningEffort_High>High</RimLLM_ReasoningEffort_High>
+  <RimLLM_ReasoningEffortSelectBtn>Reasoning: {0}</RimLLM_ReasoningEffortSelectBtn>
+  <RimLLM_SettingsIntro>Configure API providers, model fallback chains, global concurrency limits, and test model chat here.</RimLLM_SettingsIntro>
+  <RimLLM_OpenSettingsBtn>Open Advanced Settings Window</RimLLM_OpenSettingsBtn>
+</LanguageData>

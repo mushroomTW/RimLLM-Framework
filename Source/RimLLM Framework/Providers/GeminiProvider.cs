@@ -6,9 +6,10 @@ using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
-using RimLLM_Framework.Mod;
+using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Providers
 {
@@ -17,13 +18,27 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class GeminiProvider : BaseHttpProvider
     {
+        private static readonly Regex GeminiTextRegex = new Regex(@"\""text\""\s*:\s*\""([^\""\\]*(?:\\.[^\""\\]*)*)\""", RegexOptions.Compiled);
+
         public override string ProviderId => "Gemini";
+
+        private class GeminiCacheEntry
+        {
+            public string CacheId { get; set; }
+            public DateTime ExpireTime { get; set; }
+        }
+
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeminiCacheEntry> _contextCaches = 
+            new System.Collections.Concurrent.ConcurrentDictionary<string, GeminiCacheEntry>();
+
+        public GeminiProvider(IRimLLMSettings settings) : base(settings)
+        {
+        }
 
         public override async Task<string> GenerateAsync(LLMRequest request, string model)
         {
-            var settings = RimLLMFrameworkMod.Settings;
-            string apiKey = settings.GetApiKey(ProviderId);
-            string baseEndpoint = settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             string url = $"{baseEndpoint}/models/{model}:generateContent?key={apiKey}";
 
             var contents = new JArray
@@ -37,17 +52,53 @@ namespace RimLLM_Framework.Providers
                 }
             };
 
+            var generationConfig = new JObject
+            {
+                ["temperature"] = request.Temperature,
+                ["maxOutputTokens"] = request.MaxTokens
+            };
+
+            if (request.ReasoningEffort != LLMReasoningEffort.None && model != null)
+            {
+                DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
+
+                if (isThinkingBudgetModel)
+                {
+                    int budget = 1024;
+                    if (request.ReasoningEffort == LLMReasoningEffort.Medium) budget = 2048;
+                    else if (request.ReasoningEffort == LLMReasoningEffort.High) budget = 4096;
+
+                    generationConfig["thinkingConfig"] = new JObject
+                    {
+                        ["thinkingBudget"] = budget
+                    };
+                }
+                else if (isThinkingLevelModel)
+                {
+                    generationConfig["thinkingConfig"] = new JObject
+                    {
+                        ["thinkingLevel"] = request.ReasoningEffort.ToString().ToLower()
+                    };
+                }
+            }
+
             var payload = new JObject
             {
                 ["contents"] = contents,
-                ["generationConfig"] = new JObject
-                {
-                    ["temperature"] = request.Temperature,
-                    ["maxOutputTokens"] = request.MaxTokens
-                }
+                ["generationConfig"] = generationConfig
             };
 
-            if (!string.IsNullOrEmpty(request.SystemPrompt))
+            string cacheId = null;
+            if (request.EnableContextCaching && !string.IsNullOrEmpty(request.SystemPrompt))
+            {
+                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, request.SystemPrompt, request.CancellationToken).ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrEmpty(cacheId))
+            {
+                payload["cachedContent"] = cacheId;
+            }
+            else if (!string.IsNullOrEmpty(request.SystemPrompt))
             {
                 payload["systemInstruction"] = new JObject
                 {
@@ -58,29 +109,69 @@ namespace RimLLM_Framework.Providers
                 };
             }
 
-            string responseJson = await SendPostAsync(url, payload.ToString(), apiKey, "Gemini").ConfigureAwait(false);
+            string responseJson = await SendPostAsync(url, payload.ToString(), apiKey, "Gemini", cancellationToken: request.CancellationToken).ConfigureAwait(false);
 
             try
             {
                 var responseObj = JObject.Parse(responseJson);
-                var text = responseObj["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
-                if (text == null)
+                var parts = responseObj["candidates"]?[0]?["content"]?["parts"] as JArray;
+                if (parts == null || parts.Count == 0)
                 {
-                    throw new RimLLMException(LLMError.InvalidResponse, "Gemini 回傳的 JSON 中缺少 text 欄位");
+                    throw new RimLLMException(LLMError.InvalidResponse, "Gemini response JSON is missing content parts");
                 }
-                return text;
+
+                var sb = new StringBuilder();
+                bool hasThoughts = false;
+                bool hasFinishedReasoning = false;
+                foreach (var part in parts)
+                {
+                    string partText = part["text"]?.ToString();
+                    if (string.IsNullOrEmpty(partText)) continue;
+
+                    bool isThought = part["thought"]?.Type == JTokenType.Boolean && (bool)part["thought"];
+                    if (isThought)
+                    {
+                        if (!hasFinishedReasoning)
+                        {
+                            if (!hasThoughts)
+                            {
+                                sb.Append("<think>\n");
+                                hasThoughts = true;
+                            }
+                            sb.Append(partText);
+                        }
+                        else
+                        {
+                            sb.Append(partText);
+                        }
+                    }
+                    else
+                    {
+                        if (hasThoughts)
+                        {
+                            sb.Append("\n</think>\n");
+                            hasThoughts = false;
+                            hasFinishedReasoning = true;
+                        }
+                        sb.Append(partText);
+                    }
+                }
+                if (hasThoughts)
+                {
+                    sb.Append("\n</think>");
+                }
+                return sb.ToString();
             }
             catch (Exception ex) when (!(ex is RimLLMException))
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"解析 Gemini 回應失敗: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse Gemini response: {ex.Message}", ex);
             }
         }
 
         public override async Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
         {
-            var settings = RimLLMFrameworkMod.Settings;
-            string apiKey = settings.GetApiKey(ProviderId);
-            string baseEndpoint = settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             string url = $"{baseEndpoint}/models/{model}:streamGenerateContent?key={apiKey}";
 
             var contents = new JArray
@@ -94,17 +185,53 @@ namespace RimLLM_Framework.Providers
                 }
             };
 
+            var generationConfig = new JObject
+            {
+                ["temperature"] = request.Temperature,
+                ["maxOutputTokens"] = request.MaxTokens
+            };
+
+            if (request.ReasoningEffort != LLMReasoningEffort.None && model != null)
+            {
+                DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
+
+                if (isThinkingBudgetModel)
+                {
+                    int budget = 1024;
+                    if (request.ReasoningEffort == LLMReasoningEffort.Medium) budget = 2048;
+                    else if (request.ReasoningEffort == LLMReasoningEffort.High) budget = 4096;
+
+                    generationConfig["thinkingConfig"] = new JObject
+                    {
+                        ["thinkingBudget"] = budget
+                    };
+                }
+                else if (isThinkingLevelModel)
+                {
+                    generationConfig["thinkingConfig"] = new JObject
+                    {
+                        ["thinkingLevel"] = request.ReasoningEffort.ToString().ToLower()
+                    };
+                }
+            }
+
             var payload = new JObject
             {
                 ["contents"] = contents,
-                ["generationConfig"] = new JObject
-                {
-                    ["temperature"] = request.Temperature,
-                    ["maxOutputTokens"] = request.MaxTokens
-                }
+                ["generationConfig"] = generationConfig
             };
 
-            if (!string.IsNullOrEmpty(request.SystemPrompt))
+            string cacheId = null;
+            if (request.EnableContextCaching && !string.IsNullOrEmpty(request.SystemPrompt))
+            {
+                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, request.SystemPrompt, request.CancellationToken).ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrEmpty(cacheId))
+            {
+                payload["cachedContent"] = cacheId;
+            }
+            else if (!string.IsNullOrEmpty(request.SystemPrompt))
             {
                 payload["systemInstruction"] = new JObject
                 {
@@ -115,98 +242,106 @@ namespace RimLLM_Framework.Providers
                 };
             }
 
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-            httpRequest.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+            float timeoutSeconds = Settings?.ApiTimeout ?? 30f;
+            float streamTimeout = Math.Max(timeoutSeconds * 2f, 120f); // 串流給予寬鬆的超時保護
 
-            HttpResponseMessage response = null;
-            try
+            using (var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(streamTimeout)))
+            using (var cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, request.CancellationToken))
+            using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, url))
             {
-                response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
-            }
-            catch (Exception ex)
-            {
-                response?.Dispose();
-                throw new RimLLMException(LLMError.NetworkError, $"Gemini Stream 請求失敗: {ex.Message}", ex);
-            }
+                httpRequest.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
 
-            // Gemini 的 streamGenerateContent 返回一個 JSON 陣列格式。
-            // 使用正則表達式快速且安全地提取 "text" 值，防範部分轉義或空格異常。
-            var textRegex = new Regex(@"\""text\""\s*:\s*\""([^\""\\]*(?:\\.[^\""\\]*)*)\""");
-
-            using (response)
-            using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
-            using (var reader = new StreamReader(stream))
-            {
-                while (!reader.EndOfStream)
+                HttpResponseMessage response = null;
+                try
                 {
-                    string line = await reader.ReadLineAsync().ConfigureAwait(false);
-                    if (line == null) continue;
+                    response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
+                    response.EnsureSuccessStatusCode();
+                }
+                catch (Exception ex)
+                {
+                    response?.Dispose();
+                    throw new RimLLMException(LLMError.NetworkError, $"Gemini stream request failed: {ex.Message}", ex);
+                }
 
-                    var match = textRegex.Match(line);
-                    if (match.Success)
+                using (response)
+                using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                using (var reader = new StreamReader(stream))
+                using (var jsonReader = new JsonTextReader(reader))
+                {
+                    jsonReader.SupportMultipleContent = true;
+                    bool inReasoning = false;
+                    bool hasFinishedReasoning = false;
+
+                    while (await jsonReader.ReadAsync(cts.Token).ConfigureAwait(false))
                     {
-                        string rawText = match.Groups[1].Value;
-                        string unescapedText = Regex.Unescape(rawText);
-                        if (!string.IsNullOrEmpty(unescapedText))
+                        if (jsonReader.TokenType == JsonToken.StartObject)
                         {
-                            onChunkReceived?.Invoke(unescapedText);
+                            try
+                            {
+                                JObject token = await JObject.LoadAsync(jsonReader, cts.Token).ConfigureAwait(false);
+                                var parts = token["candidates"]?[0]?["content"]?["parts"] as JArray;
+                                if (parts != null)
+                                {
+                                    foreach (var part in parts)
+                                    {
+                                        string partText = part["text"]?.ToString();
+                                        if (string.IsNullOrEmpty(partText)) continue;
+
+                                        bool isThought = part["thought"]?.Type == JTokenType.Boolean && (bool)part["thought"];
+                                        if (isThought)
+                                        {
+                                            if (!hasFinishedReasoning)
+                                            {
+                                                if (!inReasoning)
+                                                {
+                                                    inReasoning = true;
+                                                    onChunkReceived?.Invoke("<think>");
+                                                }
+                                                onChunkReceived?.Invoke(partText);
+                                            }
+                                            else
+                                            {
+                                                onChunkReceived?.Invoke(partText);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            if (inReasoning)
+                                            {
+                                                inReasoning = false;
+                                                hasFinishedReasoning = true;
+                                                onChunkReceived?.Invoke("</think>");
+                                            }
+                                            onChunkReceived?.Invoke(partText);
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                if (Settings.DetailedLogging)
+                                {
+                                    RimLLMLog.Warning($"[RimLLM] Gemini stream JSON parse failed: {ex.Message}");
+                                }
+                            }
                         }
+                    }
+
+                    if (inReasoning)
+                    {
+                        onChunkReceived?.Invoke("</think>");
                     }
                 }
             }
         }
 
-        public override async Task<TestResult> TestConnectionAsync()
-        {
-            var settings = RimLLMFrameworkMod.Settings;
-            string apiKey = settings.GetApiKey(ProviderId);
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                return new TestResult { Success = false, Provider = ProviderId, ErrorMessage = "未設定 API 金鑰", ErrorCode = LLMError.InvalidKey };
-            }
-
-            var result = new TestResult { Provider = ProviderId };
-            var stopwatch = Stopwatch.StartNew();
-
-            try
-            {
-                var request = new LLMRequest { Prompt = "ping", MaxTokens = 5 };
-                string testModel = settings.GetDefaultModel(ProviderId, "gemini-2.5-flash");
-
-                string content = await GenerateAsync(request, testModel).ConfigureAwait(false);
-                stopwatch.Stop();
-
-                result.Success = true;
-                result.Model = testModel;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-            catch (RimLLMException ex)
-            {
-                stopwatch.Stop();
-                result.Success = false;
-                result.ErrorMessage = ex.Message;
-                result.ErrorCode = ex.Error;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-            catch (Exception ex)
-            {
-                stopwatch.Stop();
-                result.Success = false;
-                result.ErrorMessage = ex.Message;
-                result.ErrorCode = LLMError.Unknown;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-
-            return result;
-        }
+        protected override string DefaultTestModel => "gemini-2.5-flash";
 
         public override async Task<List<string>> FetchAvailableModelsAsync()
         {
-            var settings = RimLLMFrameworkMod.Settings;
-            string apiKey = settings.GetApiKey(ProviderId);
-            string baseEndpoint = settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
-            string url = $"{baseEndpoint.TrimEnd('/')}/models?key={apiKey}";
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
+            string url = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/models?key={apiKey}";
 
             string responseJson = await SendGetAsync(url, apiKey, "Gemini").ConfigureAwait(false);
             var list = new List<string>();
@@ -230,9 +365,99 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex)
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"獲取 Gemini 模型列表失敗: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch Gemini models list: {ex.Message}", ex);
             }
             return list;
+        }
+
+        private void DetermineGeminiThinkingConfig(string model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel)
+        {
+            isThinkingBudgetModel = false;
+            isThinkingLevelModel = false;
+            if (model == null) return;
+ 
+            isThinkingBudgetModel = model.IndexOf("thinking", StringComparison.OrdinalIgnoreCase) >= 0 || 
+                                    model.IndexOf("gemini-2.5", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    model.IndexOf("gemini-2-5", StringComparison.OrdinalIgnoreCase) >= 0;
+ 
+            isThinkingLevelModel = model.IndexOf("gemma-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
+                                   model.IndexOf("gemini-3", StringComparison.OrdinalIgnoreCase) >= 0 || 
+                                   model.IndexOf("gemini-4", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string systemPrompt, System.Threading.CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(systemPrompt)) return null;
+
+            // 清理已過期的快取 entry，避免內存洩漏
+            foreach (var kvp in _contextCaches)
+            {
+                if (kvp.Value.ExpireTime <= DateTime.UtcNow)
+                {
+                    _contextCaches.TryRemove(kvp.Key, out _);
+                }
+            }
+
+            if (_contextCaches.TryGetValue(systemPrompt, out var entry))
+            {
+                // 快取未過期，且加上 10 秒安全緩衝，避免邊界失效
+                if (entry.ExpireTime > DateTime.UtcNow.AddSeconds(10))
+                {
+                    return entry.CacheId;
+                }
+            }
+
+            // 建立新的 Cached Content 資源
+            // API url 格式: POST https://generativelanguage.googleapis.com/v1beta/cachedContents?key=YOUR_API_KEY
+            string cacheUrl = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/cachedContents?key={apiKey}";
+
+            // 剥離 model 中的 "models/" 前綴以對齊格式 (Gemini 官方要求建立快取時 model 必須包含 models/ 前綴)
+            string modelWithPrefix = model.StartsWith("models/") ? model : $"models/{model}";
+
+            var cachePayload = new JObject
+            {
+                ["model"] = modelWithPrefix,
+                ["systemInstruction"] = new JObject
+                {
+                    ["parts"] = new JArray
+                    {
+                        new JObject { ["text"] = systemPrompt }
+                    }
+                },
+                ["ttl"] = "300s" // 預設保留 5 分鐘
+            };
+
+            try
+            {
+                string cacheResponseJson = await SendPostAsync(cacheUrl, cachePayload.ToString(), apiKey, "Gemini", cancellationToken).ConfigureAwait(false);
+                var cacheObj = JObject.Parse(cacheResponseJson);
+                string cacheId = cacheObj["name"]?.ToString();
+                string expireTimeStr = cacheObj["expireTime"]?.ToString();
+
+                if (!string.IsNullOrEmpty(cacheId))
+                {
+                    DateTime expireTime = DateTime.UtcNow.AddSeconds(300); // 預設 300 秒
+                    if (DateTime.TryParse(expireTimeStr, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedTime))
+                    {
+                        expireTime = parsedTime;
+                    }
+
+                    var newEntry = new GeminiCacheEntry
+                    {
+                        CacheId = cacheId,
+                        ExpireTime = expireTime
+                    };
+                    _contextCaches[systemPrompt] = newEntry;
+                    return cacheId;
+                }
+            }
+            catch (Exception ex)
+            {
+                // 記錄警告並 fallback。不拋出異常以防整體請求中斷。
+                RimLLMLog.Warning($"[RimLLM] Failed to create Gemini Context Cache, fallback to normal call: {ex.Message}");
+            }
+
+            return null;
         }
     }
 }

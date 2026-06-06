@@ -11,6 +11,7 @@ namespace RimLLM_Framework.Core
     {
         private static readonly Dictionary<string, Assembly> RegisteredClients = new Dictionary<string, Assembly>();
         private static readonly object LockObj = new object();
+        private static readonly Assembly FrameworkAssembly = typeof(ClientRegistry).Assembly;
 
         /// <summary>
         /// 註冊客戶端 Mod。將 Mod ID 與呼叫者的 Assembly 進行綁定。
@@ -20,7 +21,7 @@ namespace RimLLM_Framework.Core
         public static void RegisterClient(string modId, Assembly callingAssembly)
         {
             if (string.IsNullOrEmpty(modId))
-                throw new ArgumentException("ModId 不能為空或 Null", nameof(modId));
+                throw new ArgumentException("ModId cannot be empty or null", nameof(modId));
 
             if (callingAssembly == null)
                 throw new ArgumentNullException(nameof(callingAssembly));
@@ -32,13 +33,13 @@ namespace RimLLM_Framework.Core
                     if (existingAssembly != callingAssembly)
                     {
                         throw new InvalidOperationException(
-                            $"[RimLLM] 安全衝突：ModId '{modId}' 已經被其他組件 ({existingAssembly.GetName().Name}) 註冊，組件 ({callingAssembly.GetName().Name}) 試圖重複註冊。");
+                            $"[RimLLM] Security conflict: ModId '{modId}' is already registered by another assembly ({existingAssembly.GetName().Name}), assembly ({callingAssembly.GetName().Name}) tried to register again.");
                     }
                     return;
                 }
  
                 RegisteredClients[modId] = callingAssembly;
-                RimLLMLog.Message($"[RimLLM] 註冊客戶端 Mod: {modId} (組件: {callingAssembly.GetName().Name})");
+                RimLLMLog.Message($"[RimLLM] Registered client Mod: {modId} (Assembly: {callingAssembly.GetName().Name})");
             }
         }
  
@@ -56,6 +57,12 @@ namespace RimLLM_Framework.Core
             if (callingAssembly == null)
                 return false;
  
+            // 若為 RimLLM Framework 自身組件，直接放行 (例如內部呼叫 GenerateObjectAsync -> GenerateAsync)
+            if (callingAssembly == FrameworkAssembly)
+            {
+                return true;
+            }
+
             lock (LockObj)
             {
                 if (RegisteredClients.TryGetValue(modId, out Assembly registeredAssembly))
@@ -63,9 +70,8 @@ namespace RimLLM_Framework.Core
                     return registeredAssembly == callingAssembly;
                 }
  
-                RegisteredClients[modId] = callingAssembly;
-                RimLLMLog.Message($"[RimLLM] 偵測到未註冊的 API 調用，已自動補註冊 Mod: {modId} (組件: {callingAssembly.GetName().Name})");
-                return true;
+                RimLLMLog.Warning($"[RimLLM] Unauthorized API call detected. Mod: {modId} (Assembly: {callingAssembly.GetName().Name}) is not registered. Please call RimLLMProvider.RegisterClient first.");
+                return false;
             }
         }
     }

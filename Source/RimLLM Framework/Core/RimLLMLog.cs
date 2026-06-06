@@ -10,8 +10,11 @@ namespace RimLLM_Framework.Core
     /// </summary>
     public static class RimLLMLog
     {
+        public static bool Enabled { get; set; } = true;
+
         public static void Message(string msg)
         {
+            if (!Enabled) return;
             try
             {
                 Log.Message(msg);
@@ -24,6 +27,7 @@ namespace RimLLM_Framework.Core
 
         public static void Warning(string msg)
         {
+            if (!Enabled) return;
             try
             {
                 Log.Warning(msg);
@@ -37,6 +41,9 @@ namespace RimLLM_Framework.Core
             }
         }
 
+        /// <summary>
+        /// 輸出錯誤日誌。故意不檢查 Enabled 旗標，因為嚴重錯誤與異常必須始終輸出並觸發遊戲控制台彈出，以利開發者與玩家發現問題。
+        /// </summary>
         public static void Error(string msg)
         {
             try

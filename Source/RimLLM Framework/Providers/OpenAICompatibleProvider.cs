@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using RimLLM_Framework.SDK;
-using RimLLM_Framework.Mod;
 
 namespace RimLLM_Framework.Providers
 {
@@ -13,20 +12,23 @@ namespace RimLLM_Framework.Providers
     public class OpenAICompatibleProvider : OpenAIProvider
     {
         public override string ProviderId => "OpenAICompatible";
+        protected override string DefaultEndpoint => "http://localhost:1234/v1";
+
+        public OpenAICompatibleProvider(IRimLLMSettings settings) : base(settings)
+        {
+        }
 
         public override async Task<TestResult> TestConnectionAsync()
         {
-            var settings = RimLLMFrameworkMod.Settings;
             // 本地相容 API 通常不需要 API 金鑰，故此處放寬檢查，不強制要求 API Key 必須存在。
-
             var result = new TestResult { Provider = ProviderId };
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
                 var request = new LLMRequest { Prompt = "ping", MaxTokens = 5 };
-                // 預設测试模型使用 "default"
-                string testModel = settings.GetDefaultModel(ProviderId, "default");
+                // 預設測試模型使用 "default"
+                string testModel = Settings.GetDefaultModel(ProviderId, "default");
 
                 string content = await GenerateAsync(request, testModel).ConfigureAwait(false);
                 stopwatch.Stop();
