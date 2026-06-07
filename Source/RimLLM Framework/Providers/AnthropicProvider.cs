@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
+using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Providers
 {
@@ -40,37 +41,7 @@ namespace RimLLM_Framework.Providers
             float temperature = request.Temperature;
             JObject thinkingConfig = null;
 
-            bool isThinkingModel = IsAnthropicThinkingModel(model);
-
-            if (request.ReasoningEffort != LLMReasoningEffort.None && isThinkingModel)
-            {
-                bool isAdaptive = model.IndexOf("claude-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
-                                  model.IndexOf("4.", StringComparison.OrdinalIgnoreCase) >= 0;
-
-                if (isAdaptive)
-                {
-                    thinkingConfig = new JObject
-                    {
-                        ["type"] = "adaptive",
-                        ["effort"] = request.ReasoningEffort.ToString().ToLower()
-                    };
-                }
-                else
-                {
-                    int budget = 1024;
-                    if (request.ReasoningEffort == LLMReasoningEffort.Medium) budget = 2048;
-                    else if (request.ReasoningEffort == LLMReasoningEffort.High) budget = 4096;
-
-                    thinkingConfig = new JObject
-                    {
-                        ["type"] = "enabled",
-                        ["budget_tokens"] = budget
-                    };
-                    maxTokens = Math.Max(maxTokens, budget + 1024); // 確保 max_tokens 大於 budget_tokens
-                }
-
-                temperature = 1.0f; // 啟用 thinking 時強制的溫度值
-            }
+            thinkingConfig = BuildAnthropicThinkingConfig(model, request.ReasoningEffort, ref maxTokens, ref temperature);
 
             var payload = new JObject
             {
@@ -161,6 +132,19 @@ namespace RimLLM_Framework.Providers
                 {
                     throw new RimLLMException(LLMError.InvalidResponse, "Anthropic response JSON is missing text and thinking fields in content blocks");
                 }
+
+                // 記錄 Token 使用量
+                var usage = responseObj["usage"];
+                if (usage != null)
+                {
+                    int prompt = usage["input_tokens"]?.Value<int>() ?? 0;
+                    int completion = usage["output_tokens"]?.Value<int>() ?? 0;
+                    if (RimLLMProvider.Instance is RimLLMManager manager)
+                    {
+                        manager.RecordUsage(ProviderId, model, prompt, completion);
+                    }
+                }
+
                 return text;
             }
             catch (Exception ex) when (!(ex is RimLLMException))
@@ -187,37 +171,7 @@ namespace RimLLM_Framework.Providers
             float temperature = request.Temperature;
             JObject thinkingConfig = null;
 
-            bool isThinkingModel = IsAnthropicThinkingModel(model);
-
-            if (request.ReasoningEffort != LLMReasoningEffort.None && isThinkingModel)
-            {
-                bool isAdaptive = model.IndexOf("claude-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
-                                  model.IndexOf("4.", StringComparison.OrdinalIgnoreCase) >= 0;
-
-                if (isAdaptive)
-                {
-                    thinkingConfig = new JObject
-                    {
-                        ["type"] = "adaptive",
-                        ["effort"] = request.ReasoningEffort.ToString().ToLower()
-                    };
-                }
-                else
-                {
-                    int budget = 1024;
-                    if (request.ReasoningEffort == LLMReasoningEffort.Medium) budget = 2048;
-                    else if (request.ReasoningEffort == LLMReasoningEffort.High) budget = 4096;
-
-                    thinkingConfig = new JObject
-                    {
-                        ["type"] = "enabled",
-                        ["budget_tokens"] = budget
-                    };
-                    maxTokens = Math.Max(maxTokens, budget + 1024); // 確保 max_tokens 大於 budget_tokens
-                }
-
-                temperature = 1.0f; // 啟用 thinking 時強制的溫度值
-            }
+            thinkingConfig = BuildAnthropicThinkingConfig(model, request.ReasoningEffort, ref maxTokens, ref temperature);
 
             var payload = new JObject
             {
@@ -285,6 +239,11 @@ namespace RimLLM_Framework.Providers
                 using (var reader = new StreamReader(stream))
                 {
                     bool inReasoning = false;
+                    int totalCompletionChars = 0;
+                    int finalPromptTokens = 0;
+                    int finalCompletionTokens = 0;
+                    bool hasUsage = false;
+
                     while (!reader.EndOfStream)
                     {
                         if (cts.Token.IsCancellationRequested)
@@ -302,8 +261,29 @@ namespace RimLLM_Framework.Providers
                             try
                             {
                                 var token = JObject.Parse(json);
+                                string eventType = token["type"]?.ToString();
+                                if (eventType == "message_start")
+                                {
+                                    var usage = token["message"]?["usage"];
+                                    if (usage != null)
+                                    {
+                                        finalPromptTokens = usage["input_tokens"]?.Value<int>() ?? 0;
+                                        finalCompletionTokens = usage["output_tokens"]?.Value<int>() ?? 0;
+                                        hasUsage = true;
+                                    }
+                                }
+                                else if (eventType == "message_delta")
+                                {
+                                    var usage = token["usage"];
+                                    if (usage != null)
+                                    {
+                                        finalCompletionTokens = usage["output_tokens"]?.Value<int>() ?? finalCompletionTokens;
+                                        hasUsage = true;
+                                    }
+                                }
+
                                 // Anthropic 串流字元片段在 content_block_delta 事件中
-                                if (token["type"]?.ToString() == "content_block_delta")
+                                if (eventType == "content_block_delta")
                                 {
                                     var delta = token["delta"];
                                     if (delta != null)
@@ -314,6 +294,7 @@ namespace RimLLM_Framework.Providers
                                             string thinking = delta["thinking"]?.ToString();
                                             if (!string.IsNullOrEmpty(thinking))
                                             {
+                                                totalCompletionChars += thinking.Length;
                                                 if (!inReasoning)
                                                 {
                                                     inReasoning = true;
@@ -327,6 +308,7 @@ namespace RimLLM_Framework.Providers
                                             string text = delta["text"]?.ToString();
                                             if (!string.IsNullOrEmpty(text))
                                             {
+                                                totalCompletionChars += text.Length;
                                                 if (inReasoning)
                                                 {
                                                     inReasoning = false;
@@ -348,6 +330,22 @@ namespace RimLLM_Framework.Providers
                     {
                         onChunkReceived?.Invoke("</think>");
                     }
+
+                    if (RimLLMProvider.Instance is RimLLMManager manager)
+                    {
+                        if (hasUsage)
+                        {
+                            manager.RecordUsage(ProviderId, model, finalPromptTokens, finalCompletionTokens);
+                        }
+                        else
+                        {
+                            int systemLen = request.SystemPrompt?.Length ?? 0;
+                            int promptLen = request.Prompt?.Length ?? 0;
+                            int estPrompt = (int)((systemLen + promptLen) * 0.8f);
+                            int estCompletion = (int)(totalCompletionChars * 0.8f);
+                            manager.RecordUsage(ProviderId, model, Math.Max(1, estPrompt), Math.Max(1, estCompletion));
+                        }
+                    }
                 }
             }
         }
@@ -360,6 +358,49 @@ namespace RimLLM_Framework.Providers
                 modelName.IndexOf("claude-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
                 modelName.IndexOf("thinking", StringComparison.OrdinalIgnoreCase) >= 0
             );
+        }
+
+        protected JObject BuildAnthropicThinkingConfig(string model, LLMReasoningEffort effort, ref int maxTokens, ref float temperature)
+        {
+            if (effort == LLMReasoningEffort.None || !IsAnthropicThinkingModel(model))
+            {
+                return null;
+            }
+
+            bool isAdaptive = model != null && (
+                              model.IndexOf("claude-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
+                              model.IndexOf("4.", StringComparison.OrdinalIgnoreCase) >= 0);
+
+            JObject thinkingConfig = null;
+
+            if (isAdaptive)
+            {
+                thinkingConfig = new JObject
+                {
+                    ["type"] = "adaptive"
+                };
+                if (effort != LLMReasoningEffort.Auto)
+                {
+                    thinkingConfig["effort"] = effort.ToString().ToLower();
+                }
+            }
+            else
+            {
+                int budget = 1024; // Default for Auto
+                if (effort == LLMReasoningEffort.Low) budget = 1024;
+                else if (effort == LLMReasoningEffort.Medium) budget = 2048;
+                else if (effort == LLMReasoningEffort.High) budget = 4096;
+
+                thinkingConfig = new JObject
+                {
+                    ["type"] = "enabled",
+                    ["budget_tokens"] = budget
+                };
+                maxTokens = Math.Max(maxTokens, budget + 1024); // 確保 max_tokens 大於 budget_tokens
+            }
+
+            temperature = 1.0f; // 啟用 thinking 時強制的溫度值
+            return thinkingConfig;
         }
 
         protected override string DefaultTestModel => "claude-3-5-sonnet-20241022";

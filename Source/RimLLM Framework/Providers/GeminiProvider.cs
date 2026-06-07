@@ -10,6 +10,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
+using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Providers
 {
@@ -58,29 +59,7 @@ namespace RimLLM_Framework.Providers
                 ["maxOutputTokens"] = request.MaxTokens
             };
 
-            if (request.ReasoningEffort != LLMReasoningEffort.None && model != null)
-            {
-                DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
-
-                if (isThinkingBudgetModel)
-                {
-                    int budget = 1024;
-                    if (request.ReasoningEffort == LLMReasoningEffort.Medium) budget = 2048;
-                    else if (request.ReasoningEffort == LLMReasoningEffort.High) budget = 4096;
-
-                    generationConfig["thinkingConfig"] = new JObject
-                    {
-                        ["thinkingBudget"] = budget
-                    };
-                }
-                else if (isThinkingLevelModel)
-                {
-                    generationConfig["thinkingConfig"] = new JObject
-                    {
-                        ["thinkingLevel"] = request.ReasoningEffort.ToString().ToLower()
-                    };
-                }
-            }
+            ApplyGeminiThinkingConfig(generationConfig, model, request.ReasoningEffort);
 
             var payload = new JObject
             {
@@ -160,6 +139,19 @@ namespace RimLLM_Framework.Providers
                 {
                     sb.Append("\n</think>");
                 }
+
+                // 記錄 Token 使用量
+                var metadata = responseObj["usageMetadata"];
+                if (metadata != null)
+                {
+                    int prompt = metadata["promptTokenCount"]?.Value<int>() ?? 0;
+                    int completion = metadata["candidatesTokenCount"]?.Value<int>() ?? 0;
+                    if (RimLLMProvider.Instance is RimLLMManager manager)
+                    {
+                        manager.RecordUsage(ProviderId, model, prompt, completion);
+                    }
+                }
+
                 return sb.ToString();
             }
             catch (Exception ex) when (!(ex is RimLLMException))
@@ -191,29 +183,7 @@ namespace RimLLM_Framework.Providers
                 ["maxOutputTokens"] = request.MaxTokens
             };
 
-            if (request.ReasoningEffort != LLMReasoningEffort.None && model != null)
-            {
-                DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
-
-                if (isThinkingBudgetModel)
-                {
-                    int budget = 1024;
-                    if (request.ReasoningEffort == LLMReasoningEffort.Medium) budget = 2048;
-                    else if (request.ReasoningEffort == LLMReasoningEffort.High) budget = 4096;
-
-                    generationConfig["thinkingConfig"] = new JObject
-                    {
-                        ["thinkingBudget"] = budget
-                    };
-                }
-                else if (isThinkingLevelModel)
-                {
-                    generationConfig["thinkingConfig"] = new JObject
-                    {
-                        ["thinkingLevel"] = request.ReasoningEffort.ToString().ToLower()
-                    };
-                }
-            }
+            ApplyGeminiThinkingConfig(generationConfig, model, request.ReasoningEffort);
 
             var payload = new JObject
             {
@@ -271,6 +241,10 @@ namespace RimLLM_Framework.Providers
                     jsonReader.SupportMultipleContent = true;
                     bool inReasoning = false;
                     bool hasFinishedReasoning = false;
+                    int totalCompletionChars = 0;
+                    int finalPromptTokens = 0;
+                    int finalCompletionTokens = 0;
+                    bool hasUsage = false;
 
                     while (await jsonReader.ReadAsync(cts.Token).ConfigureAwait(false))
                     {
@@ -279,6 +253,13 @@ namespace RimLLM_Framework.Providers
                             try
                             {
                                 JObject token = await JObject.LoadAsync(jsonReader, cts.Token).ConfigureAwait(false);
+                                var metadata = token["usageMetadata"];
+                                if (metadata != null)
+                                {
+                                    finalPromptTokens = metadata["promptTokenCount"]?.Value<int>() ?? 0;
+                                    finalCompletionTokens = metadata["candidatesTokenCount"]?.Value<int>() ?? 0;
+                                    hasUsage = true;
+                                }
                                 var parts = token["candidates"]?[0]?["content"]?["parts"] as JArray;
                                 if (parts != null)
                                 {
@@ -286,6 +267,7 @@ namespace RimLLM_Framework.Providers
                                     {
                                         string partText = part["text"]?.ToString();
                                         if (string.IsNullOrEmpty(partText)) continue;
+                                        totalCompletionChars += partText.Length;
 
                                         bool isThought = part["thought"]?.Type == JTokenType.Boolean && (bool)part["thought"];
                                         if (isThought)
@@ -330,6 +312,22 @@ namespace RimLLM_Framework.Providers
                     if (inReasoning)
                     {
                         onChunkReceived?.Invoke("</think>");
+                    }
+
+                    if (RimLLMProvider.Instance is RimLLMManager manager)
+                    {
+                        if (hasUsage)
+                        {
+                            manager.RecordUsage(ProviderId, model, finalPromptTokens, finalCompletionTokens);
+                        }
+                        else
+                        {
+                            int systemLen = request.SystemPrompt?.Length ?? 0;
+                            int promptLen = request.Prompt?.Length ?? 0;
+                            int estPrompt = (int)((systemLen + promptLen) * 0.8f);
+                            int estCompletion = (int)(totalCompletionChars * 0.8f);
+                            manager.RecordUsage(ProviderId, model, Math.Max(1, estPrompt), Math.Max(1, estCompletion));
+                        }
                     }
                 }
             }
@@ -383,6 +381,43 @@ namespace RimLLM_Framework.Providers
             isThinkingLevelModel = model.IndexOf("gemma-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
                                    model.IndexOf("gemini-3", StringComparison.OrdinalIgnoreCase) >= 0 || 
                                    model.IndexOf("gemini-4", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void ApplyGeminiThinkingConfig(JObject generationConfig, string model, LLMReasoningEffort effort)
+        {
+            if (model == null) return;
+            DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
+
+            if (isThinkingBudgetModel)
+            {
+                int budget = -1; // Default for Auto
+                if (effort == LLMReasoningEffort.Low) budget = 1024;
+                else if (effort == LLMReasoningEffort.Medium) budget = 2048;
+                else if (effort == LLMReasoningEffort.High) budget = 4096;
+                else if (effort == LLMReasoningEffort.None) budget = 0;
+
+                generationConfig["thinkingConfig"] = new JObject
+                {
+                    ["thinkingBudget"] = budget
+                };
+            }
+            else if (isThinkingLevelModel)
+            {
+                if (effort == LLMReasoningEffort.None)
+                {
+                    generationConfig["thinkingConfig"] = new JObject
+                    {
+                        ["thinkingLevel"] = "minimal"
+                    };
+                }
+                else if (effort != LLMReasoningEffort.Auto)
+                {
+                    generationConfig["thinkingConfig"] = new JObject
+                    {
+                        ["thinkingLevel"] = effort.ToString().ToLower()
+                    };
+                }
+            }
         }
 
         private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string systemPrompt, System.Threading.CancellationToken cancellationToken)

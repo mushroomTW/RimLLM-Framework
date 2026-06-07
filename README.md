@@ -218,6 +218,7 @@ public async void CallWithCaching()
    * 原生支援 **DeepSeek-R1**、**Gemini 2.0/2.5 Thinking**、**Claude 3.7** 等推理性思考模型。
    * 底層自動擷取 API 返回的思維鏈（如 OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位、Anthropic 的 `thinking` 區塊），並統一以 XML 標記 `<think>...</think>` 封裝回傳。
    * GUI 聊天測試頁面會自動解析該標記，將其渲染為精緻的灰色斜體思考過程；呼叫端 Mod 亦能極易使用正則表達式剝離或保留思維鏈，確保高相容性。
+   * **智慧思考強度控制 (Reasoning Effort)**：預設思考強度改為「自動 / 預設 (Auto)」。在此模式下，各大供應商能運行其原生的適應性或動態思考配置（如 Gemini 的 `thinkingBudget = -1`，Anthropic 的 `"type": "adaptive"`，OpenAI 的動態 `reasoning_effort` 控制等），並支援在選單中一鍵「關閉 (Disabled)」或手動調整思考強度（低/中/高）。
 9. **智慧上下文快取與 Prompt Caching (Context Caching)**
    * 原生支援 **Gemini Context Caching** 與 **Anthropic Prompt Caching (Ephemeral)**。開發者只需在 `LLMRequest` 中設定 `EnableContextCaching = true`，底層即會自動將長系統提示詞 (System Prompt) 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
 

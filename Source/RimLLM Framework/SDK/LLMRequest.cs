@@ -7,10 +7,11 @@ namespace RimLLM_Framework.SDK
     /// </summary>
     public enum LLMReasoningEffort
     {
-        None,   // 不調整 / 預設 / 關閉思考
+        Auto,   // 自動 / 預設 (由 API 供應商決定或為動態思維)
         Low,    // 低強度 (OpenAI: low, Anthropic/DeepSeek/Gemini: 1024 tokens)
         Medium, // 中強度 (OpenAI: medium, Anthropic/DeepSeek/Gemini: 2048 tokens)
-        High    // 高強度 (OpenAI: high, Anthropic/DeepSeek/Gemini: 4096 tokens)
+        High,   // 高強度 (OpenAI: high, Anthropic/DeepSeek/Gemini: 4096 tokens)
+        None    // 關閉思考
     }
 
     /// <summary>
@@ -77,7 +78,7 @@ namespace RimLLM_Framework.SDK
         /// <summary>
         /// 推理性模型的思考強度 (Reasoning Effort / Thinking Budget)。
         /// </summary>
-        public LLMReasoningEffort ReasoningEffort { get; set; } = LLMReasoningEffort.None;
+        public LLMReasoningEffort ReasoningEffort { get; set; } = LLMReasoningEffort.Auto;
 
         /// <summary>
         /// 是否啟用串流輸出 (Streaming)。

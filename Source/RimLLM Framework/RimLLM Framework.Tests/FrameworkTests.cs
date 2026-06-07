@@ -29,6 +29,28 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestClearLogs()
+        {
+            var mockSettings = new MockSettings();
+            var manager = new RimLLMManager(mockSettings);
+            
+            var entry = new RimLLMManager.RequestLogEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                ModId = "test-mod",
+                Provider = "OpenAI",
+                Model = "gpt-4",
+                Success = true,
+                LatencyMs = 150
+            };
+            manager.RequestLogs.Enqueue(entry);
+            Assert.AreEqual(1, manager.RequestLogs.Count);
+            
+            manager.ClearLogs();
+            Assert.AreEqual(0, manager.RequestLogs.Count);
+        }
+
+        [Test]
         public void TestClientRegistry()
         {
             Assembly thisAssembly = Assembly.GetExecutingAssembly();
@@ -219,12 +241,12 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual("OpenAI", args1[1]?.ToString());
             Assert.AreEqual("gpt-4o", args1[2]?.ToString());
             
-            // 2. 測試 OpenRouter 純供應商格式 (會自動解析為 openrouter/auto)
+            // 2. 測試 OpenRouter 純供應商格式 (會自動解析為快取的第一個模型，此處為 model-1)
             object[] args2 = new object[] { "OpenRouter", null, null };
             bool res2 = (bool)method.Invoke(manager, args2);
             Assert.IsTrue(res2);
             Assert.AreEqual("OpenRouter", args2[1]?.ToString());
-            Assert.AreEqual("openrouter/auto", args2[2]?.ToString());
+            Assert.AreEqual("model-1", args2[2]?.ToString());
             
             // 3. 測試其他純供應商格式 (會自動回退至 defaultModel)
             object[] args3 = new object[] { "OpenAI", null, null };
@@ -469,6 +491,57 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestTokenUsageAndCostRecording()
+        {
+            var mockSettings = new MockSettings();
+            var manager = new RimLLMManager(mockSettings);
+
+            // 1. 初始狀態應該是 0
+            Assert.AreEqual(0, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(0, mockSettings.TotalCompletionTokens);
+            Assert.AreEqual(0f, mockSettings.TotalEstimatedCost);
+
+            // 2. 記錄一些 usage (OpenAI, 預設 gpt-4o 價格：prompt 2.50/M, completion 10.00/M)
+            // 1M = 1,000,000. 100,000 prompt tokens = 0.1M * 2.50 = 0.25 USD
+            // 50,000 completion tokens = 0.05M * 10.00 = 0.50 USD. 總共 0.75 USD
+            manager.RecordUsage("OpenAI", "gpt-4o", 100000, 50000);
+
+            Assert.AreEqual(100000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(50000, mockSettings.TotalCompletionTokens);
+            Assert.AreEqual(0.75f, mockSettings.TotalEstimatedCost);
+
+            // 3. 再記錄一些 usage (Gemini, 預設 Flash 價格：prompt 0.075/M, completion 0.300/M)
+            // 2,000,000 prompt = 2M * 0.075 = 0.15 USD
+            // 1,000,000 completion = 1M * 0.3 = 0.30 USD. 總共 0.45 USD
+            manager.RecordUsage("Gemini", "gemini-2.5-flash", 2000000, 1000000);
+
+            Assert.AreEqual(2100000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(1050000, mockSettings.TotalCompletionTokens);
+            // 0.75 + 0.45 = 1.20 USD
+            Assert.AreEqual(1.20f, mockSettings.TotalEstimatedCost);
+        }
+
+        [Test]
+        public void TestResetUsage()
+        {
+            var mockSettings = new MockSettings();
+            var manager = new RimLLMManager(mockSettings);
+
+            // 1. 設置一些初始使用量
+            mockSettings.TotalPromptTokens = 5000;
+            mockSettings.TotalCompletionTokens = 3000;
+            mockSettings.TotalEstimatedCost = 0.05f;
+
+            // 2. 執行重置
+            manager.ResetUsage();
+
+            // 3. 應該歸零
+            Assert.AreEqual(0, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(0, mockSettings.TotalCompletionTokens);
+            Assert.AreEqual(0f, mockSettings.TotalEstimatedCost);
+        }
+
+        [Test]
         public void TestAnthropicPromptCachingPayload()
         {
             var mockSettings = new MockSettings();
@@ -708,6 +781,133 @@ namespace RimLLM_Framework.Tests
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
                 Assert.AreEqual(2048, (int)payload["max_thinking_tokens"]);
             }
+
+            // 6. Test LLMReasoningEffort.Auto and LLMReasoningEffort.None payloads
+
+            // 6a. OpenAI Auto
+            {
+                var provider = new TestOpenAIProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.Auto
+                };
+                string response = provider.GenerateAsync(request, "o1-mini").GetAwaiter().GetResult();
+                Assert.IsNotNull(provider.InterceptedPayload);
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                Assert.IsNull(payload["reasoning_effort"]);
+            }
+
+            // 6b. Gemini 2.0 Auto -> thinkingBudget = -1
+            {
+                var provider = new TestGeminiProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.Auto
+                };
+                string response = provider.GenerateAsync(request, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
+                Assert.IsNotNull(payload["generationConfig"]["thinkingConfig"]);
+                Assert.AreEqual(-1, (int)payload["generationConfig"]["thinkingConfig"]["thinkingBudget"]);
+            }
+
+            // 6c. Gemini 2.0 None -> thinkingBudget = 0
+            {
+                var provider = new TestGeminiProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.None
+                };
+                string response = provider.GenerateAsync(request, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
+                Assert.IsNotNull(payload["generationConfig"]["thinkingConfig"]);
+                Assert.AreEqual(0, (int)payload["generationConfig"]["thinkingConfig"]["thinkingBudget"]);
+            }
+
+            // 6d. Gemma 4 Auto -> Omit thinkingLevel
+            {
+                var provider = new TestGeminiProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.Auto
+                };
+                string response = provider.GenerateAsync(request, "gemma-4-it-b-t").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
+                Assert.IsNull(payload["generationConfig"]["thinkingConfig"]);
+            }
+
+            // 6e. Gemma 4 None -> thinkingLevel = "minimal"
+            {
+                var provider = new TestGeminiProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.None
+                };
+                string response = provider.GenerateAsync(request, "gemma-4-it-b-t").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
+                Assert.IsNotNull(payload["generationConfig"]["thinkingConfig"]);
+                Assert.AreEqual("minimal", payload["generationConfig"]["thinkingConfig"]["thinkingLevel"]?.ToString());
+            }
+
+            // 6f. Anthropic Claude 3.7 Auto -> enabled with 1024 budget
+            {
+                var provider = new TestAnthropicProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.Auto
+                };
+                string response = provider.GenerateAsync(request, "claude-3-7-sonnet").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                Assert.IsNotNull(payload["thinking"]);
+                Assert.AreEqual("enabled", payload["thinking"]["type"]?.ToString());
+                Assert.AreEqual(1024, (int)payload["thinking"]["budget_tokens"]);
+            }
+
+            // 6g. Anthropic Claude 4 Auto -> adaptive without effort
+            {
+                var provider = new TestAnthropicProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.Auto
+                };
+                string response = provider.GenerateAsync(request, "claude-4-sonnet").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                Assert.IsNotNull(payload["thinking"]);
+                Assert.AreEqual("adaptive", payload["thinking"]["type"]?.ToString());
+                Assert.IsNull(payload["thinking"]["effort"]);
+            }
+
+            // 6h. Anthropic Claude 3.7 None -> Omit thinking
+            {
+                var provider = new TestAnthropicProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.None
+                };
+                string response = provider.GenerateAsync(request, "claude-3-7-sonnet").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                Assert.IsNull(payload["thinking"]);
+            }
+
+            // 6i. OpenRouter Auto -> Omit max_thinking_tokens
+            {
+                var provider = new TestOpenRouterProvider(mockSettings);
+                var request = new LLMRequest
+                {
+                    Prompt = "hello",
+                    ReasoningEffort = LLMReasoningEffort.Auto
+                };
+                string response = provider.GenerateAsync(request, "deepseek/deepseek-r1").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                Assert.IsNull(payload["max_thinking_tokens"]);
+            }
         }
 
         [Test]
@@ -838,6 +1038,9 @@ namespace RimLLM_Framework.Tests
         public int MaxRetries { get; set; } = 3;
         public float RetryDelay { get; set; } = 3f;
         public int MaxConcurrentRequests { get; set; } = 2;
+        public long TotalPromptTokens { get; set; } = 0;
+        public long TotalCompletionTokens { get; set; } = 0;
+        public float TotalEstimatedCost { get; set; } = 0f;
 
         public Dictionary<string, string> ApiKeys = new Dictionary<string, string>();
         public Dictionary<string, string> Endpoints = new Dictionary<string, string>();

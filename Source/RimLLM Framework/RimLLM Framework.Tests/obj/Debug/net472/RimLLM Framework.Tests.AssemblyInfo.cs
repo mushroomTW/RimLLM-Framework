@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("RimLLM Framework.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+dd41fade4680b68682868ec4b55502730a3eec40")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a6f9012c3edf2a14706d639b19d7baca1cb43e92")]
 [assembly: System.Reflection.AssemblyProductAttribute("RimLLM Framework.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("RimLLM Framework.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

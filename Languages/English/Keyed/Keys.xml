@@ -79,11 +79,29 @@
   <RimLLM_ExportDiagFailed>Failed to export diagnostics: {0}</RimLLM_ExportDiagFailed>
   
   <RimLLM_ReasoningEffortLabel>Default Reasoning Effort: </RimLLM_ReasoningEffortLabel>
-  <RimLLM_ReasoningEffort_None>Disabled / Default</RimLLM_ReasoningEffort_None>
+  <RimLLM_ReasoningEffort_Auto>Auto / Default</RimLLM_ReasoningEffort_Auto>
   <RimLLM_ReasoningEffort_Low>Low</RimLLM_ReasoningEffort_Low>
   <RimLLM_ReasoningEffort_Medium>Medium</RimLLM_ReasoningEffort_Medium>
   <RimLLM_ReasoningEffort_High>High</RimLLM_ReasoningEffort_High>
+  <RimLLM_ReasoningEffort_None>Disabled</RimLLM_ReasoningEffort_None>
   <RimLLM_ReasoningEffortSelectBtn>Reasoning: {0}</RimLLM_ReasoningEffortSelectBtn>
   <RimLLM_SettingsIntro>Configure API providers, model fallback chains, global concurrency limits, and test model chat here.</RimLLM_SettingsIntro>
   <RimLLM_OpenSettingsBtn>Open Advanced Settings Window</RimLLM_OpenSettingsBtn>
+  <RimLLM_NoEnabledProviders>No enabled providers (Please enable one in settings first!)</RimLLM_NoEnabledProviders>
+  <RimLLM_ClearRequestsBtn>Clear History</RimLLM_ClearRequestsBtn>
+  <RimLLM_MsgLogsCleared>Recent request history cleared.</RimLLM_MsgLogsCleared>
+  <RimLLM_SelectModelTitle>Select Model</RimLLM_SelectModelTitle>
+  <RimLLM_NoMatchingModels>No matching models found for your search.</RimLLM_NoMatchingModels>
+  <RimLLM_Search>Search</RimLLM_Search>
+  
+  <RimLLM_DetectLocalBtn>Detect Local Endpoint (Ollama/LM Studio)</RimLLM_DetectLocalBtn>
+  <RimLLM_DetectingLocal>Scanning local endpoints...</RimLLM_DetectingLocal>
+  <RimLLM_DetectSuccess>Detected {0}: {1}</RimLLM_DetectSuccess>
+  <RimLLM_DetectFailed>No running local API endpoint found.</RimLLM_DetectFailed>
+  <RimLLM_MsgDetectSuccess>Successfully configured local API endpoint: {0}</RimLLM_MsgDetectSuccess>
+  <RimLLM_MsgDetectFailed>Detection failed. Please ensure Ollama or LM Studio is running.</RimLLM_MsgDetectFailed>
+  <RimLLM_ResetUsageBtn>Reset Usage Statistics</RimLLM_ResetUsageBtn>
+  <RimLLM_UsageHeader>Token &amp; Cost Usage Statistics</RimLLM_UsageHeader>
+  <RimLLM_UsageInfo>Prompt: {0} | Completion: {1} | Est. Cost: ${2} USD</RimLLM_UsageInfo>
+  <RimLLM_MsgUsageReset>Usage statistics have been reset.</RimLLM_MsgUsageReset>
 </LanguageData>

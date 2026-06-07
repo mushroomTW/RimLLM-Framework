@@ -55,7 +55,13 @@ namespace RimLLM_Framework.Providers
             try
             {
                 var request = new LLMRequest { Prompt = "ping", MaxTokens = 5 };
-                string testModel = Settings.GetDefaultModel(ProviderId, DefaultTestModel);
+                // 優先使用 DefaultTestModel 作為連線測試模型，因為這是最便宜且穩定的內建對話模型。
+                // 只有在 DefaultTestModel 為 "default" (如 OpenAICompatible 本地相容介面) 時，才去讀取快取清單的第一個模型。
+                string testModel = DefaultTestModel;
+                if (testModel == "default")
+                {
+                    testModel = Settings.GetDefaultModel(ProviderId, DefaultTestModel);
+                }
 
                 string content = await GenerateAsync(request, testModel).ConfigureAwait(false);
                 stopwatch.Stop();

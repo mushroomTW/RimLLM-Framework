@@ -79,11 +79,29 @@
   <RimLLM_ExportDiagFailed>匯出診斷失敗: {0}</RimLLM_ExportDiagFailed>
   
   <RimLLM_ReasoningEffortLabel>預設思考強度 (Reasoning Effort): </RimLLM_ReasoningEffortLabel>
-  <RimLLM_ReasoningEffort_None>關閉 / 預設</RimLLM_ReasoningEffort_None>
+  <RimLLM_ReasoningEffort_Auto>自動 / 預設</RimLLM_ReasoningEffort_Auto>
   <RimLLM_ReasoningEffort_Low>低</RimLLM_ReasoningEffort_Low>
   <RimLLM_ReasoningEffort_Medium>中</RimLLM_ReasoningEffort_Medium>
   <RimLLM_ReasoningEffort_High>高</RimLLM_ReasoningEffort_High>
+  <RimLLM_ReasoningEffort_None>關閉</RimLLM_ReasoningEffort_None>
   <RimLLM_ReasoningEffortSelectBtn>思考強度: {0}</RimLLM_ReasoningEffortSelectBtn>
   <RimLLM_SettingsIntro>在此配置 API 供應商、模型備用鏈、全域並行限制，以及測試模型對話。</RimLLM_SettingsIntro>
   <RimLLM_OpenSettingsBtn>開啟進階設定視窗</RimLLM_OpenSettingsBtn>
+  <RimLLM_NoEnabledProviders>無已啟用的供應商 (請先至設定頁面啟用！)</RimLLM_NoEnabledProviders>
+  <RimLLM_ClearRequestsBtn>清除歷史記錄</RimLLM_ClearRequestsBtn>
+  <RimLLM_MsgLogsCleared>最近請求歷史記錄已清除。</RimLLM_MsgLogsCleared>
+  <RimLLM_SelectModelTitle>選擇模型</RimLLM_SelectModelTitle>
+  <RimLLM_NoMatchingModels>找不到與搜尋關鍵字匹配的模型。</RimLLM_NoMatchingModels>
+  <RimLLM_Search>搜尋</RimLLM_Search>
+  
+  <RimLLM_DetectLocalBtn>自動偵測本地接口 (Ollama/LM Studio)</RimLLM_DetectLocalBtn>
+  <RimLLM_DetectingLocal>正在掃描本地端點...</RimLLM_DetectingLocal>
+  <RimLLM_DetectSuccess>成功偵測到 {0}：{1}</RimLLM_DetectSuccess>
+  <RimLLM_DetectFailed>未偵測到運行的本地接口。</RimLLM_DetectFailed>
+  <RimLLM_MsgDetectSuccess>已自動配置本地接口：{0}</RimLLM_MsgDetectSuccess>
+  <RimLLM_MsgDetectFailed>偵測失敗。請確保 Ollama 或 LM Studio 已啟動並開啟 API 服務。</RimLLM_MsgDetectFailed>
+  <RimLLM_ResetUsageBtn>重置累計統計</RimLLM_ResetUsageBtn>
+  <RimLLM_UsageHeader>Token 與費用累計統計</RimLLM_UsageHeader>
+  <RimLLM_UsageInfo>輸入: {0} | 輸出: {1} | 估計花費: ${2} USD</RimLLM_UsageInfo>
+  <RimLLM_MsgUsageReset>Token 與費用累計統計已重置。</RimLLM_MsgUsageReset>
 </LanguageData>

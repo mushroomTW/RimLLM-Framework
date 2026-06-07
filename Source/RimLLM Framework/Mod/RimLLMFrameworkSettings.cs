@@ -27,7 +27,10 @@ namespace RimLLM_Framework.Mod
         public int MaxConcurrentRequests { get; set; } = 2; // 最大並行限制
         public List<string> ChatHistory { get; set; } = new List<string>();
         public List<RimLLMManager.RequestLogEntry> RequestLogs { get; set; } = new List<RimLLMManager.RequestLogEntry>();
-        public LLMReasoningEffort DefaultReasoningEffort { get; set; } = LLMReasoningEffort.None;
+        public LLMReasoningEffort DefaultReasoningEffort { get; set; } = LLMReasoningEffort.Auto;
+        public long TotalPromptTokens { get; set; } = 0;
+        public long TotalCompletionTokens { get; set; } = 0;
+        public float TotalEstimatedCost { get; set; } = 0f;
 
         private readonly object _settingsLock = new object();
         private readonly Dictionary<string, string> _apiKeys = new Dictionary<string, string>();
@@ -90,6 +93,9 @@ namespace RimLLM_Framework.Mod
             public List<string> ChatHistory;
             public List<RimLLMManager.RequestLogEntry> RequestLogs;
             public LLMReasoningEffort DefaultReasoningEffort;
+            public long TotalPromptTokens;
+            public long TotalCompletionTokens;
+            public float TotalEstimatedCost;
         }
 
         public override void ExposeData()
@@ -122,7 +128,10 @@ namespace RimLLM_Framework.Mod
                         MaxConcurrentRequests = this.MaxConcurrentRequests,
                         ChatHistory = this.ChatHistory,
                         RequestLogs = this.RequestLogs,
-                        DefaultReasoningEffort = this.DefaultReasoningEffort
+                        DefaultReasoningEffort = this.DefaultReasoningEffort,
+                        TotalPromptTokens = this.TotalPromptTokens,
+                        TotalCompletionTokens = this.TotalCompletionTokens,
+                        TotalEstimatedCost = this.TotalEstimatedCost
                     };
      
                     jsonStr = JsonConvert.SerializeObject(dto, Formatting.None);
@@ -189,6 +198,9 @@ namespace RimLLM_Framework.Mod
                                     this.RequestLogs = dto.RequestLogs;
                                 }
                                 this.DefaultReasoningEffort = dto.DefaultReasoningEffort;
+                                this.TotalPromptTokens = dto.TotalPromptTokens;
+                                this.TotalCompletionTokens = dto.TotalCompletionTokens;
+                                this.TotalEstimatedCost = dto.TotalEstimatedCost;
 
                                 // 載入可調節項 (全域配置) 並防呆
                                 this.ApiTimeout = dto.ApiTimeout <= 0f ? 30f : dto.ApiTimeout;

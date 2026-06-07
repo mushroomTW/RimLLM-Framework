@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
+using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Providers
 {
@@ -48,7 +49,7 @@ namespace RimLLM_Framework.Providers
             if (IsOpenAiReasoningModel(model))
             {
                 payload["max_completion_tokens"] = request.MaxTokens;
-                if (request.ReasoningEffort != LLMReasoningEffort.None)
+                if (request.ReasoningEffort != LLMReasoningEffort.None && request.ReasoningEffort != LLMReasoningEffort.Auto)
                 {
                     payload["reasoning_effort"] = request.ReasoningEffort.ToString().ToLower();
                 }
@@ -62,6 +63,10 @@ namespace RimLLM_Framework.Providers
             if (stream)
             {
                 payload["stream"] = true;
+                if (ProviderId != "OpenAICompatible")
+                {
+                    payload["stream_options"] = new JObject { ["include_usage"] = true };
+                }
             }
 
             return payload;
@@ -90,17 +95,38 @@ namespace RimLLM_Framework.Providers
             try
             {
                 var responseObj = JObject.Parse(responseJson);
+
+                // 檢查是否有 top-level error (即使 HTTP 狀態碼為 200，有些 Gateway 也可能在 JSON 中回傳錯誤)
+                var errorObj = responseObj["error"];
+                if (errorObj != null)
+                {
+                    string errMsg = errorObj["message"]?.ToString() ?? errorObj.ToString();
+                    throw new RimLLMException(LLMError.InvalidResponse, $"API Error: {errMsg}");
+                }
+
                 var message = responseObj["choices"]?[0]?["message"];
                 if (message == null)
                 {
-                    throw new RimLLMException(LLMError.InvalidResponse, "OpenAI response JSON is missing message field");
+                    throw new RimLLMException(LLMError.InvalidResponse, $"OpenAI response JSON is missing message field. Raw response: {responseJson}");
                 }
                 var content = message["content"]?.ToString() ?? "";
                 var reasoning = message["reasoning_content"]?.ToString();
                 if (string.IsNullOrEmpty(content) && string.IsNullOrEmpty(reasoning))
                 {
-                    throw new RimLLMException(LLMError.InvalidResponse, "OpenAI response JSON is missing both content and reasoning_content fields");
+                    throw new RimLLMException(LLMError.InvalidResponse, $"OpenAI response message content is empty. Raw response: {responseJson}");
                 }
+                // 記錄 Token 使用量
+                var usage = responseObj["usage"];
+                if (usage != null)
+                {
+                    int prompt = usage["prompt_tokens"]?.Value<int>() ?? 0;
+                    int completion = usage["completion_tokens"]?.Value<int>() ?? 0;
+                    if (RimLLMProvider.Instance is RimLLMManager manager)
+                    {
+                        manager.RecordUsage(ProviderId, model, prompt, completion);
+                    }
+                }
+
                 if (!string.IsNullOrEmpty(reasoning))
                 {
                     if (!string.IsNullOrEmpty(content))
@@ -113,7 +139,7 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex) when (!(ex is RimLLMException))
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse OpenAI response: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse OpenAI response: {ex.Message}. Raw response: {responseJson}", ex);
             }
         }
 
@@ -155,6 +181,11 @@ namespace RimLLM_Framework.Providers
                 using (var reader = new StreamReader(stream))
                 {
                     bool inReasoning = false;
+                    int totalCompletionChars = 0;
+                    int finalPromptTokens = 0;
+                    int finalCompletionTokens = 0;
+                    bool hasUsage = false;
+
                     while (!reader.EndOfStream)
                     {
                         if (cts.Token.IsCancellationRequested)
@@ -179,6 +210,14 @@ namespace RimLLM_Framework.Providers
                                 var token = JObject.Parse(json);
                                 content = token["choices"]?[0]?["delta"]?["content"]?.ToString();
                                 reasoning = token["choices"]?[0]?["delta"]?["reasoning_content"]?.ToString();
+                                
+                                var usageObj = token["usage"];
+                                if (usageObj != null)
+                                {
+                                    finalPromptTokens = usageObj["prompt_tokens"]?.Value<int>() ?? 0;
+                                    finalCompletionTokens = usageObj["completion_tokens"]?.Value<int>() ?? 0;
+                                    hasUsage = true;
+                                }
                             }
                             catch
                             {
@@ -187,6 +226,7 @@ namespace RimLLM_Framework.Providers
 
                             if (!string.IsNullOrEmpty(reasoning))
                             {
+                                totalCompletionChars += reasoning.Length;
                                 if (!inReasoning)
                                 {
                                     inReasoning = true;
@@ -197,6 +237,7 @@ namespace RimLLM_Framework.Providers
 
                             if (!string.IsNullOrEmpty(content))
                             {
+                                totalCompletionChars += content.Length;
                                 if (inReasoning)
                                 {
                                     inReasoning = false;
@@ -209,6 +250,22 @@ namespace RimLLM_Framework.Providers
                     if (inReasoning)
                     {
                         onChunkReceived?.Invoke("</think>");
+                    }
+
+                    if (RimLLMProvider.Instance is RimLLMManager manager)
+                    {
+                        if (hasUsage)
+                        {
+                            manager.RecordUsage(ProviderId, model, finalPromptTokens, finalCompletionTokens);
+                        }
+                        else
+                        {
+                            int systemLen = request.SystemPrompt?.Length ?? 0;
+                            int promptLen = request.Prompt?.Length ?? 0;
+                            int estPrompt = (int)((systemLen + promptLen) * 0.8f);
+                            int estCompletion = (int)(totalCompletionChars * 0.8f);
+                            manager.RecordUsage(ProviderId, model, Math.Max(1, estPrompt), Math.Max(1, estCompletion));
+                        }
                     }
                 }
             }

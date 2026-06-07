@@ -74,6 +74,21 @@ namespace RimLLM_Framework.SDK
         int MaxConcurrentRequests { get; }
 
         /// <summary>
+        /// 累計輸入 Token 數。
+        /// </summary>
+        long TotalPromptTokens { get; set; }
+
+        /// <summary>
+        /// 累計輸出 Token 數。
+        /// </summary>
+        long TotalCompletionTokens { get; set; }
+
+        /// <summary>
+        /// 估計累計花費 (USD)。
+        /// </summary>
+        float TotalEstimatedCost { get; set; }
+
+        /// <summary>
         /// 將設定寫入/持久化。
         /// </summary>
         void Write();
