@@ -14,13 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4633" />
+    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4850" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="RimLLM Framework.Tests\**" />
-    <EmbeddedResource Remove="RimLLM Framework.Tests\**" />
-    <None Remove="RimLLM Framework.Tests\**" />
   </ItemGroup>
 </Project>

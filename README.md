@@ -200,7 +200,8 @@ public async void CallWithCaching()
    * **客戶端 Fallback 鏈**：支援配置由「主模型」與多個「精確備用模型」組成的輪詢鏈。當前模型遇到請求超時、限流 (Rate Limit 429) 或斷線時，底層自動無縫降級切換。UI 會優先產生「供應商:模型」格式；底層仍保留純供應商項目的相容解析，並會使用該供應商的預設模型。
    * **OpenRouter 服務端自動回退 (openrouter/auto)**：支援在 Fallback 鏈中使用 OpenRouter 官方的 `openrouter/auto` 模型，由 OpenRouter 服務端在多個推薦模型間自動執行備用降級，提供更簡便的模型回退體驗。
 3. **AES-256 設定加密與呼叫端註冊**
-   * 使用 AES-256 對稱加密保存 API 金鑰 (API Keys)，降低設定檔直接保存純文字的風險。
+   * 使用 AES-256 對稱加密保存 API 金鑰 (API Keys)，降低設定檔直接保存純文字的風險（屬混淆等級保護，詳見下方「安全性說明」）。
+   * 所有供應商（含 Gemini）的 API 金鑰一律透過 HTTP Header 傳遞，不會出現在請求 URL 中，避免金鑰被寫入代理或伺服器存取日誌。
    * **呼叫端來源校驗**：移除自動補註冊機制；對 async 調用層進行同步外殼與 `NoInlining` 封裝，讓框架能更穩定辨識已註冊呼叫端。
    * RimWorld 模組運行於同一遊戲進程內；本框架不承諾能阻止惡意模組讀取記憶體、反射 public API，或繞過遊戲進程內權限。
 4. **精緻的可滾動分欄 GUI**
@@ -248,16 +249,30 @@ public async void CallWithCaching()
 
 ---
 
+## 🔐 安全性說明 (Security Notes)
+
+為避免誤解，以下誠實說明本框架各項安全機制的實際保護等級：
+
+* **API 金鑰加密為「混淆等級」保護**：金鑰以 AES-256 加密後存入設定檔，加密金鑰由固定種子與裝置識別碼（`deviceUniqueIdentifier`）衍生。這能防止設定檔被直接複製到其他機器後讀出明文、避免雲端同步或分享設定時意外洩漏，但**無法**抵禦在本機執行的程式（包含其他 Mod）——加密邏輯與素材都在同一進程內，有心者可還原明文。請將其理解為「防呆與防意外洩漏」，而非保險箱。
+* **呼叫端註冊是防誤用機制，不是安全邊界**：`RegisterClient` 與 Assembly 比對能防止 ModId 誤用、冒名與調試混淆，但 RimWorld 所有 Mod 運行於同一進程，惡意模組仍可透過反射、記憶體讀取等同進程能力繞過校驗。本框架不承諾、也無法提供進程內沙箱隔離。
+* **金鑰不落地於 URL 與日誌**：所有供應商均以 HTTP Header 傳遞金鑰；日誌輸出一律經過 `SanitizeForLog` 處理並截斷長度，診斷匯出時裝置識別碼亦會遮罩。
+* **建議**：請使用可設定用量上限的 API 金鑰，並定期於供應商後台檢查用量；若懷疑金鑰外洩，請立即於供應商後台撤銷並更換。
+
+---
+
 ## 🧪 單元測試與驗證
 
-本專案附帶完整的單元測試套件 `RimLLM Framework.Tests`，覆蓋了 AES 加解密、來源註冊校驗、模型 Fallback 機制等核心功能。
+本專案附帶完整的單元測試套件 `Source/RimLLM Framework.Tests`（與主專案平行的獨立專案），覆蓋了 AES 加解密、來源註冊校驗、模型 Fallback 機制等核心功能。
 
 您可以在專案根目錄下使用 `dotnet-cli` 執行建置與測試驗證：
 
 ```bash
-# 還原並重新建置專案
-dotnet build
+# 還原並重新建置解決方案
+dotnet build "Source/RimLLM Framework.slnx"
 
 # 執行所有 NUnit 單元測試
-dotnet test
+dotnet test "Source/RimLLM Framework.Tests/RimLLM Framework.Tests.csproj"
 ```
+
+> [!NOTE]
+> 單元測試於 runtime 需要 RimWorld 本體的 `Assembly-CSharp` 與 Unity DLL。測試專案預設從 Steam 安裝路徑複製；若您的 RimWorld 安裝於其他位置，請設定環境變數 `RIMWORLD_MANAGED_DIR` 指向 `RimWorldWin64_Data/Managed` 資料夾。由於這些 DLL 不可散布，GitHub Actions CI 僅執行建置作為編譯閘門，完整測試請在本機執行。

@@ -11,8 +11,18 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class OpenAICompatibleProvider : OpenAIProvider
     {
-        public override string ProviderId => "OpenAICompatible";
+        public override string ProviderId => ProviderIds.OpenAICompatible;
         protected override string DefaultEndpoint => "http://localhost:1234/v1";
+
+        /// <summary>
+        /// 本地相容 API 通常不需要 API 金鑰。
+        /// </summary>
+        public override bool RequiresApiKey => false;
+
+        /// <summary>
+        /// 部分本地伺服器不支援 stream_options，故不附帶。
+        /// </summary>
+        protected override bool SupportsStreamUsageOption => false;
 
         public OpenAICompatibleProvider(IRimLLMSettings settings) : base(settings)
         {

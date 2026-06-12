@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="RimLLM Framework.csproj" />
+  <Project Path="RimLLM Framework/RimLLM Framework.csproj" />
   <Project Path="RimLLM Framework.Tests/RimLLM Framework.Tests.csproj" />
 </Solution>

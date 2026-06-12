@@ -38,14 +38,19 @@ namespace RimLLM_Framework.Providers
 
         public abstract string ProviderId { get; }
 
+        /// <summary>
+        /// 此供應商是否必須提供 API Key 才能使用。預設為 true，本地相容介面可覆寫為 false。
+        /// </summary>
+        public virtual bool RequiresApiKey => true;
+
         public abstract Task<string> GenerateAsync(LLMRequest request, string model);
-        
+
         public abstract Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived);
 
         public virtual async Task<TestResult> TestConnectionAsync()
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
-            if (string.IsNullOrEmpty(apiKey) && ProviderId != "OpenAICompatible")
+            if (string.IsNullOrEmpty(apiKey) && RequiresApiKey)
             {
                 return new TestResult { Success = false, Provider = ProviderId, ErrorMessage = "API Key not configured", ErrorCode = LLMError.InvalidKey };
             }
@@ -101,66 +106,50 @@ namespace RimLLM_Framework.Providers
         /// <summary>
         /// 統一的 HTTP POST 請求發送方法，包含異常處理與 LLMError 對照。
         /// </summary>
-        protected virtual async Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        protected virtual Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        {
+            return SendRequestAsync(HttpMethod.Post, url, payload, apiKey, authScheme, cancellationToken);
+        }
+
+        /// <summary>
+        /// 統一的 HTTP GET 請求發送方法，包含異常處理與 LLMError 對照。
+        /// </summary>
+        protected virtual Task<string> SendGetAsync(string url, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        {
+            return SendRequestAsync(HttpMethod.Get, url, null, apiKey, authScheme, cancellationToken);
+        }
+
+        /// <summary>
+        /// GET 與 POST 共用的 HTTP 發送核心：套用認證 Header、超時控制、回應錯誤對照與傳輸層例外轉換。
+        /// </summary>
+        private async Task<string> SendRequestAsync(HttpMethod method, string url, string payload, string apiKey, string authScheme, System.Threading.CancellationToken cancellationToken)
         {
             try
             {
-                using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, url))
+                using (var httpRequest = new HttpRequestMessage(method, url))
                 {
-                    httpRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
-
-                    if (!string.IsNullOrEmpty(apiKey))
+                    if (payload != null)
                     {
-                        if (authScheme == "Bearer")
-                        {
-                            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                        }
-                        else if (authScheme == "Anthropic")
-                        {
-                            httpRequest.Headers.Add("x-api-key", apiKey);
-                            httpRequest.Headers.Add("anthropic-version", "2023-06-01");
-                            httpRequest.Headers.Add("anthropic-beta", "prompt-caching-2024-07-31,thinking-2025-02-15");
-                        }
-                        else if (authScheme != "Gemini")
-                        {
-                            httpRequest.Headers.Add(authScheme, apiKey);
-                        }
+                        httpRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
                     }
+
+                    // Anthropic 的 thinking beta 僅在生成類 (POST) 請求需要
+                    ApplyAuthHeaders(httpRequest, apiKey, authScheme, includeThinkingBeta: method == HttpMethod.Post);
 
                     float timeoutSeconds = Settings?.ApiTimeout ?? 30f;
                     using (var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
                     using (var linkedCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
+                    using (HttpResponseMessage response = await HttpClient.SendAsync(httpRequest, linkedCts.Token).ConfigureAwait(false))
                     {
-                        using (HttpResponseMessage response = await HttpClient.SendAsync(httpRequest, linkedCts.Token).ConfigureAwait(false))
+                        string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                        if (response.IsSuccessStatusCode)
                         {
-                            string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                            if (response.IsSuccessStatusCode)
-                            {
-                                return responseBody;
-                            }
-
-                            int statusCode = (int)response.StatusCode;
-                            string friendlyErr = ExtractFriendlyError(responseBody, statusCode);
-                            if (statusCode == 401 || statusCode == 403)
-                            {
-                                throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
-                            }
-                            if (statusCode == 429)
-                            {
-                                if (friendlyErr.Contains("quota") || friendlyErr.Contains("insufficient"))
-                                {
-                                    throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.");
-                                }
-                                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
-                            }
-                            if (statusCode >= 500)
-                            {
-                                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
-                            }
-
-                            throw new RimLLMException(LLMError.Unknown, $"API request failed: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
+                            return responseBody;
                         }
+
+                        ThrowHttpError(response, responseBody);
+                        return null; // ThrowHttpError 一定會擲出，此行僅滿足編譯器
                     }
                 }
             }
@@ -185,90 +174,34 @@ namespace RimLLM_Framework.Providers
                 throw new RimLLMException(LLMError.Unknown, $"Unexpected error occurred when sending API request: {RimLLMLog.SanitizeForLog(ex.Message, 300)}", ex);
             }
         }
- 
+
         /// <summary>
-        /// 統一的 HTTP GET 請求發送方法，包含異常處理與 LLMError 對照。
+        /// 依 authScheme 套用對應的認證 Header。Gemini 採 x-goog-api-key Header 認證，避免金鑰出現在 URL。
         /// </summary>
-        protected virtual async Task<string> SendGetAsync(string url, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        private static void ApplyAuthHeaders(HttpRequestMessage httpRequest, string apiKey, string authScheme, bool includeThinkingBeta)
         {
-            try
-            {
-                using (var httpRequest = new HttpRequestMessage(HttpMethod.Get, url))
-                {
-                    if (!string.IsNullOrEmpty(apiKey))
-                    {
-                        if (authScheme == "Bearer")
-                        {
-                            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                        }
-                        else if (authScheme == "Anthropic")
-                        {
-                            httpRequest.Headers.Add("x-api-key", apiKey);
-                            httpRequest.Headers.Add("anthropic-version", "2023-06-01");
-                            httpRequest.Headers.Add("anthropic-beta", "prompt-caching-2024-07-31");
-                        }
-                        else if (authScheme != "Gemini")
-                        {
-                            httpRequest.Headers.Add(authScheme, apiKey);
-                        }
-                    }
- 
-                    float timeoutSeconds = Settings?.ApiTimeout ?? 30f;
-                    using (var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
-                    using (var linkedCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
-                    {
-                        using (HttpResponseMessage response = await HttpClient.SendAsync(httpRequest, linkedCts.Token).ConfigureAwait(false))
-                        {
-                            string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (string.IsNullOrEmpty(apiKey))
+                return;
 
-                            if (response.IsSuccessStatusCode)
-                            {
-                                return responseBody;
-                            }
-
-                            int statusCode = (int)response.StatusCode;
-                            string friendlyErr = ExtractFriendlyError(responseBody, statusCode);
-                            if (statusCode == 401 || statusCode == 403)
-                            {
-                                throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
-                            }
-                            if (statusCode == 429)
-                            {
-                                if (friendlyErr.Contains("quota") || friendlyErr.Contains("insufficient"))
-                                {
-                                    throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.");
-                                }
-                                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
-                            }
-                            if (statusCode >= 500)
-                            {
-                                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
-                            }
-
-                            throw new RimLLMException(LLMError.Unknown, $"API request failed: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
-                        }
-                    }
-                }
-            }
-            catch (TaskCanceledException ex)
+            if (authScheme == AuthSchemes.Bearer)
             {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    throw new OperationCanceledException(cancellationToken);
-                }
-                throw new RimLLMException(LLMError.Timeout, "Request timed out", ex);
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             }
-            catch (HttpRequestException ex)
+            else if (authScheme == AuthSchemes.Anthropic)
             {
-                throw new RimLLMException(LLMError.NetworkError, "Network connection error, unable to connect to the API server", ex);
+                httpRequest.Headers.Add("x-api-key", apiKey);
+                httpRequest.Headers.Add("anthropic-version", "2023-06-01");
+                httpRequest.Headers.Add("anthropic-beta", includeThinkingBeta
+                    ? "prompt-caching-2024-07-31,thinking-2025-02-15"
+                    : "prompt-caching-2024-07-31");
             }
-            catch (RimLLMException)
+            else if (authScheme == AuthSchemes.Gemini)
             {
-                throw;
+                httpRequest.Headers.Add("x-goog-api-key", apiKey);
             }
-            catch (Exception ex)
+            else
             {
-                throw new RimLLMException(LLMError.Unknown, $"Unexpected error occurred when sending API request: {RimLLMLog.SanitizeForLog(ex.Message, 300)}", ex);
+                httpRequest.Headers.Add(authScheme, apiKey);
             }
         }
 
@@ -361,15 +294,44 @@ namespace RimLLM_Framework.Providers
             {
                 if (friendlyErr.Contains("quota") || friendlyErr.Contains("insufficient"))
                 {
-                    throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.");
+                    throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.")
+                    {
+                        RetryAfter = ParseRetryAfter(response)
+                    };
                 }
-                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {friendlyErr}");
+                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {friendlyErr}")
+                {
+                    RetryAfter = ParseRetryAfter(response)
+                };
             }
             if (statusCode >= 500)
             {
-                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {friendlyErr}");
+                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {friendlyErr}")
+                {
+                    RetryAfter = ParseRetryAfter(response)
+                };
             }
             throw new RimLLMException(LLMError.Unknown, $"API request failed: {friendlyErr}");
+        }
+
+        /// <summary>
+        /// 解析回應中的 Retry-After Header（支援秒數與 HTTP 日期兩種格式），供重試邏輯參考。
+        /// </summary>
+        private static TimeSpan? ParseRetryAfter(HttpResponseMessage response)
+        {
+            var retryAfter = response?.Headers?.RetryAfter;
+            if (retryAfter == null) return null;
+
+            if (retryAfter.Delta.HasValue)
+            {
+                return retryAfter.Delta.Value > TimeSpan.Zero ? retryAfter.Delta : null;
+            }
+            if (retryAfter.Date.HasValue)
+            {
+                var delta = retryAfter.Date.Value - DateTimeOffset.UtcNow;
+                return delta > TimeSpan.Zero ? (TimeSpan?)delta : null;
+            }
+            return null;
         }
     }
 }

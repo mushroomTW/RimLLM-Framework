@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using RimLLM_Framework.Providers;
 
 namespace RimLLM_Framework.SDK
 {
@@ -94,5 +95,18 @@ namespace RimLLM_Framework.SDK
         /// <param name="providerId">供應商識別碼</param>
         /// <returns>可用模型名稱清單</returns>
         Task<List<string>> FetchProviderModelsAsync(string providerId);
+
+        /// <summary>
+        /// 註冊外部 LLM 供應商，供第三方 Mod 擴充自訂供應商（如自架伺服器或新興 API）。
+        /// 外部供應商註冊後即視為啟用，使用者透過 Fallback Chain 控制其參與。
+        /// ProviderId 不得與既有供應商重複。
+        /// </summary>
+        /// <param name="provider">供應商實作</param>
+        void RegisterProvider(ILLMProvider provider);
+
+        /// <summary>
+        /// 取得所有已註冊供應商的識別碼（依註冊順序，內建供應商在前）。
+        /// </summary>
+        List<string> GetRegisteredProviderIds();
     }
 }

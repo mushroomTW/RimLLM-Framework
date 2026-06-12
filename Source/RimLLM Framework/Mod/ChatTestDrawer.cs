@@ -130,7 +130,7 @@ namespace RimLLM_Framework.Mod
             {
                 chatHistory.Clear();
                 Settings.ChatHistory.Clear();
-                Settings.Write();
+                Settings.SaveTelemetry();
                 chatInput = "";
             }
 
@@ -145,7 +145,7 @@ namespace RimLLM_Framework.Mod
                     {
                         chatHistory.Clear();
                         Settings.ChatHistory.Clear();
-                        Settings.Write();
+                        Settings.SaveTelemetry();
                         chatInput = "";
                     }
                     else
@@ -158,7 +158,7 @@ namespace RimLLM_Framework.Mod
                         int aiHistoryIndex = chatHistory.Count - 1;
 
                         Settings.ChatHistory = new List<string>(chatHistory);
-                        Settings.Write();
+                        Settings.SaveTelemetry();
                         chatLoading = true;
                         chatInput = "";
 
@@ -204,7 +204,7 @@ namespace RimLLM_Framework.Mod
                                         chatHistory[aiHistoryIndex] = "RimLLM_ChatAi".Translate() + " " + formattedFinal;
                                     }
                                     Settings.ChatHistory = new List<string>(chatHistory);
-                                    Settings.Write();
+                                    Settings.SaveTelemetry();
                                     chatLoading = false;
                                     chatScrollPosition.y = 999999f;
                                 });
@@ -223,7 +223,7 @@ namespace RimLLM_Framework.Mod
                                         chatHistory.Add("RimLLM_ChatAiError".Translate() + " <color=#ef4444>" + safeError + "</color>");
                                     }
                                     Settings.ChatHistory = new List<string>(chatHistory);
-                                    Settings.Write();
+                                    Settings.SaveTelemetry();
                                     chatLoading = false;
                                     chatScrollPosition.y = 999999f;
                                 });

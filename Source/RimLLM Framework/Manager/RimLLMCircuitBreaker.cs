@@ -76,21 +76,17 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 判斷目前所有已啟用且註冊的供應商是否全部都在冷卻狀態中。
+        /// 判斷 Fallback Chain 中所有符合資格的供應商是否全部都在冷卻狀態中。
+        /// 資格判斷（已註冊、啟用、金鑰）由呼叫端透過 isEligibleProvider 提供，避免特例邏輯散落。
         /// </summary>
-        public bool AreAllEnabledProvidersInCooldown(
-            List<string> fallbackChain, 
-            IRimLLMSettings settings, 
-            Func<string, bool> isProviderRegistered)
+        public bool AreAllEligibleProvidersInCooldown(
+            List<string> fallbackChain,
+            Func<string, bool> isEligibleProvider)
         {
             foreach (string entry in fallbackChain)
             {
                 if (!ResolveFallbackEntry(entry, out string providerId)) continue;
-                if (!isProviderRegistered(providerId)) continue;
-                if (!settings.IsProviderEnabled(providerId)) continue;
-
-                string apiKey = settings.GetApiKey(providerId);
-                if (string.IsNullOrEmpty(apiKey) && providerId != "OpenAICompatible") continue;
+                if (!isEligibleProvider(providerId)) continue;
 
                 if (!IsCooldown(providerId, out _, out _))
                 {

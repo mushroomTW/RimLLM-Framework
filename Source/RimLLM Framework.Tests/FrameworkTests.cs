@@ -94,8 +94,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockSuccess"] = "mock-key-2";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.IsNotNull(registerMethod, "找不到 RegisterProvider 反射方法");
 
             int failCalls = 0;
             int successCalls = 0;
@@ -120,8 +118,8 @@ namespace RimLLM_Framework.Tests
                 }
             };
 
-            registerMethod.Invoke(manager, new object[] { mockFail });
-            registerMethod.Invoke(manager, new object[] { mockSuccess });
+            manager.RegisterProvider(mockFail);
+            manager.RegisterProvider(mockSuccess);
 
             var request = new LLMRequest 
             { 
@@ -179,8 +177,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockSuccess"] = "mock-key-z";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.IsNotNull(registerMethod);
 
             LLMRequest capturedRequest = null;
             var mockSuccess = new MockTestProvider
@@ -192,7 +188,7 @@ namespace RimLLM_Framework.Tests
                     return System.Threading.Tasks.Task.FromResult("simple-response");
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockSuccess });
+            manager.RegisterProvider(mockSuccess);
 
             const string modId = "test.simple.generate";
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
@@ -232,8 +228,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockSuccess"] = "mock-key-z";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.IsNotNull(registerMethod);
 
             LLMRequest capturedRequest = null;
             var mockSuccess = new MockTestProvider
@@ -245,7 +239,7 @@ namespace RimLLM_Framework.Tests
                     return System.Threading.Tasks.Task.FromResult("ok");
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockSuccess });
+            manager.RegisterProvider(mockSuccess);
 
             var request = new LLMRequest
             {
@@ -275,15 +269,13 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockSuccess"] = "mock-key-z";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.IsNotNull(registerMethod);
 
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
                 GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("{\"Value\":7,\"Message\":\"ok\"}")
             };
-            registerMethod.Invoke(manager, new object[] { mockSuccess });
+            manager.RegisterProvider(mockSuccess);
 
             const string modId = "test.simple.object";
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
@@ -312,8 +304,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockStream"] = "mock-key-z";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.IsNotNull(registerMethod);
 
             var mockStream = new MockStreamProvider
             {
@@ -325,7 +315,7 @@ namespace RimLLM_Framework.Tests
                     return System.Threading.Tasks.Task.CompletedTask;
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockStream });
+            manager.RegisterProvider(mockStream);
 
             const string modId = "test.simple.streaming";
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
@@ -352,8 +342,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockSuccess"] = "mock-key-z";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.IsNotNull(registerMethod);
 
             string requestedPromptReceived = null;
             string requestedSystemPromptReceived = null;
@@ -369,7 +357,7 @@ namespace RimLLM_Framework.Tests
                     return System.Threading.Tasks.Task.FromResult("```json\n{\n  \"Value\": 42,\n  \"Message\": \"Hello Cache\",\n}\n```");
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockSuccess });
+            manager.RegisterProvider(mockSuccess);
 
             // 1. 預熱測試
             manager.RegisterResponseType<TestDataStructure>();
@@ -433,29 +421,24 @@ namespace RimLLM_Framework.Tests
             mockSettings.SetModelList("OpenRouter", new List<string> { "model-1", "model-2" });
             
             var manager = new RimLLMManager(mockSettings);
-            var method = manager.GetType().GetMethod("ResolveFallbackEntry", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            Assert.IsNotNull(method);
-            
+
             // 1. 測試傳統 "Provider:Model" 格式
-            object[] args1 = new object[] { "OpenAI:gpt-4o", null, null };
-            bool res1 = (bool)method.Invoke(manager, args1);
+            bool res1 = manager.ResolveFallbackEntry("OpenAI:gpt-4o", out string providerId1, out string modelName1);
             Assert.IsTrue(res1);
-            Assert.AreEqual("OpenAI", args1[1]?.ToString());
-            Assert.AreEqual("gpt-4o", args1[2]?.ToString());
-            
+            Assert.AreEqual("OpenAI", providerId1);
+            Assert.AreEqual("gpt-4o", modelName1);
+
             // 2. 測試 OpenRouter 純供應商格式 (會自動解析為快取的第一個模型，此處為 model-1)
-            object[] args2 = new object[] { "OpenRouter", null, null };
-            bool res2 = (bool)method.Invoke(manager, args2);
+            bool res2 = manager.ResolveFallbackEntry("OpenRouter", out string providerId2, out string modelName2);
             Assert.IsTrue(res2);
-            Assert.AreEqual("OpenRouter", args2[1]?.ToString());
-            Assert.AreEqual("model-1", args2[2]?.ToString());
-            
+            Assert.AreEqual("OpenRouter", providerId2);
+            Assert.AreEqual("model-1", modelName2);
+
             // 3. 測試其他純供應商格式 (會自動回退至 defaultModel)
-            object[] args3 = new object[] { "OpenAI", null, null };
-            bool res3 = (bool)method.Invoke(manager, args3);
+            bool res3 = manager.ResolveFallbackEntry("OpenAI", out string providerId3, out string modelName3);
             Assert.IsTrue(res3);
-            Assert.AreEqual("OpenAI", args3[1]?.ToString());
-            Assert.AreEqual("default", args3[2]?.ToString());
+            Assert.AreEqual("OpenAI", providerId3);
+            Assert.AreEqual("default", modelName3);
         }
 
         [Test]
@@ -470,7 +453,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockProv"] = "mock-key";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
             
             var tcs1 = new System.Threading.Tasks.TaskCompletionSource<string>();
             var tcs2 = new System.Threading.Tasks.TaskCompletionSource<string>();
@@ -486,7 +468,7 @@ namespace RimLLM_Framework.Tests
                     return tcs2.Task;
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockProv });
+            manager.RegisterProvider(mockProv);
 
             // 1. 執行第 1 個
             var req1 = new LLMRequest { ModId = "mod1", Prompt = "p1" };
@@ -528,7 +510,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockProv"] = "mock-key";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
             
             var calledModels = new List<string>();
             var mockProv = new MockTestProvider
@@ -540,7 +521,7 @@ namespace RimLLM_Framework.Tests
                     return System.Threading.Tasks.Task.FromResult("success");
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockProv });
+            manager.RegisterProvider(mockProv);
 
             // MinFallbackLevel = High (應跳過 model-mini(Medium)，只使用 model-pro(High))
             var req = new LLMRequest { ModId = "mod", Prompt = "p", MinFallbackLevel = "High" };
@@ -567,7 +548,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockSuccess"] = "key2";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
             
             int failCount = 0;
             var mockFail = new MockTestProvider
@@ -589,8 +569,8 @@ namespace RimLLM_Framework.Tests
                     return System.Threading.Tasks.Task.FromResult("ok");
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockFail });
-            registerMethod.Invoke(manager, new object[] { mockSuccess });
+            manager.RegisterProvider(mockFail);
+            manager.RegisterProvider(mockSuccess);
 
             var req = new LLMRequest { ModId = "mod", Prompt = "p", MaxTokens = 5 };
             ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
@@ -625,8 +605,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockSuccess"] = "good-key";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
-            Assert.IsNotNull(registerMethod);
 
             int failCount = 0;
             var mockFail = new MockTestProvider
@@ -650,8 +628,8 @@ namespace RimLLM_Framework.Tests
                 }
             };
 
-            registerMethod.Invoke(manager, new object[] { mockFail });
-            registerMethod.Invoke(manager, new object[] { mockSuccess });
+            manager.RegisterProvider(mockFail);
+            manager.RegisterProvider(mockSuccess);
 
             var req = new LLMRequest { ModId = "test.invalidkey.retry", Prompt = "p" };
             ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
@@ -676,7 +654,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockProv"] = "key";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
             
             int callCount = 0;
             var mockProv = new MockTestProvider
@@ -695,7 +672,7 @@ namespace RimLLM_Framework.Tests
                     }
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockProv });
+            manager.RegisterProvider(mockProv);
 
             var req = new LLMRequest { ModId = "mod", Prompt = "p" };
             ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
@@ -1220,7 +1197,6 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["MockStream"] = "mock-key";
 
             var manager = new RimLLMManager(mockSettings);
-            var registerMethod = manager.GetType().GetMethod("RegisterProvider", BindingFlags.NonPublic | BindingFlags.Instance);
 
             var chunksReceived = new List<string>();
             var mockStream = new MockStreamProvider
@@ -1234,7 +1210,7 @@ namespace RimLLM_Framework.Tests
                     return System.Threading.Tasks.Task.CompletedTask;
                 }
             };
-            registerMethod.Invoke(manager, new object[] { mockStream });
+            manager.RegisterProvider(mockStream);
 
             var request = new LLMRequest
             {
@@ -1264,10 +1240,7 @@ namespace RimLLM_Framework.Tests
             // 預熱無空建構子、帶有循環引用的型別，驗證不會 StackOverflow 且產生合理 JSON
             manager.RegisterResponseType<ComplexTestDataStructure>();
 
-            var method = manager.GetType().GetMethod("GetSampleJson", BindingFlags.NonPublic | BindingFlags.Instance, null, new Type[] { typeof(Type) }, null);
-            Assert.IsNotNull(method);
-
-            string json = method.Invoke(manager, new object[] { typeof(ComplexTestDataStructure) }) as string;
+            string json = manager.GetSampleJson(typeof(ComplexTestDataStructure));
             
             Assert.IsNotEmpty(json);
             Assert.AreNotEqual("{}", json);
@@ -1321,6 +1294,67 @@ namespace RimLLM_Framework.Tests
                 Assert.IsTrue(result.Contains("Final output text"));
             }
         }
+
+        [Test]
+        public void TestExternalProviderRegistration()
+        {
+            var mockSettings = new MockSettings();
+            var manager = new RimLLMManager(mockSettings);
+
+            // 1. 註冊外部供應商成功，且出現在已註冊清單中
+            var external = new MockTestProvider { ProviderId = "MyCustomProvider" };
+            manager.RegisterProvider(external);
+            Assert.IsTrue(manager.GetRegisteredProviderIds().Contains("MyCustomProvider"));
+
+            // 2. 外部供應商視為註冊即啟用
+            Assert.IsTrue(manager.IsProviderEnabled("MyCustomProvider"));
+
+            // 3. 重複 ProviderId 應擲出，防止覆蓋既有供應商（含內建）
+            Assert.Throws<InvalidOperationException>(() =>
+                manager.RegisterProvider(new MockTestProvider { ProviderId = "MyCustomProvider" }));
+            Assert.Throws<InvalidOperationException>(() =>
+                manager.RegisterProvider(new MockTestProvider { ProviderId = "OpenAI" }));
+
+            // 4. 內建供應商仍依設定啟用狀態
+            mockSettings.EnabledProviders["OpenAI"] = false;
+            Assert.IsFalse(manager.IsProviderEnabled("OpenAI"));
+        }
+
+        [Test]
+        public void TestModelLevelOverrideTakesPriority()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockProv:model-mini", "MockProv:model-pro" },
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockProv"] = true;
+            mockSettings.ApiKeys["MockProv"] = "mock-key";
+            // 將原本關鍵字判定為 Medium 的 model-mini 覆寫為 High
+            mockSettings.ModelLevelOverrides["model-mini"] = 3;
+
+            var manager = new RimLLMManager(mockSettings);
+            var calledModels = new List<string>();
+            manager.RegisterProvider(new MockTestProvider
+            {
+                ProviderId = "MockProv",
+                GenerateHandler = (req, model) =>
+                {
+                    calledModels.Add(model);
+                    return System.Threading.Tasks.Task.FromResult("success");
+                }
+            });
+
+            var req = new LLMRequest { ModId = "mod.level.override", Prompt = "p", MinFallbackLevel = "High" };
+            ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
+            string res = manager.GenerateAsync(req).GetAwaiter().GetResult();
+
+            // 覆寫生效：model-mini 被視為 High，不再被 MinFallbackLevel 過濾
+            Assert.AreEqual("success", res);
+            Assert.AreEqual(1, calledModels.Count);
+            Assert.AreEqual("model-mini", calledModels[0]);
+        }
     }
 
     public class TestDataStructure
@@ -1360,13 +1394,19 @@ namespace RimLLM_Framework.Tests
         }
 
         public void SetModelList(string providerId, List<string> models) => ModelLists[providerId] = models;
+
+        public Dictionary<string, int> ModelLevelOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        public int GetModelLevelOverride(string modelName) =>
+            !string.IsNullOrEmpty(modelName) && ModelLevelOverrides.TryGetValue(modelName, out var level) ? level : 0;
+
         public void Write() {}
     }
 
     public class MockTestProvider : ILLMProvider
     {
         public string ProviderId { get; set; }
-        
+        public bool RequiresApiKey { get; set; } = true;
+
         public Func<LLMRequest, string, System.Threading.Tasks.Task<string>> GenerateHandler { get; set; }
 
         public System.Threading.Tasks.Task<string> GenerateAsync(LLMRequest request, string model)
@@ -1467,6 +1507,7 @@ namespace RimLLM_Framework.Tests
     public class MockStreamProvider : ILLMProvider
     {
         public string ProviderId { get; set; }
+        public bool RequiresApiKey { get; set; } = true;
         public Func<LLMRequest, string, Action<string>, System.Threading.Tasks.Task> StreamHandler { get; set; }
 
         public System.Threading.Tasks.Task<string> GenerateAsync(LLMRequest request, string model)

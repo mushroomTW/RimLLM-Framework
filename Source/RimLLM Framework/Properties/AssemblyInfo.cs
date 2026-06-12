@@ -19,6 +19,9 @@ using System.Runtime.InteropServices;
 // 的類型，請在該類型上將 ComVisible 屬性設定為 true。
 [assembly: ComVisible(false)]
 
+// 允許單元測試專案存取 internal 成員（取代以反射呼叫私有方法的脆弱做法）
+[assembly: InternalsVisibleTo("RimLLM Framework.Tests")]
+
 // 下列 GUID 為專案公開 (Expose) 至 COM 時所要使用的 typelib ID
 [assembly: Guid("cd170737-2861-4525-81d2-b806ef24de37")]
 

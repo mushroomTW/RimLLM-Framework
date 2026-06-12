@@ -104,4 +104,6 @@
   <RimLLM_UsageHeader>Token 与费用累计统计</RimLLM_UsageHeader>
   <RimLLM_UsageInfo>输入: {0} | 输出: {1} | 估计花费: ${2} USD</RimLLM_UsageInfo>
   <RimLLM_MsgUsageReset>Token 与费用累计统计已重置。</RimLLM_MsgUsageReset>
+  <RimLLM_ModelLevelOverrideTitle>模型分级覆写</RimLLM_ModelLevelOverrideTitle>
+  <RimLLM_ModelLevelOverrideExplanation>手动指定模型分级 (Lv.1=低, Lv.2=中, Lv.3=高)，供 MinFallbackLevel 过滤使用；覆写优先于内置关键字判断。</RimLLM_ModelLevelOverrideExplanation>
 </LanguageData>

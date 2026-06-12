@@ -1,7 +1,7 @@
 /.vscode
-/.agents
-graphify-out
 SteamDescriptions
+.omc
+.claude
 
 # IDE state
 .vs/

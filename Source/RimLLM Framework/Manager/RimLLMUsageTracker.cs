@@ -92,17 +92,17 @@ namespace RimLLM_Framework.Manager
                     lock (LogLock)
                     {
                         frameworkSettings.RequestLogs = new List<RimLLMManager.RequestLogEntry>(RequestLogs.ToArray());
-                        // 節流：非成功或過了 15 秒以上才執行實體寫入
+                        // 節流：非成功或過了 15 秒以上才執行實體寫入（僅寫遙測 JSON，不動設定 XML）
                         if (!success || (DateTime.UtcNow - _lastLogWriteTime).TotalSeconds > 15)
                         {
                             try
                             {
-                                frameworkSettings.Write();
+                                frameworkSettings.SaveTelemetry();
                                 _lastLogWriteTime = DateTime.UtcNow;
                             }
                             catch (Exception ex)
                             {
-                                RimLLMLog.Warning($"[RimLLM] Throttled Write failed: {ex.Message}");
+                                RimLLMLog.Warning($"[RimLLM] Throttled telemetry write failed: {ex.Message}");
                             }
                         }
                     }
@@ -127,12 +127,12 @@ namespace RimLLM_Framework.Manager
                     frameworkSettings.RequestLogs = new List<RimLLMManager.RequestLogEntry>();
                     try
                     {
-                        frameworkSettings.Write();
+                        frameworkSettings.SaveTelemetry();
                         _lastLogWriteTime = DateTime.UtcNow;
                     }
                     catch (Exception ex)
                     {
-                        RimLLMLog.Warning($"[RimLLM] Clear logs Write failed: {ex.Message}");
+                        RimLLMLog.Warning($"[RimLLM] Clear logs telemetry write failed: {ex.Message}");
                     }
                 }
             }
@@ -167,11 +167,14 @@ namespace RimLLM_Framework.Manager
                 _settings.TotalEstimatedCost = 0f;
                 try
                 {
-                    _settings.Write();
+                    if (_settings is RimLLMFrameworkSettings frameworkSettings)
+                    {
+                        frameworkSettings.SaveTelemetry();
+                    }
                 }
                 catch (Exception ex)
                 {
-                    RimLLMLog.Warning($"[RimLLM] Reset usage Write failed: {ex.Message}");
+                    RimLLMLog.Warning($"[RimLLM] Reset usage telemetry write failed: {ex.Message}");
                 }
             }
         }

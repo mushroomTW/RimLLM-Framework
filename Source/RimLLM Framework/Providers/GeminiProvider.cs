@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -19,9 +18,7 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class GeminiProvider : BaseHttpProvider
     {
-        private static readonly Regex GeminiTextRegex = new Regex(@"\""text\""\s*:\s*\""([^\""\\]*(?:\\.[^\""\\]*)*)\""", RegexOptions.Compiled);
-
-        public override string ProviderId => "Gemini";
+        public override string ProviderId => ProviderIds.Gemini;
 
         private class GeminiCacheEntry
         {
@@ -40,56 +37,12 @@ namespace RimLLM_Framework.Providers
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
-            string url = $"{baseEndpoint}/models/{model}:generateContent?key={apiKey}";
+            // API Key 以 x-goog-api-key Header 傳遞（由 ApplyAuthHeaders 套用），避免金鑰出現在 URL / 日誌中
+            string url = $"{baseEndpoint}/models/{model}:generateContent";
 
-            var contents = new JArray
-            {
-                new JObject
-                {
-                    ["parts"] = new JArray
-                    {
-                        new JObject { ["text"] = request.Prompt }
-                    }
-                }
-            };
+            JObject payload = await BuildRequestPayloadAsync(request, model, apiKey, baseEndpoint).ConfigureAwait(false);
 
-            var generationConfig = new JObject
-            {
-                ["temperature"] = request.Temperature,
-                ["maxOutputTokens"] = request.MaxTokens
-            };
-
-            ApplyGeminiThinkingConfig(generationConfig, model, request.ReasoningEffort);
-
-            var payload = new JObject
-            {
-                ["contents"] = contents,
-                ["generationConfig"] = generationConfig
-            };
-
-            string systemContext = request.GetEffectiveSystemPrompt();
-            string cacheId = null;
-            if (request.EnableContextCaching && !string.IsNullOrEmpty(systemContext))
-            {
-                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, systemContext, request.CancellationToken).ConfigureAwait(false);
-            }
-
-            if (!string.IsNullOrEmpty(cacheId))
-            {
-                payload["cachedContent"] = cacheId;
-            }
-            else if (!string.IsNullOrEmpty(systemContext))
-            {
-                payload["systemInstruction"] = new JObject
-                {
-                    ["parts"] = new JArray
-                    {
-                        new JObject { ["text"] = systemContext }
-                    }
-                };
-            }
-
-            string responseJson = await SendPostAsync(url, payload.ToString(), apiKey, "Gemini", cancellationToken: request.CancellationToken).ConfigureAwait(false);
+            string responseJson = await SendPostAsync(url, payload.ToString(), apiKey, AuthSchemes.Gemini, cancellationToken: request.CancellationToken).ConfigureAwait(false);
 
             try
             {
@@ -165,54 +118,9 @@ namespace RimLLM_Framework.Providers
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
-            string url = $"{baseEndpoint}/models/{model}:streamGenerateContent?key={apiKey}";
+            string url = $"{baseEndpoint}/models/{model}:streamGenerateContent";
 
-            var contents = new JArray
-            {
-                new JObject
-                {
-                    ["parts"] = new JArray
-                    {
-                        new JObject { ["text"] = request.Prompt }
-                    }
-                }
-            };
-
-            var generationConfig = new JObject
-            {
-                ["temperature"] = request.Temperature,
-                ["maxOutputTokens"] = request.MaxTokens
-            };
-
-            ApplyGeminiThinkingConfig(generationConfig, model, request.ReasoningEffort);
-
-            var payload = new JObject
-            {
-                ["contents"] = contents,
-                ["generationConfig"] = generationConfig
-            };
-
-            string systemContext = request.GetEffectiveSystemPrompt();
-            string cacheId = null;
-            if (request.EnableContextCaching && !string.IsNullOrEmpty(systemContext))
-            {
-                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, systemContext, request.CancellationToken).ConfigureAwait(false);
-            }
-
-            if (!string.IsNullOrEmpty(cacheId))
-            {
-                payload["cachedContent"] = cacheId;
-            }
-            else if (!string.IsNullOrEmpty(systemContext))
-            {
-                payload["systemInstruction"] = new JObject
-                {
-                    ["parts"] = new JArray
-                    {
-                        new JObject { ["text"] = systemContext }
-                    }
-                };
-            }
+            JObject payload = await BuildRequestPayloadAsync(request, model, apiKey, baseEndpoint).ConfigureAwait(false);
 
             float timeoutSeconds = Settings?.ApiTimeout ?? 30f;
             float streamTimeout = Math.Max(timeoutSeconds * 2f, 120f); // 串流給予寬鬆的超時保護
@@ -222,6 +130,11 @@ namespace RimLLM_Framework.Providers
             using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, url))
             {
                 httpRequest.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+                // 串流路徑自行組裝 HttpRequestMessage，需手動補上 Gemini 認證 Header
+                if (!string.IsNullOrEmpty(apiKey))
+                {
+                    httpRequest.Headers.Add("x-goog-api-key", apiKey);
+                }
 
                 HttpResponseMessage response = null;
                 try
@@ -361,9 +274,9 @@ namespace RimLLM_Framework.Providers
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
-            string url = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/models?key={apiKey}";
+            string url = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/models";
 
-            string responseJson = await SendGetAsync(url, apiKey, "Gemini").ConfigureAwait(false);
+            string responseJson = await SendGetAsync(url, apiKey, AuthSchemes.Gemini).ConfigureAwait(false);
             var list = new List<string>();
             try
             {
@@ -388,6 +301,62 @@ namespace RimLLM_Framework.Providers
                 throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch Gemini models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
             }
             return list;
+        }
+
+        /// <summary>
+        /// 組裝 generateContent / streamGenerateContent 共用的請求 payload，
+        /// 包含 contents、generationConfig（含 thinking 設定）與 Context Cache / systemInstruction 的解析。
+        /// </summary>
+        private async Task<JObject> BuildRequestPayloadAsync(LLMRequest request, string model, string apiKey, string baseEndpoint)
+        {
+            var contents = new JArray
+            {
+                new JObject
+                {
+                    ["parts"] = new JArray
+                    {
+                        new JObject { ["text"] = request.Prompt }
+                    }
+                }
+            };
+
+            var generationConfig = new JObject
+            {
+                ["temperature"] = request.Temperature,
+                ["maxOutputTokens"] = request.MaxTokens
+            };
+
+            ApplyGeminiThinkingConfig(generationConfig, model, request.ReasoningEffort);
+
+            var payload = new JObject
+            {
+                ["contents"] = contents,
+                ["generationConfig"] = generationConfig
+            };
+
+            string systemContext = request.GetEffectiveSystemPrompt();
+            string cacheId = null;
+            if (request.EnableContextCaching && !string.IsNullOrEmpty(systemContext))
+            {
+                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, systemContext, request.CancellationToken).ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrEmpty(cacheId))
+            {
+                payload["cachedContent"] = cacheId;
+            }
+            else if (!string.IsNullOrEmpty(systemContext))
+            {
+                payload["systemInstruction"] = new JObject
+                {
+                    ["parts"] = new JArray
+                    {
+                        new JObject { ["text"] = systemContext }
+                    }
+                };
+            }
+
+            return payload;
         }
 
         private void DetermineGeminiThinkingConfig(string model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel)
@@ -466,8 +435,8 @@ namespace RimLLM_Framework.Providers
             }
 
             // 建立新的 Cached Content 資源
-            // API url 格式: POST https://generativelanguage.googleapis.com/v1beta/cachedContents?key=YOUR_API_KEY
-            string cacheUrl = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/cachedContents?key={apiKey}";
+            // API url 格式: POST https://generativelanguage.googleapis.com/v1beta/cachedContents（金鑰走 x-goog-api-key Header）
+            string cacheUrl = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/cachedContents";
 
             // 剥離 model 中的 "models/" 前綴以對齊格式 (Gemini 官方要求建立快取時 model 必須包含 models/ 前綴)
             string modelWithPrefix = model.StartsWith("models/") ? model : $"models/{model}";
@@ -487,7 +456,7 @@ namespace RimLLM_Framework.Providers
 
             try
             {
-                string cacheResponseJson = await SendPostAsync(cacheUrl, cachePayload.ToString(), apiKey, "Gemini", cancellationToken).ConfigureAwait(false);
+                string cacheResponseJson = await SendPostAsync(cacheUrl, cachePayload.ToString(), apiKey, AuthSchemes.Gemini, cancellationToken).ConfigureAwait(false);
                 var cacheObj = JObject.Parse(cacheResponseJson);
                 string cacheId = cacheObj["name"]?.ToString();
                 string expireTimeStr = cacheObj["expireTime"]?.ToString();

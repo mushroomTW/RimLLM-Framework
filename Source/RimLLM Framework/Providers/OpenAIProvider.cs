@@ -65,7 +65,7 @@ namespace RimLLM_Framework.Providers
             if (stream)
             {
                 payload["stream"] = true;
-                if (ProviderId != "OpenAICompatible")
+                if (SupportsStreamUsageOption)
                 {
                     payload["stream_options"] = new JObject { ["include_usage"] = true };
                 }
@@ -73,6 +73,11 @@ namespace RimLLM_Framework.Providers
 
             return payload;
         }
+
+        /// <summary>
+        /// 串流請求是否附帶 stream_options.include_usage（部分相容伺服器不支援）。
+        /// </summary>
+        protected virtual bool SupportsStreamUsageOption => true;
 
         protected bool IsOpenAiReasoningModel(string modelName)
         {

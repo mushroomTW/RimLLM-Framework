@@ -104,4 +104,6 @@
   <RimLLM_UsageHeader>Token &amp; Cost Usage Statistics</RimLLM_UsageHeader>
   <RimLLM_UsageInfo>Prompt: {0} | Completion: {1} | Est. Cost: ${2} USD</RimLLM_UsageInfo>
   <RimLLM_MsgUsageReset>Usage statistics have been reset.</RimLLM_MsgUsageReset>
+  <RimLLM_ModelLevelOverrideTitle>Model Tier Overrides</RimLLM_ModelLevelOverrideTitle>
+  <RimLLM_ModelLevelOverrideExplanation>Manually assign model tiers (Lv.1=Low, Lv.2=Medium, Lv.3=High) used by MinFallbackLevel filtering. Overrides take priority over built-in keyword detection.</RimLLM_ModelLevelOverrideExplanation>
 </LanguageData>

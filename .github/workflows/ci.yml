@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    # net472 需要 .NET Framework 目標套件，Windows runner 已預裝
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build framework
+        run: dotnet build "Source/RimLLM Framework/RimLLM Framework.csproj" --configuration Release
+
+      # 單元測試在 runtime 需要 RimWorld 本體的 Assembly-CSharp 與 Unity DLL（不可散布，CI 上無法取得），
+      # 因此 CI 僅建置測試專案作為編譯閘門；完整測試請在本機以 `dotnet test` 執行。
+      - name: Build tests (compile gate)
+        run: dotnet build "Source/RimLLM Framework.Tests/RimLLM Framework.Tests.csproj" --configuration Release

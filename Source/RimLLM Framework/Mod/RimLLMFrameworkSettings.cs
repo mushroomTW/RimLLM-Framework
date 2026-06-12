@@ -43,58 +43,98 @@ namespace RimLLM_Framework.Mod
         public float RetryDelay { get; set; } = 3f;        // 重試間隔 (秒)
         public bool DetailedLogging { get; set; } = true;  // 是否啟用詳細日誌
         public int MaxConcurrentRequests { get; set; } = 2; // 最大並行限制
-        public List<string> ChatHistory { get; set; } = new List<string>();
-        public List<RimLLMManager.RequestLogEntry> RequestLogs { get; set; } = new List<RimLLMManager.RequestLogEntry>();
         public LLMReasoningEffort DefaultReasoningEffort { get; set; } = LLMReasoningEffort.Auto;
-        public long TotalPromptTokens { get; set; } = 0;
-        public long TotalCompletionTokens { get; set; } = 0;
-        public float TotalEstimatedCost { get; set; } = 0f;
+
+        // 遙測資料（對話歷史、請求日誌、用量統計）獨立存放於 JSON 檔案，不寫入設定 XML
+        private readonly RimLLMTelemetryStore _telemetry = new RimLLMTelemetryStore();
+        public List<string> ChatHistory
+        {
+            get => _telemetry.ChatHistory;
+            set => _telemetry.ChatHistory = value ?? new List<string>();
+        }
+        public List<RimLLMManager.RequestLogEntry> RequestLogs
+        {
+            get => _telemetry.RequestLogs;
+            set => _telemetry.RequestLogs = value ?? new List<RimLLMManager.RequestLogEntry>();
+        }
+        public long TotalPromptTokens
+        {
+            get => _telemetry.TotalPromptTokens;
+            set => _telemetry.TotalPromptTokens = value;
+        }
+        public long TotalCompletionTokens
+        {
+            get => _telemetry.TotalCompletionTokens;
+            set => _telemetry.TotalCompletionTokens = value;
+        }
+        public float TotalEstimatedCost
+        {
+            get => _telemetry.TotalEstimatedCost;
+            set => _telemetry.TotalEstimatedCost = value;
+        }
+
+        public RimLLMFrameworkSettings()
+        {
+            _telemetry.Load();
+        }
+
+        /// <summary>
+        /// 將遙測資料（對話歷史、請求日誌、用量統計）寫入獨立 JSON 檔案。
+        /// 設定本體請使用 Write()。
+        /// </summary>
+        public void SaveTelemetry()
+        {
+            _telemetry.Save();
+        }
 
         private readonly object _settingsLock = new object();
         private readonly Dictionary<string, string> _apiKeys = new Dictionary<string, string>();
         private readonly Dictionary<string, int> _apiKeyIndices = new Dictionary<string, int>();
         private readonly Dictionary<string, string> _endpoints = new Dictionary<string, string>();
+        private readonly Dictionary<string, int> _modelLevelOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         
         private readonly Dictionary<string, bool> _chinaModeProviders = new Dictionary<string, bool>
         {
-            ["MiniMax"] = false,
-            ["Qwen"] = false,
-            ["Kimi"] = false
+            [ProviderIds.MiniMax] = false,
+            [ProviderIds.Qwen] = false,
+            [ProviderIds.Kimi] = false
         };
 
         private readonly Dictionary<string, bool> _enabledProviders = new Dictionary<string, bool>
         {
-            ["OpenAI"] = false,
-            ["Gemini"] = false,
-            ["OpenAICompatible"] = false,
-            ["DeepSeek"] = false,
-            ["Groq"] = false,
-            ["Anthropic"] = false,
-            ["OpenRouter"] = false,
-            ["Kimi"] = false,
-            ["MiniMax"] = false,
-            ["Qwen"] = false,
-            ["Nvidia"] = false
+            [ProviderIds.OpenAI] = false,
+            [ProviderIds.Gemini] = false,
+            [ProviderIds.OpenAICompatible] = false,
+            [ProviderIds.DeepSeek] = false,
+            [ProviderIds.Groq] = false,
+            [ProviderIds.Anthropic] = false,
+            [ProviderIds.OpenRouter] = false,
+            [ProviderIds.Kimi] = false,
+            [ProviderIds.MiniMax] = false,
+            [ProviderIds.Qwen] = false,
+            [ProviderIds.Nvidia] = false
         };
 
         private readonly Dictionary<string, List<string>> _providerModels = new Dictionary<string, List<string>>
         {
-            ["OpenAI"] = new List<string>(),
-            ["Gemini"] = new List<string>(),
-            ["OpenAICompatible"] = new List<string>(),
-            ["DeepSeek"] = new List<string>(),
-            ["Groq"] = new List<string>(),
-            ["Anthropic"] = new List<string>(),
-            ["OpenRouter"] = new List<string>(),
-            ["Kimi"] = new List<string>(),
-            ["MiniMax"] = new List<string>(),
-            ["Qwen"] = new List<string>(),
-            ["Nvidia"] = new List<string>()
+            [ProviderIds.OpenAI] = new List<string>(),
+            [ProviderIds.Gemini] = new List<string>(),
+            [ProviderIds.OpenAICompatible] = new List<string>(),
+            [ProviderIds.DeepSeek] = new List<string>(),
+            [ProviderIds.Groq] = new List<string>(),
+            [ProviderIds.Anthropic] = new List<string>(),
+            [ProviderIds.OpenRouter] = new List<string>(),
+            [ProviderIds.Kimi] = new List<string>(),
+            [ProviderIds.MiniMax] = new List<string>(),
+            [ProviderIds.Qwen] = new List<string>(),
+            [ProviderIds.Nvidia] = new List<string>()
         };
 
         /// <summary>
         /// 用於 JSON 序列化與反序列化的 DTO 結構，避開 RimWorld Scribe 字典嵌套序列化的兼容問題。
+        /// ChatHistory / RequestLogs / Total* 欄位僅保留供舊版設定遷移讀取，新版不再寫入。
         /// </summary>
+#pragma warning disable 0649 // 遷移用欄位僅由 JSON 反序列化賦值
         private class SettingsDto
         {
             public List<string> FallbackChain;
@@ -103,6 +143,7 @@ namespace RimLLM_Framework.Mod
             public Dictionary<string, bool> EnabledProviders;
             public Dictionary<string, List<string>> ProviderModels;
             public Dictionary<string, bool> ChinaModeProviders;
+            public Dictionary<string, int> ModelLevelOverrides;
             public float ApiTimeout;
             public int MaxRetries;
             public float RetryDelay;
@@ -115,6 +156,7 @@ namespace RimLLM_Framework.Mod
             public long TotalCompletionTokens;
             public float TotalEstimatedCost;
         }
+#pragma warning restore 0649
 
         public override void ExposeData()
         {
@@ -142,14 +184,10 @@ namespace RimLLM_Framework.Mod
                         MaxRetries = this.MaxRetries,
                         RetryDelay = this.RetryDelay,
                         ChinaModeProviders = this._chinaModeProviders,
+                        ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
                         DetailedLogging = this.DetailedLogging,
                         MaxConcurrentRequests = this.MaxConcurrentRequests,
-                        ChatHistory = this.ChatHistory,
-                        RequestLogs = this.RequestLogs,
-                        DefaultReasoningEffort = this.DefaultReasoningEffort,
-                        TotalPromptTokens = this.TotalPromptTokens,
-                        TotalCompletionTokens = this.TotalCompletionTokens,
-                        TotalEstimatedCost = this.TotalEstimatedCost
+                        DefaultReasoningEffort = this.DefaultReasoningEffort
                     };
      
                     jsonStr = JsonConvert.SerializeObject(dto, Formatting.None);
@@ -203,23 +241,27 @@ namespace RimLLM_Framework.Mod
                                     foreach (var kvp in dto.ChinaModeProviders) this._chinaModeProviders[kvp.Key] = kvp.Value;
                                 }
 
-                                if (dto.ChatHistory != null)
+                                if (dto.ModelLevelOverrides != null)
                                 {
-                                    this.ChatHistory = dto.ChatHistory;
-                                    // 限制大小在 100 條內，防設定 JSON 無限膨脹
-                                    if (this.ChatHistory.Count > 100)
-                                    {
-                                        this.ChatHistory.RemoveRange(0, this.ChatHistory.Count - 100);
-                                    }
+                                    _modelLevelOverrides.Clear();
+                                    foreach (var kvp in dto.ModelLevelOverrides) _modelLevelOverrides[kvp.Key] = kvp.Value;
                                 }
-                                if (dto.RequestLogs != null)
-                                {
-                                    this.RequestLogs = dto.RequestLogs;
-                                }
+
                                 this.DefaultReasoningEffort = dto.DefaultReasoningEffort;
-                                this.TotalPromptTokens = dto.TotalPromptTokens;
-                                this.TotalCompletionTokens = dto.TotalCompletionTokens;
-                                this.TotalEstimatedCost = dto.TotalEstimatedCost;
+
+                                // 舊版設定 XML 內嵌的遙測資料：若獨立遙測檔尚不存在，執行一次性遷移
+                                if (!_telemetry.LoadedFromDisk &&
+                                    (dto.ChatHistory != null || dto.RequestLogs != null ||
+                                     dto.TotalPromptTokens > 0 || dto.TotalCompletionTokens > 0 || dto.TotalEstimatedCost > 0f))
+                                {
+                                    if (dto.ChatHistory != null) this.ChatHistory = dto.ChatHistory;
+                                    if (dto.RequestLogs != null) this.RequestLogs = dto.RequestLogs;
+                                    this.TotalPromptTokens = dto.TotalPromptTokens;
+                                    this.TotalCompletionTokens = dto.TotalCompletionTokens;
+                                    this.TotalEstimatedCost = dto.TotalEstimatedCost;
+                                    SaveTelemetry();
+                                    RimLLMLog.Message("[RimLLM] 已將舊版設定中的遙測資料遷移至獨立檔案 RimLLM_Telemetry.json。");
+                                }
 
                                 // 載入可調節項 (全域配置) 並防呆
                                 this.ApiTimeout = dto.ApiTimeout <= 0f ? 30f : dto.ApiTimeout;
@@ -284,15 +326,15 @@ namespace RimLLM_Framework.Mod
             {
                 if (_chinaModeProviders.TryGetValue(providerId, out bool isChina) && isChina)
                 {
-                    if (providerId == "MiniMax") resolvedDefault = "https://api.minimaxi.com/v1";
-                    else if (providerId == "Qwen") resolvedDefault = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-                    else if (providerId == "Kimi") resolvedDefault = "https://api.moonshot.cn/v1";
+                    if (providerId == ProviderIds.MiniMax) resolvedDefault = "https://api.minimaxi.com/v1";
+                    else if (providerId == ProviderIds.Qwen) resolvedDefault = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+                    else if (providerId == ProviderIds.Kimi) resolvedDefault = "https://api.moonshot.cn/v1";
                 }
                 else
                 {
-                    if (providerId == "MiniMax") resolvedDefault = "https://api.minimax.io/v1";
-                    else if (providerId == "Qwen") resolvedDefault = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
-                    else if (providerId == "Kimi") resolvedDefault = "https://api.moonshot.ai/v1";
+                    if (providerId == ProviderIds.MiniMax) resolvedDefault = "https://api.minimax.io/v1";
+                    else if (providerId == ProviderIds.Qwen) resolvedDefault = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+                    else if (providerId == ProviderIds.Kimi) resolvedDefault = "https://api.moonshot.ai/v1";
                 }
 
                 return _endpoints.TryGetValue(providerId, out string val) ? (string.IsNullOrEmpty(val) ? resolvedDefault : val) : resolvedDefault;
@@ -360,6 +402,45 @@ namespace RimLLM_Framework.Mod
             lock (_settingsLock)
             {
                 _providerModels[providerId] = models != null ? new List<string>(models) : new List<string>();
+            }
+        }
+
+        public int GetModelLevelOverride(string modelName)
+        {
+            if (string.IsNullOrEmpty(modelName)) return 0;
+            lock (_settingsLock)
+            {
+                return _modelLevelOverrides.TryGetValue(modelName, out int level) ? level : 0;
+            }
+        }
+
+        /// <summary>
+        /// 設定模型分級覆寫 (1=低, 2=中, 3=高)。傳入 0 或負值代表移除覆寫。
+        /// </summary>
+        public void SetModelLevelOverride(string modelName, int level)
+        {
+            if (string.IsNullOrEmpty(modelName)) return;
+            lock (_settingsLock)
+            {
+                if (level <= 0)
+                {
+                    _modelLevelOverrides.Remove(modelName);
+                }
+                else
+                {
+                    _modelLevelOverrides[modelName] = Math.Min(level, 3);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 取得目前所有模型分級覆寫的複本，供 UI 列表顯示。
+        /// </summary>
+        public Dictionary<string, int> GetModelLevelOverridesSnapshot()
+        {
+            lock (_settingsLock)
+            {
+                return new Dictionary<string, int>(_modelLevelOverrides, StringComparer.OrdinalIgnoreCase);
             }
         }
     }

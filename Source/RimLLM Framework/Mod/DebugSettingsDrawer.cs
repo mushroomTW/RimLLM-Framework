@@ -185,7 +185,20 @@ namespace RimLLM_Framework.Mod
                 }
                 sb.AppendLine();
                 sb.AppendLine("=== Provider Setup ===");
-                var providers = new[] { "Gemini", "OpenAI", "DeepSeek", "Groq", "Anthropic", "OpenRouter", "Kimi", "MiniMax", "Qwen", "Nvidia", "OpenAICompatible" };
+                List<string> providers;
+                try
+                {
+                    providers = RimLLMProvider.Instance.GetRegisteredProviderIds();
+                }
+                catch (InvalidOperationException)
+                {
+                    providers = new List<string>
+                    {
+                        ProviderIds.Gemini, ProviderIds.OpenAI, ProviderIds.DeepSeek, ProviderIds.Groq,
+                        ProviderIds.Anthropic, ProviderIds.OpenRouter, ProviderIds.Kimi, ProviderIds.MiniMax,
+                        ProviderIds.Qwen, ProviderIds.Nvidia, ProviderIds.OpenAICompatible
+                    };
+                }
                 foreach (var prov in providers)
                 {
                     bool enabled = Settings.IsProviderEnabled(prov);

@@ -45,5 +45,13 @@ namespace RimLLM_Framework.SDK
             Assembly callingAssembly = Assembly.GetCallingAssembly();
             ClientRegistry.RegisterClient(modId, callingAssembly);
         }
+
+        /// <summary>
+        /// 註冊外部 LLM 供應商的靜態便捷入口。詳見 IRimLLM.RegisterProvider。
+        /// </summary>
+        public static void RegisterProvider(Providers.ILLMProvider provider)
+        {
+            Instance.RegisterProvider(provider);
+        }
     }
 }

@@ -4,6 +4,7 @@ using UnityEngine;
 using Verse;
 using RimWorld;
 using RimLLM_Framework.SDK;
+using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
 {
@@ -15,8 +16,10 @@ namespace RimLLM_Framework.Mod
         private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
         // Fallback 分頁專屬的 UI 暫存狀態
-        private static string addProviderId = "Gemini";
+        private static string addProviderId = ProviderIds.Gemini;
         private static string addModelName = "";
+        private static string overrideModelName = "";
+        private static int overrideLevel = 2;
 
         /// <summary>
         /// 獲取 Fallback 設定詳細內容的滾動高度。
@@ -24,7 +27,41 @@ namespace RimLLM_Framework.Mod
         public static float GetHeight(float width)
         {
             int chainCount = Settings.FallbackChain.Count;
-            return 150f + (chainCount * 36f) + 180f;
+            int overrideCount = Settings.GetModelLevelOverridesSnapshot().Count;
+            return 150f + (chainCount * 36f) + 180f + 110f + (overrideCount * 32f);
+        }
+
+        /// <summary>
+        /// 取得所有已註冊供應商識別碼（含第三方 Mod 註冊的外部供應商）。
+        /// </summary>
+        private static List<string> GetRegisteredProviderIds()
+        {
+            try
+            {
+                return RimLLMProvider.Instance.GetRegisteredProviderIds();
+            }
+            catch (InvalidOperationException)
+            {
+                // SDK 尚未初始化時退回內建清單
+                return new List<string>
+                {
+                    ProviderIds.Gemini, ProviderIds.OpenAI, ProviderIds.DeepSeek, ProviderIds.Groq,
+                    ProviderIds.Anthropic, ProviderIds.OpenRouter, ProviderIds.Kimi, ProviderIds.MiniMax,
+                    ProviderIds.Qwen, ProviderIds.Nvidia, ProviderIds.OpenAICompatible
+                };
+            }
+        }
+
+        /// <summary>
+        /// 判斷供應商在 UI 中是否可選（內建依設定啟用狀態；外部供應商註冊即啟用）。
+        /// </summary>
+        private static bool IsProviderSelectable(string providerId)
+        {
+            if (RimLLMProvider.Instance is RimLLMManager manager)
+            {
+                return manager.IsProviderEnabled(providerId);
+            }
+            return Settings.IsProviderEnabled(providerId);
         }
 
         /// <summary>
@@ -44,12 +81,12 @@ namespace RimLLM_Framework.Mod
             }
 
             // 確保 addProviderId 是已啟用的供應商（如果有啟用的話）
-            if (!Settings.IsProviderEnabled(addProviderId))
+            if (!IsProviderSelectable(addProviderId))
             {
                 string firstEnabled = null;
-                foreach (string prov in new string[] { "Gemini", "OpenAI", "DeepSeek", "Groq", "Anthropic", "OpenRouter", "Kimi", "MiniMax", "Qwen", "Nvidia", "OpenAICompatible" })
+                foreach (string prov in GetRegisteredProviderIds())
                 {
-                    if (Settings.IsProviderEnabled(prov))
+                    if (IsProviderSelectable(prov))
                     {
                         firstEnabled = prov;
                         break;
@@ -152,17 +189,14 @@ namespace RimLLM_Framework.Mod
             if (Widgets.ButtonText(addProvBtn, "RimLLM_SelectProviderBtn".Translate(addProviderId)))
             {
                 List<FloatMenuOption> options = new List<FloatMenuOption>();
-                if (Settings.IsProviderEnabled("Gemini")) options.Add(new FloatMenuOption("Gemini", () => SetDefaultAddModelName("Gemini")));
-                if (Settings.IsProviderEnabled("OpenAI")) options.Add(new FloatMenuOption("OpenAI", () => SetDefaultAddModelName("OpenAI")));
-                if (Settings.IsProviderEnabled("DeepSeek")) options.Add(new FloatMenuOption("DeepSeek", () => SetDefaultAddModelName("DeepSeek")));
-                if (Settings.IsProviderEnabled("Groq")) options.Add(new FloatMenuOption("Groq", () => SetDefaultAddModelName("Groq")));
-                if (Settings.IsProviderEnabled("Anthropic")) options.Add(new FloatMenuOption("Anthropic", () => SetDefaultAddModelName("Anthropic")));
-                if (Settings.IsProviderEnabled("OpenRouter")) options.Add(new FloatMenuOption("OpenRouter", () => SetDefaultAddModelName("OpenRouter")));
-                if (Settings.IsProviderEnabled("Kimi")) options.Add(new FloatMenuOption("Kimi", () => SetDefaultAddModelName("Kimi")));
-                if (Settings.IsProviderEnabled("MiniMax")) options.Add(new FloatMenuOption("MiniMax", () => SetDefaultAddModelName("MiniMax")));
-                if (Settings.IsProviderEnabled("Qwen")) options.Add(new FloatMenuOption("Qwen", () => SetDefaultAddModelName("Qwen")));
-                if (Settings.IsProviderEnabled("Nvidia")) options.Add(new FloatMenuOption("Nvidia", () => SetDefaultAddModelName("Nvidia")));
-                if (Settings.IsProviderEnabled("OpenAICompatible")) options.Add(new FloatMenuOption("OpenAICompatible", () => SetDefaultAddModelName("OpenAICompatible")));
+                foreach (string prov in GetRegisteredProviderIds())
+                {
+                    if (IsProviderSelectable(prov))
+                    {
+                        string captured = prov;
+                        options.Add(new FloatMenuOption(captured, () => SetDefaultAddModelName(captured)));
+                    }
+                }
 
                 if (options.Count == 0)
                 {
@@ -194,6 +228,49 @@ namespace RimLLM_Framework.Mod
                     Settings.FallbackChain = chain;
                     Settings.Write();
                     Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
+                }
+            }
+            listing.GapLine(10f);
+
+            // 3. 模型分級覆寫（優先於內建關鍵字啟發式判斷）
+            listing.Label("<b>" + "RimLLM_ModelLevelOverrideTitle".Translate() + "</b>");
+            listing.Label("RimLLM_ModelLevelOverrideExplanation".Translate());
+            listing.Gap(4f);
+
+            var overrides = Settings.GetModelLevelOverridesSnapshot();
+            foreach (var kvp in overrides)
+            {
+                Rect rowRect = listing.GetRect(30f);
+                Rect nameRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 60f, rowRect.height);
+                Rect delRect = new Rect(rowRect.x + rowRect.width - 40f, rowRect.y, 30f, rowRect.height);
+
+                Widgets.Label(nameRect, $" <color=cyan>{kvp.Key}</color> → Lv.{kvp.Value}");
+                if (Widgets.ButtonText(delRect, "X"))
+                {
+                    Settings.SetModelLevelOverride(kvp.Key, 0);
+                    Settings.Write();
+                    break;
+                }
+            }
+
+            Rect ovRect = listing.GetRect(30f);
+            Rect ovNameRect = new Rect(ovRect.x, ovRect.y, 250f, ovRect.height);
+            Rect ovLevelBtn = new Rect(ovRect.x + 260f, ovRect.y, 150f, ovRect.height);
+            Rect ovAddBtn = new Rect(ovRect.x + 420f, ovRect.y, 100f, ovRect.height);
+
+            overrideModelName = Widgets.TextField(ovNameRect, overrideModelName);
+            if (Widgets.ButtonText(ovLevelBtn, $"Lv.{overrideLevel}"))
+            {
+                overrideLevel = overrideLevel >= 3 ? 1 : overrideLevel + 1;
+            }
+            if (Widgets.ButtonText(ovAddBtn, "RimLLM_AddBtn".Translate()))
+            {
+                string trimmedName = overrideModelName?.Trim();
+                if (!string.IsNullOrEmpty(trimmedName))
+                {
+                    Settings.SetModelLevelOverride(trimmedName, overrideLevel);
+                    Settings.Write();
+                    overrideModelName = "";
                 }
             }
             listing.GapLine(10f);

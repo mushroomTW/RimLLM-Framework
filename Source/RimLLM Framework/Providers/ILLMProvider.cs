@@ -16,6 +16,12 @@ namespace RimLLM_Framework.Providers
         string ProviderId { get; }
 
         /// <summary>
+        /// 此供應商是否必須提供 API Key 才能使用。
+        /// 本地相容介面（如 OpenAICompatible / LM Studio / Ollama）可回傳 false。
+        /// </summary>
+        bool RequiresApiKey { get; }
+
+        /// <summary>
         /// 向該供應商發送非同步生成請求。
         /// </summary>
         /// <param name="request">請求參數</param>

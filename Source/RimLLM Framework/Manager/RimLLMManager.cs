@@ -23,6 +23,9 @@ namespace RimLLM_Framework.Manager
     {
         private readonly IRimLLMSettings _settings;
         private readonly Dictionary<string, ILLMProvider> _providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _providerOrder = new List<string>();
+        private readonly HashSet<string> _builtInProviderIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _providerLock = new object();
         private readonly HashSet<Type> _registeredTypes = new HashSet<Type>();
 
         // 拆分出去的模組實體
@@ -59,23 +62,90 @@ namespace RimLLM_Framework.Manager
             _circuitBreaker = new RimLLMCircuitBreaker();
             _usageTracker = new RimLLMUsageTracker(settings);
 
-            // 初始化並註冊供應商
-            RegisterProvider(new OpenAIProvider(settings));
-            RegisterProvider(new GeminiProvider(settings));
-            RegisterProvider(new OpenAICompatibleProvider(settings));
-            RegisterProvider(new DeepSeekProvider(settings));
-            RegisterProvider(new GroqProvider(settings));
-            RegisterProvider(new AnthropicProvider(settings));
-            RegisterProvider(new OpenRouterProvider(settings));
-            RegisterProvider(new KimiProvider(settings));
-            RegisterProvider(new MiniMaxProvider(settings));
-            RegisterProvider(new QwenProvider(settings));
-            RegisterProvider(new NvidiaProvider(settings));
+            // 初始化並註冊內建供應商
+            RegisterBuiltInProvider(new OpenAIProvider(settings));
+            RegisterBuiltInProvider(new GeminiProvider(settings));
+            RegisterBuiltInProvider(new OpenAICompatibleProvider(settings));
+            RegisterBuiltInProvider(new DeepSeekProvider(settings));
+            RegisterBuiltInProvider(new GroqProvider(settings));
+            RegisterBuiltInProvider(new AnthropicProvider(settings));
+            RegisterBuiltInProvider(new OpenRouterProvider(settings));
+            RegisterBuiltInProvider(new KimiProvider(settings));
+            RegisterBuiltInProvider(new MiniMaxProvider(settings));
+            RegisterBuiltInProvider(new QwenProvider(settings));
+            RegisterBuiltInProvider(new NvidiaProvider(settings));
         }
 
-        private void RegisterProvider(ILLMProvider provider)
+        private void RegisterBuiltInProvider(ILLMProvider provider)
         {
-            _providers[provider.ProviderId] = provider;
+            lock (_providerLock)
+            {
+                _providers[provider.ProviderId] = provider;
+                _providerOrder.Add(provider.ProviderId);
+                _builtInProviderIds.Add(provider.ProviderId);
+            }
+        }
+
+        /// <summary>
+        /// 註冊外部供應商，供第三方 Mod 擴充自訂的 LLM 供應商。
+        /// 外部供應商註冊後即視為啟用，使用者透過 Fallback Chain 控制其參與。
+        /// </summary>
+        /// <exception cref="InvalidOperationException">當 ProviderId 與既有供應商重複時擲出，防止覆蓋內建供應商。</exception>
+        public void RegisterProvider(ILLMProvider provider)
+        {
+            if (provider == null)
+                throw new ArgumentNullException(nameof(provider));
+            if (string.IsNullOrEmpty(provider.ProviderId))
+                throw new ArgumentException("ProviderId cannot be empty or null", nameof(provider));
+
+            lock (_providerLock)
+            {
+                if (_providers.ContainsKey(provider.ProviderId))
+                {
+                    throw new InvalidOperationException($"[RimLLM] Provider ID '{provider.ProviderId}' is already registered and cannot be overridden.");
+                }
+
+                _providers[provider.ProviderId] = provider;
+                _providerOrder.Add(provider.ProviderId);
+            }
+            RimLLMLog.Message($"[RimLLM] Registered external provider: {provider.ProviderId}");
+        }
+
+        /// <summary>
+        /// 取得所有已註冊供應商的識別碼（依註冊順序）。
+        /// </summary>
+        public List<string> GetRegisteredProviderIds()
+        {
+            lock (_providerLock)
+            {
+                return new List<string>(_providerOrder);
+            }
+        }
+
+        /// <summary>
+        /// 檢查供應商是否啟用。內建供應商由設定 UI 控制；外部註冊的供應商視為註冊即啟用。
+        /// </summary>
+        public bool IsProviderEnabled(string providerId)
+        {
+            bool isBuiltIn;
+            lock (_providerLock)
+            {
+                if (!_providers.ContainsKey(providerId))
+                    return false;
+                isBuiltIn = _builtInProviderIds.Contains(providerId);
+            }
+            return !isBuiltIn || _settings.IsProviderEnabled(providerId);
+        }
+
+        /// <summary>
+        /// 執行緒安全地查找已註冊的供應商（外部註冊可能與請求併發）。
+        /// </summary>
+        private bool TryGetProvider(string providerId, out ILLMProvider provider)
+        {
+            lock (_providerLock)
+            {
+                return _providers.TryGetValue(providerId, out provider);
+            }
         }
 
         private static LLMRequest CreateSimpleRequest(
@@ -139,17 +209,8 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private async Task<string> GenerateInternalDirectAsync(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
         {
-            var totalStopwatch = Stopwatch.StartNew();
-            DateTime startTime = DateTime.Now;
-
             // 1. 來源身分安全校驗 (Caller Verification)
-            if (verifyCaller && callingAssembly != null)
-            {
-                if (!ClientRegistry.Verify(request.ModId, callingAssembly))
-                {
-                    throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{request.ModId}' did not pass.");
-                }
-            }
+            VerifyCallerOrThrow(request, callingAssembly, verifyCaller);
 
             // 1.5 檢查是否啟用串流輸出，若有則呼叫串流通道進行文字累加
             if (request.EnableStreaming)
@@ -163,131 +224,12 @@ namespace RimLLM_Framework.Manager
                 return sb.ToString();
             }
 
-            // 2. 獲取全域設定的 Fallback Chain
-            var fallbackChain = GetFallbackChainSnapshot();
-
-            if (fallbackChain == null || fallbackChain.Count == 0)
-            {
-                throw new RimLLMException(LLMError.ProviderOffline, "No valid API provider fallback chain configured.");
-            }
-
-            Exception lastException = null;
-
-            // 3. 依據 Fallback Chain 進行模型級輪詢嘗試
-            foreach (string entry in fallbackChain)
-            {
-                if (!ResolveFallbackEntry(entry, out string providerId, out string modelName))
-                    continue;
-
-                if (!_providers.TryGetValue(providerId, out ILLMProvider provider))
-                    continue;
-
-                // 檢查該 Provider 是否啟用
-                if (!_settings.IsProviderEnabled(providerId))
-                    continue;
-
-                string apiKey = _settings.GetApiKey(providerId);
-                // OpenAICompatible 放寬金鑰要求，其餘則必須提供 API Key
-                if (string.IsNullOrEmpty(apiKey) && providerId != "OpenAICompatible")
-                    continue;
-
-                // 3.1 評估 MinFallbackLevel 模型分級
-                int minLevel = ParseMinFallbackLevel(request.MinFallbackLevel);
-                if (minLevel > 0)
-                {
-                    int currentModelLevel = GetModelLevel(modelName);
-                    if (currentModelLevel < minLevel)
-                    {
-                        RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
-                        continue;
-                    }
-                }
-
-                // 3.2 Circuit Breaker 健康狀態檢查
-                bool shouldSkip = _circuitBreaker.IsCooldown(providerId, out DateTime cdTime, out int failures);
-                if (shouldSkip)
-                {
-                    if (!_circuitBreaker.AreAllEnabledProvidersInCooldown(fallbackChain, _settings, id => _providers.ContainsKey(id)))
-                    {
-                        RimLLMLog.Message($"[RimLLM] Skipping provider {providerId} because it is in cooldown until {cdTime.ToLocalTime()} due to {failures} continuous failures.");
-                        continue;
-                    }
-                }
-
-                int maxRetries = _settings.MaxRetries;
-                float retryDelay = _settings.RetryDelay;
-
-                for (int attempt = 0; attempt <= maxRetries; attempt++)
-                {
-                    // 檢查中途是否被取消
-                    if (request.CancellationToken.IsCancellationRequested)
-                    {
-                        throw new OperationCanceledException(request.CancellationToken);
-                    }
-
-                    try
-                    {
-                        if (attempt > 0)
-                        {
-                            RimLLMLog.Message($"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName}), retrying attempt {attempt + 1}...");
-                        }
-                        else
-                        {
-                            RimLLMLog.Message($"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName})");
-                        }
-                        
-                        var requestStopwatch = Stopwatch.StartNew();
-                        string result = await provider.GenerateAsync(request, modelName).ConfigureAwait(false);
-                        requestStopwatch.Stop();
-
-                        // 成功後重設健康狀態冷卻
-                        _circuitBreaker.RecordSuccess(providerId);
-
-                        _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
-                        return result;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastException = ex;
-                        bool retryable = IsRetryableException(ex);
-                        bool recordHealthFailure = ShouldRecordHealthFailure(ex);
-
-                        if (recordHealthFailure)
-                        {
-                            _circuitBreaker.RecordFailure(providerId);
-                        }
-
-                        if (retryable && attempt < maxRetries)
-                        {
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) call failed: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Retrying in {retryDelay} seconds...");
-                            if (retryDelay > 0f)
-                            {
-                                await Task.Delay(TimeSpan.FromSeconds(retryDelay), request.CancellationToken).ConfigureAwait(false);
-                            }
-                        }
-                        else if (!retryable)
-                        {
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) returned a non-retryable error: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Fallbacking to the next entry.");
-                            break;
-                        }
-                        else
-                        {
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
-                        }
-                    }
-                }
-            }
-
-            totalStopwatch.Stop();
-            _usageTracker.RecordLog(startTime, request.ModId, "FallbackChain", "None", false, lastException?.Message ?? "All fallbacks failed", totalStopwatch.ElapsedMilliseconds);
-            throw new RimLLMException(
-                LLMError.Unknown, 
-                $"All fallback attempts failed. Last error reason: {lastException?.Message}", 
-                lastException);
+            // 2. 交由共用的 Fallback Chain 執行核心處理
+            return await ExecuteWithFallbackAsync(
+                request,
+                (provider, modelName) => provider.GenerateAsync(request, modelName),
+                LLMError.Unknown,
+                "All fallback attempts failed.").ConfigureAwait(false);
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
@@ -408,116 +350,199 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>
         /// 真正的非同步串流生成邏輯。
+        /// 與非串流路徑共用相同的 Fallback Chain 執行核心，因此重試與熔斷行為一致。
         /// </summary>
         private async Task StreamInternalDirectAsync(LLMRequest request, Action<string> onChunkReceived, Assembly callingAssembly, bool verifyCaller)
+        {
+            // 來源身分校驗
+            VerifyCallerOrThrow(request, callingAssembly, verifyCaller);
+
+            await ExecuteWithFallbackAsync(
+                request,
+                async (provider, modelName) =>
+                {
+                    await provider.StreamAsync(request, modelName, onChunkReceived).ConfigureAwait(false);
+                    return "";
+                },
+                LLMError.ProviderOffline,
+                "All fallback attempts failed, unable to establish stream connection.").ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 共用的 Fallback Chain 執行核心。
+        /// 依序遍歷符合資格的供應商條目，對每個條目套用相同的重試策略，
+        /// 並統一處理取消檢查、熔斷記錄與用量統計。
+        /// </summary>
+        private async Task<string> ExecuteWithFallbackAsync(
+            LLMRequest request,
+            Func<ILLMProvider, string, Task<string>> attemptAsync,
+            LLMError exhaustedError,
+            string exhaustedMessage)
         {
             var totalStopwatch = Stopwatch.StartNew();
             DateTime startTime = DateTime.Now;
 
-            // 1. 來源身分校驗
-            if (verifyCaller && callingAssembly != null)
-            {
-                if (!ClientRegistry.Verify(request.ModId, callingAssembly))
-                {
-                    throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Source verification failed. Assembly verification for ModId '{request.ModId}' did not pass.");
-                }
-            }
-
             var fallbackChain = GetFallbackChainSnapshot();
-
             if (fallbackChain == null || fallbackChain.Count == 0)
             {
                 throw new RimLLMException(LLMError.ProviderOffline, "No valid API provider fallback chain configured.");
             }
 
-            bool connected = false;
             Exception lastException = null;
+            int maxRetries = _settings.MaxRetries;
+            float retryDelay = _settings.RetryDelay;
 
-            // 尋找第一個可用的 Provider 與其模型，並嘗試建立連線與串流
             foreach (string entry in fallbackChain)
             {
-                if (!ResolveFallbackEntry(entry, out string providerId, out string modelName))
+                if (!TryGetEligibleCandidate(entry, fallbackChain, request, out string providerId, out ILLMProvider provider, out string modelName))
                     continue;
 
-                if (!_providers.TryGetValue(providerId, out ILLMProvider provider))
-                    continue;
-
-                if (!_settings.IsProviderEnabled(providerId))
-                    continue;
-
-                string apiKey = _settings.GetApiKey(providerId);
-                if (string.IsNullOrEmpty(apiKey) && providerId != "OpenAICompatible")
-                    continue;
-
-                // 評估 MinFallbackLevel 模型分級
-                int minLevel = ParseMinFallbackLevel(request.MinFallbackLevel);
-                if (minLevel > 0)
+                for (int attempt = 0; attempt <= maxRetries; attempt++)
                 {
-                    int currentModelLevel = GetModelLevel(modelName);
-                    if (currentModelLevel < minLevel)
-                    {
-                        RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
-                        continue;
-                    }
-                }
-
-                // Circuit Breaker 健康狀態檢查
-                bool shouldSkip = _circuitBreaker.IsCooldown(providerId, out DateTime cdTime, out int failures);
-                if (shouldSkip)
-                {
-                    if (!_circuitBreaker.AreAllEnabledProvidersInCooldown(fallbackChain, _settings, id => _providers.ContainsKey(id)))
-                    {
-                        RimLLMLog.Message($"[RimLLM] Skipping provider {providerId} because it is in cooldown until {cdTime.ToLocalTime()} due to {failures} continuous failures.");
-                        continue;
-                    }
-                }
-
-                try
-                {
-                    // 檢查是否取消
+                    // 檢查中途是否被取消
                     if (request.CancellationToken.IsCancellationRequested)
                     {
                         throw new OperationCanceledException(request.CancellationToken);
                     }
 
-                    var requestStopwatch = Stopwatch.StartNew();
-                    await provider.StreamAsync(request, modelName, onChunkReceived).ConfigureAwait(false);
-                    requestStopwatch.Stop();
-                    connected = true;
-
-                    // 成功後重設健康狀態冷卻
-                    _circuitBreaker.RecordSuccess(providerId);
-
-                    _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
-                    break;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    RimLLMLog.Warning($"[RimLLM] Stream connection failed: {providerId} ({modelName}) -> {RimLLMLog.SanitizeForLog(ex.Message, 300)}, trying next fallback.");
-                    lastException = ex;
-
-                    if (ShouldRecordHealthFailure(ex))
+                    try
                     {
-                        _circuitBreaker.RecordFailure(providerId);
+                        RimLLMLog.Message(attempt > 0
+                            ? $"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName}), retrying attempt {attempt + 1}..."
+                            : $"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName})");
+
+                        var requestStopwatch = Stopwatch.StartNew();
+                        string result = await attemptAsync(provider, modelName).ConfigureAwait(false);
+                        requestStopwatch.Stop();
+
+                        // 成功後重設健康狀態冷卻
+                        _circuitBreaker.RecordSuccess(providerId);
+
+                        _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
+                        return result;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastException = ex;
+                        bool retryable = IsRetryableException(ex);
+
+                        // 可重試類錯誤（網路、超時、限流等）同時視為健康度失敗，納入熔斷統計
+                        if (retryable)
+                        {
+                            _circuitBreaker.RecordFailure(providerId);
+                        }
+
+                        if (retryable && attempt < maxRetries)
+                        {
+                            // 若伺服器透過 Retry-After 建議等待時間，取其與使用者設定延遲的較大者（上限 60 秒，避免長時間卡住）
+                            float effectiveDelay = retryDelay;
+                            if (ex is RimLLMException rimEx && rimEx.RetryAfter.HasValue)
+                            {
+                                effectiveDelay = Math.Min(Math.Max(effectiveDelay, (float)rimEx.RetryAfter.Value.TotalSeconds), 60f);
+                            }
+
+                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) call failed: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Retrying in {effectiveDelay:F1} seconds...");
+                            if (effectiveDelay > 0f)
+                            {
+                                await Task.Delay(TimeSpan.FromSeconds(effectiveDelay), request.CancellationToken).ConfigureAwait(false);
+                            }
+                        }
+                        else if (!retryable)
+                        {
+                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) returned a non-retryable error: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Fallbacking to the next entry.");
+                            break;
+                        }
+                        else
+                        {
+                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
+                        }
                     }
                 }
             }
 
-            if (!connected)
+            totalStopwatch.Stop();
+            _usageTracker.RecordLog(startTime, request.ModId, "FallbackChain", "None", false, lastException?.Message ?? "All fallbacks failed", totalStopwatch.ElapsedMilliseconds);
+            throw new RimLLMException(exhaustedError, $"{exhaustedMessage} Last error: {lastException?.Message}", lastException);
+        }
+
+        /// <summary>
+        /// 檢查供應商是否可用：已啟用且（若需要）API Key 存在。
+        /// </summary>
+        private bool IsProviderUsable(string providerId, ILLMProvider provider)
+        {
+            if (!IsProviderEnabled(providerId))
+                return false;
+
+            if (provider.RequiresApiKey && string.IsNullOrEmpty(_settings.GetApiKey(providerId)))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// 檢查單一 Fallback 條目是否具備執行資格：
+        /// 供應商已註冊且可用（啟用 + 金鑰）、模型分級達標、且未處於熔斷冷卻。
+        /// 若所有可用供應商都在冷卻中，則破例放行以避免完全斷線。
+        /// </summary>
+        private bool TryGetEligibleCandidate(string entry, List<string> fallbackChain, LLMRequest request, out string providerId, out ILLMProvider provider, out string modelName)
+        {
+            provider = null;
+
+            if (!ResolveFallbackEntry(entry, out providerId, out modelName))
+                return false;
+
+            if (!TryGetProvider(providerId, out provider))
+                return false;
+
+            if (!IsProviderUsable(providerId, provider))
+                return false;
+
+            // 評估 MinFallbackLevel 模型分級
+            int minLevel = ParseMinFallbackLevel(request.MinFallbackLevel);
+            if (minLevel > 0)
             {
-                totalStopwatch.Stop();
-                _usageTracker.RecordLog(startTime, request.ModId, "FallbackChain", "None", false, lastException?.Message ?? "All fallbacks failed", totalStopwatch.ElapsedMilliseconds);
-                throw new RimLLMException(LLMError.ProviderOffline, $"All fallback attempts failed, unable to establish stream connection. Last error: {lastException?.Message}", lastException);
+                int currentModelLevel = GetModelLevel(modelName);
+                if (currentModelLevel < minLevel)
+                {
+                    RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
+                    return false;
+                }
+            }
+
+            // Circuit Breaker 健康狀態檢查
+            if (_circuitBreaker.IsCooldown(providerId, out DateTime cdTime, out int failures))
+            {
+                if (!_circuitBreaker.AreAllEligibleProvidersInCooldown(fallbackChain, id => TryGetProvider(id, out ILLMProvider p) && IsProviderUsable(id, p)))
+                {
+                    RimLLMLog.Message($"[RimLLM] Skipping provider {providerId} because it is in cooldown until {cdTime.ToLocalTime()} due to {failures} continuous failures.");
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// 來源身分安全校驗 (Caller Verification)。
+        /// </summary>
+        private static void VerifyCallerOrThrow(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
+        {
+            if (!verifyCaller || callingAssembly == null)
+                return;
+
+            if (!ClientRegistry.Verify(request.ModId, callingAssembly))
+            {
+                throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{request.ModId}' did not pass.");
             }
         }
 
         public async Task<TestResult> TestProviderAsync(string providerId)
         {
-            if (!_providers.TryGetValue(providerId, out ILLMProvider provider))
+            if (!TryGetProvider(providerId, out ILLMProvider provider))
             {
                 return new TestResult
                 {
@@ -533,7 +558,7 @@ namespace RimLLM_Framework.Manager
 
         public async Task<List<string>> FetchProviderModelsAsync(string providerId)
         {
-            if (!_providers.TryGetValue(providerId, out ILLMProvider provider))
+            if (!TryGetProvider(providerId, out ILLMProvider provider))
             {
                 throw new RimLLMException(LLMError.ProviderOffline, $"Unknown provider ID: {providerId}");
             }
@@ -578,33 +603,12 @@ namespace RimLLM_Framework.Manager
             return clone;
         }
 
+        /// <summary>
+        /// 判斷例外是否屬於暫時性錯誤（網路、超時、限流等）。
+        /// 暫時性錯誤可以重試，同時也會被記入熔斷器的健康度統計；
+        /// 非暫時性錯誤（如金鑰無效）直接 fallback 到下一個條目且不觸發熔斷。
+        /// </summary>
         private bool IsRetryableException(Exception ex)
-        {
-            if (ex is OperationCanceledException)
-            {
-                return false;
-            }
-
-            if (ex is RimLLMException rimEx)
-            {
-                switch (rimEx.Error)
-                {
-                    case LLMError.Timeout:
-                    case LLMError.RateLimit:
-                    case LLMError.ProviderOffline:
-                    case LLMError.NetworkError:
-                    case LLMError.QuotaExceeded:
-                    case LLMError.Unknown:
-                        return true;
-                    default:
-                        return false;
-                }
-            }
-
-            return true;
-        }
-
-        private bool ShouldRecordHealthFailure(Exception ex)
         {
             if (ex is OperationCanceledException)
             {
@@ -641,12 +645,12 @@ namespace RimLLM_Framework.Manager
             return RimLLMJsonHelper.GetSampleJson<T>();
         }
 
-        private string GetSampleJson(Type type)
+        internal string GetSampleJson(Type type)
         {
             return RimLLMJsonHelper.GetSampleJson(type);
         }
 
-        private bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
+        internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
         {
             providerId = entry;
             modelName = "";
@@ -681,6 +685,14 @@ namespace RimLLM_Framework.Manager
         private int GetModelLevel(string modelName)
         {
             if (string.IsNullOrEmpty(modelName)) return 1;
+
+            // 使用者明確設定的分級覆寫優先於關鍵字啟發式判斷
+            int overrideLevel = _settings.GetModelLevelOverride(modelName);
+            if (overrideLevel >= 1 && overrideLevel <= 3)
+            {
+                return overrideLevel;
+            }
+
             string lower = modelName.ToLower();
 
             // 如果含有 High 關鍵字，則優先判定為 Tier 3

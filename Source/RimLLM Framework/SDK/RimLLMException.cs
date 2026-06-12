@@ -13,6 +13,12 @@ namespace RimLLM_Framework.SDK
         /// </summary>
         public LLMError Error { get; }
 
+        /// <summary>
+        /// 伺服器透過 Retry-After Header 建議的重試等待時間（若有提供）。
+        /// 重試邏輯會以此值與使用者設定的重試延遲取較大者。
+        /// </summary>
+        public TimeSpan? RetryAfter { get; set; }
+
         public RimLLMException(LLMError error, string message) : base(message)
         {
             Error = error;

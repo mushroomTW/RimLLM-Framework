@@ -74,6 +74,12 @@ namespace RimLLM_Framework.SDK
         void SetModelList(string providerId, List<string> models);
 
         /// <summary>
+        /// 查詢使用者設定的模型分級覆寫 (1=低, 2=中, 3=高)。
+        /// 回傳 0 代表未設定，將改用內建關鍵字啟發式判斷。
+        /// </summary>
+        int GetModelLevelOverride(string modelName);
+
+        /// <summary>
         /// 最大並行限制。
         /// </summary>
         int MaxConcurrentRequests { get; }

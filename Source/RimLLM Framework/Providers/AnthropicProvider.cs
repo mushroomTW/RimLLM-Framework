@@ -82,7 +82,7 @@ namespace RimLLM_Framework.Providers
                 }
             }
 
-            string responseJson = await SendPostAsync(baseEndpoint, payload.ToString(), apiKey, "Anthropic", cancellationToken: request.CancellationToken).ConfigureAwait(false);
+            string responseJson = await SendPostAsync(baseEndpoint, payload.ToString(), apiKey, AuthSchemes.Anthropic, cancellationToken: request.CancellationToken).ConfigureAwait(false);
 
             try
             {
@@ -445,7 +445,7 @@ namespace RimLLM_Framework.Providers
 
             try
             {
-                string responseJson = await SendGetAsync(url, apiKey, "Anthropic").ConfigureAwait(false);
+                string responseJson = await SendGetAsync(url, apiKey, AuthSchemes.Anthropic).ConfigureAwait(false);
                 List<string> models = ParseModelIds(responseJson);
                 if (models.Count > 0)
                 {
