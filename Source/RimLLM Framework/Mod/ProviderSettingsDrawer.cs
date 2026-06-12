@@ -431,7 +431,7 @@ namespace RimLLM_Framework.Mod
                 {
                     var models = await RimLLMProvider.Instance.FetchProviderModelsAsync(providerId).ConfigureAwait(false);
 
-                    RimLLMDispatcher.Instance.Enqueue(() =>
+                    RimLLMDispatcher.EnqueueOnMainThread(() =>
                     {
                         Fetching[providerId] = false;
                         if (models != null && models.Count > 0)
@@ -448,10 +448,10 @@ namespace RimLLM_Framework.Mod
                 }
                 catch (Exception ex)
                 {
-                    RimLLMDispatcher.Instance.Enqueue(() =>
+                    RimLLMDispatcher.EnqueueOnMainThread(() =>
                     {
                         Fetching[providerId] = false;
-                        FetchStatus[providerId] = "RimLLM_FetchFailed".Translate() + " (" + ex.Message + ")";
+                        FetchStatus[providerId] = "RimLLM_FetchFailed".Translate() + " (" + RimLLMLog.SanitizeForLog(ex.Message, 220) + ")";
                     });
                 }
             });
@@ -478,7 +478,7 @@ namespace RimLLM_Framework.Mod
                 {
                     TestResult result = await RimLLMProvider.Instance.TestProviderAsync(providerId).ConfigureAwait(false);
 
-                    RimLLMDispatcher.Instance.Enqueue(() =>
+                    RimLLMDispatcher.EnqueueOnMainThread(() =>
                     {
                         Testing[providerId] = false;
                         if (result.Success)
@@ -493,10 +493,10 @@ namespace RimLLM_Framework.Mod
                 }
                 catch (Exception ex)
                 {
-                    RimLLMDispatcher.Instance.Enqueue(() =>
+                    RimLLMDispatcher.EnqueueOnMainThread(() =>
                     {
                         Testing[providerId] = false;
-                        TestStatus[providerId] = "RimLLM_TestStatusError".Translate(ex.Message);
+                        TestStatus[providerId] = "RimLLM_TestStatusError".Translate(RimLLMLog.SanitizeForLog(ex.Message, 220));
                     });
                 }
             });
@@ -534,7 +534,7 @@ namespace RimLLM_Framework.Mod
                                     finalUrl = "http://localhost:11434/v1";
                                 }
 
-                                RimLLMDispatcher.Instance.Enqueue(() =>
+                                RimLLMDispatcher.EnqueueOnMainThread(() =>
                                 {
                                     Settings.SetEndpoint("OpenAICompatible", finalUrl);
                                     Settings.Write();
@@ -552,7 +552,7 @@ namespace RimLLM_Framework.Mod
                     }
                 }
 
-                RimLLMDispatcher.Instance.Enqueue(() =>
+                RimLLMDispatcher.EnqueueOnMainThread(() =>
                 {
                     isDetectingLocal = false;
                     detectStatusMsg = "RimLLM_DetectFailed".Translate();

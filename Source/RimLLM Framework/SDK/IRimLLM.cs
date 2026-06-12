@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace RimLLM_Framework.SDK
@@ -16,6 +17,19 @@ namespace RimLLM_Framework.SDK
         /// <param name="request">LLM 請求物件</param>
         /// <returns>生成之文字字串</returns>
         Task<string> GenerateAsync(LLMRequest request);
+
+        /// <summary>
+        /// 非同步生成文字回應的簡化 overload。
+        /// </summary>
+        Task<string> GenerateAsync(
+            string modId,
+            string prompt,
+            string systemPrompt = null,
+            string cachedContext = null,
+            int maxTokens = 1024,
+            float temperature = 0.7f,
+            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
+            CancellationToken cancellationToken = default);
         
         /// <summary>
         /// 非同步生成結構化物件。
@@ -25,6 +39,19 @@ namespace RimLLM_Framework.SDK
         /// <param name="request">LLM 請求物件</param>
         /// <returns>反序列化後之目標物件</returns>
         Task<T> GenerateObjectAsync<T>(LLMRequest request);
+
+        /// <summary>
+        /// 非同步生成結構化物件的簡化 overload。
+        /// </summary>
+        Task<T> GenerateObjectAsync<T>(
+            string modId,
+            string prompt,
+            string systemPrompt = null,
+            string cachedContext = null,
+            int maxTokens = 1024,
+            float temperature = 0.7f,
+            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
+            CancellationToken cancellationToken = default);
         
         /// <summary>
         /// 非同步串流生成回應。
@@ -32,6 +59,20 @@ namespace RimLLM_Framework.SDK
         /// <param name="request">LLM 請求物件</param>
         /// <param name="onChunkReceived">收到字串片段時的回呼函式</param>
         Task StreamAsync(LLMRequest request, Action<string> onChunkReceived);
+
+        /// <summary>
+        /// 非同步串流生成回應的簡化 overload。
+        /// </summary>
+        Task<string> GenerateStreamingAsync(
+            string modId,
+            string prompt,
+            Action<string> onChunkReceived,
+            string systemPrompt = null,
+            string cachedContext = null,
+            int maxTokens = 1024,
+            float temperature = 0.7f,
+            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
+            CancellationToken cancellationToken = default);
         
         /// <summary>
         /// 測試指定供應商 (Provider) 的連線狀態。

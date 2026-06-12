@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using System.Diagnostics;
 using RimLLM_Framework.SDK;
+using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Providers
 {
@@ -143,7 +144,7 @@ namespace RimLLM_Framework.Providers
                             string friendlyErr = ExtractFriendlyError(responseBody, statusCode);
                             if (statusCode == 401 || statusCode == 403)
                             {
-                                throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {friendlyErr}");
+                                throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
                             }
                             if (statusCode == 429)
                             {
@@ -151,14 +152,14 @@ namespace RimLLM_Framework.Providers
                                 {
                                     throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.");
                                 }
-                                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {friendlyErr}");
+                                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
                             }
                             if (statusCode >= 500)
                             {
-                                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {friendlyErr}");
+                                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
                             }
 
-                            throw new RimLLMException(LLMError.Unknown, $"API request failed: {friendlyErr}");
+                            throw new RimLLMException(LLMError.Unknown, $"API request failed: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
                         }
                     }
                 }
@@ -181,14 +182,14 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex)
             {
-                throw new RimLLMException(LLMError.Unknown, $"Unexpected error occurred when sending API request: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.Unknown, $"Unexpected error occurred when sending API request: {RimLLMLog.SanitizeForLog(ex.Message, 300)}", ex);
             }
         }
  
         /// <summary>
         /// 統一的 HTTP GET 請求發送方法，包含異常處理與 LLMError 對照。
         /// </summary>
-        protected async Task<string> SendGetAsync(string url, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        protected virtual async Task<string> SendGetAsync(string url, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
         {
             try
             {
@@ -229,7 +230,7 @@ namespace RimLLM_Framework.Providers
                             string friendlyErr = ExtractFriendlyError(responseBody, statusCode);
                             if (statusCode == 401 || statusCode == 403)
                             {
-                                throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {friendlyErr}");
+                                throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
                             }
                             if (statusCode == 429)
                             {
@@ -237,14 +238,14 @@ namespace RimLLM_Framework.Providers
                                 {
                                     throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.");
                                 }
-                                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {friendlyErr}");
+                                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
                             }
                             if (statusCode >= 500)
                             {
-                                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {friendlyErr}");
+                                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
                             }
 
-                            throw new RimLLMException(LLMError.Unknown, $"API request failed: {friendlyErr}");
+                            throw new RimLLMException(LLMError.Unknown, $"API request failed: {RimLLMLog.SanitizeForLog(friendlyErr, 300)}");
                         }
                     }
                 }
@@ -267,8 +268,39 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex)
             {
-                throw new RimLLMException(LLMError.Unknown, $"Unexpected error occurred when sending API request: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.Unknown, $"Unexpected error occurred when sending API request: {RimLLMLog.SanitizeForLog(ex.Message, 300)}", ex);
             }
+        }
+
+        protected void ThrowIfStreamTimedOut(System.Threading.CancellationToken linkedToken, System.Threading.CancellationToken userToken)
+        {
+            if (!linkedToken.IsCancellationRequested) return;
+
+            if (userToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(userToken);
+            }
+
+            throw new RimLLMException(LLMError.Timeout, "Stream request timed out");
+        }
+
+        protected Exception ConvertStreamTransportException(string providerName, Exception ex, System.Threading.CancellationToken userToken)
+        {
+            if (ex is OperationCanceledException)
+            {
+                if (userToken.IsCancellationRequested)
+                {
+                    return new OperationCanceledException(userToken);
+                }
+                return new RimLLMException(LLMError.Timeout, $"{providerName} stream request timed out", ex);
+            }
+
+            if (ex is HttpRequestException)
+            {
+                return new RimLLMException(LLMError.NetworkError, $"{providerName} stream network error", ex);
+            }
+
+            return new RimLLMException(LLMError.NetworkError, $"{providerName} stream request failed: {RimLLMLog.SanitizeForLog(ex.Message, 300)}", ex);
         }
 
         /// <summary>
@@ -294,7 +326,7 @@ namespace RimLLM_Framework.Providers
                     }
                     if (!string.IsNullOrEmpty(message))
                     {
-                        return message;
+                    return RimLLMLog.SanitizeForLog(message, 300);
                     }
                 }
 
@@ -302,7 +334,7 @@ namespace RimLLM_Framework.Providers
                 string directMessage = json["message"]?.ToString();
                 if (!string.IsNullOrEmpty(directMessage))
                 {
-                    return directMessage;
+                    return RimLLMLog.SanitizeForLog(directMessage, 300);
                 }
             }
             catch
@@ -310,11 +342,34 @@ namespace RimLLM_Framework.Providers
                 // 無法解析為 JSON，則限制長度以防 UI 跑版
                 if (responseBody.Length > 100)
                 {
-                    return responseBody.Substring(0, 97) + "...";
+                    return RimLLMLog.SanitizeForLog(responseBody, 100);
                 }
             }
  
-            return responseBody;
+            return RimLLMLog.SanitizeForLog(responseBody, 300);
+        }
+
+        protected void ThrowHttpError(HttpResponseMessage response, string responseBody)
+        {
+            int statusCode = (int)response.StatusCode;
+            string friendlyErr = ExtractFriendlyError(responseBody, statusCode);
+            if (statusCode == 401 || statusCode == 403)
+            {
+                throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {friendlyErr}");
+            }
+            if (statusCode == 429)
+            {
+                if (friendlyErr.Contains("quota") || friendlyErr.Contains("insufficient"))
+                {
+                    throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.");
+                }
+                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {friendlyErr}");
+            }
+            if (statusCode >= 500)
+            {
+                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {friendlyErr}");
+            }
+            throw new RimLLMException(LLMError.Unknown, $"API request failed: {friendlyErr}");
         }
     }
 }

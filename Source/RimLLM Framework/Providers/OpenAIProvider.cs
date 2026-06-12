@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
+using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Providers
 {
@@ -26,12 +27,13 @@ namespace RimLLM_Framework.Providers
         protected virtual JObject BuildPayload(LLMRequest request, string model, bool stream = false)
         {
             var messages = new JArray();
-            if (!string.IsNullOrEmpty(request.SystemPrompt))
+            string systemContext = request.GetEffectiveSystemPrompt();
+            if (!string.IsNullOrEmpty(systemContext))
             {
                 messages.Add(new JObject
                 {
                     ["role"] = "system",
-                    ["content"] = request.SystemPrompt
+                    ["content"] = systemContext
                 });
             }
             messages.Add(new JObject
@@ -101,19 +103,19 @@ namespace RimLLM_Framework.Providers
                 if (errorObj != null)
                 {
                     string errMsg = errorObj["message"]?.ToString() ?? errorObj.ToString();
-                    throw new RimLLMException(LLMError.InvalidResponse, $"API Error: {errMsg}");
+                    throw new RimLLMException(LLMError.InvalidResponse, $"API Error: {RimLLMLog.SanitizeForLog(errMsg, 300)}");
                 }
 
                 var message = responseObj["choices"]?[0]?["message"];
                 if (message == null)
                 {
-                    throw new RimLLMException(LLMError.InvalidResponse, $"OpenAI response JSON is missing message field. Raw response: {responseJson}");
+                    throw new RimLLMException(LLMError.InvalidResponse, $"OpenAI response JSON is missing message field. Response preview: {RimLLMLog.SanitizeForLog(responseJson, 300)}");
                 }
                 var content = message["content"]?.ToString() ?? "";
                 var reasoning = message["reasoning_content"]?.ToString();
                 if (string.IsNullOrEmpty(content) && string.IsNullOrEmpty(reasoning))
                 {
-                    throw new RimLLMException(LLMError.InvalidResponse, $"OpenAI response message content is empty. Raw response: {responseJson}");
+                    throw new RimLLMException(LLMError.InvalidResponse, $"OpenAI response message content is empty. Response preview: {RimLLMLog.SanitizeForLog(responseJson, 300)}");
                 }
                 // 記錄 Token 使用量
                 var usage = responseObj["usage"];
@@ -139,7 +141,7 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex) when (!(ex is RimLLMException))
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse OpenAI response: {ex.Message}. Raw response: {responseJson}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse OpenAI response: {RimLLMLog.SanitizeForLog(ex.Message, 200)}. Response preview: {RimLLMLog.SanitizeForLog(responseJson, 300)}", ex);
             }
         }
 
@@ -168,12 +170,21 @@ namespace RimLLM_Framework.Providers
                 try
                 {
                     response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
-                    response.EnsureSuccessStatusCode();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        ThrowHttpError(response, responseBody);
+                    }
+                }
+                catch (RimLLMException)
+                {
+                    response?.Dispose();
+                    throw;
                 }
                 catch (Exception ex)
                 {
                     response?.Dispose();
-                    throw new RimLLMException(LLMError.NetworkError, $"OpenAI stream request failed: {ex.Message}", ex);
+                    throw ConvertStreamTransportException("OpenAI", ex, request.CancellationToken);
                 }
 
                 using (response)
@@ -190,7 +201,7 @@ namespace RimLLM_Framework.Providers
                     {
                         if (cts.Token.IsCancellationRequested)
                         {
-                            throw new RimLLMException(LLMError.Timeout, "Stream request timed out");
+                            ThrowIfStreamTimedOut(cts.Token, request.CancellationToken);
                         }
 
                         string line = await reader.ReadLineAsync().ConfigureAwait(false);
@@ -260,7 +271,7 @@ namespace RimLLM_Framework.Providers
                         }
                         else
                         {
-                            int systemLen = request.SystemPrompt?.Length ?? 0;
+                            int systemLen = request.GetEffectiveSystemPrompt()?.Length ?? 0;
                             int promptLen = request.Prompt?.Length ?? 0;
                             int estPrompt = (int)((systemLen + promptLen) * 0.8f);
                             int estCompletion = (int)(totalCompletionChars * 0.8f);
@@ -308,7 +319,7 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex)
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch {ProviderId} models list: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch {ProviderId} models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
             }
             return list;
         }

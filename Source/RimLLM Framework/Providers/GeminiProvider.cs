@@ -67,23 +67,24 @@ namespace RimLLM_Framework.Providers
                 ["generationConfig"] = generationConfig
             };
 
+            string systemContext = request.GetEffectiveSystemPrompt();
             string cacheId = null;
-            if (request.EnableContextCaching && !string.IsNullOrEmpty(request.SystemPrompt))
+            if (request.EnableContextCaching && !string.IsNullOrEmpty(systemContext))
             {
-                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, request.SystemPrompt, request.CancellationToken).ConfigureAwait(false);
+                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, systemContext, request.CancellationToken).ConfigureAwait(false);
             }
 
             if (!string.IsNullOrEmpty(cacheId))
             {
                 payload["cachedContent"] = cacheId;
             }
-            else if (!string.IsNullOrEmpty(request.SystemPrompt))
+            else if (!string.IsNullOrEmpty(systemContext))
             {
                 payload["systemInstruction"] = new JObject
                 {
                     ["parts"] = new JArray
                     {
-                        new JObject { ["text"] = request.SystemPrompt }
+                        new JObject { ["text"] = systemContext }
                     }
                 };
             }
@@ -156,7 +157,7 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex) when (!(ex is RimLLMException))
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse Gemini response: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse Gemini response: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
             }
         }
 
@@ -191,23 +192,24 @@ namespace RimLLM_Framework.Providers
                 ["generationConfig"] = generationConfig
             };
 
+            string systemContext = request.GetEffectiveSystemPrompt();
             string cacheId = null;
-            if (request.EnableContextCaching && !string.IsNullOrEmpty(request.SystemPrompt))
+            if (request.EnableContextCaching && !string.IsNullOrEmpty(systemContext))
             {
-                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, request.SystemPrompt, request.CancellationToken).ConfigureAwait(false);
+                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, systemContext, request.CancellationToken).ConfigureAwait(false);
             }
 
             if (!string.IsNullOrEmpty(cacheId))
             {
                 payload["cachedContent"] = cacheId;
             }
-            else if (!string.IsNullOrEmpty(request.SystemPrompt))
+            else if (!string.IsNullOrEmpty(systemContext))
             {
                 payload["systemInstruction"] = new JObject
                 {
                     ["parts"] = new JArray
                     {
-                        new JObject { ["text"] = request.SystemPrompt }
+                        new JObject { ["text"] = systemContext }
                     }
                 };
             }
@@ -225,12 +227,21 @@ namespace RimLLM_Framework.Providers
                 try
                 {
                     response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
-                    response.EnsureSuccessStatusCode();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        ThrowHttpError(response, responseBody);
+                    }
+                }
+                catch (RimLLMException)
+                {
+                    response?.Dispose();
+                    throw;
                 }
                 catch (Exception ex)
                 {
                     response?.Dispose();
-                    throw new RimLLMException(LLMError.NetworkError, $"Gemini stream request failed: {ex.Message}", ex);
+                    throw ConvertStreamTransportException("Gemini", ex, request.CancellationToken);
                 }
 
                 using (response)
@@ -246,67 +257,78 @@ namespace RimLLM_Framework.Providers
                     int finalCompletionTokens = 0;
                     bool hasUsage = false;
 
-                    while (await jsonReader.ReadAsync(cts.Token).ConfigureAwait(false))
+                    try
                     {
-                        if (jsonReader.TokenType == JsonToken.StartObject)
+                        while (await jsonReader.ReadAsync(cts.Token).ConfigureAwait(false))
                         {
-                            try
+                            if (jsonReader.TokenType == JsonToken.StartObject)
                             {
-                                JObject token = await JObject.LoadAsync(jsonReader, cts.Token).ConfigureAwait(false);
-                                var metadata = token["usageMetadata"];
-                                if (metadata != null)
+                                try
                                 {
-                                    finalPromptTokens = metadata["promptTokenCount"]?.Value<int>() ?? 0;
-                                    finalCompletionTokens = metadata["candidatesTokenCount"]?.Value<int>() ?? 0;
-                                    hasUsage = true;
-                                }
-                                var parts = token["candidates"]?[0]?["content"]?["parts"] as JArray;
-                                if (parts != null)
-                                {
-                                    foreach (var part in parts)
+                                    JObject token = await JObject.LoadAsync(jsonReader, cts.Token).ConfigureAwait(false);
+                                    var metadata = token["usageMetadata"];
+                                    if (metadata != null)
                                     {
-                                        string partText = part["text"]?.ToString();
-                                        if (string.IsNullOrEmpty(partText)) continue;
-                                        totalCompletionChars += partText.Length;
-
-                                        bool isThought = part["thought"]?.Type == JTokenType.Boolean && (bool)part["thought"];
-                                        if (isThought)
+                                        finalPromptTokens = metadata["promptTokenCount"]?.Value<int>() ?? 0;
+                                        finalCompletionTokens = metadata["candidatesTokenCount"]?.Value<int>() ?? 0;
+                                        hasUsage = true;
+                                    }
+                                    var parts = token["candidates"]?[0]?["content"]?["parts"] as JArray;
+                                    if (parts != null)
+                                    {
+                                        foreach (var part in parts)
                                         {
-                                            if (!hasFinishedReasoning)
+                                            string partText = part["text"]?.ToString();
+                                            if (string.IsNullOrEmpty(partText)) continue;
+                                            totalCompletionChars += partText.Length;
+
+                                            bool isThought = part["thought"]?.Type == JTokenType.Boolean && (bool)part["thought"];
+                                            if (isThought)
                                             {
-                                                if (!inReasoning)
+                                                if (!hasFinishedReasoning)
                                                 {
-                                                    inReasoning = true;
-                                                    onChunkReceived?.Invoke("<think>");
+                                                    if (!inReasoning)
+                                                    {
+                                                        inReasoning = true;
+                                                        onChunkReceived?.Invoke("<think>");
+                                                    }
+                                                    onChunkReceived?.Invoke(partText);
                                                 }
-                                                onChunkReceived?.Invoke(partText);
+                                                else
+                                                {
+                                                    onChunkReceived?.Invoke(partText);
+                                                }
                                             }
                                             else
                                             {
+                                                if (inReasoning)
+                                                {
+                                                    inReasoning = false;
+                                                    hasFinishedReasoning = true;
+                                                    onChunkReceived?.Invoke("</think>");
+                                                }
                                                 onChunkReceived?.Invoke(partText);
                                             }
                                         }
-                                        else
-                                        {
-                                            if (inReasoning)
-                                            {
-                                                inReasoning = false;
-                                                hasFinishedReasoning = true;
-                                                onChunkReceived?.Invoke("</think>");
-                                            }
-                                            onChunkReceived?.Invoke(partText);
-                                        }
+                                    }
+                                }
+                                catch (Exception ex) when (ex is OperationCanceledException || ex is IOException || ex is HttpRequestException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex)
+                                {
+                                    if (Settings.DetailedLogging)
+                                    {
+                                        RimLLMLog.Warning($"[RimLLM] Gemini stream JSON parse failed: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
-                                if (Settings.DetailedLogging)
-                                {
-                                    RimLLMLog.Warning($"[RimLLM] Gemini stream JSON parse failed: {ex.Message}");
-                                }
-                            }
                         }
+                    }
+                    catch (Exception ex) when (ex is OperationCanceledException || ex is IOException || ex is HttpRequestException)
+                    {
+                        throw ConvertStreamTransportException("Gemini", ex, request.CancellationToken);
                     }
 
                     if (inReasoning)
@@ -322,7 +344,7 @@ namespace RimLLM_Framework.Providers
                         }
                         else
                         {
-                            int systemLen = request.SystemPrompt?.Length ?? 0;
+                            int systemLen = request.GetEffectiveSystemPrompt()?.Length ?? 0;
                             int promptLen = request.Prompt?.Length ?? 0;
                             int estPrompt = (int)((systemLen + promptLen) * 0.8f);
                             int estCompletion = (int)(totalCompletionChars * 0.8f);
@@ -363,7 +385,7 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex)
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch Gemini models list: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch Gemini models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
             }
             return list;
         }
@@ -420,9 +442,10 @@ namespace RimLLM_Framework.Providers
             }
         }
 
-        private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string systemPrompt, System.Threading.CancellationToken cancellationToken)
+        private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string cacheableContext, System.Threading.CancellationToken cancellationToken)
         {
-            if (string.IsNullOrEmpty(systemPrompt)) return null;
+            if (string.IsNullOrEmpty(cacheableContext)) return null;
+            string cacheKey = $"{model}\n{cacheableContext}";
 
             // 清理已過期的快取 entry，避免內存洩漏
             foreach (var kvp in _contextCaches)
@@ -433,7 +456,7 @@ namespace RimLLM_Framework.Providers
                 }
             }
 
-            if (_contextCaches.TryGetValue(systemPrompt, out var entry))
+            if (_contextCaches.TryGetValue(cacheKey, out var entry))
             {
                 // 快取未過期，且加上 10 秒安全緩衝，避免邊界失效
                 if (entry.ExpireTime > DateTime.UtcNow.AddSeconds(10))
@@ -456,7 +479,7 @@ namespace RimLLM_Framework.Providers
                 {
                     ["parts"] = new JArray
                     {
-                        new JObject { ["text"] = systemPrompt }
+                        new JObject { ["text"] = cacheableContext }
                     }
                 },
                 ["ttl"] = "300s" // 預設保留 5 分鐘
@@ -482,14 +505,14 @@ namespace RimLLM_Framework.Providers
                         CacheId = cacheId,
                         ExpireTime = expireTime
                     };
-                    _contextCaches[systemPrompt] = newEntry;
+                    _contextCaches[cacheKey] = newEntry;
                     return cacheId;
                 }
             }
             catch (Exception ex)
             {
                 // 記錄警告並 fallback。不拋出異常以防整體請求中斷。
-                RimLLMLog.Warning($"[RimLLM] Failed to create Gemini Context Cache, fallback to normal call: {ex.Message}");
+                RimLLMLog.Warning($"[RimLLM] Failed to create Gemini Context Cache, fallback to normal call: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
             }
 
             return null;

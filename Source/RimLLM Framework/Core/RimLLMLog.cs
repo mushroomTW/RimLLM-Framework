@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 using Verse;
 
 namespace RimLLM_Framework.Core
@@ -11,6 +12,33 @@ namespace RimLLM_Framework.Core
     public static class RimLLMLog
     {
         public static bool Enabled { get; set; } = true;
+        private static readonly Regex SecretPattern = new Regex(
+            @"(?i)(sk-[a-z0-9_\-]{8,}|api[_\- ]?key\s*[:=]\s*[""']?[^""'\s,;}]+|authorization\s*[:=]\s*[""']?[^""'\s,;}]+|key=[^&\s]+)",
+            RegexOptions.Compiled);
+
+        public static string SanitizeForLog(string value, int maxLength = 500)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+
+            string sanitized = SecretPattern.Replace(value, match =>
+            {
+                string text = match.Value;
+                int idx = text.IndexOf('=');
+                if (idx < 0) idx = text.IndexOf(':');
+                if (idx > 0)
+                {
+                    return text.Substring(0, idx + 1) + "[redacted]";
+                }
+                return "[redacted-secret]";
+            });
+
+            sanitized = sanitized.Replace("\r", "\\r").Replace("\n", "\\n");
+            if (sanitized.Length > maxLength)
+            {
+                sanitized = sanitized.Substring(0, maxLength) + "...";
+            }
+            return sanitized;
+        }
 
         public static void Message(string msg)
         {

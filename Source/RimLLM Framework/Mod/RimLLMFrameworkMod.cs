@@ -16,7 +16,7 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// 全域設定檔實例。
         /// </summary>
-        public static RimLLMFrameworkSettings Settings { get; private set; }
+        internal static RimLLMFrameworkSettings Settings { get; private set; }
 
         public RimLLMFrameworkMod(ModContentPack content) : base(content)
         {

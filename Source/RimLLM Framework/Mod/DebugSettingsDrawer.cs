@@ -131,7 +131,7 @@ namespace RimLLM_Framework.Mod
                         string timeStr = log.Timestamp.ToString("HH:mm:ss");
                         string statusText = log.Success
                             ? $"<color=#22c55e>SUCCESS</color> ({log.LatencyMs}ms)"
-                            : $"<color=#ef4444>FAILED</color> (Err: {log.ErrorMessage})";
+                            : $"<color=#ef4444>FAILED</color> (Err: {RimLLMLog.SanitizeForLog(log.ErrorMessage, 160)})";
 
                         string logLine = $"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}";
 
@@ -178,9 +178,10 @@ namespace RimLLM_Framework.Mod
                 sb.AppendLine();
 
                 sb.AppendLine("=== Fallback Chain ===");
-                for (int i = 0; i < Settings.FallbackChain.Count; i++)
+                var fallbackChain = Settings.FallbackChain;
+                for (int i = 0; i < fallbackChain.Count; i++)
                 {
-                    sb.AppendLine($"  {i + 1}. {Settings.FallbackChain[i]}");
+                    sb.AppendLine($"  {i + 1}. {fallbackChain[i]}");
                 }
                 sb.AppendLine();
                 sb.AppendLine("=== Provider Setup ===");
@@ -190,9 +191,12 @@ namespace RimLLM_Framework.Mod
                     bool enabled = Settings.IsProviderEnabled(prov);
                     bool hasKey = !string.IsNullOrEmpty(Settings.GetApiKey(prov));
                     string endpoint = Settings.GetEndpoint(prov, "default");
-                    sb.AppendLine($"  {prov}: Enabled={enabled}, HasKey={hasKey}, Endpoint={endpoint}");
+                    sb.AppendLine($"  {prov}: Enabled={enabled}, HasKey={hasKey}, Endpoint={MaskEndpoint(endpoint)}");
                     var models = Settings.GetModelList(prov);
-                    sb.AppendLine($"    Cached Models ({models.Count}): {string.Join(", ", models)}");
+                    string modelPreview = models.Count > 20
+                        ? string.Join(", ", models.GetRange(0, 20)) + $", ... ({models.Count - 20} more)"
+                        : string.Join(", ", models);
+                    sb.AppendLine($"    Cached Models ({models.Count}): {RimLLMLog.SanitizeForLog(modelPreview, 1000)}");
                 }
                 sb.AppendLine();
                 sb.AppendLine("=== Recent Request Logs ===");
@@ -207,7 +211,7 @@ namespace RimLLM_Framework.Mod
                     {
                         foreach (var log in logs)
                         {
-                            string status = log.Success ? "SUCCESS" : $"FAILED ({log.ErrorMessage})";
+                            string status = log.Success ? "SUCCESS" : $"FAILED ({RimLLMLog.SanitizeForLog(log.ErrorMessage, 200)})";
                             sb.AppendLine($"  [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Mod: {log.ModId} | Provider: {log.Provider} ({log.Model}) | {status} | Latency: {log.LatencyMs}ms");
                         }
                     }
@@ -218,7 +222,22 @@ namespace RimLLM_Framework.Mod
             }
             catch (Exception ex)
             {
-                Messages.Message("RimLLM_ExportDiagFailed".Translate(ex.Message), MessageTypeDefOf.RejectInput, false);
+                Messages.Message("RimLLM_ExportDiagFailed".Translate(RimLLMLog.SanitizeForLog(ex.Message, 200)), MessageTypeDefOf.RejectInput, false);
+            }
+        }
+
+        private static string MaskEndpoint(string endpoint)
+        {
+            if (string.IsNullOrEmpty(endpoint)) return endpoint;
+            try
+            {
+                var uri = new Uri(endpoint);
+                string port = uri.IsDefaultPort ? "" : $":{uri.Port}";
+                return $"{uri.Scheme}://{uri.Host}{port}/...";
+            }
+            catch
+            {
+                return RimLLMLog.SanitizeForLog(endpoint, 120);
             }
         }
     }

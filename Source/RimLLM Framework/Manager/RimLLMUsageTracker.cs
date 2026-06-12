@@ -18,6 +18,31 @@ namespace RimLLM_Framework.Manager
         private static DateTime _lastLogWriteTime = DateTime.MinValue;
         private static readonly object LogLock = new object();
         private static readonly object UsageLock = new object();
+        private static readonly Dictionary<string, CostRate> KnownModelRates = new Dictionary<string, CostRate>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "anthropic:claude-fable-5", new CostRate(10.00f, 50.00f) },
+            { "anthropic:claude-opus-4-8", new CostRate(5.00f, 25.00f) },
+            { "anthropic:claude-sonnet-4-6", new CostRate(3.00f, 15.00f) },
+            { "anthropic:claude-haiku-4-5", new CostRate(1.00f, 5.00f) },
+            { "anthropic:claude-haiku-4-5-20251001", new CostRate(1.00f, 5.00f) },
+            { "gemini:gemini-3.1-pro-preview", new CostRate(2.00f, 12.00f) },
+            { "gemini:gemini-3.1-flash-lite", new CostRate(0.25f, 1.50f) },
+            { "gemini:gemini-2.5-pro", new CostRate(1.25f, 10.00f) },
+            { "gemini:gemini-2.5-flash", new CostRate(0.30f, 2.50f) },
+            { "gemini:gemini-2.5-flash-lite", new CostRate(0.10f, 0.40f) }
+        };
+
+        private struct CostRate
+        {
+            public readonly float PromptPerMillion;
+            public readonly float CompletionPerMillion;
+
+            public CostRate(float promptPerMillion, float completionPerMillion)
+            {
+                PromptPerMillion = promptPerMillion;
+                CompletionPerMillion = completionPerMillion;
+            }
+        }
 
         /// <summary>
         /// 存放最近 API 呼叫歷史的執行緒安全佇列。
@@ -50,7 +75,7 @@ namespace RimLLM_Framework.Manager
                 Provider = provider,
                 Model = model,
                 Success = success,
-                ErrorMessage = err,
+                ErrorMessage = RimLLMLog.SanitizeForLog(err, 300),
                 LatencyMs = latency
             };
 
@@ -62,7 +87,7 @@ namespace RimLLM_Framework.Manager
 
             if (_settings is RimLLMFrameworkSettings frameworkSettings)
             {
-                RimLLMDispatcher.Instance.Enqueue(() =>
+                RimLLMDispatcher.EnqueueOnMainThread(() =>
                 {
                     lock (LogLock)
                     {
@@ -153,71 +178,30 @@ namespace RimLLM_Framework.Manager
 
         private float EstimateCost(string providerId, string modelName, int promptTokens, int completionTokens)
         {
-            float promptRate = 0f;
-            float completionRate = 0f;
-
-            string provLower = (providerId ?? "").ToLower();
-            if (provLower == "openai")
+            string key = $"{NormalizeProvider(providerId)}:{NormalizeModel(modelName)}";
+            if (!KnownModelRates.TryGetValue(key, out var rate))
             {
-                string modelLower = (modelName ?? "").ToLower();
-                if (modelLower.Contains("mini") || modelLower.Contains("gpt-3.5"))
-                {
-                    promptRate = 0.150f;     // $0.15 / 1M
-                    completionRate = 0.600f; // $0.60 / 1M
-                }
-                else
-                {
-                    promptRate = 2.50f;      // $2.50 / 1M (gpt-4o)
-                    completionRate = 10.00f; // $10.00 / 1M
-                }
-            }
-            else if (provLower == "gemini")
-            {
-                string modelLower = (modelName ?? "").ToLower();
-                if (modelLower.Contains("pro"))
-                {
-                    promptRate = 1.25f;      // $1.25 / 1M
-                    completionRate = 5.00f;  // $5.00 / 1M
-                }
-                else
-                {
-                    promptRate = 0.075f;     // $0.075 / 1M (gemini 2.5 flash)
-                    completionRate = 0.300f; // $0.30 / 1M
-                }
-            }
-            else if (provLower == "anthropic")
-            {
-                promptRate = 3.00f;          // Claude 3.7 Sonnet
-                completionRate = 15.00f;
-            }
-            else if (provLower == "deepseek")
-            {
-                promptRate = 0.27f;          // Average cache hit / miss
-                completionRate = 2.19f;
-            }
-            else if (provLower == "openrouter")
-            {
-                promptRate = 0.50f;
-                completionRate = 1.50f;
-            }
-            else if (provLower == "groq")
-            {
-                promptRate = 0.59f;
-                completionRate = 0.79f;
-            }
-            else if (provLower == "kimi" || provLower == "minimax" || provLower == "qwen")
-            {
-                promptRate = 0.30f;
-                completionRate = 1.00f;
-            }
-            else
-            {
-                return 0f; // Free or local
+                return 0f;
             }
 
-            float promptCost = (promptTokens / 1000000f) * promptRate;
-            float completionCost = (completionTokens / 1000000f) * completionRate;
+            float promptCost = (promptTokens / 1000000f) * rate.PromptPerMillion;
+            float completionCost = (completionTokens / 1000000f) * rate.CompletionPerMillion;
             return promptCost + completionCost;
+        }
+
+        private string NormalizeProvider(string providerId)
+        {
+            return (providerId ?? "").Trim().ToLowerInvariant();
+        }
+
+        private string NormalizeModel(string modelName)
+        {
+            string model = (modelName ?? "").Trim().ToLowerInvariant();
+            if (model.StartsWith("models/"))
+            {
+                model = model.Substring("models/".Length);
+            }
+            return model;
         }
     }
 }

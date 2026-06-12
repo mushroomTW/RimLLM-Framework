@@ -5,7 +5,7 @@ using System.Reflection;
 namespace RimLLM_Framework.Core
 {
     /// <summary>
-    /// 管理外部 Mod 註冊與安全校驗，防止惡意 Mod 假冒其他 Mod ID (Caller Verification)。
+    /// 管理外部 Mod 註冊與呼叫來源校驗，降低 ModId 誤用與來源混淆 (Caller Verification)。
     /// </summary>
     public static class ClientRegistry
     {
@@ -70,7 +70,7 @@ namespace RimLLM_Framework.Core
                     return registeredAssembly == callingAssembly;
                 }
  
-                RimLLMLog.Warning($"[RimLLM] Unauthorized API call detected. Mod: {modId} (Assembly: {callingAssembly.GetName().Name}) is not registered. Please call RimLLMProvider.RegisterClient first.");
+                RimLLMLog.Warning($"[RimLLM] Unregistered API call detected. Mod: {modId} (Assembly: {callingAssembly.GetName().Name}) is not registered. Please call RimLLMProvider.RegisterClient first.");
                 return false;
             }
         }

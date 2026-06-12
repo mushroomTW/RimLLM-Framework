@@ -20,6 +20,18 @@ namespace RimLLM_Framework.SDK
     public class LLMRequest
     {
         /// <summary>
+        /// 建立最常用的文字請求。
+        /// </summary>
+        public static LLMRequest Create(string modId, string prompt)
+        {
+            return new LLMRequest
+            {
+                ModId = modId,
+                Prompt = prompt
+            };
+        }
+
+        /// <summary>
         /// 呼叫端 Mod 的唯一識別碼。
         /// 用於配額限制、成本統計與安全校驗。
         /// </summary>
@@ -34,6 +46,11 @@ namespace RimLLM_Framework.SDK
         /// 系統提示詞內容。用以規範 AI 角色行為或輸出格式。
         /// </summary>
         public string SystemPrompt { get; set; }
+
+        /// <summary>
+        /// 可重複使用的大型穩定上下文。啟用 Context Caching 時，Provider 會優先快取此內容。
+        /// </summary>
+        public string CachedContext { get; set; }
 
         /// <summary>
         /// 模型溫度參數，控制生成內容的隨機性 (範圍通常為 0.0 ~ 2.0，預設為 0.7)。
@@ -91,6 +108,103 @@ namespace RimLLM_Framework.SDK
         public Action<string> OnChunkReceived { get; set; }
 
         /// <summary>
+        /// 設定系統提示詞。
+        /// </summary>
+        public LLMRequest WithSystemPrompt(string systemPrompt)
+        {
+            SystemPrompt = systemPrompt;
+            return this;
+        }
+
+        /// <summary>
+        /// 設定生成長度與溫度。
+        /// </summary>
+        public LLMRequest WithSampling(int? maxTokens = null, float? temperature = null)
+        {
+            if (maxTokens.HasValue)
+            {
+                MaxTokens = maxTokens.Value;
+            }
+            if (temperature.HasValue)
+            {
+                Temperature = temperature.Value;
+            }
+            return this;
+        }
+
+        /// <summary>
+        /// 設定推理性模型的思考強度。
+        /// </summary>
+        public LLMRequest WithReasoning(LLMReasoningEffort effort)
+        {
+            ReasoningEffort = effort;
+            return this;
+        }
+
+        /// <summary>
+        /// 設定串流回呼，並啟用統一串流模式。
+        /// </summary>
+        public LLMRequest WithStreaming(Action<string> onChunkReceived)
+        {
+            EnableStreaming = true;
+            OnChunkReceived = onChunkReceived;
+            return this;
+        }
+
+        /// <summary>
+        /// 設定請求優先權。
+        /// </summary>
+        public LLMRequest WithPriority(int priority)
+        {
+            Priority = priority;
+            return this;
+        }
+
+        /// <summary>
+        /// 設定 fallback 可接受的最低模型等級。
+        /// </summary>
+        public LLMRequest WithMinFallbackLevel(string minFallbackLevel)
+        {
+            MinFallbackLevel = minFallbackLevel;
+            return this;
+        }
+
+        /// <summary>
+        /// 設定取消 Token。
+        /// </summary>
+        public LLMRequest WithCancellation(System.Threading.CancellationToken cancellationToken)
+        {
+            CancellationToken = cancellationToken;
+            return this;
+        }
+
+        /// <summary>
+        /// 以最簡方式啟用上下文快取，適合放世界狀態、角色資料、Schema 等大型穩定內容。
+        /// </summary>
+        public LLMRequest WithCachedContext(string cachedContext)
+        {
+            CachedContext = cachedContext;
+            EnableContextCaching = true;
+            return this;
+        }
+
+        /// <summary>
+        /// 取得送往 Provider 的完整系統上下文。
+        /// </summary>
+        public string GetEffectiveSystemPrompt()
+        {
+            if (string.IsNullOrEmpty(SystemPrompt))
+            {
+                return CachedContext;
+            }
+            if (string.IsNullOrEmpty(CachedContext))
+            {
+                return SystemPrompt;
+            }
+            return SystemPrompt + "\n\n" + CachedContext;
+        }
+
+        /// <summary>
         /// 創建當前 Request 的深拷貝，避免在傳遞與修復過程中產生全域副作用。
         /// </summary>
         public LLMRequest Clone()
@@ -100,6 +214,7 @@ namespace RimLLM_Framework.SDK
                 ModId = this.ModId,
                 Prompt = this.Prompt,
                 SystemPrompt = this.SystemPrompt,
+                CachedContext = this.CachedContext,
                 Temperature = this.Temperature,
                 MaxTokens = this.MaxTokens,
                 ResponseType = this.ResponseType,

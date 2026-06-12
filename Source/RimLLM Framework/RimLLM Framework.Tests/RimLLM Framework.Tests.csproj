@@ -5,6 +5,9 @@
     <AssemblyName>RimLLM Framework.Tests</AssemblyName>
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>
+    <DefaultRimWorldManagedDir>C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed</DefaultRimWorldManagedDir>
+    <RimWorldManagedDir Condition="'$(RimWorldManagedDir)' == '' and '$(RIMWORLD_MANAGED_DIR)' != ''">$(RIMWORLD_MANAGED_DIR)</RimWorldManagedDir>
+    <RimWorldManagedDir Condition="'$(RimWorldManagedDir)' == ''">$(DefaultRimWorldManagedDir)</RimWorldManagedDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,14 +22,18 @@
   </ItemGroup>
 
   <!-- 建置後僅複製 RimWorld 與 UnityEngine 相關的實體 DLL 到測試輸出目錄，排除 mscorlib、System 等基礎類別庫，防止 CLR runtime 衝突 -->
-  <Target Name="CopyRimWorldAssemblies" AfterTargets="Build">
+  <Target Name="CopyRimWorldAssemblies" AfterTargets="Build" Condition="Exists('$(RimWorldManagedDir)')">
     <Message Text="====== Copying necessary RimWorld &amp; Unity DLLs to $(TargetDir) ======" Importance="high" />
     <ItemGroup>
-      <RimWorldAssemblies Include="c:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\Assembly-CSharp*.dll" />
-      <RimWorldAssemblies Include="c:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\UnityEngine*.dll" />
-      <RimWorldAssemblies Include="c:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\Unity.*.dll" />
-      <RimWorldAssemblies Include="c:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed\netstandard.dll" />
+      <RimWorldAssemblies Include="$(RimWorldManagedDir)\Assembly-CSharp*.dll" />
+      <RimWorldAssemblies Include="$(RimWorldManagedDir)\UnityEngine*.dll" />
+      <RimWorldAssemblies Include="$(RimWorldManagedDir)\Unity.*.dll" />
+      <RimWorldAssemblies Include="$(RimWorldManagedDir)\netstandard.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(RimWorldAssemblies)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="WarnMissingRimWorldAssemblies" AfterTargets="Build" Condition="!Exists('$(RimWorldManagedDir)')">
+    <Warning Text="RimWorld managed assembly folder not found: $(RimWorldManagedDir). Set RimWorldManagedDir or RIMWORLD_MANAGED_DIR before running integration-style tests." />
   </Target>
 </Project>

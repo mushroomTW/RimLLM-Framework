@@ -17,7 +17,25 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// API 供應商的 Fallback Chain 順序。
         /// </summary>
-        public List<string> FallbackChain { get; set; } = new List<string>();
+        private List<string> _fallbackChain = new List<string>();
+
+        public List<string> FallbackChain
+        {
+            get
+            {
+                lock (_settingsLock)
+                {
+                    return new List<string>(_fallbackChain);
+                }
+            }
+            set
+            {
+                lock (_settingsLock)
+                {
+                    _fallbackChain = value != null ? new List<string>(value) : new List<string>();
+                }
+            }
+        }
 
         // 可調節項 (全域配置)
         public float ApiTimeout { get; set; } = 30f;       // API 逾時時間 (秒)
@@ -149,8 +167,9 @@ namespace RimLLM_Framework.Mod
                             {
                                 if (dto.FallbackChain != null)
                                 {
-                                    this.FallbackChain = dto.FallbackChain;
-                                    this.FallbackChain.RemoveAll(entry => string.IsNullOrEmpty(entry));
+                                    var fallbackChain = new List<string>(dto.FallbackChain);
+                                    fallbackChain.RemoveAll(entry => string.IsNullOrEmpty(entry));
+                                    this.FallbackChain = fallbackChain;
                                 }
                                 if (dto.Endpoints != null)
                                 {
