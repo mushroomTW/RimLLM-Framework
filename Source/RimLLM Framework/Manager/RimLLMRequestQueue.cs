@@ -51,7 +51,7 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         public async Task<string> EnqueueRequestAsync(LLMRequest request, Func<Task<string>> action)
         {
-            var tcs = new TaskCompletionSource<string>();
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             var entry = new QueueEntry
             {
                 Request = request,
@@ -63,7 +63,7 @@ namespace RimLLM_Framework.Manager
             if (request.CancellationToken.IsCancellationRequested)
             {
                 tcs.TrySetCanceled(request.CancellationToken);
-                return await tcs.Task;
+                return await tcs.Task.ConfigureAwait(false);
             }
 
             CancellationTokenRegistration registration = default;
@@ -91,7 +91,7 @@ namespace RimLLM_Framework.Manager
 
             try
             {
-                return await tcs.Task;
+                return await tcs.Task.ConfigureAwait(false);
             }
             finally
             {
@@ -103,7 +103,7 @@ namespace RimLLM_Framework.Manager
         {
             lock (_queueLock)
             {
-                int limit = _settings.MaxConcurrentRequests;
+                int limit = Math.Max(1, _settings.MaxConcurrentRequests);
                 while (_activeRequests < limit && _waitingQueue.Count > 0)
                 {
                     var entry = _waitingQueue[0];

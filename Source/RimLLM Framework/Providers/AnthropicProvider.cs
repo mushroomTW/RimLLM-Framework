@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
+using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Providers
 {
@@ -57,7 +58,8 @@ namespace RimLLM_Framework.Providers
             }
 
             // Anthropic 的 System Prompt 必須放在頂層欄位，並支援快取控制
-            if (!string.IsNullOrEmpty(request.SystemPrompt))
+            string systemContext = request.GetEffectiveSystemPrompt();
+            if (!string.IsNullOrEmpty(systemContext))
             {
                 if (request.EnableContextCaching)
                 {
@@ -66,7 +68,7 @@ namespace RimLLM_Framework.Providers
                         new JObject
                         {
                             ["type"] = "text",
-                            ["text"] = request.SystemPrompt,
+                            ["text"] = systemContext,
                             ["cache_control"] = new JObject
                             {
                                 ["type"] = "ephemeral"
@@ -76,7 +78,7 @@ namespace RimLLM_Framework.Providers
                 }
                 else
                 {
-                    payload["system"] = request.SystemPrompt;
+                    payload["system"] = systemContext;
                 }
             }
 
@@ -149,7 +151,7 @@ namespace RimLLM_Framework.Providers
             }
             catch (Exception ex) when (!(ex is RimLLMException))
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse Anthropic response: {ex.Message}", ex);
+                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse Anthropic response: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
             }
         }
 
@@ -187,7 +189,8 @@ namespace RimLLM_Framework.Providers
                 payload["thinking"] = thinkingConfig;
             }
 
-            if (!string.IsNullOrEmpty(request.SystemPrompt))
+            string systemContext = request.GetEffectiveSystemPrompt();
+            if (!string.IsNullOrEmpty(systemContext))
             {
                 if (request.EnableContextCaching)
                 {
@@ -196,7 +199,7 @@ namespace RimLLM_Framework.Providers
                         new JObject
                         {
                             ["type"] = "text",
-                            ["text"] = request.SystemPrompt,
+                            ["text"] = systemContext,
                             ["cache_control"] = new JObject
                             {
                                 ["type"] = "ephemeral"
@@ -206,7 +209,7 @@ namespace RimLLM_Framework.Providers
                 }
                 else
                 {
-                    payload["system"] = request.SystemPrompt;
+                    payload["system"] = systemContext;
                 }
             }
 
@@ -226,12 +229,21 @@ namespace RimLLM_Framework.Providers
                 try
                 {
                     response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
-                    response.EnsureSuccessStatusCode();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        ThrowHttpError(response, responseBody);
+                    }
+                }
+                catch (RimLLMException)
+                {
+                    response?.Dispose();
+                    throw;
                 }
                 catch (Exception ex)
                 {
                     response?.Dispose();
-                    throw new RimLLMException(LLMError.NetworkError, $"Anthropic stream request failed: {ex.Message}", ex);
+                    throw ConvertStreamTransportException("Anthropic", ex, request.CancellationToken);
                 }
 
                 using (response)
@@ -248,7 +260,7 @@ namespace RimLLM_Framework.Providers
                     {
                         if (cts.Token.IsCancellationRequested)
                         {
-                            throw new RimLLMException(LLMError.Timeout, "Stream request timed out");
+                            ThrowIfStreamTimedOut(cts.Token, request.CancellationToken);
                         }
 
                         string line = await reader.ReadLineAsync().ConfigureAwait(false);
@@ -339,7 +351,7 @@ namespace RimLLM_Framework.Providers
                         }
                         else
                         {
-                            int systemLen = request.SystemPrompt?.Length ?? 0;
+                            int systemLen = request.GetEffectiveSystemPrompt()?.Length ?? 0;
                             int promptLen = request.Prompt?.Length ?? 0;
                             int estPrompt = (int)((systemLen + promptLen) * 0.8f);
                             int estCompletion = (int)(totalCompletionChars * 0.8f);
@@ -353,9 +365,13 @@ namespace RimLLM_Framework.Providers
         protected bool IsAnthropicThinkingModel(string modelName)
         {
             return modelName != null && (
-                modelName.IndexOf("claude-3-7", StringComparison.OrdinalIgnoreCase) >= 0 || 
-                modelName.IndexOf("claude-3.7", StringComparison.OrdinalIgnoreCase) >= 0 || 
-                modelName.IndexOf("claude-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
+                modelName.IndexOf("claude-3-7", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                modelName.IndexOf("claude-3.7", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                modelName.IndexOf("claude-4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                modelName.IndexOf("claude-opus-4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                modelName.IndexOf("claude-sonnet-4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                modelName.IndexOf("claude-haiku-4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                modelName.IndexOf("claude-fable-5", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 modelName.IndexOf("thinking", StringComparison.OrdinalIgnoreCase) >= 0
             );
         }
@@ -368,7 +384,10 @@ namespace RimLLM_Framework.Providers
             }
 
             bool isAdaptive = model != null && (
-                              model.IndexOf("claude-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
+                              model.IndexOf("claude-4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                              model.IndexOf("claude-opus-4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                              model.IndexOf("claude-sonnet-4", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                              model.IndexOf("claude-fable-5", StringComparison.OrdinalIgnoreCase) >= 0 ||
                               model.IndexOf("4.", StringComparison.OrdinalIgnoreCase) >= 0);
 
             JObject thinkingConfig = null;
@@ -403,19 +422,89 @@ namespace RimLLM_Framework.Providers
             return thinkingConfig;
         }
 
-        protected override string DefaultTestModel => "claude-3-5-sonnet-20241022";
+        protected override string DefaultTestModel => "claude-sonnet-4-6";
 
-        public override Task<List<string>> FetchAvailableModelsAsync()
+        private static readonly List<string> BuiltInAnthropicModels = new List<string>
         {
-            // Anthropic 官方的 models endpoint 目前常有限制或不穩定，
-            // 故於此手動回傳 Claude 常用模型以利玩家最穩健地選用。
-            var models = new List<string>
+            "claude-fable-5",
+            "claude-opus-4-8",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5",
+            "claude-haiku-4-5-20251001",
+            "claude-3-7-sonnet-20250219",
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229"
+        };
+
+        public override async Task<List<string>> FetchAvailableModelsAsync()
+        {
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            string endpoint = Settings.GetEndpoint(ProviderId, "https://api.anthropic.com/v1/messages");
+            string url = ResolveModelsEndpoint(endpoint);
+
+            try
             {
-                "claude-3-5-sonnet-20241022",
-                "claude-3-5-haiku-20241022",
-                "claude-3-opus-20240229"
+                string responseJson = await SendGetAsync(url, apiKey, "Anthropic").ConfigureAwait(false);
+                List<string> models = ParseModelIds(responseJson);
+                if (models.Count > 0)
+                {
+                    return models;
+                }
+
+                RimLLMLog.Warning("[RimLLM] Anthropic models endpoint returned no models; using built-in fallback list.");
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Warning($"[RimLLM] Failed to fetch Anthropic models; using built-in fallback list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+            }
+
+            return new List<string>(BuiltInAnthropicModels);
+        }
+
+        private string ResolveModelsEndpoint(string endpoint)
+        {
+            string url = string.IsNullOrEmpty(endpoint) ? "https://api.anthropic.com/v1/messages" : endpoint.TrimEnd(new char[] { '/' });
+            if (url.EndsWith("/models", StringComparison.OrdinalIgnoreCase))
+            {
+                return url;
+            }
+            if (url.EndsWith("/messages", StringComparison.OrdinalIgnoreCase))
+            {
+                return url.Substring(0, url.Length - "/messages".Length) + "/models";
+            }
+            return url + "/models";
+        }
+
+        private List<string> ParseModelIds(string responseJson)
+        {
+            var list = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var obj = JObject.Parse(responseJson);
+            var arrays = new[]
+            {
+                obj["data"] as JArray,
+                obj["models"] as JArray
             };
-            return Task.FromResult(models);
+
+            foreach (var array in arrays)
+            {
+                if (array == null) continue;
+
+                foreach (var item in array)
+                {
+                    string id = item["id"]?.ToString() ?? item["name"]?.ToString();
+                    if (string.IsNullOrEmpty(id)) continue;
+
+                    id = id.Replace("models/", "");
+                    if (seen.Add(id))
+                    {
+                        list.Add(id);
+                    }
+                }
+            }
+
+            return list;
         }
     }
 }

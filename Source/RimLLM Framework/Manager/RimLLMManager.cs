@@ -78,10 +78,50 @@ namespace RimLLM_Framework.Manager
             _providers[provider.ProviderId] = provider;
         }
 
+        private static LLMRequest CreateSimpleRequest(
+            string modId,
+            string prompt,
+            string systemPrompt,
+            string cachedContext,
+            int maxTokens,
+            float temperature,
+            LLMReasoningEffort reasoningEffort,
+            CancellationToken cancellationToken)
+        {
+            var request = LLMRequest.Create(modId, prompt)
+                .WithSystemPrompt(systemPrompt)
+                .WithSampling(maxTokens, temperature)
+                .WithReasoning(reasoningEffort)
+                .WithCancellation(cancellationToken);
+
+            if (!string.IsNullOrEmpty(cachedContext))
+            {
+                request.WithCachedContext(cachedContext);
+            }
+
+            return request;
+        }
+
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public Task<string> GenerateAsync(LLMRequest request)
         {
             Assembly callingAssembly = Assembly.GetCallingAssembly();
+            return GenerateInternalAsync(request, callingAssembly, verifyCaller: true);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public Task<string> GenerateAsync(
+            string modId,
+            string prompt,
+            string systemPrompt = null,
+            string cachedContext = null,
+            int maxTokens = 1024,
+            float temperature = 0.7f,
+            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
+            CancellationToken cancellationToken = default)
+        {
+            Assembly callingAssembly = Assembly.GetCallingAssembly();
+            var request = CreateSimpleRequest(modId, prompt, systemPrompt, cachedContext, maxTokens, temperature, reasoningEffort, cancellationToken);
             return GenerateInternalAsync(request, callingAssembly, verifyCaller: true);
         }
 
@@ -90,7 +130,8 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private Task<string> GenerateInternalAsync(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
         {
-            return _requestQueue.EnqueueRequestAsync(request, () => GenerateInternalDirectAsync(request, callingAssembly, verifyCaller));
+            LLMRequest normalizedRequest = NormalizeRequest(request);
+            return _requestQueue.EnqueueRequestAsync(normalizedRequest, () => GenerateInternalDirectAsync(normalizedRequest, callingAssembly, verifyCaller));
         }
 
         /// <summary>
@@ -106,7 +147,7 @@ namespace RimLLM_Framework.Manager
             {
                 if (!ClientRegistry.Verify(request.ModId, callingAssembly))
                 {
-                    throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Security verification failed. Assembly verification for ModId '{request.ModId}' did not pass.");
+                    throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{request.ModId}' did not pass.");
                 }
             }
 
@@ -117,13 +158,13 @@ namespace RimLLM_Framework.Manager
                 await StreamInternalDirectAsync(request, chunk =>
                 {
                     sb.Append(chunk);
-                    request.OnChunkReceived?.Invoke(chunk);
+                    DispatchChunk(request.OnChunkReceived, chunk);
                 }, callingAssembly, verifyCaller: false).ConfigureAwait(false);
                 return sb.ToString();
             }
 
             // 2. 獲取全域設定的 Fallback Chain
-            var fallbackChain = _settings.FallbackChain;
+            var fallbackChain = GetFallbackChainSnapshot();
 
             if (fallbackChain == null || fallbackChain.Count == 0)
             {
@@ -205,20 +246,33 @@ namespace RimLLM_Framework.Manager
                         _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
                         return result;
                     }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         lastException = ex;
+                        bool retryable = IsRetryableException(ex);
+                        bool recordHealthFailure = ShouldRecordHealthFailure(ex);
 
-                        // 記錄失敗並計算健康狀態
-                        _circuitBreaker.RecordFailure(providerId);
-
-                        if (attempt < maxRetries)
+                        if (recordHealthFailure)
                         {
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) call failed: {ex.Message}. Retrying in {retryDelay} seconds...");
+                            _circuitBreaker.RecordFailure(providerId);
+                        }
+
+                        if (retryable && attempt < maxRetries)
+                        {
+                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) call failed: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Retrying in {retryDelay} seconds...");
                             if (retryDelay > 0f)
                             {
                                 await Task.Delay(TimeSpan.FromSeconds(retryDelay), request.CancellationToken).ConfigureAwait(false);
                             }
+                        }
+                        else if (!retryable)
+                        {
+                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) returned a non-retryable error: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Fallbacking to the next entry.");
+                            break;
                         }
                         else
                         {
@@ -240,6 +294,22 @@ namespace RimLLM_Framework.Manager
         public Task<T> GenerateObjectAsync<T>(LLMRequest request)
         {
             Assembly callingAssembly = Assembly.GetCallingAssembly();
+            return GenerateObjectInternalAsync<T>(request, callingAssembly);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public Task<T> GenerateObjectAsync<T>(
+            string modId,
+            string prompt,
+            string systemPrompt = null,
+            string cachedContext = null,
+            int maxTokens = 1024,
+            float temperature = 0.7f,
+            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
+            CancellationToken cancellationToken = default)
+        {
+            Assembly callingAssembly = Assembly.GetCallingAssembly();
+            var request = CreateSimpleRequest(modId, prompt, systemPrompt, cachedContext, maxTokens, temperature, reasoningEffort, cancellationToken);
             return GenerateObjectInternalAsync<T>(request, callingAssembly);
         }
 
@@ -267,7 +337,7 @@ namespace RimLLM_Framework.Manager
             }
             catch (Exception ex)
             {
-                RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting fallback repair. Original response: {rawResponse}\nRepaired: {repairedJson}\nError: {ex.Message}");
+                RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting fallback repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
                 try
                 {
                     string fallbackExtracted = RimLLMJsonHelper.ExtractJsonBlock(repairedJson);
@@ -287,7 +357,7 @@ namespace RimLLM_Framework.Manager
                     {
                         throw new RimLLMException(
                             LLMError.InvalidResponse, 
-                            $"Unable to parse LLM response to target object {typeof(T).Name}.\nOriginal response: {rawResponse}\nParse error: {ex.Message}\nLLM Assisted Repair error: {repairEx.Message}", 
+                            $"Unable to parse LLM response to target object {typeof(T).Name}. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}. Parse error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}. LLM-assisted repair error: {RimLLMLog.SanitizeForLog(repairEx.Message, 200)}", 
                             repairEx);
                     }
                 }
@@ -304,14 +374,34 @@ namespace RimLLM_Framework.Manager
             return StreamInternalAsync(request, onChunkReceived, callingAssembly, verifyCaller: true);
         }
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public Task<string> GenerateStreamingAsync(
+            string modId,
+            string prompt,
+            Action<string> onChunkReceived,
+            string systemPrompt = null,
+            string cachedContext = null,
+            int maxTokens = 1024,
+            float temperature = 0.7f,
+            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
+            CancellationToken cancellationToken = default)
+        {
+            Assembly callingAssembly = Assembly.GetCallingAssembly();
+            var request = CreateSimpleRequest(modId, prompt, systemPrompt, cachedContext, maxTokens, temperature, reasoningEffort, cancellationToken)
+                .WithStreaming(onChunkReceived);
+            return GenerateInternalAsync(request, callingAssembly, verifyCaller: true);
+        }
+
         /// <summary>
         /// 包裝排隊佇列的 StreamInternalAsync。
         /// </summary>
         private async Task StreamInternalAsync(LLMRequest request, Action<string> onChunkReceived, Assembly callingAssembly, bool verifyCaller)
         {
-            await _requestQueue.EnqueueRequestAsync(request, async () =>
+            LLMRequest normalizedRequest = NormalizeRequest(request);
+            Action<string> mainThreadCallback = chunk => DispatchChunk(onChunkReceived, chunk);
+            await _requestQueue.EnqueueRequestAsync(normalizedRequest, async () =>
             {
-                await StreamInternalDirectAsync(request, onChunkReceived, callingAssembly, verifyCaller).ConfigureAwait(false);
+                await StreamInternalDirectAsync(normalizedRequest, mainThreadCallback, callingAssembly, verifyCaller).ConfigureAwait(false);
                 return "";
             }).ConfigureAwait(false);
         }
@@ -333,7 +423,7 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
-            var fallbackChain = _settings.FallbackChain;
+            var fallbackChain = GetFallbackChainSnapshot();
 
             if (fallbackChain == null || fallbackChain.Count == 0)
             {
@@ -401,13 +491,19 @@ namespace RimLLM_Framework.Manager
                     _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
                     break;
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
-                    RimLLMLog.Warning($"[RimLLM] Stream connection failed: {providerId} ({modelName}) -> {ex.Message}, trying next fallback.");
+                    RimLLMLog.Warning($"[RimLLM] Stream connection failed: {providerId} ({modelName}) -> {RimLLMLog.SanitizeForLog(ex.Message, 300)}, trying next fallback.");
                     lastException = ex;
 
-                    // 記錄失敗並計算健康狀態
-                    _circuitBreaker.RecordFailure(providerId);
+                    if (ShouldRecordHealthFailure(ex))
+                    {
+                        _circuitBreaker.RecordFailure(providerId);
+                    }
                 }
             }
 
@@ -458,6 +554,87 @@ namespace RimLLM_Framework.Manager
         }
 
         #region Helper Methods
+
+        private List<string> GetFallbackChainSnapshot()
+        {
+            var chain = _settings.FallbackChain;
+            return chain != null ? new List<string>(chain) : null;
+        }
+
+        private LLMRequest NormalizeRequest(LLMRequest request)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            if (request.ReasoningEffort != LLMReasoningEffort.Auto || _settings.DefaultReasoningEffort == LLMReasoningEffort.Auto)
+            {
+                return request;
+            }
+
+            var clone = request.Clone();
+            clone.ReasoningEffort = _settings.DefaultReasoningEffort;
+            return clone;
+        }
+
+        private bool IsRetryableException(Exception ex)
+        {
+            if (ex is OperationCanceledException)
+            {
+                return false;
+            }
+
+            if (ex is RimLLMException rimEx)
+            {
+                switch (rimEx.Error)
+                {
+                    case LLMError.Timeout:
+                    case LLMError.RateLimit:
+                    case LLMError.ProviderOffline:
+                    case LLMError.NetworkError:
+                    case LLMError.QuotaExceeded:
+                    case LLMError.Unknown:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool ShouldRecordHealthFailure(Exception ex)
+        {
+            if (ex is OperationCanceledException)
+            {
+                return false;
+            }
+
+            if (ex is RimLLMException rimEx)
+            {
+                switch (rimEx.Error)
+                {
+                    case LLMError.Timeout:
+                    case LLMError.RateLimit:
+                    case LLMError.ProviderOffline:
+                    case LLMError.NetworkError:
+                    case LLMError.QuotaExceeded:
+                    case LLMError.Unknown:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void DispatchChunk(Action<string> callback, string chunk)
+        {
+            if (callback == null) return;
+            RimLLMDispatcher.EnqueueOnMainThread(() => callback(chunk));
+        }
 
         private string GetSampleJson<T>()
         {
@@ -556,6 +733,7 @@ namespace RimLLM_Framework.Manager
                 Temperature = 0.1f, // 低隨機性有利於修復格式
                 MaxTokens = originalRequest.MaxTokens,
                 CancellationToken = originalRequest.CancellationToken,
+                ReasoningEffort = LLMReasoningEffort.None,
                 SystemPrompt = "You are a JSON repair assistant. The user will provide a JSON string that failed to parse, along with the parser error message. Your task is to output ONLY the corrected JSON string that is syntactically valid and contains all fields. Do NOT include markdown code blocks (like ```json), explanations, or any other text.",
                 Prompt = $"Failed JSON:\n{failedResponse}\n\nParser Error:\n{errorMessage}\n\nTarget Structure Sample:\n{RimLLMJsonHelper.GetSampleJson<T>()}\n\nPlease output the repaired JSON string:"
             };

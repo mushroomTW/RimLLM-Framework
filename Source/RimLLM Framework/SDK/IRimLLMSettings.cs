@@ -24,6 +24,11 @@ namespace RimLLM_Framework.SDK
         bool DetailedLogging { get; }
 
         /// <summary>
+        /// 全域預設思考強度。請求未指定時由 Manager 套用。
+        /// </summary>
+        LLMReasoningEffort DefaultReasoningEffort { get; }
+
+        /// <summary>
         /// 單一模型最多重試次數。
         /// </summary>
         int MaxRetries { get; }
