@@ -185,7 +185,7 @@ namespace RimLLM_Framework.Mod
                                             accumulatedReply += chunk;
                                             localReply = FormatThinkProcess(accumulatedReply);
                                         }
-                                        RimLLMDispatcher.Instance.Enqueue(() =>
+                                        RimLLMDispatcher.EnqueueOnMainThread(() =>
                                         {
                                             if (aiHistoryIndex < chatHistory.Count)
                                             {
@@ -197,7 +197,7 @@ namespace RimLLM_Framework.Mod
                                 };
                                 string finalReply = await RimLLMProvider.Instance.GenerateAsync(request).ConfigureAwait(false);
                                 string formattedFinal = FormatThinkProcess(finalReply);
-                                RimLLMDispatcher.Instance.Enqueue(() =>
+                                RimLLMDispatcher.EnqueueOnMainThread(() =>
                                 {
                                     if (aiHistoryIndex < chatHistory.Count)
                                     {
@@ -211,15 +211,16 @@ namespace RimLLM_Framework.Mod
                             }
                             catch (Exception ex)
                             {
-                                RimLLMDispatcher.Instance.Enqueue(() =>
+                                RimLLMDispatcher.EnqueueOnMainThread(() =>
                                 {
+                                    string safeError = RimLLMLog.SanitizeForLog(ex.Message, 240);
                                     if (aiHistoryIndex < chatHistory.Count)
                                     {
-                                        chatHistory[aiHistoryIndex] = "RimLLM_ChatAiError".Translate() + " <color=#ef4444>" + ex.Message + "</color>";
+                                        chatHistory[aiHistoryIndex] = "RimLLM_ChatAiError".Translate() + " <color=#ef4444>" + safeError + "</color>";
                                     }
                                     else
                                     {
-                                        chatHistory.Add("RimLLM_ChatAiError".Translate() + " <color=#ef4444>" + ex.Message + "</color>");
+                                        chatHistory.Add("RimLLM_ChatAiError".Translate() + " <color=#ef4444>" + safeError + "</color>");
                                     }
                                     Settings.ChatHistory = new List<string>(chatHistory);
                                     Settings.Write();

@@ -40,6 +40,20 @@ namespace RimLLM_Framework.Core
             ExecutionQueue.Enqueue(action);
         }
 
+        public static void EnqueueOnMainThread(Action action)
+        {
+            if (action == null) return;
+            try
+            {
+                Instance.Enqueue(action);
+            }
+            catch
+            {
+                // Unit tests and headless reflection runs do not always provide Unity ECall support.
+                action.Invoke();
+            }
+        }
+
         private void Update()
         {
             // 在每一幀的 Update 週期中，消耗佇列中的所有 Actions

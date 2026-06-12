@@ -35,7 +35,13 @@ namespace RimLLM_Framework.Mod
             listing.Label("RimLLM_FallbackExplanation".Translate());
             listing.Gap(8f);
             var chain = Settings.FallbackChain;
+            int originalCount = chain.Count;
             chain.RemoveAll(entry => string.IsNullOrEmpty(entry));
+            if (chain.Count != originalCount)
+            {
+                Settings.FallbackChain = chain;
+                Settings.Write();
+            }
 
             // 確保 addProviderId 是已啟用的供應商（如果有啟用的話）
             if (!Settings.IsProviderEnabled(addProviderId))
@@ -91,6 +97,7 @@ namespace RimLLM_Framework.Mod
                             string temp = chain[i];
                             chain[i] = chain[i - 1];
                             chain[i - 1] = temp;
+                            Settings.FallbackChain = chain;
                             Settings.Write();
                             break;
                         }
@@ -110,6 +117,7 @@ namespace RimLLM_Framework.Mod
                             string temp = chain[i];
                             chain[i] = chain[i + 1];
                             chain[i + 1] = temp;
+                            Settings.FallbackChain = chain;
                             Settings.Write();
                             break;
                         }
@@ -125,6 +133,7 @@ namespace RimLLM_Framework.Mod
                     if (Widgets.ButtonText(deleteRect, "X"))
                     {
                         chain.RemoveAt(i);
+                        Settings.FallbackChain = chain;
                         Settings.Write();
                         break;
                     }
@@ -182,6 +191,7 @@ namespace RimLLM_Framework.Mod
                 else
                 {
                     chain.Add(entry);
+                    Settings.FallbackChain = chain;
                     Settings.Write();
                     Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
                 }

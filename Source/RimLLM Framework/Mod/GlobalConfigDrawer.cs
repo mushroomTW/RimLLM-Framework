@@ -51,6 +51,14 @@ namespace RimLLM_Framework.Mod
             Settings.MaxConcurrentRequests = Mathf.RoundToInt(maxConcurrentVal);
             listing.Gap(6f);
 
+            if (Math.Abs(prevTimeout - Settings.ApiTimeout) > 0.001f ||
+                prevRetries != Settings.MaxRetries ||
+                Math.Abs(prevDelay - Settings.RetryDelay) > 0.001f ||
+                prevMaxConcurrent != Settings.MaxConcurrentRequests)
+            {
+                Settings.Write();
+            }
+
             // 5. 預設思考強度
             Rect effortRect = listing.GetRect(30f);
             Rect labelRect = new Rect(effortRect.x, effortRect.y, 250f, effortRect.height);
