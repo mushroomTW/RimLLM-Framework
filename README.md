@@ -29,9 +29,6 @@ public class MyAIMod : Verse.Mod
 }
 ```
 
-> [!IMPORTANT]
-> 自 2026.06.05 版本起已**移除了「自動補註冊」機制**。所有呼叫端 Mod 必須在進行任何 API 呼叫前，明確呼叫一次 `RimLLMProvider.RegisterClient` 進行來源註冊，否則 API 呼叫會因來源校驗失敗而拋出異常。此機制用於降低誤用與身分混淆，不是同進程惡意模組的完整安全邊界。
-
 ### 3. 文字生成 (Text Generation)
 
 最簡單的情況可以直接傳入 `ModId` 與提示詞：
