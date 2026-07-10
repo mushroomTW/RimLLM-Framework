@@ -26,8 +26,12 @@ namespace RimLLM_Framework.Providers
             public DateTime ExpireTime { get; set; }
         }
 
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeminiCacheEntry> _contextCaches = 
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, GeminiCacheEntry> _contextCaches =
             new System.Collections.Concurrent.ConcurrentDictionary<string, GeminiCacheEntry>();
+
+        // 對同一 cacheKey 的快取建立流程加鎖，避免並發時重複建立資源（重複付建立費）。
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.SemaphoreSlim> _cacheCreationLocks =
+            new System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.SemaphoreSlim>();
 
         public GeminiProvider(IRimLLMSettings settings) : base(settings)
         {
@@ -100,9 +104,11 @@ namespace RimLLM_Framework.Providers
                 {
                     int prompt = metadata["promptTokenCount"]?.Value<int>() ?? 0;
                     int completion = metadata["candidatesTokenCount"]?.Value<int>() ?? 0;
+                    // promptTokenCount 已包含快取命中部分，cachedContentTokenCount 為其中以折扣計價的子集
+                    int cached = metadata["cachedContentTokenCount"]?.Value<int>() ?? 0;
                     if (RimLLMProvider.Instance is RimLLMManager manager)
                     {
-                        manager.RecordUsage(ProviderId, model, prompt, completion);
+                        manager.RecordUsage(ProviderId, model, prompt, completion, cached);
                     }
                 }
 
@@ -168,6 +174,7 @@ namespace RimLLM_Framework.Providers
                     int totalCompletionChars = 0;
                     int finalPromptTokens = 0;
                     int finalCompletionTokens = 0;
+                    int finalCachedTokens = 0;
                     bool hasUsage = false;
 
                     try
@@ -184,6 +191,7 @@ namespace RimLLM_Framework.Providers
                                     {
                                         finalPromptTokens = metadata["promptTokenCount"]?.Value<int>() ?? 0;
                                         finalCompletionTokens = metadata["candidatesTokenCount"]?.Value<int>() ?? 0;
+                                        finalCachedTokens = metadata["cachedContentTokenCount"]?.Value<int>() ?? 0;
                                         hasUsage = true;
                                     }
                                     var parts = token["candidates"]?[0]?["content"]?["parts"] as JArray;
@@ -253,7 +261,7 @@ namespace RimLLM_Framework.Providers
                     {
                         if (hasUsage)
                         {
-                            manager.RecordUsage(ProviderId, model, finalPromptTokens, finalCompletionTokens);
+                            manager.RecordUsage(ProviderId, model, finalPromptTokens, finalCompletionTokens, finalCachedTokens);
                         }
                         else
                         {
@@ -268,7 +276,7 @@ namespace RimLLM_Framework.Providers
             }
         }
 
-        protected override string DefaultTestModel => "gemini-2.5-flash";
+        protected override string DefaultTestModel => "gemini-3.5-flash";
 
         public override async Task<List<string>> FetchAvailableModelsAsync()
         {
@@ -327,6 +335,12 @@ namespace RimLLM_Framework.Providers
             };
 
             ApplyGeminiThinkingConfig(generationConfig, model, request.ReasoningEffort);
+
+            if (request.ResponseType != null && Settings.EnableNativeSchema)
+            {
+                generationConfig["responseMimeType"] = "application/json";
+                generationConfig["responseSchema"] = RimLLMJsonHelper.GenerateJsonSchema(request.ResponseType, uppercaseTypes: true);
+            }
 
             var payload = new JObject
             {
@@ -414,26 +428,74 @@ namespace RimLLM_Framework.Providers
         private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string cacheableContext, System.Threading.CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(cacheableContext)) return null;
+
+            // 顯式快取需付「建立費 + 儲存費」，內容過小時這些成本會超過節省，因此低於最低門檻直接改走一般 systemInstruction。
+            // Gemini 官方對 2.5 系列的最低可快取輸入量：Pro 約 2048 token、Flash / Flash-Lite 約 1024 token。
+            // 以「字元數 < 最低 token 數」作為「必定不足」的保守下界（即使最密集的 CJK 也約為 1 token/字元），避免送出注定失敗的建立請求。
+            int minCacheableTokens = (model != null && model.IndexOf("pro", StringComparison.OrdinalIgnoreCase) >= 0) ? 2048 : 1024;
+            if (cacheableContext.Length < minCacheableTokens)
+            {
+                if (Settings.DetailedLogging)
+                {
+                    RimLLMLog.Message($"[RimLLM] Context too small for Gemini explicit cache ({cacheableContext.Length} chars < {minCacheableTokens}); using inline systemInstruction instead.");
+                }
+                return null;
+            }
+
             string cacheKey = $"{model}\n{cacheableContext}";
 
-            // 清理已過期的快取 entry，避免內存洩漏
+            CleanupExpiredCaches();
+
+            string existing = TryGetValidCachedId(cacheKey);
+            if (existing != null) return existing;
+
+            // 串行化同一 cacheKey 的建立流程，避免並發請求各自建立一份重複的快取資源
+            var gate = _cacheCreationLocks.GetOrAdd(cacheKey, _ => new System.Threading.SemaphoreSlim(1, 1));
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                // 雙重檢查：等待鎖期間可能已由其他請求建立完成
+                existing = TryGetValidCachedId(cacheKey);
+                if (existing != null) return existing;
+
+                return await CreateCachedContentAsync(apiKey, baseEndpoint, model, cacheKey, cacheableContext, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+
+        /// <summary>
+        /// 清理已過期的快取 entry 與其對應鎖，避免記憶體洩漏。
+        /// </summary>
+        private void CleanupExpiredCaches()
+        {
             foreach (var kvp in _contextCaches)
             {
                 if (kvp.Value.ExpireTime <= DateTime.UtcNow)
                 {
                     _contextCaches.TryRemove(kvp.Key, out _);
+                    _cacheCreationLocks.TryRemove(kvp.Key, out _);
                 }
             }
+        }
 
-            if (_contextCaches.TryGetValue(cacheKey, out var entry))
+        /// <summary>
+        /// 取回未過期（含 10 秒安全緩衝）的快取 ID；查無或已逼近過期則回傳 null。
+        /// </summary>
+        private string TryGetValidCachedId(string cacheKey)
+        {
+            if (_contextCaches.TryGetValue(cacheKey, out var entry) &&
+                entry.ExpireTime > DateTime.UtcNow.AddSeconds(10))
             {
-                // 快取未過期，且加上 10 秒安全緩衝，避免邊界失效
-                if (entry.ExpireTime > DateTime.UtcNow.AddSeconds(10))
-                {
-                    return entry.CacheId;
-                }
+                return entry.CacheId;
             }
+            return null;
+        }
 
+        private async Task<string> CreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string cacheKey, string cacheableContext, System.Threading.CancellationToken cancellationToken)
+        {
             // 建立新的 Cached Content 資源
             // API url 格式: POST https://generativelanguage.googleapis.com/v1beta/cachedContents（金鑰走 x-goog-api-key Header）
             string cacheUrl = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/cachedContents";

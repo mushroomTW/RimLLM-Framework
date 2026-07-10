@@ -2,6 +2,8 @@
 SteamDescriptions
 .omc
 .claude
+docs
+AGENTS.md
 
 # IDE state
 .vs/

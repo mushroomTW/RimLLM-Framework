@@ -17,11 +17,24 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class OpenAIProvider : BaseHttpProvider
     {
-        public override string ProviderId => "OpenAI";
-        protected virtual string DefaultEndpoint => "https://api.openai.com/v1/chat/completions";
+        private readonly string _providerId;
+        private readonly string _defaultEndpoint;
+        private readonly string _defaultTestModel;
 
-        public OpenAIProvider(IRimLLMSettings settings) : base(settings)
+        public override string ProviderId => _providerId;
+        protected virtual string DefaultEndpoint => _defaultEndpoint;
+
+        public OpenAIProvider(IRimLLMSettings settings)
+            : this(settings, ProviderIds.OpenAI, "https://api.openai.com/v1/chat/completions", "gpt-4o-mini")
         {
+        }
+
+        protected OpenAIProvider(IRimLLMSettings settings, string providerId, string defaultEndpoint, string defaultTestModel)
+            : base(settings)
+        {
+            _providerId = providerId;
+            _defaultEndpoint = defaultEndpoint;
+            _defaultTestModel = defaultTestModel;
         }
 
         protected virtual JObject BuildPayload(LLMRequest request, string model, bool stream = false)
@@ -47,6 +60,20 @@ namespace RimLLM_Framework.Providers
                 ["model"] = model,
                 ["messages"] = messages
             };
+
+            if (request.ResponseType != null && Settings.EnableNativeSchema)
+            {
+                payload["response_format"] = new JObject
+                {
+                    ["type"] = "json_schema",
+                    ["json_schema"] = new JObject
+                    {
+                        ["name"] = "custom_type",
+                        ["strict"] = true,
+                        ["schema"] = RimLLMJsonHelper.GenerateJsonSchema(request.ResponseType, uppercaseTypes: false)
+                    }
+                };
+            }
 
             if (IsOpenAiReasoningModel(model))
             {
@@ -287,7 +314,7 @@ namespace RimLLM_Framework.Providers
             }
         }
 
-        protected override string DefaultTestModel => "gpt-4o-mini";
+        protected override string DefaultTestModel => _defaultTestModel;
 
         public override async Task<List<string>> FetchAvailableModelsAsync()
         {

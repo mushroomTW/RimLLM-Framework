@@ -2,7 +2,7 @@
 <LanguageData>
   <RimLLM_MainMenu><b>Main Menu</b></RimLLM_MainMenu>
   <RimLLM_TabProviders>Provider Settings</RimLLM_TabProviders>
-  <RimLLM_TabFallback>Fallback Chain</RimLLM_TabFallback>
+  <RimLLM_TabFallback>Model Settings</RimLLM_TabFallback>
   <RimLLM_TabGlobalConfig>Global Config</RimLLM_TabGlobalConfig>
   
   <RimLLM_ApiProviders><b>API Providers</b></RimLLM_ApiProviders>
@@ -11,7 +11,7 @@
   <RimLLM_ModelsCount>{0} Models</RimLLM_ModelsCount>
   
   <RimLLM_TitleProviderSettings>Provider Settings - {0}</RimLLM_TitleProviderSettings>
-  <RimLLM_TitleFallback>Global Fallback Chain Settings</RimLLM_TitleFallback>
+  <RimLLM_TitleFallback>Global Model Settings</RimLLM_TitleFallback>
   <RimLLM_TitleGlobalConfig>Global Request and Retry Configuration</RimLLM_TitleGlobalConfig>
   
   <RimLLM_EnableProvider>Enable this API Provider</RimLLM_EnableProvider>
@@ -66,7 +66,7 @@
   <RimLLM_ExportDiag>Export Diagnostics (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
   <RimLLM_RecentRequests>Recent Request History (Last {0})</RimLLM_RecentRequests>
   <RimLLM_NoRequests>&lt;color=gray&gt;No request history currently.&lt;/color&gt;</RimLLM_NoRequests>
-  <RimLLM_ChatTitle>Model Chat Interface (Supports /clear to reset)</RimLLM_ChatTitle>
+  <RimLLM_ChatTitle>Model Chat Interface</RimLLM_ChatTitle>
   <RimLLM_Send>Send</RimLLM_Send>
   <RimLLM_ClearBtn>Clear</RimLLM_ClearBtn>
   <RimLLM_AiThinking>AI is thinking</RimLLM_AiThinking>
@@ -106,4 +106,59 @@
   <RimLLM_MsgUsageReset>Usage statistics have been reset.</RimLLM_MsgUsageReset>
   <RimLLM_ModelLevelOverrideTitle>Model Tier Overrides</RimLLM_ModelLevelOverrideTitle>
   <RimLLM_ModelLevelOverrideExplanation>Manually assign model tiers (Lv.1=Low, Lv.2=Medium, Lv.3=High) used by MinFallbackLevel filtering. Overrides take priority over built-in keyword detection.</RimLLM_ModelLevelOverrideExplanation>
+  
+  <RimLLM_TabBudget>Budget &amp; Safety</RimLLM_TabBudget>
+  <RimLLM_TitleBudget>Budget &amp; Safety Configuration</RimLLM_TitleBudget>
+  <RimLLM_DailyBudgetLimitLabel>Daily Budget Limit: {0} USD (0.0 for Unlimited)</RimLLM_DailyBudgetLimitLabel>
+  <RimLLM_BudgetPolicyLabel>Budget Exceeded Policy: </RimLLM_BudgetPolicyLabel>
+  <RimLLM_BudgetPolicy_HardBlock>Block requests and warn (HardBlock)</RimLLM_BudgetPolicy_HardBlock>
+  <RimLLM_BudgetPolicy_SilentMocking>Return canned silent message (SilentMocking)</RimLLM_BudgetPolicy_SilentMocking>
+  <RimLLM_BudgetPolicy_FallbackToFree>Fallback to free/local models (FallbackToFree)</RimLLM_BudgetPolicy_FallbackToFree>
+  <RimLLM_BudgetPolicy_DialogPrompt>Prompt in-game confirmation (DialogPrompt)</RimLLM_BudgetPolicy_DialogPrompt>
+  <RimLLM_EnableAntiAbuseLabel>Enable anti-abuse limits (prevent Mod loop bugs)</RimLLM_EnableAntiAbuseLabel>
+  <RimLLM_MaxRequestsPerWindowLabel>Max requests in window: {0} times</RimLLM_MaxRequestsPerWindowLabel>
+  <RimLLM_ThrottlingWindowSecondsLabel>Throttling monitor window: {0} seconds</RimLLM_ThrottlingWindowSecondsLabel>
+  <RimLLM_CoolDownDurationSecondsLabel>Cooldown duration on abuse: {0} seconds</RimLLM_CoolDownDurationSecondsLabel>
+  <RimLLM_DailyAccumulatedCostLabel>Daily cost accumulated: ${0} USD (Base Date: {1})</RimLLM_DailyAccumulatedCostLabel>
+  <RimLLM_ResetDailyCostBtn>Reset Daily Cost</RimLLM_ResetDailyCostBtn>
+  <RimLLM_MsgDailyCostReset>Daily cost accumulated has been reset.</RimLLM_MsgDailyCostReset>
+  <RimLLM_BudgetExceededPrompt>Your RimLLM daily cost has reached ${0} USD, exceeding the limit of ${1} USD!\nWould you like to temporarily increase your budget to keep AI functions running?</RimLLM_BudgetExceededPrompt>
+  <RimLLM_BudgetExceededPrompt_Approve>Approve (Increase budget by 50%)</RimLLM_BudgetExceededPrompt_Approve>
+  <RimLLM_BudgetExceededPrompt_Decline>Decline (Block requests)</RimLLM_BudgetExceededPrompt_Decline>
+  <RimLLM_SilentMockResponse>*AI is temporarily resting due to daily budget limits...*</RimLLM_SilentMockResponse>
+  <RimLLM_RoutingStrategyLabel>Smart Routing &amp; Load Balancing Strategy: </RimLLM_RoutingStrategyLabel>
+  <RimLLM_RoutingStrategy_PriorityFailover>Priority Failover with Cooldowns (PriorityFailover)</RimLLM_RoutingStrategy_PriorityFailover>
+  <RimLLM_RoutingStrategy_MinLatency>Minimum Latency First (MinLatency)</RimLLM_RoutingStrategy_MinLatency>
+  <RimLLM_RoutingStrategy_RoundRobin>Load Balancing Round Robin (RoundRobin)</RimLLM_RoutingStrategy_RoundRobin>
+  <RimLLM_EnableNativeSchemaLabel>Enable Native JSON Schema Enforcement (highly increases output format accuracy)</RimLLM_EnableNativeSchemaLabel>
+  <RimLLM_EnableJsonRepairLabel>Enable JSON Response Structural Repair (fault-tolerant JSON parser)</RimLLM_EnableJsonRepairLabel>
+
+  <RimLLM_TabSemanticCache>Semantic Cache</RimLLM_TabSemanticCache>
+  <RimLLM_TitleSemanticCache>Semantic Cache &amp; Embedding Settings</RimLLM_TitleSemanticCache>
+  <RimLLM_EnableSemanticCacheLabel>Enable Global Semantic Cache (saves tokens &amp; reduces response latency)</RimLLM_EnableSemanticCacheLabel>
+  <RimLLM_SemanticCacheThresholdLabel>Semantic Match Similarity Threshold: {0} (closer to 1.0 is more strict)</RimLLM_SemanticCacheThresholdLabel>
+  <RimLLM_SemanticCacheMaxCountLabel>In-Memory Cache Capacity Limit: {0} entries (~{1} MB)</RimLLM_SemanticCacheMaxCountLabel>
+  <RimLLM_EmbeddingProviderLabel>Embedding Provider: </RimLLM_EmbeddingProviderLabel>
+  <RimLLM_EmbeddingModelLabel>Embedding Model Name: </RimLLM_EmbeddingModelLabel>
+  <RimLLM_EmbeddingEndpointLabel>Custom Endpoint URL: </RimLLM_EmbeddingEndpointLabel>
+  <RimLLM_EmbeddingApiKeyLabel>Custom API Key (optional, defaults to provider key if empty): </RimLLM_EmbeddingApiKeyLabel>
+  <RimLLM_CacheStatsLabel>Cache Statistics: </RimLLM_CacheStatsLabel>
+  <RimLLM_CacheTotalCountLabel>Cache Size: {0} / {1} entries</RimLLM_CacheTotalCountLabel>
+  <RimLLM_CacheHitsLabel>Cache Hits: {0} times</RimLLM_CacheHitsLabel>
+  <RimLLM_CacheMissesLabel>Cache Misses: {0} times</RimLLM_CacheMissesLabel>
+  <RimLLM_CacheHitRateLabel>Average Cache Hit Rate: {0}</RimLLM_CacheHitRateLabel>
+  <RimLLM_EstTokensSavedLabel>Estimated Tokens Saved: {0} Tokens</RimLLM_EstTokensSavedLabel>
+  <RimLLM_ClearCacheBtn>Clear Semantic Cache Manually</RimLLM_ClearCacheBtn>
+  <RimLLM_MsgCacheCleared>Semantic Cache has been cleared manually.</RimLLM_MsgCacheCleared>
+  
+  <RimLLM_EmbeddingProvider_Offline_Trigram>Offline Trigram Calculation (Offline)</RimLLM_EmbeddingProvider_Offline_Trigram>
+  <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
+  <RimLLM_EmbeddingProvider_LocalAPI_Ollama>Local Ollama API (Ollama)</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
+  <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>Local OpenAI Compatible (LM Studio/Local)</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
+
+  <RimLLM_ProviderCallStatsTitle>Provider Call Statistics &amp; Success Rate</RimLLM_ProviderCallStatsTitle>
+  <RimLLM_ProviderTotalCallsLabel>Total Calls: {0}</RimLLM_ProviderTotalCallsLabel>
+  <RimLLM_ProviderSuccessCallsLabel>Success: {0} / Failure: {1}</RimLLM_ProviderSuccessCallsLabel>
+  <RimLLM_ProviderSuccessRateLabel>Success Rate: {0}%</RimLLM_ProviderSuccessRateLabel>
+  <RimLLM_ProviderApiCacheRateLabel>API Prompt Cache Hit Rate: {0}% (Saved {1} / {2} Tokens)</RimLLM_ProviderApiCacheRateLabel>
 </LanguageData>

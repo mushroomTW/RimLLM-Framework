@@ -25,6 +25,8 @@ namespace RimLLM_Framework.Mod
         public long TotalPromptTokens { get; set; }
         public long TotalCompletionTokens { get; set; }
         public float TotalEstimatedCost { get; set; }
+        public float DailyAccumulatedCost { get; set; }
+        public string DailyBudgetResetDate { get; set; } = "";
 
         /// <summary>
         /// 磁碟上是否已存在遙測檔案。用於判斷是否需要從舊版設定 XML 遷移。
@@ -38,6 +40,8 @@ namespace RimLLM_Framework.Mod
             public long TotalPromptTokens;
             public long TotalCompletionTokens;
             public float TotalEstimatedCost;
+            public float DailyAccumulatedCost;
+            public string DailyBudgetResetDate;
         }
 
         private static string GetFilePath()
@@ -72,6 +76,8 @@ namespace RimLLM_Framework.Mod
                     TotalPromptTokens = dto.TotalPromptTokens;
                     TotalCompletionTokens = dto.TotalCompletionTokens;
                     TotalEstimatedCost = dto.TotalEstimatedCost;
+                    DailyAccumulatedCost = dto.DailyAccumulatedCost;
+                    DailyBudgetResetDate = dto.DailyBudgetResetDate ?? "";
                     LoadedFromDisk = true;
                 }
                 catch (Exception ex)
@@ -97,7 +103,9 @@ namespace RimLLM_Framework.Mod
                         RequestLogs = RequestLogs,
                         TotalPromptTokens = TotalPromptTokens,
                         TotalCompletionTokens = TotalCompletionTokens,
-                        TotalEstimatedCost = TotalEstimatedCost
+                        TotalEstimatedCost = TotalEstimatedCost,
+                        DailyAccumulatedCost = DailyAccumulatedCost,
+                        DailyBudgetResetDate = DailyBudgetResetDate
                     };
                     File.WriteAllText(GetFilePath(), JsonConvert.SerializeObject(dto, Formatting.None));
                     LoadedFromDisk = true;

@@ -6,6 +6,7 @@ using Verse;
 using RimWorld;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
+using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
 {
@@ -58,7 +59,16 @@ namespace RimLLM_Framework.Mod
             {
                 extraHeight = 60f;
             }
-            return 250f + keysHeight + modelSectionHeight + 100f + extraHeight;
+
+            float statsHeight = 120f;
+            if (RimLLMProvider.Instance is RimLLMManager mgr)
+            {
+                if (mgr.UsageTracker.ProviderStatistics.TryGetValue(ActiveProviderSubTab, out var stats) && stats.TotalPromptTokens > 0)
+                {
+                    statsHeight += 50f;
+                }
+            }
+            return 250f + keysHeight + modelSectionHeight + 100f + statsHeight + extraHeight;
         }
 
         /// <summary>
@@ -73,8 +83,8 @@ namespace RimLLM_Framework.Mod
             Widgets.Label(titleRect, "RimLLM_ApiProviders".Translate());
 
             Rect listRect = new Rect(contentRect.x, titleRect.yMax + 4f, contentRect.width, contentRect.height - 24f);
-            // 11 個供應商，每個按鈕高度 46f + 4f gap = 50f
-            Rect viewRect = new Rect(0f, 0f, listRect.width - 16f, 11 * 50f + 10f);
+            // 12 個供應商，每個按鈕高度 46f + 4f gap = 50f
+            Rect viewRect = new Rect(0f, 0f, listRect.width - 16f, 12 * 50f + 10f);
             Widgets.BeginScrollView(listRect, ref _midScrollPosition, viewRect);
             Listing_Standard listing = new Listing_Standard();
             listing.Begin(viewRect);
@@ -87,7 +97,9 @@ namespace RimLLM_Framework.Mod
             listing.Gap(4f);
             DrawProviderSubButton(listing, "Groq", "Groq");
             listing.Gap(4f);
-            DrawProviderSubButton(listing, "Anthropic Claude", "Anthropic");
+            DrawProviderSubButton(listing, "Grok", "Grok");
+            listing.Gap(4f);
+            DrawProviderSubButton(listing, "Z.ai", "Z.ai");
             listing.Gap(4f);
             DrawProviderSubButton(listing, "OpenRouter", "OpenRouter");
             listing.Gap(4f);
@@ -163,8 +175,10 @@ namespace RimLLM_Framework.Mod
                 DrawProviderSettings(listing, "DeepSeek", "https://api.deepseek.com", "deepseek-chat");
             else if (ActiveProviderSubTab == "Groq")
                 DrawProviderSettings(listing, "Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile");
-            else if (ActiveProviderSubTab == "Anthropic")
-                DrawProviderSettings(listing, "Anthropic", "https://api.anthropic.com/v1/messages", "claude-3-5-sonnet-20241022");
+            else if (ActiveProviderSubTab == "Grok")
+                DrawProviderSettings(listing, "Grok", "https://api.x.ai/v1", "grok-2-1212");
+            else if (ActiveProviderSubTab == "Z.ai")
+                DrawProviderSettings(listing, "Z.ai", "https://api.z.ai/api/paas/v4", "glm-4.5-flash");
             else if (ActiveProviderSubTab == "OpenRouter")
                 DrawProviderSettings(listing, "OpenRouter", "https://openrouter.ai/api/v1", "google/gemini-2.5-flash");
             else if (ActiveProviderSubTab == "Kimi")
@@ -202,9 +216,21 @@ namespace RimLLM_Framework.Mod
                     int keyToDelete = -1;
                     for (int i = 0; i < keys.Count; i++)
                     {
-                        Rect rowRect = listing.GetRect(28f);
-                        Rect inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 40f, rowRect.height);
-                        Rect deleteRect = new Rect(rowRect.x + rowRect.width - 32f, rowRect.y, 32f, rowRect.height);
+                        Rect rowRect = listing.GetRect(30f);
+                        bool canDelete = keys.Count > 1 || !string.IsNullOrEmpty(keys[i]);
+                        
+                        Rect inputRect;
+                        Rect deleteRect = Rect.zero;
+                        
+                        if (canDelete)
+                        {
+                            inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 40f, rowRect.height);
+                            deleteRect = new Rect(rowRect.x + rowRect.width - 32f, rowRect.y, 32f, rowRect.height);
+                        }
+                        else
+                        {
+                            inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width, rowRect.height);
+                        }
 
                         string oldVal = keys[i];
                         string newVal = Widgets.TextField(inputRect, oldVal);
@@ -213,7 +239,7 @@ namespace RimLLM_Framework.Mod
                             keys[i] = newVal;
                         }
 
-                        if (keys.Count > 1 || !string.IsNullOrEmpty(keys[0]))
+                        if (canDelete)
                         {
                             if (Widgets.ButtonText(deleteRect, "-"))
                             {
@@ -386,6 +412,78 @@ namespace RimLLM_Framework.Mod
                 Text.Anchor = TextAnchor.UpperLeft;
 
                 listing.Gap(12f);
+
+                // 4.9 呼叫統計與成功率
+                listing.Label($"<b>{"RimLLM_ProviderCallStatsTitle".Translate()}</b>");
+                int successCount = 0;
+                int failureCount = 0;
+                long apiTotalTokens = 0;
+                long apiCachedTokens = 0;
+                if (RimLLMProvider.Instance is RimLLMManager managerInstance)
+                {
+                    if (managerInstance.UsageTracker.ProviderStatistics.TryGetValue(providerId, out var stats))
+                    {
+                        successCount = stats.SuccessCount;
+                        failureCount = stats.FailureCount;
+                        apiTotalTokens = stats.TotalPromptTokens;
+                        apiCachedTokens = stats.CachedPromptTokens;
+                    }
+                }
+                int totalCalls = successCount + failureCount;
+                float successRate = totalCalls > 0 ? (successCount * 100f) / totalCalls : 100f;
+
+                listing.Label("RimLLM_ProviderTotalCallsLabel".Translate(totalCalls));
+                listing.Label("RimLLM_ProviderSuccessCallsLabel".Translate(successCount, failureCount));
+                listing.Label("RimLLM_ProviderSuccessRateLabel".Translate(successRate.ToString("F1")));
+
+                // 繪製可視化成功率條
+                Rect successBarRect = listing.GetRect(20f);
+                Widgets.DrawBoxSolid(successBarRect, new Color(0.35f, 0.15f, 0.15f, 0.6f)); // 紅色背景代表失敗
+                if (totalCalls > 0)
+                {
+                    float fillPercent = (float)successCount / totalCalls;
+                    if (fillPercent > 0f)
+                    {
+                        Rect fillRect = new Rect(successBarRect.x, successBarRect.y, successBarRect.width * fillPercent, successBarRect.height);
+                        Widgets.DrawBoxSolid(fillRect, new Color(0.18f, 0.48f, 0.18f, 0.8f)); // 綠色代表成功
+                    }
+                }
+                else
+                {
+                    Widgets.DrawBoxSolid(successBarRect, new Color(0.2f, 0.2f, 0.2f, 0.6f));
+                }
+                Widgets.DrawBox(successBarRect, 1);
+
+                Text.Anchor = TextAnchor.MiddleCenter;
+                Text.Font = GameFont.Tiny;
+                Widgets.Label(successBarRect, totalCalls > 0 ? $"{successRate:F1}%" : "100.0% (N/A)");
+                Text.Anchor = TextAnchor.UpperLeft;
+                Text.Font = GameFont.Small;
+                listing.Gap(12f);
+
+                // 4.9.5 繪製 API-side 快取命中率（僅在有提示 Token 累計且支援的供應商顯示）
+                if (apiTotalTokens > 0)
+                {
+                    float apiCacheRate = (apiCachedTokens * 100f) / apiTotalTokens;
+                    listing.Label("RimLLM_ProviderApiCacheRateLabel".Translate(apiCacheRate.ToString("F1"), apiCachedTokens, apiTotalTokens));
+
+                    Rect apiCacheBarRect = listing.GetRect(20f);
+                    Widgets.DrawBoxSolid(apiCacheBarRect, new Color(0.2f, 0.2f, 0.2f, 0.6f)); // 灰色代表未命中
+                    float fillPercent = (float)apiCachedTokens / apiTotalTokens;
+                    if (fillPercent > 0f)
+                    {
+                        Rect fillRect = new Rect(apiCacheBarRect.x, apiCacheBarRect.y, apiCacheBarRect.width * fillPercent, apiCacheBarRect.height);
+                        Widgets.DrawBoxSolid(fillRect, new Color(0.15f, 0.45f, 0.6f, 0.8f)); // 藍色代表 API Caching 命中
+                    }
+                    Widgets.DrawBox(apiCacheBarRect, 1);
+
+                    Text.Anchor = TextAnchor.MiddleCenter;
+                    Text.Font = GameFont.Tiny;
+                    Widgets.Label(apiCacheBarRect, $"{apiCacheRate:F1}%");
+                    Text.Anchor = TextAnchor.UpperLeft;
+                    Text.Font = GameFont.Small;
+                    listing.Gap(12f);
+                }
 
                 // 5. 連線測試
                 listing.Label("RimLLM_ConnectionTestTitle".Translate());

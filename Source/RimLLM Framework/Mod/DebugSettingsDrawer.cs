@@ -195,7 +195,7 @@ namespace RimLLM_Framework.Mod
                     providers = new List<string>
                     {
                         ProviderIds.Gemini, ProviderIds.OpenAI, ProviderIds.DeepSeek, ProviderIds.Groq,
-                        ProviderIds.Anthropic, ProviderIds.OpenRouter, ProviderIds.Kimi, ProviderIds.MiniMax,
+                        ProviderIds.Grok, ProviderIds.Zai, ProviderIds.OpenRouter, ProviderIds.Kimi, ProviderIds.MiniMax,
                         ProviderIds.Qwen, ProviderIds.Nvidia, ProviderIds.OpenAICompatible
                     };
                 }

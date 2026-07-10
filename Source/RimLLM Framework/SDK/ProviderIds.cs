@@ -11,11 +11,12 @@ namespace RimLLM_Framework.SDK
         public const string OpenAICompatible = "OpenAICompatible";
         public const string DeepSeek = "DeepSeek";
         public const string Groq = "Groq";
-        public const string Anthropic = "Anthropic";
+        public const string Grok = "Grok";
         public const string OpenRouter = "OpenRouter";
         public const string Kimi = "Kimi";
         public const string MiniMax = "MiniMax";
         public const string Qwen = "Qwen";
         public const string Nvidia = "Nvidia";
+        public const string Zai = "Z.ai";
     }
 }

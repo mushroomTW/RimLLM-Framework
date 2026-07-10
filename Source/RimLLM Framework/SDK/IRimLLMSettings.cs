@@ -100,6 +100,96 @@ namespace RimLLM_Framework.SDK
         float TotalEstimatedCost { get; set; }
 
         /// <summary>
+        /// 今日預算上限 (USD)。
+        /// </summary>
+        float DailyBudgetLimit { get; set; }
+
+        /// <summary>
+        /// 預算超限應對策略 (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)。
+        /// </summary>
+        int BudgetPolicy { get; set; }
+
+        /// <summary>
+        /// 是否啟用防爆限制。
+        /// </summary>
+        bool EnableAntiAbuse { get; set; }
+
+        /// <summary>
+        /// 時間窗口內最大請求次數。
+        /// </summary>
+        int MaxRequestsPerWindow { get; set; }
+
+        /// <summary>
+        /// 防護監測時間窗口 (秒)。
+        /// </summary>
+        int ThrottlingWindowSeconds { get; set; }
+
+        /// <summary>
+        /// 超限後強制冷卻時間 (秒)。
+        /// </summary>
+        int CoolDownDurationSeconds { get; set; }
+
+        /// <summary>
+        /// 今日累計估計消耗。
+        /// </summary>
+        float DailyAccumulatedCost { get; set; }
+
+        /// <summary>
+        /// 日預算重置日期的日期字串。
+        /// </summary>
+        string DailyBudgetResetDate { get; set; }
+
+        /// <summary>
+        /// 智慧路由與負載均衡策略 (0=PriorityFailover, 1=MinLatency, 2=RoundRobin)。
+        /// </summary>
+        int RoutingStrategy { get; set; }
+
+        /// <summary>
+        /// 是否啟用原生 JSON Schema 強制執行。
+        /// </summary>
+        bool EnableNativeSchema { get; set; }
+
+        /// <summary>
+        /// 是否啟用 JSON 回傳格式修復輔助。
+        /// </summary>
+        bool EnableJsonRepair { get; set; }
+
+        /// <summary>
+        /// 是否啟用全域語意快取。
+        /// </summary>
+        bool EnableSemanticCache { get; set; }
+
+        /// <summary>
+        /// 語意快取相似度閾值 (Cosine Similarity)。
+        /// </summary>
+        float SemanticCacheThreshold { get; set; }
+
+        /// <summary>
+        /// 語意快取記憶體容量上限。
+        /// </summary>
+        int SemanticCacheMaxCount { get; set; }
+
+        /// <summary>
+        /// Embedding 供應商名稱。
+        /// </summary>
+        string EmbeddingProvider { get; set; }
+
+        /// <summary>
+        /// Embedding 模型名稱。
+        /// </summary>
+        string EmbeddingModel { get; set; }
+
+        /// <summary>
+        /// Embedding 自訂端點。
+        /// </summary>
+        string EmbeddingEndpoint { get; set; }
+
+        /// <summary>
+        /// Embedding 自訂 API 金鑰。
+        /// </summary>
+        string EmbeddingApiKey { get; set; }
+
+        /// <summary>
         /// 將設定寫入/持久化。
         /// </summary>
         void Write();

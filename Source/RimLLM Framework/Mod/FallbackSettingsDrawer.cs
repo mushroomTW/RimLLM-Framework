@@ -18,8 +18,6 @@ namespace RimLLM_Framework.Mod
         // Fallback 分頁專屬的 UI 暫存狀態
         private static string addProviderId = ProviderIds.Gemini;
         private static string addModelName = "";
-        private static string overrideModelName = "";
-        private static int overrideLevel = 2;
 
         /// <summary>
         /// 獲取 Fallback 設定詳細內容的滾動高度。
@@ -27,8 +25,7 @@ namespace RimLLM_Framework.Mod
         public static float GetHeight(float width)
         {
             int chainCount = Settings.FallbackChain.Count;
-            int overrideCount = Settings.GetModelLevelOverridesSnapshot().Count;
-            return 150f + (chainCount * 36f) + 180f + 110f + (overrideCount * 32f);
+            return 150f + (chainCount * 36f) + 260f;
         }
 
         /// <summary>
@@ -46,7 +43,7 @@ namespace RimLLM_Framework.Mod
                 return new List<string>
                 {
                     ProviderIds.Gemini, ProviderIds.OpenAI, ProviderIds.DeepSeek, ProviderIds.Groq,
-                    ProviderIds.Anthropic, ProviderIds.OpenRouter, ProviderIds.Kimi, ProviderIds.MiniMax,
+                    ProviderIds.Grok, ProviderIds.Zai, ProviderIds.OpenRouter, ProviderIds.Kimi, ProviderIds.MiniMax,
                     ProviderIds.Qwen, ProviderIds.Nvidia, ProviderIds.OpenAICompatible
                 };
             }
@@ -69,6 +66,29 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         public static void DrawFallbackSettings(Listing_Standard listing)
         {
+            // 3. 智慧路由設定
+            Rect routingRect = listing.GetRect(30f);
+            float routingLabelWidth = Text.CalcSize("RimLLM_RoutingStrategyLabel".Translate()).x;
+            Rect strategyLabelRect = new Rect(routingRect.x, routingRect.y, routingLabelWidth + 5f, routingRect.height);
+            Rect strategyBtnRect = new Rect(routingRect.x + routingLabelWidth + 15f, routingRect.y, 220f, routingRect.height);
+
+            Text.Anchor = TextAnchor.MiddleLeft;
+            Widgets.Label(strategyLabelRect, "RimLLM_RoutingStrategyLabel".Translate());
+            Text.Anchor = TextAnchor.UpperLeft;
+
+            string strategyLabelKey = $"RimLLM_RoutingStrategy_{GetStrategyEnumName(Settings.RoutingStrategy)}";
+            if (Widgets.ButtonText(strategyBtnRect, strategyLabelKey.Translate()))
+            {
+                List<FloatMenuOption> options = new List<FloatMenuOption>
+                {
+                    new FloatMenuOption("RimLLM_RoutingStrategy_PriorityFailover".Translate(), () => { Settings.RoutingStrategy = 0; Settings.Write(); }),
+                    new FloatMenuOption("RimLLM_RoutingStrategy_MinLatency".Translate(), () => { Settings.RoutingStrategy = 1; Settings.Write(); }),
+                    new FloatMenuOption("RimLLM_RoutingStrategy_RoundRobin".Translate(), () => { Settings.RoutingStrategy = 2; Settings.Write(); })
+                };
+                Find.WindowStack.Add(new FloatMenu(options));
+            }
+            listing.GapLine(10f);
+
             listing.Label("RimLLM_FallbackExplanation".Translate());
             listing.Gap(8f);
             var chain = Settings.FallbackChain;
@@ -118,13 +138,52 @@ namespace RimLLM_Framework.Mod
                     Rect itemRect = listing.GetRect(30f);
 
                     // 左右劃分
-                    Rect labelRect = new Rect(itemRect.x, itemRect.y, itemRect.width - 120f, itemRect.height);
+                    int colonIndex = entry.IndexOf(':');
+                    bool hasModelName = colonIndex >= 0;
+                    float labelWidth = hasModelName ? (itemRect.width - 200f) : (itemRect.width - 120f);
+                    Rect labelRect = new Rect(itemRect.x, itemRect.y, labelWidth, itemRect.height);
                     Rect upRect = new Rect(itemRect.x + itemRect.width - 110f, itemRect.y, 30f, itemRect.height);
                     Rect downRect = new Rect(itemRect.x + itemRect.width - 75f, itemRect.y, 30f, itemRect.height);
                     Rect deleteRect = new Rect(itemRect.x + itemRect.width - 40f, itemRect.y, 30f, itemRect.height);
 
                     // 繪製順序標記與名稱
                     Widgets.Label(labelRect, $" {i + 1}. <color=cyan>{entry}</color>");
+
+                    // 若包含模型名稱，則在右側繪製分級按鈕
+                    if (hasModelName)
+                    {
+                        string modelName = entry.Substring(colonIndex + 1);
+                        Rect levelRect = new Rect(itemRect.x + itemRect.width - 190f, itemRect.y, 70f, itemRect.height);
+                        int currentLevel = Settings.GetModelLevelOverride(modelName);
+                        string levelLabel;
+                        switch (currentLevel)
+                        {
+                            case 1:
+                                levelLabel = "低";
+                                break;
+                            case 2:
+                                levelLabel = "中";
+                                break;
+                            case 3:
+                                levelLabel = "高";
+                                break;
+                            default:
+                                levelLabel = "自動";
+                                break;
+                        }
+
+                        if (Widgets.ButtonText(levelRect, levelLabel))
+                        {
+                            List<FloatMenuOption> options = new List<FloatMenuOption>
+                            {
+                                new FloatMenuOption("自動", () => { Settings.SetModelLevelOverride(modelName, 0); Settings.Write(); }),
+                                new FloatMenuOption("低", () => { Settings.SetModelLevelOverride(modelName, 1); Settings.Write(); }),
+                                new FloatMenuOption("中", () => { Settings.SetModelLevelOverride(modelName, 2); Settings.Write(); }),
+                                new FloatMenuOption("高", () => { Settings.SetModelLevelOverride(modelName, 3); Settings.Write(); })
+                            };
+                            Find.WindowStack.Add(new FloatMenu(options));
+                        }
+                    }
 
                     // 上移按鈕
                     if (i > 0)
@@ -232,48 +291,17 @@ namespace RimLLM_Framework.Mod
             }
             listing.GapLine(10f);
 
-            // 3. 模型分級覆寫（優先於內建關鍵字啟發式判斷）
-            listing.Label("<b>" + "RimLLM_ModelLevelOverrideTitle".Translate() + "</b>");
-            listing.Label("RimLLM_ModelLevelOverrideExplanation".Translate());
-            listing.Gap(4f);
+        }
 
-            var overrides = Settings.GetModelLevelOverridesSnapshot();
-            foreach (var kvp in overrides)
+        private static string GetStrategyEnumName(int strategy)
+        {
+            switch (strategy)
             {
-                Rect rowRect = listing.GetRect(30f);
-                Rect nameRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 60f, rowRect.height);
-                Rect delRect = new Rect(rowRect.x + rowRect.width - 40f, rowRect.y, 30f, rowRect.height);
-
-                Widgets.Label(nameRect, $" <color=cyan>{kvp.Key}</color> → Lv.{kvp.Value}");
-                if (Widgets.ButtonText(delRect, "X"))
-                {
-                    Settings.SetModelLevelOverride(kvp.Key, 0);
-                    Settings.Write();
-                    break;
-                }
+                case 0: return "PriorityFailover";
+                case 1: return "MinLatency";
+                case 2: return "RoundRobin";
+                default: return "PriorityFailover";
             }
-
-            Rect ovRect = listing.GetRect(30f);
-            Rect ovNameRect = new Rect(ovRect.x, ovRect.y, 250f, ovRect.height);
-            Rect ovLevelBtn = new Rect(ovRect.x + 260f, ovRect.y, 150f, ovRect.height);
-            Rect ovAddBtn = new Rect(ovRect.x + 420f, ovRect.y, 100f, ovRect.height);
-
-            overrideModelName = Widgets.TextField(ovNameRect, overrideModelName);
-            if (Widgets.ButtonText(ovLevelBtn, $"Lv.{overrideLevel}"))
-            {
-                overrideLevel = overrideLevel >= 3 ? 1 : overrideLevel + 1;
-            }
-            if (Widgets.ButtonText(ovAddBtn, "RimLLM_AddBtn".Translate()))
-            {
-                string trimmedName = overrideModelName?.Trim();
-                if (!string.IsNullOrEmpty(trimmedName))
-                {
-                    Settings.SetModelLevelOverride(trimmedName, overrideLevel);
-                    Settings.Write();
-                    overrideModelName = "";
-                }
-            }
-            listing.GapLine(10f);
         }
 
         private static void SetDefaultAddModelName(string providerId)

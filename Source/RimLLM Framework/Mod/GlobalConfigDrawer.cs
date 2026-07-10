@@ -19,7 +19,7 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         public static float GetHeight(float width)
         {
-            return 280f;
+            return 350f;
         }
 
         /// <summary>
@@ -31,6 +31,8 @@ namespace RimLLM_Framework.Mod
             int prevRetries = Settings.MaxRetries;
             float prevDelay = Settings.RetryDelay;
             int prevMaxConcurrent = Settings.MaxConcurrentRequests;
+            bool prevNativeSchema = Settings.EnableNativeSchema;
+            bool prevJsonRepair = Settings.EnableJsonRepair;
 
             // 1. API 逾時時間
             listing.Label("RimLLM_ApiTimeoutLabel".Translate(Mathf.RoundToInt(Settings.ApiTimeout)));
@@ -51,10 +53,22 @@ namespace RimLLM_Framework.Mod
             Settings.MaxConcurrentRequests = Mathf.RoundToInt(maxConcurrentVal);
             listing.Gap(6f);
 
+            // 4.5. 原生 Schema & JSON 修復開關
+            bool enableNativeSchema = Settings.EnableNativeSchema;
+            listing.CheckboxLabeled("RimLLM_EnableNativeSchemaLabel".Translate(), ref enableNativeSchema);
+            Settings.EnableNativeSchema = enableNativeSchema;
+
+            bool enableJsonRepair = Settings.EnableJsonRepair;
+            listing.CheckboxLabeled("RimLLM_EnableJsonRepairLabel".Translate(), ref enableJsonRepair);
+            Settings.EnableJsonRepair = enableJsonRepair;
+            listing.Gap(6f);
+
             if (Math.Abs(prevTimeout - Settings.ApiTimeout) > 0.001f ||
                 prevRetries != Settings.MaxRetries ||
                 Math.Abs(prevDelay - Settings.RetryDelay) > 0.001f ||
-                prevMaxConcurrent != Settings.MaxConcurrentRequests)
+                prevMaxConcurrent != Settings.MaxConcurrentRequests ||
+                prevNativeSchema != Settings.EnableNativeSchema ||
+                prevJsonRepair != Settings.EnableJsonRepair)
             {
                 Settings.Write();
             }

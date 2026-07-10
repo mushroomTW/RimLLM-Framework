@@ -1,5 +1,8 @@
 # RimLLM Framework
 
+[![RimWorld 1.6](https://img.shields.io/badge/RimWorld-1.6-brightgreen.svg)](http://rimworldgame.com/)
+![Languages](https://img.shields.io/badge/languages-EN%20%7C%20繁中%20%7C%20简中-orange.svg)
+
 `RimLLM Framework` 是一個 RimWorld 模組大型語言模型 (LLM) 呼叫介面與底層核心的基礎框架。它為其他 RimWorld AI 模組提供穩健、便利、高效且開箱即用的 SDK 支援，免去模組開發者重複造輪子的煩惱。
 
 ---
@@ -153,9 +156,12 @@ public void StreamResponse()
 
 ### 6. 上下文快取節省 Token (Context Caching)
 
-若您的 Mod 擁有非常龐大的穩定上下文（例如遊戲世界狀態、詳細的角色屬性列表或 XML Schema 等），且需要高頻率呼叫 API，您可以啟用 **上下文快取 (Context Caching)**。
+若您的 Mod 擁有非常龐大、且**短時間內會重複使用**的穩定上下文（例如世界觀規則、固定的角色背景設定、輸出用的 XML/JSON Schema 等），且需要高頻率呼叫 API，您可以啟用 **上下文快取 (Context Caching)**。
 
 這會自動利用 API 供應商（如 Google Gemini 或 Anthropic Claude）的快取機制，避免每次呼叫都重新計算穩定上下文的 Token，進而大幅降低 Token 費用與響應延遲：
+
+> [!IMPORTANT]
+> **請只快取「穩定且會重複使用」的內容。** `CachedContext` 不適合放每回合都變動的即時資料（如當前殖民地快照、隨機事件、即時心情值）。對 Gemini 而言，顯式快取需付「建立費 + 儲存費」，若內容每次都不同便無法重用，反而會墊高成本——此類易變內容請改放 `Prompt`。
 
 ```csharp
 public async void CallWithCaching()
@@ -163,12 +169,14 @@ public async void CallWithCaching()
     var request = new LLMRequest
     {
         ModId = "myai.mod",
-        Prompt = "分析此殖民地成員的心理健康狀態。",
-        
-        // SystemPrompt 放角色規則；CachedContext 放大型、可重複使用的穩定資料
+
+        // 易變的即時資料放 Prompt，每次都會重新送出
+        Prompt = "依據以下殖民地當前狀態，分析成員的心理健康：" + BuildColonySnapshot(),
+
+        // SystemPrompt 放角色規則；CachedContext 放大型、穩定、會重複使用的資料（規則書 / Schema / 固定設定）
         SystemPrompt = "你是一個 RimWorld 心理分析大師。",
-        CachedContext = BuildColonySnapshotAndPawnProfiles(),
-        
+        CachedContext = BuildAnalysisRulesAndOutputSchema(),
+
         // 啟用快取節省 Token 功能
         EnableContextCaching = true 
     };
@@ -183,14 +191,17 @@ public async void CallWithCaching()
 > * 若想更簡潔，也可以使用 `LLMRequest.Create(...).WithCachedContext(longContext)`，它會自動設定 `EnableContextCaching = true`。
 > * 簡化 overload 也支援 `cachedContext: longContext`，並會自動啟用 Context Caching。
 > * **Gemini** 預設會將 `SystemPrompt + CachedContext` 以 `cachedContents` 方式快取 5 分鐘（TTL 300s），後續相同上下文與模型的請求會自動對齊該快取。
+>   * **最小門檻保護**：當上下文過小（Pro 模型約 < 2048、其餘模型約 < 1024）時，建立顯式快取並不划算，框架會自動略過快取、改走一般 `systemInstruction`，避免付了建立費卻無法回收。
+>   * 同一上下文的快取建立流程具備並發鎖保護，避免多執行緒同時送出而重複建立快取資源。
 > * **Anthropic (Claude)** 則會套用 `ephemeral` 快取標記，對重複輸入的 Prompt 提供高達 90% 的費用折扣。
+> * **成本面板反映節省**：Debug 分頁的費用估算會自動讀取 API 回傳的快取命中量（Anthropic 的 `cache_read_input_tokens`、Gemini 的 `cachedContentTokenCount`），並以折扣費率計入，因此面板數字會真實反映 Context Caching 省下的金額。
 
 ---
 
 ## 📖 主要功能與特色
 
 1. **多供應商支援 (Multi-Provider Support)**
-   * 原生支援 Google **Gemini**、**OpenAI**、**DeepSeek**、**Groq**、**Anthropic (Claude)**、**OpenRouter**、**Kimi**、**MiniMax** 與 **Qwen**。
+   * 原生支援 Google **Gemini**、**OpenAI**、**DeepSeek**、**Groq**、**Grok (xAI)**、**Z.ai**、**OpenRouter**、**Kimi**、**MiniMax**、**Qwen** 與 **NVIDIA**。
    * 支援 **OpenAI Compatible API**，可自訂配置任何本地或第三方相容介面（如 LM Studio、Ollama、LocalAI、vLLM 等），預設 Endpoint 為 `http://localhost:1234/v1` 且支援 API 金鑰。
    * 針對 **Kimi**、**MiniMax**、**Qwen** 提供「使用中國專用端點 (預設關閉)」一鍵切換，保證優質連線。
 2. **故障轉移與雙重備用機制 (Model Fallback)**
@@ -217,6 +228,8 @@ public async void CallWithCaching()
    * **智慧思考強度控制 (Reasoning Effort)**：預設思考強度改為「自動 / 預設 (Auto)」。在此模式下，各大供應商能運行其原生的適應性或動態思考配置（如 Gemini 的 `thinkingBudget = -1`，Anthropic 的 `"type": "adaptive"`，OpenAI 的動態 `reasoning_effort` 控制等），並支援在選單中一鍵「關閉 (Disabled)」或手動調整思考強度（低/中/高）。
 9. **智慧上下文快取與 Prompt Caching (Context Caching)**
    * 原生支援 **Gemini Context Caching** 與 **Anthropic Prompt Caching (Ephemeral)**。開發者只需在 `LLMRequest` 中設定 `CachedContext` 並啟用 `EnableContextCaching = true`，底層即會自動將 `SystemPrompt + CachedContext` 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
+   * **成本防呆**：Gemini 顯式快取設有最小門檻，內容過小時自動略過快取改走 `systemInstruction`，避免「付建立費卻無法回收」的反效果；同一上下文的快取建立亦具併發鎖保護以防重複建立。
+   * **節省可量化**：用量統計會解析 API 回傳的快取命中 Token（Anthropic `cache_read`、Gemini `cachedContentTokenCount`）並套用折扣費率計入成本估算，讓費用面板真實反映快取帶來的節省。
 
 ---
 
@@ -253,7 +266,6 @@ public async void CallWithCaching()
 * **API 金鑰加密為「混淆等級」保護**：金鑰以 AES-256 加密後存入設定檔，加密金鑰由固定種子與裝置識別碼（`deviceUniqueIdentifier`）衍生。這能防止設定檔被直接複製到其他機器後讀出明文、避免雲端同步或分享設定時意外洩漏，但**無法**抵禦在本機執行的程式（包含其他 Mod）——加密邏輯與素材都在同一進程內，有心者可還原明文。請將其理解為「防呆與防意外洩漏」，而非保險箱。
 * **呼叫端註冊是防誤用機制，不是安全邊界**：`RegisterClient` 與 Assembly 比對能防止 ModId 誤用、冒名與調試混淆，但 RimWorld 所有 Mod 運行於同一進程，惡意模組仍可透過反射、記憶體讀取等同進程能力繞過校驗。本框架不承諾、也無法提供進程內沙箱隔離。
 * **金鑰不落地於 URL 與日誌**：所有供應商均以 HTTP Header 傳遞金鑰；日誌輸出一律經過 `SanitizeForLog` 處理並截斷長度，診斷匯出時裝置識別碼亦會遮罩。
-* **建議**：請使用可設定用量上限的 API 金鑰，並定期於供應商後台檢查用量；若懷疑金鑰外洩，請立即於供應商後台撤銷並更換。
 
 ---
 
@@ -270,6 +282,3 @@ dotnet build "Source/RimLLM Framework.slnx"
 # 執行所有 NUnit 單元測試
 dotnet test "Source/RimLLM Framework.Tests/RimLLM Framework.Tests.csproj"
 ```
-
-> [!NOTE]
-> 單元測試於 runtime 需要 RimWorld 本體的 `Assembly-CSharp` 與 Unity DLL。測試專案預設從 Steam 安裝路徑複製；若您的 RimWorld 安裝於其他位置，請設定環境變數 `RIMWORLD_MANAGED_DIR` 指向 `RimWorldWin64_Data/Managed` 資料夾。由於這些 DLL 不可散布，GitHub Actions CI 僅執行建置作為編譯閘門，完整測試請在本機執行。

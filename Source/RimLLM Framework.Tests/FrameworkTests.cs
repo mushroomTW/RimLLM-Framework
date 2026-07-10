@@ -86,7 +86,8 @@ namespace RimLLM_Framework.Tests
             {
                 FallbackChain = new List<string> { "MockFail:model-x", "MockSuccess:model-y" },
                 MaxRetries = 0,
-                RetryDelay = 0f
+                RetryDelay = 0f,
+                RoutingStrategy = 0
             };
             mockSettings.EnabledProviders["MockFail"] = true;
             mockSettings.EnabledProviders["MockSuccess"] = true;
@@ -540,7 +541,8 @@ namespace RimLLM_Framework.Tests
             {
                 FallbackChain = new List<string> { "MockFail:model-a", "MockSuccess:model-b" },
                 MaxRetries = 0,
-                RetryDelay = 0f
+                RetryDelay = 0f,
+                RoutingStrategy = 0
             };
             mockSettings.EnabledProviders["MockFail"] = true;
             mockSettings.EnabledProviders["MockSuccess"] = true;
@@ -579,6 +581,7 @@ namespace RimLLM_Framework.Tests
             for (int i = 0; i < 3; i++)
             {
                 try { manager.GenerateAsync(req).GetAwaiter().GetResult(); } catch {}
+                manager.ClearCooldowns();
             }
             Assert.AreEqual(3, failCount);
             Assert.AreEqual(3, successCount);
@@ -725,6 +728,13 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestSettingsDefaultRoutingStrategy()
+        {
+            var settings = new RimLLMFrameworkSettings();
+            Assert.AreEqual(2, settings.RoutingStrategy);
+        }
+
+        [Test]
         public void TestTokenUsageAndCostRecording()
         {
             var mockSettings = new MockSettings();
@@ -743,38 +753,68 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual(0f, mockSettings.TotalEstimatedCost);
 
             // 3. 已知精確費率模型才累計估算金額。
-            manager.RecordUsage("Anthropic", "claude-sonnet-4-6", 1000000, 1000000);
+            manager.RecordUsage("Gemini", "gemini-2.5-flash", 1000000, 1000000);
 
             Assert.AreEqual(1100000, mockSettings.TotalPromptTokens);
             Assert.AreEqual(1050000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(18.00f, mockSettings.TotalEstimatedCost, 0.0001f);
+            Assert.AreEqual(2.80f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             // 4. Gemini 模型若帶官方 models/ 前綴也能正規化。
             manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 1000000);
 
             Assert.AreEqual(2100000, mockSettings.TotalPromptTokens);
             Assert.AreEqual(2050000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(20.80f, mockSettings.TotalEstimatedCost, 0.0001f);
+            Assert.AreEqual(5.60f, mockSettings.TotalEstimatedCost, 0.0001f);
+
+            manager.RecordUsage("Gemini", "gemini-3.5-flash", 1000000, 1000000);
+
+            Assert.AreEqual(3100000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(3050000, mockSettings.TotalCompletionTokens);
+            Assert.AreEqual(16.10f, mockSettings.TotalEstimatedCost, 0.0001f);
+
+            manager.RecordUsage("DeepSeek", "deepseek-v4-flash", 1000000, 1000000);
+            Assert.AreEqual(4100000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(4050000, mockSettings.TotalCompletionTokens);
+            Assert.AreEqual(16.52f, mockSettings.TotalEstimatedCost, 0.0001f);
+
+            manager.RecordUsage("Groq", "llama-3.3-70b-versatile", 1000000, 1000000);
+            Assert.AreEqual(5100000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(5050000, mockSettings.TotalCompletionTokens);
+            Assert.AreEqual(17.90f, mockSettings.TotalEstimatedCost, 0.0001f);
+
+            manager.RecordUsage("MiniMax", "MiniMax-M3", 1000000, 1000000);
+            Assert.AreEqual(6100000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(6050000, mockSettings.TotalCompletionTokens);
+            Assert.AreEqual(19.40f, mockSettings.TotalEstimatedCost, 0.0001f);
         }
 
         [Test]
-        public void TestAnthropicFetchAvailableModelsUsesApiResponse()
+        public void TestCachedTokenDiscountReducesCost()
         {
+            // 快取命中的輸入 Token 應以折扣費率計價，藉此反映 Context Caching 的節省。
             var mockSettings = new MockSettings();
-            mockSettings.ApiKeys["Anthropic"] = "mock-key";
-            mockSettings.Endpoints["Anthropic"] = "https://api.anthropic.com/v1/messages";
+            var manager = new RimLLMManager(mockSettings);
 
-            var provider = new TestAnthropicModelListProvider(
-                mockSettings,
-                "{\"data\":[{\"id\":\"claude-sonnet-4-6\"},{\"id\":\"claude-opus-4-8\"},{\"id\":\"claude-sonnet-4-6\"}]}"
-            );
+            // Gemini：輸入價 $0.3/M，cache read 折扣 0.25x。
+            // 1,000,000 輸入中有 800,000 為快取命中 → 200,000*0.3 + 800,000*0.3*0.25 = $0.06 + $0.06 = $0.12
+            manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 0, 800000);
+            Assert.AreEqual(1000000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(0.12f, mockSettings.TotalEstimatedCost, 0.0001f);
 
-            var models = provider.FetchAvailableModelsAsync().GetAwaiter().GetResult();
+            // 對照組：相同輸入但完全無快取應為 $0.30。
+            mockSettings.TotalEstimatedCost = 0f;
+            manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 0, 0);
+            Assert.AreEqual(0.30f, mockSettings.TotalEstimatedCost, 0.0001f);
 
-            Assert.AreEqual("https://api.anthropic.com/v1/models", provider.LastUrl);
-            Assert.AreEqual(2, models.Count);
-            Assert.AreEqual("claude-sonnet-4-6", models[0]);
-            Assert.AreEqual("claude-opus-4-8", models[1]);
+            // 防呆：cachedPromptTokens 超過 promptTokens 時應被夾到上限，不會出現負值或溢出。
+            mockSettings.TotalEstimatedCost = 0f;
+            manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 0, 5000000);
+            // 全部視為快取命中：1,000,000 * 0.30/M * 0.25 = $0.075
+            Assert.AreEqual(0.075f, mockSettings.TotalEstimatedCost, 0.0001f);
+
+            mockSettings.TotalEstimatedCost = 0f;
+            manager.RecordUsage("DeepSeek", "deepseek-v4-flash", 1000000, 0, 1000000);
+            Assert.AreEqual(0.0028f, mockSettings.TotalEstimatedCost, 0.0001f);
         }
 
         [Test]
@@ -816,47 +856,22 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestAnthropicPromptCachingPayload()
-        {
-            var mockSettings = new MockSettings();
-            mockSettings.ApiKeys["Anthropic"] = "mock-key";
-            
-            var provider = new TestAnthropicProvider(mockSettings);
-            var request = new LLMRequest
-            {
-                ModId = "test",
-                Prompt = "hello",
-                SystemPrompt = "base-system-instructions",
-                CachedContext = "stable-colony-context-for-caching",
-                EnableContextCaching = true
-            };
-
-            string response = provider.GenerateAsync(request, "claude-3-5-sonnet").GetAwaiter().GetResult();
-            Assert.AreEqual("mocked-response", response);
-            Assert.IsNotNull(provider.InterceptedPayload);
-
-            var payloadObj = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-            var systemArray = payloadObj["system"] as Newtonsoft.Json.Linq.JArray;
-            Assert.IsNotNull(systemArray, "Anthropic system prompt payload must be an array when caching is enabled");
-            Assert.AreEqual(1, systemArray.Count);
-            Assert.AreEqual("text", systemArray[0]["type"]?.ToString());
-            Assert.AreEqual("base-system-instructions\n\nstable-colony-context-for-caching", systemArray[0]["text"]?.ToString());
-            Assert.AreEqual("ephemeral", systemArray[0]["cache_control"]?["type"]?.ToString());
-        }
-
-        [Test]
         public void TestGeminiContextCachingFlow()
         {
             var mockSettings = new MockSettings();
             mockSettings.ApiKeys["Gemini"] = "mock-key";
 
             var provider = new TestGeminiProvider(mockSettings);
+            // 內容須超過顯式快取門檻（pro 模型約 2048 token，以字元數為保守下界），否則會正確地略過快取改走 systemInstruction
+            const string systemPrompt = "base-system-instructions";
+            string cachedContext = "stable-colony-context-for-gemini-caching " + new string('x', 2100);
+            string expectedSystemText = systemPrompt + "\n\n" + cachedContext;
             var request = new LLMRequest
             {
                 ModId = "test",
                 Prompt = "hello",
-                SystemPrompt = "base-system-instructions",
-                CachedContext = "stable-colony-context-for-gemini-caching",
+                SystemPrompt = systemPrompt,
+                CachedContext = cachedContext,
                 EnableContextCaching = true
             };
 
@@ -870,7 +885,7 @@ namespace RimLLM_Framework.Tests
             Assert.IsTrue(firstCall.url.Contains("cachedContents"));
             var firstPayload = Newtonsoft.Json.Linq.JObject.Parse(firstCall.payload);
             Assert.AreEqual("models/gemini-1.5-pro", firstPayload["model"]?.ToString());
-            Assert.AreEqual("base-system-instructions\n\nstable-colony-context-for-gemini-caching", firstPayload["systemInstruction"]?["parts"]?[0]?["text"]?.ToString());
+            Assert.AreEqual(expectedSystemText, firstPayload["systemInstruction"]?["parts"]?[0]?["text"]?.ToString());
 
             // 驗證第二個呼叫是生成內容，且使用了 cachedContent 屬性並不包含 systemInstruction
             var secondCall = provider.SendCalls[1];
@@ -893,11 +908,97 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestGeminiSkipsExplicitCacheWhenContextTooSmall()
+        {
+            // 內容過小時建立顯式快取不划算（建立費 + 儲存費 > 節省），應略過快取改走一般 systemInstruction。
+            var mockSettings = new MockSettings();
+            mockSettings.ApiKeys["Gemini"] = "mock-key";
+
+            var provider = new TestGeminiProvider(mockSettings);
+            var request = new LLMRequest
+            {
+                ModId = "test",
+                Prompt = "hello",
+                SystemPrompt = "small-system",
+                CachedContext = "tiny-context",
+                EnableContextCaching = true
+            };
+
+            string response = provider.GenerateAsync(request, "gemini-2.5-flash").GetAwaiter().GetResult();
+            Assert.AreEqual("gemini-response", response);
+
+            // 不應有建立快取的呼叫，僅一次 generateContent
+            Assert.AreEqual(1, provider.SendCalls.Count);
+            var call = provider.SendCalls[0];
+            Assert.IsTrue(call.url.Contains("generateContent"));
+
+            var payload = Newtonsoft.Json.Linq.JObject.Parse(call.payload);
+            Assert.IsNull(payload["cachedContent"]);
+            Assert.AreEqual("small-system\n\ntiny-context", payload["systemInstruction"]?["parts"]?[0]?["text"]?.ToString());
+        }
+
+        [Test]
+        public void TestGeminiConnectionTestUsesGemini35Flash()
+        {
+            var mockSettings = new MockSettings();
+            mockSettings.ApiKeys["Gemini"] = "mock-key";
+
+            var provider = new TestGeminiProvider(mockSettings);
+            TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("gemini-3.5-flash", result.Model);
+            Assert.AreEqual(1, provider.SendCalls.Count);
+            Assert.IsTrue(provider.SendCalls[0].url.Contains("/models/gemini-3.5-flash:generateContent"));
+        }
+
+        [Test]
+        public void TestOpenRouterConnectionTestUsesFreeRouter()
+        {
+            var mockSettings = new MockSettings();
+            mockSettings.ApiKeys["OpenRouter"] = "mock-key";
+
+            var provider = new TestOpenRouterProvider(mockSettings);
+            TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("openrouter/free", result.Model);
+            Assert.IsNotNull(provider.InterceptedPayload);
+            var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+            Assert.AreEqual("openrouter/free", payload["model"]?.ToString());
+        }
+
+        [Test]
+        public void TestZaiConnectionTestUsesFreeFlashModel()
+        {
+            var mockSettings = new MockSettings();
+            mockSettings.ApiKeys[ProviderIds.Zai] = "mock-key";
+
+            var provider = new TestZaiProvider(mockSettings);
+            TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual("glm-4.5-flash", result.Model);
+            Assert.AreEqual("https://api.z.ai/api/paas/v4/chat/completions", provider.InterceptedUrl);
+            Assert.IsNotNull(provider.InterceptedPayload);
+            var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+            Assert.AreEqual("glm-4.5-flash", payload["model"]?.ToString());
+        }
+
+        [Test]
+        public void TestManagerRegistersZaiProvider()
+        {
+            var mockSettings = new MockSettings();
+            var manager = new RimLLMManager(mockSettings);
+
+            Assert.Contains(ProviderIds.Zai, manager.GetRegisteredProviderIds());
+        }
+
+        [Test]
         public void TestReasoningEffortPayloads()
         {
             var mockSettings = new MockSettings();
             mockSettings.ApiKeys["OpenAI"] = "mock-key";
-            mockSettings.ApiKeys["Anthropic"] = "mock-key";
             mockSettings.ApiKeys["Gemini"] = "mock-key";
             mockSettings.ApiKeys["OpenRouter"] = "mock-key";
 
@@ -938,63 +1039,7 @@ namespace RimLLM_Framework.Tests
                 Assert.IsNull(payload["max_completion_tokens"]);
             }
 
-            // 3. Anthropic: Claude 3.7 with ReasoningEffort.High
-            {
-                var provider = new TestAnthropicProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.High,
-                    Temperature = 0.5f,
-                    MaxTokens = 1000
-                };
-                string response = provider.GenerateAsync(request, "claude-3-7-sonnet").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.InterceptedPayload);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNotNull(payload["thinking"]);
-                Assert.AreEqual("enabled", payload["thinking"]["type"]?.ToString());
-                Assert.AreEqual(4096, (int)payload["thinking"]["budget_tokens"]);
-                Assert.AreEqual(1.0f, (float)payload["temperature"]);
-                // max_tokens should be adjusted to be greater than budget_tokens
-                Assert.IsTrue((int)payload["max_tokens"] > 4096);
-            }
-            // 3b. Anthropic: Claude 3.5 (non-thinking model) with ReasoningEffort.High (should NOT include thinking)
-            {
-                var provider = new TestAnthropicProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.High,
-                    Temperature = 0.5f,
-                    MaxTokens = 1000
-                };
-                string response = provider.GenerateAsync(request, "claude-3-5-sonnet").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.InterceptedPayload);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNull(payload["thinking"]);
-                Assert.AreEqual(0.5f, (float)payload["temperature"]);
-                Assert.AreEqual(1000, (int)payload["max_tokens"]);
-            }
 
-            // 3c. Anthropic: Claude 4 (adaptive-thinking model) with ReasoningEffort.Medium (should include adaptive thinking)
-            {
-                var provider = new TestAnthropicProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Medium,
-                    Temperature = 0.5f,
-                    MaxTokens = 1000
-                };
-                string response = provider.GenerateAsync(request, "claude-4-sonnet").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.InterceptedPayload);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNotNull(payload["thinking"]);
-                Assert.AreEqual("adaptive", payload["thinking"]["type"]?.ToString());
-                Assert.AreEqual("medium", payload["thinking"]["effort"]?.ToString());
-                Assert.IsNull(payload["thinking"]["budget_tokens"]);
-                Assert.AreEqual(1.0f, (float)payload["temperature"]);
-            }
 
             // 4. Gemini: Gemini with ReasoningEffort.Low
             {
@@ -1129,48 +1174,7 @@ namespace RimLLM_Framework.Tests
                 Assert.AreEqual("minimal", payload["generationConfig"]["thinkingConfig"]["thinkingLevel"]?.ToString());
             }
 
-            // 6f. Anthropic Claude 3.7 Auto -> enabled with 1024 budget
-            {
-                var provider = new TestAnthropicProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Auto
-                };
-                string response = provider.GenerateAsync(request, "claude-3-7-sonnet").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNotNull(payload["thinking"]);
-                Assert.AreEqual("enabled", payload["thinking"]["type"]?.ToString());
-                Assert.AreEqual(1024, (int)payload["thinking"]["budget_tokens"]);
-            }
 
-            // 6g. Anthropic Claude 4 Auto -> adaptive without effort
-            {
-                var provider = new TestAnthropicProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Auto
-                };
-                string response = provider.GenerateAsync(request, "claude-4-sonnet").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNotNull(payload["thinking"]);
-                Assert.AreEqual("adaptive", payload["thinking"]["type"]?.ToString());
-                Assert.IsNull(payload["thinking"]["effort"]);
-            }
-
-            // 6h. Anthropic Claude 3.7 None -> Omit thinking
-            {
-                var provider = new TestAnthropicProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.None
-                };
-                string response = provider.GenerateAsync(request, "claude-3-7-sonnet").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNull(payload["thinking"]);
-            }
 
             // 6i. OpenRouter Auto -> Omit max_thinking_tokens
             {
@@ -1259,7 +1263,6 @@ namespace RimLLM_Framework.Tests
             var mockSettings = new MockSettings();
             mockSettings.ApiKeys["OpenAI"] = "mock-key";
             mockSettings.ApiKeys["Gemini"] = "mock-key";
-            mockSettings.ApiKeys["Anthropic"] = "mock-key";
 
             // 1. 測試 OpenAIProvider (DeepSeek-R1 格式 reasoning_content)
             {
@@ -1281,17 +1284,6 @@ namespace RimLLM_Framework.Tests
                 Assert.IsTrue(result.Contains("</think>"));
                 Assert.IsTrue(result.Contains("Thinking deeply..."));
                 Assert.IsTrue(result.Contains("Response from Gemini"));
-            }
-
-            // 3. 測試 AnthropicProvider (thinking block)
-            {
-                var provider = new TestAnthropicProviderWithReasoning(mockSettings);
-                var request = new LLMRequest { Prompt = "hello" };
-                string result = provider.GenerateAsync(request, "claude-thinking").GetAwaiter().GetResult();
-                Assert.IsTrue(result.Contains("<think>"));
-                Assert.IsTrue(result.Contains("</think>"));
-                Assert.IsTrue(result.Contains("Formulating the answer..."));
-                Assert.IsTrue(result.Contains("Final output text"));
             }
         }
 
@@ -1355,6 +1347,531 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual(1, calledModels.Count);
             Assert.AreEqual("model-mini", calledModels[0]);
         }
+
+        [Test]
+        public void TestBudgetReset()
+        {
+            var mockSettings = new MockSettings();
+            var tracker = new RimLLMUsageTracker(mockSettings);
+
+            // 設置非今日重置日期
+            mockSettings.DailyBudgetResetDate = "2026-01-01";
+            mockSettings.DailyAccumulatedCost = 5.5f;
+
+            // 觸發重置
+            tracker.CheckDailyReset();
+
+            string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+            Assert.AreEqual(todayStr, mockSettings.DailyBudgetResetDate);
+            Assert.AreEqual(0f, mockSettings.DailyAccumulatedCost);
+        }
+
+        [Test]
+        public void TestThrottlingAntiAbuse()
+        {
+            var mockSettings = new MockSettings
+            {
+                EnableAntiAbuse = true,
+                MaxRequestsPerWindow = 3,
+                ThrottlingWindowSeconds = 5,
+                CoolDownDurationSeconds = 10,
+                FallbackChain = new List<string> { "MockSuccess:model-z" }
+            };
+            mockSettings.EnabledProviders["MockSuccess"] = true;
+            mockSettings.ApiKeys["MockSuccess"] = "mock-key-z";
+
+            var manager = new RimLLMManager(mockSettings);
+            var mockSuccess = new MockTestProvider
+            {
+                ProviderId = "MockSuccess",
+                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("ok")
+            };
+            manager.RegisterProvider(mockSuccess);
+
+            const string modId = "test.abuse.mod";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+
+            // 呼叫 3 次應該都成功
+            Assert.AreEqual("ok", manager.GenerateAsync(request).GetAwaiter().GetResult());
+            Assert.AreEqual("ok", manager.GenerateAsync(request).GetAwaiter().GetResult());
+            Assert.AreEqual("ok", manager.GenerateAsync(request).GetAwaiter().GetResult());
+
+            // 第 4 次呼叫超出頻率限制，預期觸發 RateLimit 錯誤
+            var ex = Assert.Throws<RimLLMException>(() =>
+            {
+                manager.GenerateAsync(request).GetAwaiter().GetResult();
+            });
+            Assert.AreEqual(LLMError.RateLimit, ex.Error);
+        }
+
+        [Test]
+        public void TestBudgetPolicyHardBlock()
+        {
+            var mockSettings = new MockSettings
+            {
+                DailyBudgetLimit = 1.0f,
+                DailyAccumulatedCost = 1.2f,
+                DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd"),
+                BudgetPolicy = 0, // HardBlock
+                FallbackChain = new List<string> { "MockSuccess:model-z" }
+            };
+            mockSettings.EnabledProviders["MockSuccess"] = true;
+            mockSettings.ApiKeys["MockSuccess"] = "mock-key-z";
+
+            var manager = new RimLLMManager(mockSettings);
+            var mockSuccess = new MockTestProvider
+            {
+                ProviderId = "MockSuccess",
+                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("ok")
+            };
+            manager.RegisterProvider(mockSuccess);
+
+            const string modId = "test.budget.block.mod";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+
+            var ex = Assert.Throws<RimLLMException>(() =>
+            {
+                manager.GenerateAsync(request).GetAwaiter().GetResult();
+            });
+            Assert.AreEqual(LLMError.QuotaExceeded, ex.Error);
+        }
+
+        [Test]
+        public void TestBudgetPolicySilentMocking()
+        {
+            var mockSettings = new MockSettings
+            {
+                DailyBudgetLimit = 1.0f,
+                DailyAccumulatedCost = 1.2f,
+                DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd"),
+                BudgetPolicy = 1, // SilentMocking
+                FallbackChain = new List<string> { "MockSuccess:model-z" }
+            };
+            mockSettings.EnabledProviders["MockSuccess"] = true;
+            mockSettings.ApiKeys["MockSuccess"] = "mock-key-z";
+
+            var manager = new RimLLMManager(mockSettings);
+            var mockSuccess = new MockTestProvider
+            {
+                ProviderId = "MockSuccess",
+                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("ok")
+            };
+            manager.RegisterProvider(mockSuccess);
+
+            const string modId = "test.budget.mock.mod";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            // 1. 一般文字請求
+            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+            string resText = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.IsTrue(resText.Contains("沉思") || resText.Contains("resting") || resText.Contains("thinking") || resText.Contains("REST"));
+
+            // 2. 結構化輸出請求，預期回傳空 JSON "{}"
+            var resObj = manager.GenerateObjectAsync<TestDataStructure>(request).GetAwaiter().GetResult();
+            Assert.IsNotNull(resObj);
+            Assert.AreEqual(100, resObj.Value);
+            Assert.AreEqual("default", resObj.Message);
+        }
+
+        [Test]
+        public void TestJsonSchemaGenerator()
+        {
+            // test lowercase (OpenAI style)
+            var openaiSchema = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure), uppercaseTypes: false);
+            Assert.AreEqual("object", openaiSchema["type"]?.ToString());
+            Assert.IsNotNull(openaiSchema["properties"]);
+            Assert.AreEqual("integer", openaiSchema["properties"]?["Value"]?["type"]?.ToString());
+            Assert.AreEqual("string", openaiSchema["properties"]?["Message"]?["type"]?.ToString());
+            Assert.IsFalse((bool)openaiSchema["additionalProperties"]);
+
+            // test uppercase (Gemini style)
+            var geminiSchema = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure), uppercaseTypes: true);
+            Assert.AreEqual("OBJECT", geminiSchema["type"]?.ToString());
+            Assert.AreEqual("INTEGER", geminiSchema["properties"]?["Value"]?["type"]?.ToString());
+            Assert.AreEqual("STRING", geminiSchema["properties"]?["Message"]?["type"]?.ToString());
+        }
+
+        [Test]
+        public void TestSmartRoutingMinLatency()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockSlow:model-s", "MockFast:model-f" },
+                RoutingStrategy = 1, // MinLatency
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockSlow"] = true;
+            mockSettings.EnabledProviders["MockFast"] = true;
+            mockSettings.ApiKeys["MockSlow"] = "key-s";
+            mockSettings.ApiKeys["MockFast"] = "key-f";
+
+            var manager = new RimLLMManager(mockSettings);
+
+            var mockSlow = new MockTestProvider
+            {
+                ProviderId = "MockSlow",
+                GenerateHandler = async (req, model) =>
+                {
+                    await System.Threading.Tasks.Task.Delay(100);
+                    return "slow-ok";
+                }
+            };
+            var mockFast = new MockTestProvider
+            {
+                ProviderId = "MockFast",
+                GenerateHandler = async (req, model) =>
+                {
+                    await System.Threading.Tasks.Task.Delay(5);
+                    return "fast-ok";
+                }
+            };
+
+            manager.RegisterProvider(mockSlow);
+            manager.RegisterProvider(mockFast);
+
+            const string modId = "test.routing.latency";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+
+            // 第一次呼叫：兩個都沒有延遲歷史，依據 FallbackChain 順序（先 MockSlow）
+            string res1 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.AreEqual("slow-ok", res1);
+
+            // 第二次呼叫：因為 MockSlow 已有延遲（100ms），MockFast 尚未有歷史（視為 0 延遲），優先呼叫 MockFast
+            string res2 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.AreEqual("fast-ok", res2);
+
+            // 第三次呼叫：此時 MockSlow 平均 100ms，MockFast 平均 5ms，智慧路由應該優先選擇 MockFast
+            string res3 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.AreEqual("fast-ok", res3);
+        }
+
+        [Test]
+        public void TestSmartRoutingPriorityFailover()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockFail:model-x", "MockSuccess:model-y" },
+                RoutingStrategy = 0, // PriorityFailover
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockFail"] = true;
+            mockSettings.EnabledProviders["MockSuccess"] = true;
+            mockSettings.ApiKeys["MockFail"] = "key-x";
+            mockSettings.ApiKeys["MockSuccess"] = "key-y";
+
+            var manager = new RimLLMManager(mockSettings);
+
+            int failCalls = 0;
+            int successCalls = 0;
+
+            var mockFail = new MockTestProvider
+            {
+                ProviderId = "MockFail",
+                GenerateHandler = (req, model) =>
+                {
+                    failCalls++;
+                    throw new Exception("Simulated fail");
+                }
+            };
+            var mockSuccess = new MockTestProvider
+            {
+                ProviderId = "MockSuccess",
+                GenerateHandler = (req, model) =>
+                {
+                    successCalls++;
+                    return System.Threading.Tasks.Task.FromResult("success-ok");
+                }
+            };
+
+            manager.RegisterProvider(mockFail);
+            manager.RegisterProvider(mockSuccess);
+
+            const string modId = "test.routing.failover";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+
+            // 第一次呼叫：MockFail 失敗，然後 Fallback 到 MockSuccess 成功
+            string res1 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.AreEqual("success-ok", res1);
+            Assert.AreEqual(1, failCalls);
+            Assert.AreEqual(1, successCalls);
+
+            // 第二次呼叫：MockFail 此時正處於 60 秒的故障冷卻期，智慧路由應直接跳過它，不進行呼叫，直接執行 MockSuccess
+            string res2 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.AreEqual("success-ok", res2);
+            Assert.AreEqual(1, failCalls); // 呼叫次數仍為 1，說明已被跳過！
+            Assert.AreEqual(2, successCalls);
+        }
+
+        [Test]
+        public void TestJsonRepairSettings()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockJSON:model-j" },
+                EnableJsonRepair = false, // 禁用 JSON 修復
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockJSON"] = true;
+            mockSettings.ApiKeys["MockJSON"] = "key-j";
+
+            var manager = new RimLLMManager(mockSettings);
+            var mockJSON = new MockTestProvider
+            {
+                ProviderId = "MockJSON",
+                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("```json\n{ \"Value\": 42, \"Message\": \"ok\", }\n```") // 帶有 markdown 與尾隨逗號的不合法 JSON
+            };
+            manager.RegisterProvider(mockJSON);
+
+            const string modId = "test.json.repair.settings";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+
+            // 1. 當 EnableJsonRepair 為 false 時，預期拋出例外
+            Assert.Throws<RimLLMException>(() =>
+            {
+                manager.GenerateObjectAsync<TestDataStructure>(request).GetAwaiter().GetResult();
+            });
+
+            // 2. 當 EnableJsonRepair 為 true 時，預期成功修復並解析
+            mockSettings.EnableJsonRepair = true;
+            var res = manager.GenerateObjectAsync<TestDataStructure>(request).GetAwaiter().GetResult();
+            Assert.IsNotNull(res);
+            Assert.AreEqual(42, res.Value);
+            Assert.AreEqual(okStr(res.Message), "ok");
+        }
+
+        [Test]
+        public void TestTrigramCosineSimilarity()
+        {
+            // 1. 相同字串相似度為 1.0
+            float simSelf = RimLLMSemanticCache.CalculateTrigramSimilarity("Colony status is good", "Colony status is good");
+            Assert.AreEqual(1.0f, simSelf, 0.001f);
+
+            // 2. 完全無關字串相似度接近 0.0
+            float simDiff = RimLLMSemanticCache.CalculateTrigramSimilarity("Colony status is good", "Starve event happened");
+            Assert.IsTrue(simDiff < 0.2f);
+
+            // 3. 相似字串相似度較高
+            float simClose = RimLLMSemanticCache.CalculateTrigramSimilarity("We have 10 colonists", "We have 11 colonists");
+            Assert.IsTrue(simClose > 0.75f);
+        }
+
+        [Test]
+        public void TestSemanticCacheExactMatch()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockProv:model-a" },
+                EnableSemanticCache = true,
+                EmbeddingProvider = "Offline_Trigram",
+                SemanticCacheThreshold = 0.95f
+            };
+            mockSettings.EnabledProviders["MockProv"] = true;
+            mockSettings.ApiKeys["MockProv"] = "key-a";
+
+            var manager = new RimLLMManager(mockSettings);
+            int providerCalls = 0;
+            var mockProv = new MockTestProvider
+            {
+                ProviderId = "MockProv",
+                GenerateHandler = (req, model) =>
+                {
+                    providerCalls++;
+                    return System.Threading.Tasks.Task.FromResult("mocked-response");
+                }
+            };
+            manager.RegisterProvider(mockProv);
+
+            const string modId = "test.cache.exact";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            var request = new LLMRequest { ModId = modId, Prompt = "Tell me a story about colony" };
+
+            // 第一次呼叫，會快取未命中，並呼叫 Provider
+            string res1 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.AreEqual("mocked-response", res1);
+            Assert.AreEqual(1, providerCalls);
+            Assert.AreEqual(1, manager.SemanticCache.CacheCount);
+            Assert.AreEqual(0, manager.SemanticCache.CacheHits);
+            Assert.AreEqual(1, manager.SemanticCache.CacheMisses);
+
+            // 第二次相同呼叫，會精確字串命中快取，不呼叫 Provider
+            string res2 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.AreEqual("mocked-response", res2);
+            Assert.AreEqual(1, providerCalls); // 呼叫次數維持 1
+            Assert.AreEqual(1, manager.SemanticCache.CacheHits);
+            Assert.AreEqual(1, manager.SemanticCache.CacheMisses);
+        }
+
+        [Test]
+        public void TestSemanticCacheEvictionLRU()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockProv:model-a" },
+                EnableSemanticCache = true,
+                EmbeddingProvider = "Offline_Trigram",
+                SemanticCacheMaxCount = 2,
+                SemanticCacheThreshold = 0.95f
+            };
+            mockSettings.EnabledProviders["MockProv"] = true;
+            mockSettings.ApiKeys["MockProv"] = "key-a";
+
+            var manager = new RimLLMManager(mockSettings);
+            int callVal = 0;
+            var mockProv = new MockTestProvider
+            {
+                ProviderId = "MockProv",
+                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("res:" + (++callVal))
+            };
+            manager.RegisterProvider(mockProv);
+
+            const string modId = "test.cache.lru";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            // 依序發送 3 個不同請求
+            var req1 = new LLMRequest { ModId = modId, Prompt = "Prompt A" };
+            var req2 = new LLMRequest { ModId = modId, Prompt = "Prompt B" };
+            var req3 = new LLMRequest { ModId = modId, Prompt = "Prompt C" };
+
+            manager.GenerateAsync(req1).GetAwaiter().GetResult(); // 快取入 [A]
+            manager.GenerateAsync(req2).GetAwaiter().GetResult(); // 快取入 [A, B]
+            
+            // 此時存取一次 A，使其成為最新存取的
+            manager.GenerateAsync(req1).GetAwaiter().GetResult(); // Hit A, [B, A]
+            
+            manager.GenerateAsync(req3).GetAwaiter().GetResult(); // 快取入 [A, C]，B 應被剔除
+
+            Assert.AreEqual(2, manager.SemanticCache.CacheCount);
+
+            // B 應該不在快取中（如果呼叫 B 會導致重新調用 Provider 得到 res:4）
+            var reqB = new LLMRequest { ModId = modId, Prompt = "Prompt B" };
+            string resB = manager.GenerateAsync(reqB).GetAwaiter().GetResult();
+            Assert.AreEqual("res:4", resB);
+        }
+
+        [Test]
+        public void TestRequestBypassSemanticCache()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockProv:model-a" },
+                EnableSemanticCache = true,
+                EmbeddingProvider = "Offline_Trigram",
+                SemanticCacheThreshold = 0.95f
+            };
+            mockSettings.EnabledProviders["MockProv"] = true;
+            mockSettings.ApiKeys["MockProv"] = "key-a";
+
+            var manager = new RimLLMManager(mockSettings);
+            int providerCalls = 0;
+            var mockProv = new MockTestProvider
+            {
+                ProviderId = "MockProv",
+                GenerateHandler = (req, model) =>
+                {
+                    providerCalls++;
+                    return System.Threading.Tasks.Task.FromResult("res-" + providerCalls);
+                }
+            };
+            manager.RegisterProvider(mockProv);
+
+            const string modId = "test.cache.bypass";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            var request = new LLMRequest { ModId = modId, Prompt = "Test Prompt" };
+
+            // 第一次生成
+            string res1 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            Assert.AreEqual("res-1", res1);
+
+            // 第二次生成，但是啟用 BypassSemanticCache = true
+            var requestBypass = new LLMRequest { ModId = modId, Prompt = "Test Prompt", BypassSemanticCache = true };
+            string res2 = manager.GenerateAsync(requestBypass).GetAwaiter().GetResult();
+            
+            Assert.AreEqual("res-2", res2); // 應該直接呼叫 Provider，得到 res-2
+            Assert.AreEqual(2, providerCalls);
+        }
+
+        [Test]
+        public void TestSemanticCacheThreshold()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockProv:model-a" },
+                EnableSemanticCache = true,
+                EmbeddingProvider = "Offline_Trigram",
+                SemanticCacheThreshold = 0.95f // 嚴格閾值
+            };
+            mockSettings.EnabledProviders["MockProv"] = true;
+            mockSettings.ApiKeys["MockProv"] = "key-a";
+
+            var manager = new RimLLMManager(mockSettings);
+            int providerCalls = 0;
+            var mockProv = new MockTestProvider
+            {
+                ProviderId = "MockProv",
+                GenerateHandler = (req, model) =>
+                {
+                    providerCalls++;
+                    return System.Threading.Tasks.Task.FromResult("success");
+                }
+            };
+            manager.RegisterProvider(mockProv);
+
+            const string modId = "test.cache.threshold";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            // 1. 寫入快取 "We have 10 colonists"
+            var req1 = new LLMRequest { ModId = modId, Prompt = "We have 10 colonists" };
+            manager.GenerateAsync(req1).GetAwaiter().GetResult();
+
+            // 2. 當 Threshold = 0.95 時，呼叫相似的 "We have 11 colonists" 應該未命中（miss）
+            var req2 = new LLMRequest { ModId = modId, Prompt = "We have 11 colonists" };
+            string res2 = manager.GenerateAsync(req2).GetAwaiter().GetResult();
+            Assert.AreEqual(2, providerCalls); // 再次呼叫了 Provider
+
+            // 3. 當 Threshold 下調至 0.70 時，再次呼叫應該命中（hit）
+            mockSettings.SemanticCacheThreshold = 0.70f;
+            string res3 = manager.GenerateAsync(req2).GetAwaiter().GetResult();
+            Assert.AreEqual(2, providerCalls); // 未再次呼叫，說明命中了快取！
+        }
+
+        [Test]
+        public void TestProviderStatisticsTracking()
+        {
+            var mockSettings = new MockSettings();
+            var tracker = new RimLLMUsageTracker(mockSettings);
+
+            // 1. 記錄 2 次成功與 1 次失敗
+            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", true, "", 100);
+            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", true, "", 100);
+            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", false, "Error", 100);
+
+            Assert.IsTrue(tracker.ProviderStatistics.TryGetValue("Gemini", out var stats));
+            Assert.AreEqual(3, stats.TotalCount);
+            Assert.AreEqual(2, stats.SuccessCount);
+            Assert.AreEqual(1, stats.FailureCount);
+            Assert.AreEqual(2.0f / 3.0f, stats.SuccessRate, 0.001f);
+
+            // 2. 清空日誌後應清空統計
+            tracker.ClearLogs();
+            Assert.AreEqual(0, tracker.ProviderStatistics.Count);
+        }
+
+        private string okStr(string s) => s;
     }
 
     public class TestDataStructure
@@ -1375,6 +1892,25 @@ namespace RimLLM_Framework.Tests
         public long TotalPromptTokens { get; set; } = 0;
         public long TotalCompletionTokens { get; set; } = 0;
         public float TotalEstimatedCost { get; set; } = 0f;
+        public float DailyBudgetLimit { get; set; } = 0f;
+        public int BudgetPolicy { get; set; } = 0;
+        public bool EnableAntiAbuse { get; set; } = true;
+        public int MaxRequestsPerWindow { get; set; } = 10;
+        public int ThrottlingWindowSeconds { get; set; } = 10;
+        public int CoolDownDurationSeconds { get; set; } = 60;
+        public float DailyAccumulatedCost { get; set; } = 0f;
+        public string DailyBudgetResetDate { get; set; } = "";
+        public int RoutingStrategy { get; set; } = 0;
+        public bool EnableNativeSchema { get; set; } = true;
+        public bool EnableJsonRepair { get; set; } = true;
+
+        public bool EnableSemanticCache { get; set; } = false;
+        public float SemanticCacheThreshold { get; set; } = 0.90f;
+        public int SemanticCacheMaxCount { get; set; } = 200;
+        public string EmbeddingProvider { get; set; } = "Offline_Trigram";
+        public string EmbeddingModel { get; set; } = "text-embedding-004";
+        public string EmbeddingEndpoint { get; set; } = "";
+        public string EmbeddingApiKey { get; set; } = "";
 
         public Dictionary<string, string> ApiKeys = new Dictionary<string, string>();
         public Dictionary<string, string> Endpoints = new Dictionary<string, string>();
@@ -1430,36 +1966,6 @@ namespace RimLLM_Framework.Tests
         }
     }
 
-    public class TestAnthropicProvider : AnthropicProvider
-    {
-        public string InterceptedPayload { get; private set; }
-
-        public TestAnthropicProvider(IRimLLMSettings settings) : base(settings) {}
-
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
-        {
-            InterceptedPayload = payload;
-            return System.Threading.Tasks.Task.FromResult("{\"content\": [{\"type\": \"text\", \"text\": \"mocked-response\"}]}");
-        }
-    }
-
-    public class TestAnthropicModelListProvider : AnthropicProvider
-    {
-        private readonly string _responseJson;
-        public string LastUrl { get; private set; }
-
-        public TestAnthropicModelListProvider(IRimLLMSettings settings, string responseJson) : base(settings)
-        {
-            _responseJson = responseJson;
-        }
-
-        protected override System.Threading.Tasks.Task<string> SendGetAsync(string url, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
-        {
-            LastUrl = url;
-            return System.Threading.Tasks.Task.FromResult(_responseJson);
-        }
-    }
-
     public class TestGeminiProvider : GeminiProvider
     {
         public List<(string url, string payload)> SendCalls { get; } = new List<(string, string)>();
@@ -1501,6 +2007,21 @@ namespace RimLLM_Framework.Tests
         {
             InterceptedPayload = payload;
             return System.Threading.Tasks.Task.FromResult("{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"mocked-openrouter-response\"}}]}");
+        }
+    }
+
+    public class TestZaiProvider : ZaiProvider
+    {
+        public string InterceptedUrl { get; private set; }
+        public string InterceptedPayload { get; private set; }
+
+        public TestZaiProvider(IRimLLMSettings settings) : base(settings) {}
+
+        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        {
+            InterceptedUrl = url;
+            InterceptedPayload = payload;
+            return System.Threading.Tasks.Task.FromResult("{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"mocked-zai-response\"}}]}");
         }
     }
 
@@ -1575,17 +2096,4 @@ namespace RimLLM_Framework.Tests
             );
         }
     }
-
-    public class TestAnthropicProviderWithReasoning : AnthropicProvider
-    {
-        public TestAnthropicProviderWithReasoning(IRimLLMSettings settings) : base(settings) {}
-
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
-        {
-            return System.Threading.Tasks.Task.FromResult(
-                "{\"content\": [{\"type\": \"thinking\", \"thinking\": \"Formulating the answer...\"}, {\"type\": \"text\", \"text\": \"Final output text\"}]}"
-            );
-        }
-    }
 }
-

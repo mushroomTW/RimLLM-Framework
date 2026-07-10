@@ -88,8 +88,9 @@ namespace RimLLM_Framework.Mod
 
             // 思考強度設定列
             Rect effortRowRect = listing.GetRect(30f);
-            Rect effortLabelRect = new Rect(effortRowRect.x, effortRowRect.y, 250f, effortRowRect.height);
-            Rect effortBtnRect = new Rect(effortRowRect.x + 260f, effortRowRect.y, 200f, effortRowRect.height);
+            float effortLabelWidth = Text.CalcSize("RimLLM_ReasoningEffortLabel".Translate()).x;
+            Rect effortLabelRect = new Rect(effortRowRect.x, effortRowRect.y, effortLabelWidth + 5f, effortRowRect.height);
+            Rect effortBtnRect = new Rect(effortRowRect.x + effortLabelWidth + 15f, effortRowRect.y, 160f, effortRowRect.height);
             Text.Anchor = TextAnchor.MiddleLeft;
             Widgets.Label(effortLabelRect, "RimLLM_ReasoningEffortLabel".Translate());
             Text.Anchor = TextAnchor.UpperLeft;
@@ -141,17 +142,8 @@ namespace RimLLM_Framework.Mod
                 if (!string.IsNullOrEmpty(chatInput))
                 {
                     string trimmedInput = chatInput.Trim();
-                    if (trimmedInput == "/clear")
-                    {
-                        chatHistory.Clear();
-                        Settings.ChatHistory.Clear();
-                        Settings.SaveTelemetry();
-                        chatInput = "";
-                    }
-                    else
-                    {
-                        string userPrompt = trimmedInput;
-                        chatHistory.Add("RimLLM_ChatUser".Translate() + " " + userPrompt);
+                    string userPrompt = trimmedInput;
+                    chatHistory.Add("RimLLM_ChatUser".Translate() + " " + userPrompt);
 
                         // 先新增一個 AI 回覆的佔位項目，以利後續串流更新
                         chatHistory.Add("RimLLM_ChatAi".Translate() + " ");
@@ -229,7 +221,6 @@ namespace RimLLM_Framework.Mod
                                 });
                             }
                         });
-                    }
                 }
             }
         }

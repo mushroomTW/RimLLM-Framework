@@ -97,6 +97,10 @@ namespace RimLLM_Framework.Mod
             listing.Gap(4f);
             DrawCategoryButton(listing, "RimLLM_TabGlobalConfig".Translate(), "GlobalConfig");
             listing.Gap(4f);
+            DrawCategoryButton(listing, "RimLLM_TabSemanticCache".Translate(), "SemanticCache");
+            listing.Gap(4f);
+            DrawCategoryButton(listing, "RimLLM_TabBudget".Translate(), "Budget");
+            listing.Gap(4f);
             DrawCategoryButton(listing, "RimLLM_TabChatTest".Translate(), "ChatTest");
             listing.Gap(4f);
             DrawCategoryButton(listing, "RimLLM_TabDebug".Translate(), "Debug");
@@ -155,6 +159,14 @@ namespace RimLLM_Framework.Mod
             {
                 titleText = "RimLLM_TitleGlobalConfig".Translate();
             }
+            else if (activeMainCategory == "SemanticCache")
+            {
+                titleText = "RimLLM_TitleSemanticCache".Translate();
+            }
+            else if (activeMainCategory == "Budget")
+            {
+                titleText = "RimLLM_TitleBudget".Translate();
+            }
             else if (activeMainCategory == "ChatTest")
             {
                 titleText = "RimLLM_ChatTitle".Translate();
@@ -185,6 +197,14 @@ namespace RimLLM_Framework.Mod
             {
                 GlobalConfigDrawer.DrawGlobalConfigSettings(listing);
             }
+            else if (activeMainCategory == "SemanticCache")
+            {
+                SemanticCacheSettingsDrawer.DrawSemanticCacheSettings(listing);
+            }
+            else if (activeMainCategory == "Budget")
+            {
+                BudgetSettingsDrawer.DrawBudgetSettings(listing);
+            }
             else if (activeMainCategory == "ChatTest")
             {
                 ChatTestDrawer.DrawChatTestSettings(listing);
@@ -211,6 +231,14 @@ namespace RimLLM_Framework.Mod
             else if (activeMainCategory == "GlobalConfig")
             {
                 return GlobalConfigDrawer.GetHeight(width);
+            }
+            else if (activeMainCategory == "SemanticCache")
+            {
+                return SemanticCacheSettingsDrawer.GetHeight(width);
+            }
+            else if (activeMainCategory == "Budget")
+            {
+                return BudgetSettingsDrawer.GetHeight(width);
             }
             else if (activeMainCategory == "ChatTest")
             {

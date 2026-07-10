@@ -73,6 +73,35 @@ namespace RimLLM_Framework.Mod
             set => _telemetry.TotalEstimatedCost = value;
         }
 
+        public float DailyBudgetLimit { get; set; } = 0.0f;
+        public int BudgetPolicy { get; set; } = 0; // 0 = HardBlock
+        public bool EnableAntiAbuse { get; set; } = true;
+        public int MaxRequestsPerWindow { get; set; } = 10;
+        public int ThrottlingWindowSeconds { get; set; } = 10;
+        public int CoolDownDurationSeconds { get; set; } = 60;
+        public int RoutingStrategy { get; set; } = 2;
+        public bool EnableNativeSchema { get; set; } = true;
+        public bool EnableJsonRepair { get; set; } = true;
+
+        public bool EnableSemanticCache { get; set; } = false;
+        public float SemanticCacheThreshold { get; set; } = 0.90f;
+        public int SemanticCacheMaxCount { get; set; } = 200;
+        public string EmbeddingProvider { get; set; } = "Offline_Trigram";
+        public string EmbeddingModel { get; set; } = "text-embedding-004";
+        public string EmbeddingEndpoint { get; set; } = "";
+        public string EmbeddingApiKey { get; set; } = "";
+
+        public float DailyAccumulatedCost
+        {
+            get => _telemetry.DailyAccumulatedCost;
+            set => _telemetry.DailyAccumulatedCost = value;
+        }
+        public string DailyBudgetResetDate
+        {
+            get => _telemetry.DailyBudgetResetDate;
+            set => _telemetry.DailyBudgetResetDate = value ?? "";
+        }
+
         public RimLLMFrameworkSettings()
         {
             _telemetry.Load();
@@ -107,7 +136,8 @@ namespace RimLLM_Framework.Mod
             [ProviderIds.OpenAICompatible] = false,
             [ProviderIds.DeepSeek] = false,
             [ProviderIds.Groq] = false,
-            [ProviderIds.Anthropic] = false,
+            [ProviderIds.Grok] = false,
+            [ProviderIds.Zai] = false,
             [ProviderIds.OpenRouter] = false,
             [ProviderIds.Kimi] = false,
             [ProviderIds.MiniMax] = false,
@@ -122,7 +152,8 @@ namespace RimLLM_Framework.Mod
             [ProviderIds.OpenAICompatible] = new List<string>(),
             [ProviderIds.DeepSeek] = new List<string>(),
             [ProviderIds.Groq] = new List<string>(),
-            [ProviderIds.Anthropic] = new List<string>(),
+            [ProviderIds.Grok] = new List<string>(),
+            [ProviderIds.Zai] = new List<string>(),
             [ProviderIds.OpenRouter] = new List<string>(),
             [ProviderIds.Kimi] = new List<string>(),
             [ProviderIds.MiniMax] = new List<string>(),
@@ -155,6 +186,22 @@ namespace RimLLM_Framework.Mod
             public long TotalPromptTokens;
             public long TotalCompletionTokens;
             public float TotalEstimatedCost;
+            public float DailyBudgetLimit;
+            public int BudgetPolicy;
+            public bool EnableAntiAbuse;
+            public int MaxRequestsPerWindow;
+            public int ThrottlingWindowSeconds;
+            public int CoolDownDurationSeconds;
+            public int RoutingStrategy = 2;
+            public bool EnableNativeSchema = true;
+            public bool EnableJsonRepair = true;
+            public bool EnableSemanticCache = false;
+            public float SemanticCacheThreshold = 0.90f;
+            public int SemanticCacheMaxCount = 200;
+            public string EmbeddingProvider = "Offline_Trigram";
+            public string EmbeddingModel = "text-embedding-004";
+            public string EmbeddingEndpoint = "";
+            public string EmbeddingApiKey = "";
         }
 #pragma warning restore 0649
 
@@ -187,7 +234,23 @@ namespace RimLLM_Framework.Mod
                         ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
                         DetailedLogging = this.DetailedLogging,
                         MaxConcurrentRequests = this.MaxConcurrentRequests,
-                        DefaultReasoningEffort = this.DefaultReasoningEffort
+                        DefaultReasoningEffort = this.DefaultReasoningEffort,
+                        DailyBudgetLimit = this.DailyBudgetLimit,
+                        BudgetPolicy = this.BudgetPolicy,
+                        EnableAntiAbuse = this.EnableAntiAbuse,
+                        MaxRequestsPerWindow = this.MaxRequestsPerWindow,
+                        ThrottlingWindowSeconds = this.ThrottlingWindowSeconds,
+                        CoolDownDurationSeconds = this.CoolDownDurationSeconds,
+                        RoutingStrategy = this.RoutingStrategy,
+                        EnableNativeSchema = this.EnableNativeSchema,
+                        EnableJsonRepair = this.EnableJsonRepair,
+                        EnableSemanticCache = this.EnableSemanticCache,
+                        SemanticCacheThreshold = this.SemanticCacheThreshold,
+                        SemanticCacheMaxCount = this.SemanticCacheMaxCount,
+                        EmbeddingProvider = this.EmbeddingProvider,
+                        EmbeddingModel = this.EmbeddingModel,
+                        EmbeddingEndpoint = this.EmbeddingEndpoint,
+                        EmbeddingApiKey = this.EmbeddingApiKey
                     };
      
                     jsonStr = JsonConvert.SerializeObject(dto, Formatting.None);
@@ -270,6 +333,24 @@ namespace RimLLM_Framework.Mod
                                 this.DetailedLogging = dto.DetailedLogging;
                                 this.MaxConcurrentRequests = dto.MaxConcurrentRequests <= 0 ? 2 : dto.MaxConcurrentRequests;
                                 RimLLMLog.Enabled = this.DetailedLogging;
+
+                                this.DailyBudgetLimit = dto.DailyBudgetLimit < 0f ? 0f : dto.DailyBudgetLimit;
+                                this.BudgetPolicy = dto.BudgetPolicy < 0 ? 0 : dto.BudgetPolicy;
+                                this.EnableAntiAbuse = dto.EnableAntiAbuse;
+                                // Use 10 as default if the value is <= 0 for MaxRequestsPerWindow and ThrottlingWindowSeconds
+                                this.MaxRequestsPerWindow = dto.MaxRequestsPerWindow <= 0 ? 10 : dto.MaxRequestsPerWindow;
+                                this.ThrottlingWindowSeconds = dto.ThrottlingWindowSeconds <= 0 ? 10 : dto.ThrottlingWindowSeconds;
+                                this.CoolDownDurationSeconds = dto.CoolDownDurationSeconds < 0 ? 60 : dto.CoolDownDurationSeconds;
+                                this.RoutingStrategy = dto.RoutingStrategy < 0 ? 0 : dto.RoutingStrategy;
+                                this.EnableNativeSchema = dto.EnableNativeSchema;
+                                this.EnableJsonRepair = dto.EnableJsonRepair;
+                                this.EnableSemanticCache = dto.EnableSemanticCache;
+                                this.SemanticCacheThreshold = dto.SemanticCacheThreshold <= 0f ? 0.90f : dto.SemanticCacheThreshold;
+                                this.SemanticCacheMaxCount = dto.SemanticCacheMaxCount <= 0 ? 200 : dto.SemanticCacheMaxCount;
+                                this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? "Offline_Trigram" : dto.EmbeddingProvider;
+                                this.EmbeddingModel = string.IsNullOrEmpty(dto.EmbeddingModel) ? "text-embedding-004" : dto.EmbeddingModel;
+                                this.EmbeddingEndpoint = dto.EmbeddingEndpoint ?? "";
+                                this.EmbeddingApiKey = dto.EmbeddingApiKey ?? "";
                             }
                         }
                         catch (Exception ex)

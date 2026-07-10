@@ -48,7 +48,13 @@ namespace RimLLM_Framework.SDK
         public string SystemPrompt { get; set; }
 
         /// <summary>
-        /// 可重複使用的大型穩定上下文。啟用 Context Caching 時，Provider 會優先快取此內容。
+        /// 可重複使用的「大型且穩定」上下文，例如世界觀規則、輸出 Schema、固定角色設定等。
+        /// 啟用 Context Caching 時，Provider 會優先快取此內容。
+        /// <para>
+        /// 注意：請只放短時間內會「重複使用」的穩定內容。對 Gemini 而言，顯式快取需付建立費與儲存費，
+        /// 若放每回合都變動的內容（如即時世界狀態、隨機事件），快取無法重用，反而會增加成本；
+        /// 此類易變內容應改放 <see cref="Prompt"/>。對 Anthropic / OpenAI 系列則由 API 端自動命中，影響較小。
+        /// </para>
         /// </summary>
         public string CachedContext { get; set; }
 
@@ -76,6 +82,11 @@ namespace RimLLM_Framework.SDK
         /// 最低相容模型等級，供 Fallback 決定降級下限。
         /// </summary>
         public string MinFallbackLevel { get; set; }
+
+        /// <summary>
+        /// 指示是否跳過語意快取直接呼叫 LLM 進行新鮮回答。
+        /// </summary>
+        public bool BypassSemanticCache { get; set; } = false;
 
         /// <summary>
         /// 非同步請求取消 Token。
@@ -179,7 +190,17 @@ namespace RimLLM_Framework.SDK
         }
 
         /// <summary>
-        /// 以最簡方式啟用上下文快取，適合放世界狀態、角色資料、Schema 等大型穩定內容。
+        /// 設定是否跳過語意快取。
+        /// </summary>
+        public LLMRequest WithBypassSemanticCache(bool bypass)
+        {
+            BypassSemanticCache = bypass;
+            return this;
+        }
+
+        /// <summary>
+        /// 以最簡方式啟用上下文快取，適合放「大型且短時間內會重複使用」的穩定內容，例如世界觀規則、固定角色設定、輸出 Schema。
+        /// 請勿放每回合變動的即時資料（如當前世界狀態、隨機事件），否則 Gemini 顯式快取無法重用，反而墊高成本——詳見 <see cref="CachedContext"/>。
         /// </summary>
         public LLMRequest WithCachedContext(string cachedContext)
         {
@@ -225,7 +246,8 @@ namespace RimLLM_Framework.SDK
                 EnableContextCaching = this.EnableContextCaching,
                 ReasoningEffort = this.ReasoningEffort,
                 EnableStreaming = this.EnableStreaming,
-                OnChunkReceived = this.OnChunkReceived
+                OnChunkReceived = this.OnChunkReceived,
+                BypassSemanticCache = this.BypassSemanticCache
             };
         }
     }

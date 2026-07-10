@@ -1,6 +1,3 @@
-using System;
-using System.Diagnostics;
-using System.Threading.Tasks;
 using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
@@ -10,13 +7,9 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class MiniMaxProvider : OpenAIProvider
     {
-        public override string ProviderId => "MiniMax";
-        protected override string DefaultEndpoint => "https://api.minimax.io/v1";
-
-        public MiniMaxProvider(IRimLLMSettings settings) : base(settings)
+        public MiniMaxProvider(IRimLLMSettings settings)
+            : base(settings, ProviderIds.MiniMax, "https://api.minimax.io/v1", "MiniMax-M3")
         {
         }
-
-        protected override string DefaultTestModel => "abab6.5g-chat";
     }
 }

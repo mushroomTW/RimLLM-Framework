@@ -11,6 +11,8 @@ using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Providers;
 using RimLLM_Framework.Mod;
+using Verse;
+using RimWorld;
 
 namespace RimLLM_Framework.Manager
 {
@@ -28,10 +30,39 @@ namespace RimLLM_Framework.Manager
         private readonly object _providerLock = new object();
         private readonly HashSet<Type> _registeredTypes = new HashSet<Type>();
 
-        // 拆分出去的模組實體
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMCircuitBreaker _circuitBreaker;
         private readonly RimLLMUsageTracker _usageTracker;
+        private readonly RimLLMSemanticCache _semanticCache;
+
+        public RimLLMSemanticCache SemanticCache => _semanticCache;
+        public RimLLMUsageTracker UsageTracker => _usageTracker;
+
+        // Anti-abuse state
+        private readonly ConcurrentDictionary<string, List<DateTime>> RequestTimestamps = 
+            new ConcurrentDictionary<string, List<DateTime>>(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, DateTime> CoolDownUntil = 
+            new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        // Budget Dialog state
+        private string _budgetApprovalDate = "";
+        private string _budgetDeclineDate = "";
+        private readonly object BudgetPromptLock = new object();
+        private TaskCompletionSource<bool> _activePromptTcs = null;
+
+        // Smart Routing state
+        private struct ResolvedCandidate
+        {
+            public string Entry;
+            public string ProviderId;
+            public ILLMProvider Provider;
+            public string ModelName;
+        }
+
+        private readonly ConcurrentDictionary<string, List<long>> ProviderLatencies = 
+            new ConcurrentDictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, DateTime> ProviderFailCooldowns = 
+            new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// 使用量統計日誌實體，保持結構以相容 Scribe 序列化。
@@ -68,12 +99,15 @@ namespace RimLLM_Framework.Manager
             RegisterBuiltInProvider(new OpenAICompatibleProvider(settings));
             RegisterBuiltInProvider(new DeepSeekProvider(settings));
             RegisterBuiltInProvider(new GroqProvider(settings));
-            RegisterBuiltInProvider(new AnthropicProvider(settings));
+            RegisterBuiltInProvider(new GrokProvider(settings));
             RegisterBuiltInProvider(new OpenRouterProvider(settings));
             RegisterBuiltInProvider(new KimiProvider(settings));
             RegisterBuiltInProvider(new MiniMaxProvider(settings));
             RegisterBuiltInProvider(new QwenProvider(settings));
             RegisterBuiltInProvider(new NvidiaProvider(settings));
+            RegisterBuiltInProvider(new ZaiProvider(settings));
+
+            _semanticCache = new RimLLMSemanticCache(settings);
         }
 
         private void RegisterBuiltInProvider(ILLMProvider provider)
@@ -198,10 +232,29 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 包裝排隊佇列的 GenerateInternalAsync。
         /// </summary>
-        private Task<string> GenerateInternalAsync(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
+        private async Task<string> GenerateInternalAsync(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
         {
             LLMRequest normalizedRequest = NormalizeRequest(request);
-            return _requestQueue.EnqueueRequestAsync(normalizedRequest, () => GenerateInternalDirectAsync(normalizedRequest, callingAssembly, verifyCaller));
+
+            // 1. 嘗試從語意快取中讀取（僅非串流請求啟用）
+            if (!normalizedRequest.EnableStreaming)
+            {
+                string cachedResponse = await _semanticCache.TryGetCachedResponseAsync(normalizedRequest).ConfigureAwait(false);
+                if (cachedResponse != null)
+                {
+                    return cachedResponse;
+                }
+            }
+
+            string result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () => GenerateInternalDirectAsync(normalizedRequest, callingAssembly, verifyCaller)).ConfigureAwait(false);
+
+            // 2. 成功生成後，異步寫入語意快取
+            if (!normalizedRequest.EnableStreaming)
+            {
+                await _semanticCache.AddCacheEntryAsync(normalizedRequest, result).ConfigureAwait(false);
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -211,6 +264,25 @@ namespace RimLLM_Framework.Manager
         {
             // 1. 來源身分安全校驗 (Caller Verification)
             VerifyCallerOrThrow(request, callingAssembly, verifyCaller);
+
+            // Anti-abuse check
+            if (_settings.EnableAntiAbuse)
+            {
+                CheckAntiAbuse(request.ModId);
+            }
+
+            // Budget check
+            bool budgetOk = await CheckBudgetLimitAsync(request).ConfigureAwait(false);
+            if (!budgetOk)
+            {
+                throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
+            }
+
+            // Check if budget mocked
+            if (IsBudgetMocked(request, out string mockResult))
+            {
+                return mockResult;
+            }
 
             // 1.5 檢查是否啟用串流輸出，若有則呼叫串流通道進行文字累加
             if (request.EnableStreaming)
@@ -270,7 +342,7 @@ namespace RimLLM_Framework.Manager
             string rawResponse = await GenerateInternalAsync(requestClone, callingAssembly, verifyCaller: true).ConfigureAwait(false);
             
             // 執行 JSON 修復
-            string repairedJson = RimLLMJsonHelper.RepairJson(rawResponse);
+            string repairedJson = _settings.EnableJsonRepair ? RimLLMJsonHelper.RepairJson(rawResponse) : rawResponse;
 
             try
             {
@@ -279,6 +351,14 @@ namespace RimLLM_Framework.Manager
             }
             catch (Exception ex)
             {
+                if (!_settings.EnableJsonRepair)
+                {
+                    throw new RimLLMException(
+                        LLMError.InvalidResponse, 
+                        $"Unable to parse LLM response to target object {typeof(T).Name} (JSON Repair is disabled). Raw Response: {RimLLMLog.SanitizeForLog(rawResponse, 300)}. Parse error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", 
+                        ex);
+                }
+
                 RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting fallback repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
                 try
                 {
@@ -357,6 +437,26 @@ namespace RimLLM_Framework.Manager
             // 來源身分校驗
             VerifyCallerOrThrow(request, callingAssembly, verifyCaller);
 
+            // Anti-abuse check
+            if (_settings.EnableAntiAbuse)
+            {
+                CheckAntiAbuse(request.ModId);
+            }
+
+            // Budget check
+            bool budgetOk = await CheckBudgetLimitAsync(request).ConfigureAwait(false);
+            if (!budgetOk)
+            {
+                throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
+            }
+
+            // Check if budget mocked
+            if (IsBudgetMocked(request, out string mockResult))
+            {
+                onChunkReceived(mockResult);
+                return;
+            }
+
             await ExecuteWithFallbackAsync(
                 request,
                 async (provider, modelName) =>
@@ -388,14 +488,65 @@ namespace RimLLM_Framework.Manager
                 throw new RimLLMException(LLMError.ProviderOffline, "No valid API provider fallback chain configured.");
             }
 
+            // 1. 解析所有符合資格的供應商候選
+            var candidates = new List<ResolvedCandidate>();
+            foreach (string entry in fallbackChain)
+            {
+                if (TryGetEligibleCandidate(entry, fallbackChain, request, out string pId, out ILLMProvider p, out string mName))
+                {
+                    candidates.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                throw new RimLLMException(LLMError.ProviderOffline, "No eligible API providers found in the fallback chain.");
+            }
+
+            // 2. 過濾處於故障冷卻期的供應商（若全部都在冷卻中，則破例放行）
+            var activeCandidates = candidates.FindAll(c => !IsInCooldown(c.ProviderId));
+            if (activeCandidates.Count == 0)
+            {
+                activeCandidates = candidates;
+            }
+
+            // 3. 套用路由與負載均衡策略
+            int strategy = _settings.RoutingStrategy;
+            if (strategy == 1) // MinLatency (最小延遲優先)
+            {
+                activeCandidates.Sort((a, b) =>
+                {
+                    float latA = GetAverageLatency(a.ProviderId);
+                    float latB = GetAverageLatency(b.ProviderId);
+                    if (latA == 0f && latB != 0f) return -1;
+                    if (latA != 0f && latB == 0f) return 1;
+                    return latA.CompareTo(latB);
+                });
+            }
+            else if (strategy == 2) // RoundRobin / Random (隨機輪詢負載均衡)
+            {
+                var rnd = new Random();
+                for (int i = activeCandidates.Count - 1; i > 0; i--)
+                {
+                    int j = rnd.Next(i + 1);
+                    var temp = activeCandidates[i];
+                    activeCandidates[i] = activeCandidates[j];
+                    activeCandidates[j] = temp;
+                }
+            }
+            // strategy == 0 (PriorityFailover) 保留原始 fallbackChain 順序
+
             Exception lastException = null;
             int maxRetries = _settings.MaxRetries;
             float retryDelay = _settings.RetryDelay;
 
-            foreach (string entry in fallbackChain)
+            foreach (var candidate in activeCandidates)
             {
-                if (!TryGetEligibleCandidate(entry, fallbackChain, request, out string providerId, out ILLMProvider provider, out string modelName))
-                    continue;
+                string providerId = candidate.ProviderId;
+                ILLMProvider provider = candidate.Provider;
+                string modelName = candidate.ModelName;
+                bool candidateSuccess = false;
+                bool isRetryableFailure = false;
 
                 for (int attempt = 0; attempt <= maxRetries; attempt++)
                 {
@@ -415,10 +566,12 @@ namespace RimLLM_Framework.Manager
                         string result = await attemptAsync(provider, modelName).ConfigureAwait(false);
                         requestStopwatch.Stop();
 
-                        // 成功後重設健康狀態冷卻
+                        // 成功後重設健康狀態與記錄延遲
                         _circuitBreaker.RecordSuccess(providerId);
+                        RecordLatency(providerId, requestStopwatch.ElapsedMilliseconds);
 
                         _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
+                        candidateSuccess = true;
                         return result;
                     }
                     catch (OperationCanceledException)
@@ -434,11 +587,12 @@ namespace RimLLM_Framework.Manager
                         if (retryable)
                         {
                             _circuitBreaker.RecordFailure(providerId);
+                            isRetryableFailure = true;
                         }
 
                         if (retryable && attempt < maxRetries)
                         {
-                            // 若伺服器透過 Retry-After 建議等待時間，取其與使用者設定延遲的較大者（上限 60 秒，避免長時間卡住）
+                            // 若伺服器透過 Retry-After 建議等待時間，取其與使用者設定延遲的較大者
                             float effectiveDelay = retryDelay;
                             if (ex is RimLLMException rimEx && rimEx.RetryAfter.HasValue)
                             {
@@ -461,6 +615,12 @@ namespace RimLLM_Framework.Manager
                             RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
                         }
                     }
+                }
+
+                if (!candidateSuccess && isRetryableFailure)
+                {
+                    // 只有在因為網路或暫時性錯誤（可重試錯誤）導致失敗時，才置入冷卻阻斷期
+                    ProviderFailCooldowns[providerId] = DateTime.UtcNow.AddSeconds(60);
                 }
             }
 
@@ -500,6 +660,19 @@ namespace RimLLM_Framework.Manager
 
             if (!IsProviderUsable(providerId, provider))
                 return false;
+
+            // Budget fallback to free
+            if (_settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit)
+            {
+                if (_settings.BudgetPolicy == 2) // FallbackToFree (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)
+                {
+                    bool isFree = providerId == ProviderIds.OpenAICompatible || modelName.ToLower().Contains("free");
+                    if (!isFree)
+                    {
+                        return false;
+                    }
+                }
+            }
 
             // 評估 MinFallbackLevel 模型分級
             int minLevel = ParseMinFallbackLevel(request.MinFallbackLevel);
@@ -761,14 +934,203 @@ namespace RimLLM_Framework.Manager
             _usageTracker.ClearLogs();
         }
 
-        public void RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens)
+        public void ClearCooldowns()
         {
-            _usageTracker.RecordUsage(providerId, modelName, promptTokens, completionTokens);
+            ProviderFailCooldowns.Clear();
+            ProviderLatencies.Clear();
+            RequestTimestamps.Clear();
+            CoolDownUntil.Clear();
+        }
+
+        public void RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
+        {
+            _usageTracker.RecordUsage(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens);
         }
 
         public void ResetUsage()
         {
             _usageTracker.ResetUsage();
+        }
+
+        private void CheckAntiAbuse(string modId)
+        {
+            if (string.IsNullOrEmpty(modId)) return;
+            
+            DateTime now = DateTime.UtcNow;
+            if (CoolDownUntil.TryGetValue(modId, out DateTime cdTime) && now < cdTime)
+            {
+                throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' is in anti-abuse cooldown until {cdTime.ToLocalTime()}.");
+            }
+
+            var list = RequestTimestamps.GetOrAdd(modId, _ => new List<DateTime>());
+            lock (list)
+            {
+                DateTime limit = now.AddSeconds(-_settings.ThrottlingWindowSeconds);
+                list.RemoveAll(t => t < limit);
+                list.Add(now);
+
+                if (list.Count > _settings.MaxRequestsPerWindow)
+                {
+                    DateTime cdUntil = now.AddSeconds(_settings.CoolDownDurationSeconds);
+                    CoolDownUntil[modId] = cdUntil;
+                    RimLLMLog.Warning($"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
+                    throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
+                }
+            }
+        }
+
+        private async Task<bool> CheckBudgetLimitAsync(LLMRequest request)
+        {
+            _usageTracker.CheckDailyReset();
+            
+            if (_settings.DailyBudgetLimit <= 0f || _settings.DailyAccumulatedCost < _settings.DailyBudgetLimit)
+            {
+                return true; // Budget is fine
+            }
+
+            string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+
+            // 1. Check if already approved/declined today
+            if (_budgetApprovalDate == todayStr)
+            {
+                return true; // Bypassed
+            }
+            if (_budgetDeclineDate == todayStr)
+            {
+                return false; // Blocked
+            }
+
+            // 2. Check if we should fall back to free (handled inside TryGetEligibleCandidate)
+            if (_settings.BudgetPolicy == 2) // FallbackToFree
+            {
+                return true; 
+            }
+
+            if (_settings.BudgetPolicy == 0) // HardBlock
+            {
+                return false;
+            }
+
+            if (_settings.BudgetPolicy == 1) // SilentMocking
+            {
+                return true; // Handled separately via IsBudgetMocked
+            }
+
+            if (_settings.BudgetPolicy == 3) // DialogPrompt
+            {
+                if (Find.WindowStack == null)
+                {
+                    return false;
+                }
+
+                TaskCompletionSource<bool> tcs = null;
+                lock (BudgetPromptLock)
+                {
+                    if (_activePromptTcs != null)
+                    {
+                        tcs = _activePromptTcs;
+                    }
+                    else
+                    {
+                        tcs = new TaskCompletionSource<bool>();
+                        _activePromptTcs = tcs;
+                        
+                        // Show the dialog on main thread
+                        RimLLMDispatcher.EnqueueOnMainThread(() =>
+                        {
+                            var dialog = new Dialog_MessageBox(
+                                "RimLLM_BudgetExceededPrompt".Translate(_settings.DailyAccumulatedCost.ToString("F4"), _settings.DailyBudgetLimit.ToString("F2")),
+                                "RimLLM_BudgetExceededPrompt_Approve".Translate(), () =>
+                                {
+                                    lock (BudgetPromptLock)
+                                    {
+                                        _budgetApprovalDate = todayStr;
+                                        _activePromptTcs = null;
+                                    }
+                                    tcs.SetResult(true);
+                                },
+                                "RimLLM_BudgetExceededPrompt_Decline".Translate(), () =>
+                                {
+                                    lock (BudgetPromptLock)
+                                    {
+                                        _budgetDeclineDate = todayStr;
+                                        _activePromptTcs = null;
+                                    }
+                                    tcs.SetResult(false);
+                                }
+                            );
+                            Find.WindowStack.Add(dialog);
+                        });
+                    }
+                }
+
+                bool approved = await tcs.Task;
+                return approved;
+            }
+
+            return false;
+        }
+
+        private bool IsBudgetMocked(LLMRequest request, out string mockResult)
+        {
+            mockResult = null;
+            if (_settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit)
+            {
+                if (_settings.BudgetPolicy == 1) // SilentMocking
+                {
+                    if (request.ResponseType != null)
+                    {
+                        mockResult = "{}";
+                    }
+                    else
+                    {
+                        try
+                        {
+                            mockResult = (LanguageDatabase.activeLanguage != null) 
+                                ? "RimLLM_SilentMockResponse".Translate().ToString() 
+                                : "*AI is temporarily resting due to daily budget limits...*";
+                        }
+                        catch
+                        {
+                            mockResult = "*AI is temporarily resting due to daily budget limits...*";
+                        }
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private bool IsInCooldown(string providerId)
+        {
+            return ProviderFailCooldowns.TryGetValue(providerId, out DateTime cdUntil) && DateTime.UtcNow < cdUntil;
+        }
+
+        private float GetAverageLatency(string providerId)
+        {
+            if (ProviderLatencies.TryGetValue(providerId, out var list) && list.Count > 0)
+            {
+                lock (list)
+                {
+                    long sum = 0;
+                    foreach (var val in list) sum += val;
+                    return (float)sum / list.Count;
+                }
+            }
+            return 0f;
+        }
+
+        private void RecordLatency(string providerId, long ms)
+        {
+            var list = ProviderLatencies.GetOrAdd(providerId, _ => new List<long>());
+            lock (list)
+            {
+                list.Add(ms);
+                if (list.Count > 5)
+                {
+                    list.RemoveAt(0);
+                }
+            }
         }
 
         #endregion

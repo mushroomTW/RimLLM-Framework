@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
@@ -47,6 +48,98 @@ namespace RimLLM_Framework.Manager
             {
                 return "{}";
             }
+        }
+
+        /// <summary>
+        /// 遞迴使用反射將 C# 型別轉換為 JObject 代表的 JSON Schema。
+        /// </summary>
+        public static JObject GenerateJsonSchema(Type type, bool uppercaseTypes = false)
+        {
+            var schema = new JObject();
+            string typeStr;
+
+            if (type == typeof(string) || type == typeof(char))
+            {
+                typeStr = uppercaseTypes ? "STRING" : "string";
+                schema["type"] = typeStr;
+            }
+            else if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte) ||
+                     type == typeof(uint) || type == typeof(ulong) || type == typeof(ushort) || type == typeof(sbyte))
+            {
+                typeStr = uppercaseTypes ? "INTEGER" : "integer";
+                schema["type"] = typeStr;
+            }
+            else if (type == typeof(float) || type == typeof(double) || type == typeof(decimal))
+            {
+                typeStr = uppercaseTypes ? "NUMBER" : "number";
+                schema["type"] = typeStr;
+            }
+            else if (type == typeof(bool))
+            {
+                typeStr = uppercaseTypes ? "BOOLEAN" : "boolean";
+                schema["type"] = typeStr;
+            }
+            else if (type.IsEnum)
+            {
+                typeStr = uppercaseTypes ? "STRING" : "string";
+                schema["type"] = typeStr;
+                var names = new JArray();
+                foreach (var name in Enum.GetNames(type))
+                {
+                    names.Add(name);
+                }
+                schema["enum"] = names;
+            }
+            else if (type.IsGenericType && (type.GetGenericTypeDefinition() == typeof(List<>) || 
+                                            type.GetGenericTypeDefinition() == typeof(IList<>) ||
+                                            type.GetGenericTypeDefinition() == typeof(IReadOnlyList<>) ||
+                                            type.GetGenericTypeDefinition() == typeof(ICollection<>)))
+            {
+                typeStr = uppercaseTypes ? "ARRAY" : "array";
+                schema["type"] = typeStr;
+                Type itemType = type.GetGenericArguments()[0];
+                schema["items"] = GenerateJsonSchema(itemType, uppercaseTypes);
+            }
+            else if (type.IsArray)
+            {
+                typeStr = uppercaseTypes ? "ARRAY" : "array";
+                schema["type"] = typeStr;
+                Type itemType = type.GetElementType();
+                schema["items"] = GenerateJsonSchema(itemType, uppercaseTypes);
+            }
+            else // 自定義物件
+            {
+                typeStr = uppercaseTypes ? "OBJECT" : "object";
+                schema["type"] = typeStr;
+                var properties = new JObject();
+                var required = new JArray();
+
+                // 獲取所有公開屬性
+                foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (prop.CanRead && prop.CanWrite && prop.GetIndexParameters().Length == 0)
+                    {
+                        properties[prop.Name] = GenerateJsonSchema(prop.PropertyType, uppercaseTypes);
+                        required.Add(prop.Name);
+                    }
+                }
+
+                // 獲取所有公開欄位
+                foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (!field.IsLiteral && !field.IsInitOnly)
+                    {
+                        properties[field.Name] = GenerateJsonSchema(field.FieldType, uppercaseTypes);
+                        required.Add(field.Name);
+                    }
+                }
+
+                schema["properties"] = properties;
+                schema["required"] = required;
+                schema["additionalProperties"] = false;
+            }
+
+            return schema;
         }
 
         /// <summary>

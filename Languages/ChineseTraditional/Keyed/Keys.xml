@@ -2,7 +2,7 @@
 <LanguageData>
   <RimLLM_MainMenu><b>主選單</b></RimLLM_MainMenu>
   <RimLLM_TabProviders>供應商設定</RimLLM_TabProviders>
-  <RimLLM_TabFallback>Fallback 鏈</RimLLM_TabFallback>
+  <RimLLM_TabFallback>模型設置</RimLLM_TabFallback>
   <RimLLM_TabGlobalConfig>全域請求配置</RimLLM_TabGlobalConfig>
   
   <RimLLM_ApiProviders><b>API 供應商</b></RimLLM_ApiProviders>
@@ -11,13 +11,13 @@
   <RimLLM_ModelsCount>{0} 模型</RimLLM_ModelsCount>
   
   <RimLLM_TitleProviderSettings>供應商設定 - {0}</RimLLM_TitleProviderSettings>
-  <RimLLM_TitleFallback>全域 Fallback 鏈設定</RimLLM_TitleFallback>
+  <RimLLM_TitleFallback>全域模型設置</RimLLM_TitleFallback>
   <RimLLM_TitleGlobalConfig>全域請求與重試配置</RimLLM_TitleGlobalConfig>
   
   <RimLLM_EnableProvider>啟用此 API 供應商</RimLLM_EnableProvider>
-  <RimLLM_ApiKey>API 金鑰列表 (API Keys):</RimLLM_ApiKey>
+  <RimLLM_ApiKey>API 金鑰列表:</RimLLM_ApiKey>
   <RimLLM_AddApiKeyBtn>新增金鑰 (+)</RimLLM_AddApiKeyBtn>
-  <RimLLM_ApiEndpoint>API Endpoint:</RimLLM_ApiEndpoint>
+  <RimLLM_ApiEndpoint>API 服務端點:</RimLLM_ApiEndpoint>
   <RimLLM_ChinaEndpointToggle>使用中國專用連線端點 (預設關閉，使用全球版端點)</RimLLM_ChinaEndpointToggle>
   
   <RimLLM_AvailableModelsTitle><b>可用模型列表配置</b></RimLLM_AvailableModelsTitle>
@@ -66,7 +66,7 @@
   <RimLLM_ExportDiag>匯出診斷資訊 (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
   <RimLLM_RecentRequests>最近請求歷史紀錄 (最近 {0} 筆)</RimLLM_RecentRequests>
   <RimLLM_NoRequests>&lt;color=gray&gt;目前無請求紀錄。&lt;/color&gt;</RimLLM_NoRequests>
-  <RimLLM_ChatTitle>模型對話測試介面 (支援 /clear 清空)</RimLLM_ChatTitle>
+  <RimLLM_ChatTitle>模型對話測試介面</RimLLM_ChatTitle>
   <RimLLM_Send>發送</RimLLM_Send>
   <RimLLM_ClearBtn>清空</RimLLM_ClearBtn>
   <RimLLM_AiThinking>AI 正在思考中</RimLLM_AiThinking>
@@ -78,7 +78,7 @@
   <RimLLM_ExportDiagSuccess>診斷資訊已成功匯出至: {0}</RimLLM_ExportDiagSuccess>
   <RimLLM_ExportDiagFailed>匯出診斷失敗: {0}</RimLLM_ExportDiagFailed>
   
-  <RimLLM_ReasoningEffortLabel>預設思考強度 (Reasoning Effort): </RimLLM_ReasoningEffortLabel>
+  <RimLLM_ReasoningEffortLabel>預設思考強度: </RimLLM_ReasoningEffortLabel>
   <RimLLM_ReasoningEffort_Auto>自動 / 預設</RimLLM_ReasoningEffort_Auto>
   <RimLLM_ReasoningEffort_Low>低</RimLLM_ReasoningEffort_Low>
   <RimLLM_ReasoningEffort_Medium>中</RimLLM_ReasoningEffort_Medium>
@@ -106,4 +106,59 @@
   <RimLLM_MsgUsageReset>Token 與費用累計統計已重置。</RimLLM_MsgUsageReset>
   <RimLLM_ModelLevelOverrideTitle>模型分級覆寫</RimLLM_ModelLevelOverrideTitle>
   <RimLLM_ModelLevelOverrideExplanation>手動指定模型分級 (Lv.1=低, Lv.2=中, Lv.3=高)，供 MinFallbackLevel 過濾使用；覆寫優先於內建關鍵字判斷。</RimLLM_ModelLevelOverrideExplanation>
+  
+  <RimLLM_TabBudget>預算與防護</RimLLM_TabBudget>
+  <RimLLM_TitleBudget>預算與防護安全設定</RimLLM_TitleBudget>
+  <RimLLM_DailyBudgetLimitLabel>今日預算上限: {0} USD (0.0 為無限制)</RimLLM_DailyBudgetLimitLabel>
+  <RimLLM_BudgetPolicyLabel>預算超限應對策略: </RimLLM_BudgetPolicyLabel>
+  <RimLLM_BudgetPolicy_HardBlock>直接阻斷並警告</RimLLM_BudgetPolicy_HardBlock>
+  <RimLLM_BudgetPolicy_SilentMocking>靜默回傳沉思字樣</RimLLM_BudgetPolicy_SilentMocking>
+  <RimLLM_BudgetPolicy_FallbackToFree>自動降級至免費/本地模型</RimLLM_BudgetPolicy_FallbackToFree>
+  <RimLLM_BudgetPolicy_DialogPrompt>遊戲內彈窗確認</RimLLM_BudgetPolicy_DialogPrompt>
+  <RimLLM_EnableAntiAbuseLabel>啟用防爆限制 (防止 Mod Bug 死循環)</RimLLM_EnableAntiAbuseLabel>
+  <RimLLM_MaxRequestsPerWindowLabel>時間窗口內最大請求次數: {0} 次</RimLLM_MaxRequestsPerWindowLabel>
+  <RimLLM_ThrottlingWindowSecondsLabel>防護監測時間窗口: {0} 秒</RimLLM_ThrottlingWindowSecondsLabel>
+  <RimLLM_CoolDownDurationSecondsLabel>超限後強制冷卻時間: {0} 秒</RimLLM_CoolDownDurationSecondsLabel>
+  <RimLLM_DailyAccumulatedCostLabel>當日已累計消耗: ${0} USD (重置基準日: {1})</RimLLM_DailyAccumulatedCostLabel>
+  <RimLLM_ResetDailyCostBtn>手動重置今日花費</RimLLM_ResetDailyCostBtn>
+  <RimLLM_MsgDailyCostReset>今日花費累計已重置。</RimLLM_MsgDailyCostReset>
+  <RimLLM_BudgetExceededPrompt>您的 RimLLM 當日花費已達 ${0} USD，超過設定的每日預算 ${1} USD！\n是否同意臨時增加今日預算以維持 AI 功能運作？</RimLLM_BudgetExceededPrompt>
+  <RimLLM_BudgetExceededPrompt_Approve>同意 (預算提高 50%)</RimLLM_BudgetExceededPrompt_Approve>
+  <RimLLM_BudgetExceededPrompt_Decline>不同意 (阻斷請求)</RimLLM_BudgetExceededPrompt_Decline>
+  <RimLLM_SilentMockResponse>*說書人因當日預算上限限制陷入沉思...*</RimLLM_SilentMockResponse>
+  <RimLLM_RoutingStrategyLabel>智慧路由與動態負載均衡策略: </RimLLM_RoutingStrategyLabel>
+  <RimLLM_RoutingStrategy_PriorityFailover>優先順序自動容錯</RimLLM_RoutingStrategy_PriorityFailover>
+  <RimLLM_RoutingStrategy_MinLatency>最小延遲優先</RimLLM_RoutingStrategy_MinLatency>
+  <RimLLM_RoutingStrategy_RoundRobin>隨機輪詢負載均衡</RimLLM_RoutingStrategy_RoundRobin>
+  <RimLLM_EnableNativeSchemaLabel>啟用原生 JSON Schema 強制執行 (提升結構化輸出精準度)</RimLLM_EnableNativeSchemaLabel>
+  <RimLLM_EnableJsonRepairLabel>啟用 JSON 回傳格式修復輔助 (容錯非標準 JSON)</RimLLM_EnableJsonRepairLabel>
+
+  <RimLLM_TabSemanticCache>語意快取</RimLLM_TabSemanticCache>
+  <RimLLM_TitleSemanticCache>語意快取與 Embedding 設定</RimLLM_TitleSemanticCache>
+  <RimLLM_EnableSemanticCacheLabel>啟用全域語意快取 (節省 Token 與縮短響應時間)</RimLLM_EnableSemanticCacheLabel>
+  <RimLLM_SemanticCacheThresholdLabel>語意匹配相似度閾值: {0} (越接近 1.0 匹配越嚴格)</RimLLM_SemanticCacheThresholdLabel>
+  <RimLLM_SemanticCacheMaxCountLabel>記憶體快取容量上限: {0} 條 (約 {1} MB)</RimLLM_SemanticCacheMaxCountLabel>
+  <RimLLM_EmbeddingProviderLabel>Embedding 供應商: </RimLLM_EmbeddingProviderLabel>
+  <RimLLM_EmbeddingModelLabel>Embedding 模型名稱: </RimLLM_EmbeddingModelLabel>
+  <RimLLM_EmbeddingEndpointLabel>自訂服務端點: </RimLLM_EmbeddingEndpointLabel>
+  <RimLLM_EmbeddingApiKeyLabel>自訂 API 金鑰 (選填，為空時預設與主 API 相同): </RimLLM_EmbeddingApiKeyLabel>
+  <RimLLM_CacheStatsLabel>快取運行統計: </RimLLM_CacheStatsLabel>
+  <RimLLM_CacheTotalCountLabel>快取項目數量: {0} / {1} 條</RimLLM_CacheTotalCountLabel>
+  <RimLLM_CacheHitsLabel>快取命中次數: {0} 次</RimLLM_CacheHitsLabel>
+  <RimLLM_CacheMissesLabel>快取未命中次數: {0} 次</RimLLM_CacheMissesLabel>
+  <RimLLM_CacheHitRateLabel>平均快取命中率: {0}</RimLLM_CacheHitRateLabel>
+  <RimLLM_EstTokensSavedLabel>預估節省 Token 數: {0} Tokens</RimLLM_EstTokensSavedLabel>
+  <RimLLM_ClearCacheBtn>手動清除語意快取</RimLLM_ClearCacheBtn>
+  <RimLLM_MsgCacheCleared>語意快取已手動清除。</RimLLM_MsgCacheCleared>
+  
+  <RimLLM_EmbeddingProvider_Offline_Trigram>離線 Trigram 計算</RimLLM_EmbeddingProvider_Offline_Trigram>
+  <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
+  <RimLLM_EmbeddingProvider_LocalAPI_Ollama>本地 Ollama API</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
+  <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>本地 OpenAI 相容 API</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
+
+  <RimLLM_ProviderCallStatsTitle>供應商呼叫統計與成功率</RimLLM_ProviderCallStatsTitle>
+  <RimLLM_ProviderTotalCallsLabel>累計呼叫次數: {0} 次</RimLLM_ProviderTotalCallsLabel>
+  <RimLLM_ProviderSuccessCallsLabel>成功: {0} 次 / 失敗: {1} 次</RimLLM_ProviderSuccessCallsLabel>
+  <RimLLM_ProviderSuccessRateLabel>呼叫成功率: {0}%</RimLLM_ProviderSuccessRateLabel>
+  <RimLLM_ProviderApiCacheRateLabel>API 提示快取命中率: {0}% (已省下 {1} / {2} Tokens)</RimLLM_ProviderApiCacheRateLabel>
 </LanguageData>

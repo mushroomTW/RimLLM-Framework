@@ -58,6 +58,6 @@ namespace RimLLM_Framework.Providers
             return payload;
         }
 
-        protected override string DefaultTestModel => "google/gemini-2.5-flash";
+        protected override string DefaultTestModel => "openrouter/free";
     }
 }

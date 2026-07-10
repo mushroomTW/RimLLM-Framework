@@ -1,6 +1,3 @@
-using System;
-using System.Diagnostics;
-using System.Threading.Tasks;
 using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
@@ -10,13 +7,9 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class KimiProvider : OpenAIProvider
     {
-        public override string ProviderId => "Kimi";
-        protected override string DefaultEndpoint => "https://api.moonshot.ai/v1";
-
-        public KimiProvider(IRimLLMSettings settings) : base(settings)
+        public KimiProvider(IRimLLMSettings settings)
+            : base(settings, ProviderIds.Kimi, "https://api.moonshot.ai/v1", "moonshot-v1-8k")
         {
         }
-
-        protected override string DefaultTestModel => "moonshot-v1-8k";
     }
 }

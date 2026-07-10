@@ -1,6 +1,3 @@
-using System;
-using System.Diagnostics;
-using System.Threading.Tasks;
 using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
@@ -10,13 +7,9 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class NvidiaProvider : OpenAIProvider
     {
-        public override string ProviderId => "Nvidia";
-        protected override string DefaultEndpoint => "https://integrate.api.nvidia.com/v1";
-
-        public NvidiaProvider(IRimLLMSettings settings) : base(settings)
+        public NvidiaProvider(IRimLLMSettings settings)
+            : base(settings, ProviderIds.Nvidia, "https://integrate.api.nvidia.com/v1", "meta/llama-3.1-8b-instruct")
         {
         }
-
-        protected override string DefaultTestModel => "meta/llama-3.1-8b-instruct";
     }
 }

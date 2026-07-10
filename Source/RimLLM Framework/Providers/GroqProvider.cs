@@ -1,6 +1,3 @@
-using System;
-using System.Diagnostics;
-using System.Threading.Tasks;
 using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
@@ -10,13 +7,9 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class GroqProvider : OpenAIProvider
     {
-        public override string ProviderId => "Groq";
-        protected override string DefaultEndpoint => "https://api.groq.com/openai/v1";
-
-        public GroqProvider(IRimLLMSettings settings) : base(settings)
+        public GroqProvider(IRimLLMSettings settings)
+            : base(settings, ProviderIds.Groq, "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile")
         {
         }
-
-        protected override string DefaultTestModel => "llama-3.3-70b-versatile";
     }
 }

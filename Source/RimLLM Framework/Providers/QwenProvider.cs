@@ -1,6 +1,3 @@
-using System;
-using System.Diagnostics;
-using System.Threading.Tasks;
 using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
@@ -10,13 +7,9 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class QwenProvider : OpenAIProvider
     {
-        public override string ProviderId => "Qwen";
-        protected override string DefaultEndpoint => "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
-
-        public QwenProvider(IRimLLMSettings settings) : base(settings)
+        public QwenProvider(IRimLLMSettings settings)
+            : base(settings, ProviderIds.Qwen, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "qwen-plus")
         {
         }
-
-        protected override string DefaultTestModel => "qwen-plus";
     }
 }
