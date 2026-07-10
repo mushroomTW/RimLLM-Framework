@@ -7,19 +7,19 @@
   <supportedVersions>
     <li>1.6</li>
   </supportedVersions>
-  <description><![CDATA[RimLLM Framework - 統一 RimWorld 的 LLM 介面與核心基礎框架。
+  <description><![CDATA[RimLLM Framework — A unified LLM interface and core infrastructure framework for RimWorld.
 
-此模組旨在統一管理 API key、模型快取與供應商配置，提供一個穩定且彈性的基礎架構，各個模組就不用重複造車輪了，讓其他模組能夠無縫對接各大 LLM 服務（如 Gemini、OpenAI 以及本地相容接口），並提升遊戲中 LLM 呼叫的穩定性與可維護性。
+This mod provides a stable and flexible foundation for managing API keys, model caching, and provider configuration, so other mods don't have to reinvent the wheel. It enables seamless integration with major LLM services (Gemini, OpenAI, local-compatible endpoints, and more), improving stability and maintainability of in-game LLM calls.
 
-<b>主要功能與特色：</b>
-1. <b>多供應商支援 (Multi-Provider)</b>：原生支援 Gemini (Google)、OpenAI、DeepSeek、Groq、Grok (xAI)、Z.ai、OpenRouter、Kimi、MiniMax、Qwen、NVIDIA 與本地相容接口 (OpenAI Compatible，如 LM Studio、Ollama)。
-2. <b>自動故障轉移機制 (Model Fallback)</b>：已重構為純模型級的精確故障轉移鏈。允許玩家自訂主模型與多個精確備用模型，當請求發生異常時自動依序切換，確保遊戲中的 LLM 呼叫不中斷。
-3. <b>金鑰設定加密與呼叫端註冊 (AES-256 &amp; Caller Registration)</b>：採用 AES-256 對稱加密保存 API 金鑰，降低設定檔純文字暴露風險；<b>移除自動補註冊機制並重構 async 調用端組件校驗</b>，讓框架能更穩定辨識已註冊呼叫端。此機制用於降低誤用與身分混淆，不承諾阻止同進程惡意模組讀取記憶體、反射 public API 或繞過遊戲進程內權限。
-4. <b>線程安全與 Scribe 存檔優化</b>：所有字典操作加入多線程鎖保護；<b>RecordLog 寫入改為透過 Dispatcher 派遣回 Unity 主線程執行，並加入 15 秒定時節流寫入</b>，避免背景存檔導致 RimWorld 隨機崩潰或產生 TPS 抖動。
-5. <b>推理性思考模型與智慧思考強度 (Reasoning Models &amp; Auto Effort)</b>：原生支援 DeepSeek-R1、Gemini 2.0/2.5 Thinking 等思考模型，底層自動提取 reasoning_content、thought 區塊，統一以 &lt;think&gt;...&lt;/think&gt; 標記封裝並回傳。
-6. <b>語意快取 (Semantic Cache)</b>：內建雙層語意快取引擎，優先執行零延遲的精確字串比對，再透過離線 Trigram 餘弦夾角演算法進行語意相似度比對（或呼叫外部 Embedding API），並支援 LRU 淘汰策略與即時命中率可視化圖表。
-7. <b>供應商即時統計 (Provider Stats)</b>：每個供應商設定頁面均附有請求成功率可視化進度條，以及 API 端提示快取命中率圖表（支援 Gemini Context Caching 等）。
-8. <b>開發者 SDK 支援</b>：提供統一簡潔的 API 介面、動態串流（Streaming）控制、以及基於反射與遞迴的 JSON Schema 快取預熱優化，方便其他模組快速、穩定且無縫地對接 LLM 服務與建構 Agent 工具。]]>
+<b>Key Features:</b>
+1. <b>Multi-Provider Support</b>: Native support for Google Gemini, OpenAI, DeepSeek, Groq, Grok (xAI), Z.ai, OpenRouter, Kimi, MiniMax, Qwen, NVIDIA, and local-compatible endpoints (OpenAI Compatible — LM Studio, Ollama, etc.).
+2. <b>Model Fallback</b>: Refactored into a pure model-level precise fallback chain. Players can configure a primary model and multiple exact fallback models; the framework automatically switches on timeout, rate-limit (429), or connection errors to keep LLM calls uninterrupted.
+3. <b>AES-256 Encryption &amp; Caller Registration</b>: API keys are stored with AES-256 symmetric encryption to reduce plaintext exposure risk. Auto-registration has been removed; async caller component validation has been hardened so the framework can reliably identify registered callers. This is an obfuscation-level protection — it does not prevent same-process attacks via reflection or memory reading.
+4. <b>Thread Safety &amp; Scribe Scheduling</b>: All dictionary operations are guarded with locks. RecordLog writes are dispatched back to the Unity main thread via RimLLMDispatcher with a 15-second throttle, preventing crashes or TPS spikes caused by background saves.
+5. <b>Reasoning Models &amp; Auto Effort</b>: Native support for DeepSeek-R1, Gemini 2.0/2.5 Thinking, and other reasoning models. The layer automatically extracts reasoning_content and thought blocks, wrapping them uniformly in &lt;think&gt;...&lt;/think&gt; tags.
+6. <b>Semantic Cache</b>: A two-layer semantic cache engine — fast exact-string matching first, then offline Trigram cosine similarity (or external Embedding API) for fuzzy matching — with LRU eviction and a real-time hit-rate visualization chart.
+7. <b>Provider Stats</b>: Each provider settings page shows a request success-rate progress bar and an API-side prompt cache hit-rate chart (supports Gemini Context Caching, etc.).
+8. <b>Developer SDK</b>: Clean unified API, dynamic streaming control, and reflection-based recursive JSON Schema cache warm-up, so other mods can integrate LLM services and build Agent tools quickly and reliably.]]>
   </description>
   <loadAfter>
     <li>brrainz.harmony</li>
