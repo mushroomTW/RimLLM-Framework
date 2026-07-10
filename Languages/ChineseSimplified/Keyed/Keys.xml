@@ -138,6 +138,9 @@
   <RimLLM_EnableSemanticCacheLabel>啟用全域語意快取 (節省 Token 與縮短響應時間)</RimLLM_EnableSemanticCacheLabel>
   <RimLLM_SemanticCacheThresholdLabel>語意匹配相似度閾值: {0} (越接近 1.0 匹配越嚴格)</RimLLM_SemanticCacheThresholdLabel>
   <RimLLM_SemanticCacheMaxCountLabel>記憶體快取容量上限: {0} 條 (約 {1} MB)</RimLLM_SemanticCacheMaxCountLabel>
+  <RimLLM_SemanticCacheTTL_Label>语意缓存生命周期 (TTL): {0}</RimLLM_SemanticCacheTTL_Label>
+  <RimLLM_SemanticCacheTTL_Never>不过期 (永久缓存)</RimLLM_SemanticCacheTTL_Never>
+  <RimLLM_SemanticCacheTTL_Minutes>{0} 分钟</RimLLM_SemanticCacheTTL_Minutes>
   <RimLLM_EmbeddingProviderLabel>Embedding 供應商: </RimLLM_EmbeddingProviderLabel>
   <RimLLM_EmbeddingModelLabel>Embedding 模型名稱: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>自訂服務端點: </RimLLM_EmbeddingEndpointLabel>

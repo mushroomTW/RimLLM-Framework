@@ -155,9 +155,14 @@ namespace RimLLM_Framework.Providers
                 {
                     int prompt = usage["prompt_tokens"]?.Value<int>() ?? 0;
                     int completion = usage["completion_tokens"]?.Value<int>() ?? 0;
+                    int cached = usage["prompt_tokens_details"]?["cached_tokens"]?.Value<int>() ?? 0;
+                    if (cached == 0)
+                    {
+                        cached = usage["cached_tokens"]?.Value<int>() ?? 0;
+                    }
                     if (RimLLMProvider.Instance is RimLLMManager manager)
                     {
-                        manager.RecordUsage(ProviderId, model, prompt, completion);
+                        manager.RecordUsage(ProviderId, model, prompt, completion, cached);
                     }
                 }
 
@@ -227,6 +232,7 @@ namespace RimLLM_Framework.Providers
                     int totalCompletionChars = 0;
                     int finalPromptTokens = 0;
                     int finalCompletionTokens = 0;
+                    int finalCachedTokens = 0;
                     bool hasUsage = false;
 
                     while (!reader.EndOfStream)
@@ -259,6 +265,11 @@ namespace RimLLM_Framework.Providers
                                 {
                                     finalPromptTokens = usageObj["prompt_tokens"]?.Value<int>() ?? 0;
                                     finalCompletionTokens = usageObj["completion_tokens"]?.Value<int>() ?? 0;
+                                    finalCachedTokens = usageObj["prompt_tokens_details"]?["cached_tokens"]?.Value<int>() ?? 0;
+                                    if (finalCachedTokens == 0)
+                                    {
+                                        finalCachedTokens = usageObj["cached_tokens"]?.Value<int>() ?? 0;
+                                    }
                                     hasUsage = true;
                                 }
                             }
@@ -299,7 +310,7 @@ namespace RimLLM_Framework.Providers
                     {
                         if (hasUsage)
                         {
-                            manager.RecordUsage(ProviderId, model, finalPromptTokens, finalCompletionTokens);
+                            manager.RecordUsage(ProviderId, model, finalPromptTokens, finalCompletionTokens, finalCachedTokens);
                         }
                         else
                         {

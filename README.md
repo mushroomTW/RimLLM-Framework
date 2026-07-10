@@ -230,6 +230,9 @@ public async void CallWithCaching()
    * 原生支援 **Gemini Context Caching** 與 **Anthropic Prompt Caching (Ephemeral)**。開發者只需在 `LLMRequest` 中設定 `CachedContext` 並啟用 `EnableContextCaching = true`，底層即會自動將 `SystemPrompt + CachedContext` 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
    * **成本防呆**：Gemini 顯式快取設有最小門檻，內容過小時自動略過快取改走 `systemInstruction`，避免「付建立費卻無法回收」的反效果；同一上下文的快取建立亦具併發鎖保護以防重複建立。
    * **節省可量化**：用量統計會解析 API 回傳的快取命中 Token（Anthropic `cache_read`、Gemini `cachedContentTokenCount`）並套用折扣費率計入成本估算，讓費用面板真實反映快取帶來的節省。
+10. **全域語意快取 (Semantic Caching) 與生命週期控制 (TTL)**
+    * 框架提供全域語意快取機制，支援「精確字串比對」與「模糊語意相似度比對（Trigram 餘弦 / Embedding 向量）」。在玩家頻繁點擊或短時間內發送極度相似之指令時能立刻由快取返回響應，節省 Token 並大幅降低冷啟動延遲。
+    * **快取生命週期 (TTL) 機制**：為解決高重複性週期任務（如 AI 調度、世界狀態監控）因重複命中快取而失去即時適應彈性的問題，框架新增快取過期時間（TTL，可於 UI 設定為 0 ~ 60 分鐘）。快取項目在超出時間後會自動被判定過期並清除，確保在維持快取防護效益的同時，AI 決策仍具備隨遊戲時間進展而動態調整的彈性。
 
 ---
 

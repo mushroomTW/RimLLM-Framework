@@ -138,6 +138,9 @@
   <RimLLM_EnableSemanticCacheLabel>Enable Global Semantic Cache (saves tokens &amp; reduces response latency)</RimLLM_EnableSemanticCacheLabel>
   <RimLLM_SemanticCacheThresholdLabel>Semantic Match Similarity Threshold: {0} (closer to 1.0 is more strict)</RimLLM_SemanticCacheThresholdLabel>
   <RimLLM_SemanticCacheMaxCountLabel>In-Memory Cache Capacity Limit: {0} entries (~{1} MB)</RimLLM_SemanticCacheMaxCountLabel>
+  <RimLLM_SemanticCacheTTL_Label>Semantic Cache Expiration (TTL): {0}</RimLLM_SemanticCacheTTL_Label>
+  <RimLLM_SemanticCacheTTL_Never>Never Expire (Permanent Cache)</RimLLM_SemanticCacheTTL_Never>
+  <RimLLM_SemanticCacheTTL_Minutes>{0} minutes</RimLLM_SemanticCacheTTL_Minutes>
   <RimLLM_EmbeddingProviderLabel>Embedding Provider: </RimLLM_EmbeddingProviderLabel>
   <RimLLM_EmbeddingModelLabel>Embedding Model Name: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>Custom Endpoint URL: </RimLLM_EmbeddingEndpointLabel>

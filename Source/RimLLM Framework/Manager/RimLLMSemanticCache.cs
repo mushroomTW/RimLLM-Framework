@@ -44,6 +44,7 @@ namespace RimLLM_Framework.Manager
             public string Response { get; set; }
             public float[] Embedding { get; set; }
             public long LastAccessSequence { get; set; }
+            public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         }
 
         public RimLLMSemanticCache(IRimLLMSettings settings)
@@ -77,12 +78,20 @@ namespace RimLLM_Framework.Manager
             }
 
             string combinedQuery = request.GetEffectiveSystemPrompt() + "\n\n" + request.Prompt;
+            int ttl = _settings.SemanticCacheTTL;
 
             lock (_cacheLock)
             {
-                // 1. 優先精確字串比對（免去 Embedding 請求，節省流量且 0 延遲）
-                foreach (var entry in _cacheStore)
+                // 1. 優先精確字串比對，並過濾過期項目
+                for (int i = _cacheStore.Count - 1; i >= 0; i--)
                 {
+                    var entry = _cacheStore[i];
+                    if (ttl > 0 && (DateTime.UtcNow - entry.CreatedAt).TotalSeconds > ttl)
+                    {
+                        _cacheStore.RemoveAt(i);
+                        continue;
+                    }
+
                     if (entry.Prompt == request.Prompt && entry.SystemPrompt == request.SystemPrompt)
                     {
                         entry.LastAccessSequence = ++_accessSequence;
@@ -117,8 +126,15 @@ namespace RimLLM_Framework.Manager
                 SemanticCacheEntry bestMatch = null;
                 float bestSimilarity = -1f;
 
-                foreach (var entry in _cacheStore)
+                for (int i = _cacheStore.Count - 1; i >= 0; i--)
                 {
+                    var entry = _cacheStore[i];
+                    if (ttl > 0 && (DateTime.UtcNow - entry.CreatedAt).TotalSeconds > ttl)
+                    {
+                        _cacheStore.RemoveAt(i);
+                        continue;
+                    }
+
                     float similarity = 0f;
                     if (provider == "Offline_Trigram")
                     {
@@ -178,8 +194,19 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
+            int ttl = _settings.SemanticCacheTTL;
+
             lock (_cacheLock)
             {
+                // 先清除過期項目，避免佔用快取空間
+                for (int i = _cacheStore.Count - 1; i >= 0; i--)
+                {
+                    if (ttl > 0 && (DateTime.UtcNow - _cacheStore[i].CreatedAt).TotalSeconds > ttl)
+                    {
+                        _cacheStore.RemoveAt(i);
+                    }
+                }
+
                 // 容量超出時，進行 LRU 剔除
                 int maxCount = _settings.SemanticCacheMaxCount;
                 if (maxCount <= 0) maxCount = 200;
@@ -203,7 +230,8 @@ namespace RimLLM_Framework.Manager
                     Prompt = request.Prompt,
                     Response = response,
                     Embedding = embedding,
-                    LastAccessSequence = ++_accessSequence
+                    LastAccessSequence = ++_accessSequence,
+                    CreatedAt = DateTime.UtcNow
                 });
             }
         }

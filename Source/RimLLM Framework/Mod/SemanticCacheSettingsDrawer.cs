@@ -24,6 +24,7 @@ namespace RimLLM_Framework.Mod
                 baseHeight += 120f;
             }
             baseHeight += 190f; // 統計資料高度與快取圖形化進度條
+            baseHeight += 45f;  // 快取過期時間 (TTL) 滑桿高度
             return baseHeight;
         }
 
@@ -32,6 +33,7 @@ namespace RimLLM_Framework.Mod
             bool prevEnable = Settings.EnableSemanticCache;
             float prevThreshold = Settings.SemanticCacheThreshold;
             int prevMaxCount = Settings.SemanticCacheMaxCount;
+            int prevTtl = Settings.SemanticCacheTTL;
             string prevProvider = Settings.EmbeddingProvider;
             string prevModel = Settings.EmbeddingModel;
             string prevEndpoint = Settings.EmbeddingEndpoint;
@@ -52,6 +54,16 @@ namespace RimLLM_Framework.Mod
             listing.Label("RimLLM_SemanticCacheMaxCountLabel".Translate(Settings.SemanticCacheMaxCount, estimatedMB.ToString("F2")));
             float maxCountVal = listing.Slider((float)Settings.SemanticCacheMaxCount, 10f, 1000f);
             Settings.SemanticCacheMaxCount = Mathf.RoundToInt(maxCountVal);
+            listing.Gap(6f);
+
+            // 3.5. 快取過期時間 (TTL)
+            int currentTtlMin = Settings.SemanticCacheTTL / 60;
+            string ttlValueLabel = currentTtlMin == 0 
+                ? "RimLLM_SemanticCacheTTL_Never".Translate() 
+                : "RimLLM_SemanticCacheTTL_Minutes".Translate(currentTtlMin);
+            listing.Label("RimLLM_SemanticCacheTTL_Label".Translate(ttlValueLabel));
+            float ttlVal = listing.Slider((float)currentTtlMin, 0f, 60f);
+            Settings.SemanticCacheTTL = Mathf.RoundToInt(ttlVal) * 60;
             listing.GapLine(10f);
 
             // 4. Embedding 供應商設定
@@ -162,6 +174,7 @@ namespace RimLLM_Framework.Mod
             if (prevEnable != Settings.EnableSemanticCache ||
                 Math.Abs(prevThreshold - Settings.SemanticCacheThreshold) > 0.001f ||
                 prevMaxCount != Settings.SemanticCacheMaxCount ||
+                prevTtl != Settings.SemanticCacheTTL ||
                 prevProvider != Settings.EmbeddingProvider ||
                 prevModel != Settings.EmbeddingModel ||
                 prevEndpoint != Settings.EmbeddingEndpoint ||

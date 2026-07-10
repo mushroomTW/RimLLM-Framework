@@ -838,6 +838,68 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestOpenAIProviderCacheUsage()
+        {
+            var mockSettings = new MockSettings();
+            mockSettings.ApiKeys["OpenAI"] = "mock-key";
+            var manager = new RimLLMManager(mockSettings);
+            
+            // 初始化 SDK 入口，讓 OpenAIProvider 能 RecordUsage
+            RimLLMProvider.Initialize(manager);
+
+            var provider = new TestOpenAIProviderWithUsage(mockSettings);
+            
+            // 測試 1：標準 OpenAI 的 prompt_tokens_details.cached_tokens
+            provider.MockResponse = "{" +
+                "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"hello\"}}]," +
+                "\"usage\": {" +
+                "  \"prompt_tokens\": 1000," +
+                "  \"completion_tokens\": 200," +
+                "  \"prompt_tokens_details\": {" +
+                "    \"cached_tokens\": 600" +
+                "  }" +
+                "}" +
+                "}";
+
+            var request = new LLMRequest { Prompt = "ping" };
+            string res = provider.GenerateAsync(request, "gpt-4o").GetAwaiter().GetResult();
+            
+            Assert.AreEqual("hello", res);
+            Assert.AreEqual(1000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(200, mockSettings.TotalCompletionTokens);
+            
+            // 驗證 UsageTracker 內部的統計數據
+            var stats = manager.UsageTracker.ProviderStatistics["OpenAI"];
+            Assert.AreEqual(1000, stats.TotalPromptTokens);
+            Assert.AreEqual(600, stats.CachedPromptTokens);
+            Assert.AreEqual(0.6f, stats.ContextCacheHitRate, 0.0001f);
+
+            // 測試 2：有些相容格式的外層 cached_tokens
+            mockSettings.TotalPromptTokens = 0;
+            mockSettings.TotalCompletionTokens = 0;
+            stats.TotalPromptTokens = 0;
+            stats.CachedPromptTokens = 0;
+
+            provider.MockResponse = "{" +
+                "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"hello 2\"}}]," +
+                "\"usage\": {" +
+                "  \"prompt_tokens\": 2000," +
+                "  \"completion_tokens\": 300," +
+                "  \"cached_tokens\": 800" +
+                "}" +
+                "}";
+
+            string res2 = provider.GenerateAsync(request, "gpt-4o").GetAwaiter().GetResult();
+            Assert.AreEqual("hello 2", res2);
+            Assert.AreEqual(2000, mockSettings.TotalPromptTokens);
+            Assert.AreEqual(300, mockSettings.TotalCompletionTokens);
+            Assert.AreEqual(2000, stats.TotalPromptTokens);
+            Assert.AreEqual(800, stats.CachedPromptTokens);
+            Assert.AreEqual(0.4f, stats.ContextCacheHitRate, 0.0001f);
+        }
+
+
+        [Test]
         public void TestCachedContextRequestApi()
         {
             var request = new LLMRequest
@@ -1763,6 +1825,30 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public async System.Threading.Tasks.Task TestSemanticCacheExpiration()
+        {
+            var mockSettings = new MockSettings
+            {
+                EnableSemanticCache = true,
+                SemanticCacheThreshold = 0.90f,
+                SemanticCacheTTL = 2 // 2 seconds
+            };
+            var cache = new RimLLMSemanticCache(mockSettings);
+            var req = LLMRequest.Create("test-mod", "Calculate optimal mining route");
+
+            // 1. Add cache and retrieve immediately
+            await cache.AddCacheEntryAsync(req, "Mine path A");
+            string resImmediate = await cache.TryGetCachedResponseAsync(req);
+            Assert.AreEqual("Mine path A", resImmediate, "Should hit cache immediately");
+
+            // 2. Wait 3 seconds (greater than 2s TTL)
+            await System.Threading.Tasks.Task.Delay(3000);
+            string resAfterExpiry = await cache.TryGetCachedResponseAsync(req);
+            Assert.IsNull(resAfterExpiry, "Should miss cache after TTL expiration");
+            Assert.AreEqual(0, cache.CacheCount, "Expired cache entry should have been removed");
+        }
+
+        [Test]
         public void TestRequestBypassSemanticCache()
         {
             var mockSettings = new MockSettings
@@ -1907,6 +1993,7 @@ namespace RimLLM_Framework.Tests
         public bool EnableSemanticCache { get; set; } = false;
         public float SemanticCacheThreshold { get; set; } = 0.90f;
         public int SemanticCacheMaxCount { get; set; } = 200;
+        public int SemanticCacheTTL { get; set; } = 300;
         public string EmbeddingProvider { get; set; } = "Offline_Trigram";
         public string EmbeddingModel { get; set; } = "text-embedding-004";
         public string EmbeddingEndpoint { get; set; } = "";
@@ -2094,6 +2181,18 @@ namespace RimLLM_Framework.Tests
             return System.Threading.Tasks.Task.FromResult(
                 "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Thinking deeply...\", \"thought\": true}, {\"text\": \"Response from Gemini\"}]}}]}"
             );
+        }
+    }
+
+    public class TestOpenAIProviderWithUsage : OpenAIProvider
+    {
+        public string MockResponse { get; set; }
+        
+        public TestOpenAIProviderWithUsage(IRimLLMSettings settings) : base(settings) {}
+        
+        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        {
+            return System.Threading.Tasks.Task.FromResult(MockResponse);
         }
     }
 }

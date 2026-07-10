@@ -170,6 +170,11 @@ namespace RimLLM_Framework.SDK
         int SemanticCacheMaxCount { get; set; }
 
         /// <summary>
+        /// 語意快取存活時間 (TTL，單位：秒)。0 代表不過期。
+        /// </summary>
+        int SemanticCacheTTL { get; set; }
+
+        /// <summary>
         /// Embedding 供應商名稱。
         /// </summary>
         string EmbeddingProvider { get; set; }
