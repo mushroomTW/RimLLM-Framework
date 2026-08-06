@@ -2120,6 +2120,188 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestBudgetPromptWaiterRespectsCancellation()
+        {
+            var neverCompletes = new System.Threading.Tasks.TaskCompletionSource<bool>();
+            using (var cts = new System.Threading.CancellationTokenSource())
+            {
+                cts.Cancel();
+
+                Assert.Throws<OperationCanceledException>(() =>
+                    RimLLMManager.AwaitBudgetApprovalAsync(
+                        neverCompletes.Task, cts.Token, TimeSpan.FromSeconds(30))
+                        .GetAwaiter().GetResult(),
+                    "預算詢問等待必須響應請求的取消 Token");
+            }
+        }
+
+        [Test]
+        public void TestBudgetPromptWaiterTimesOutAsDecline()
+        {
+            var neverCompletes = new System.Threading.Tasks.TaskCompletionSource<bool>();
+
+            bool approved = RimLLMManager.AwaitBudgetApprovalAsync(
+                neverCompletes.Task,
+                System.Threading.CancellationToken.None,
+                TimeSpan.FromMilliseconds(50)).GetAwaiter().GetResult();
+
+            Assert.IsFalse(approved, "逾時應視為拒絕而非無限期等待或拋出例外");
+        }
+
+        [Test]
+        public void TestBudgetPromptWaiterCancellationDoesNotAffectOtherWaiters()
+        {
+            var shared = new System.Threading.Tasks.TaskCompletionSource<bool>(
+                System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+
+            using (var cancelledCts = new System.Threading.CancellationTokenSource())
+            {
+                // 等待者 A 會被取消
+                var waiterA = RimLLMManager.AwaitBudgetApprovalAsync(
+                    shared.Task, cancelledCts.Token, TimeSpan.FromSeconds(30));
+
+                // 等待者 B 正常等待
+                var waiterB = RimLLMManager.AwaitBudgetApprovalAsync(
+                    shared.Task, System.Threading.CancellationToken.None, TimeSpan.FromSeconds(30));
+
+                cancelledCts.Cancel();
+                Assert.Throws<OperationCanceledException>(() => waiterA.GetAwaiter().GetResult());
+
+                // 使用者稍後按下同意，B 仍應取得結果。
+                shared.TrySetResult(true);
+                Assert.IsTrue(waiterB.GetAwaiter().GetResult(),
+                    "單一等待者取消不得影響其他共用同一對話框的請求");
+            }
+        }
+
+        [Test]
+        public void TestStreamRequestChargesAntiAbuseOnce()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockStreamOnce:model-a" },
+                EnableAntiAbuse = true,
+                MaxRequestsPerWindow = 1,
+                ThrottlingWindowSeconds = 60
+            };
+            mockSettings.EnabledProviders["MockStreamOnce"] = true;
+            mockSettings.ApiKeys["MockStreamOnce"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockStreamOnce",
+                StreamHandler = (req, model, onChunk) =>
+                {
+                    onChunk("ok");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            });
+
+            const string modId = "test.stream.antiabuse";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            // 單一串流請求先前會在 Generate 與 Stream 兩層各計一次，導致額度上限 1 時直接被擋。
+            string result = manager.GenerateStreamingAsync(modId, "hi", _ => { }).GetAwaiter().GetResult();
+            Assert.AreEqual("ok", result, "單一請求不得重複計入防濫用額度");
+        }
+
+        [Test]
+        public void TestStreamingDiscardsPartialChunksOnProviderFailure()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockPartial:model-a", "MockGood:model-b" },
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockPartial"] = true;
+            mockSettings.EnabledProviders["MockGood"] = true;
+            mockSettings.ApiKeys["MockPartial"] = "key";
+            mockSettings.ApiKeys["MockGood"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockPartial",
+                StreamHandler = (req, model, onChunk) =>
+                {
+                    // 先吐出部分內容再失敗
+                    onChunk("AB");
+                    throw new RimLLMException(LLMError.ProviderOffline, "dropped mid-stream");
+                }
+            });
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockGood",
+                StreamHandler = (req, model, onChunk) =>
+                {
+                    onChunk("XY");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            });
+
+            const string modId = "test.stream.partial";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            string result = manager.GenerateStreamingAsync(modId, "hi", _ => { }).GetAwaiter().GetResult();
+
+            Assert.AreEqual("XY", result, "失敗 attempt 的部分串流內容不得混入最終結果");
+        }
+
+        [Test]
+        public void TestStreamingRestartCallbackFiresOnceOnFallback()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockPartial2:model-a", "MockGood2:model-b" },
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockPartial2"] = true;
+            mockSettings.EnabledProviders["MockGood2"] = true;
+            mockSettings.ApiKeys["MockPartial2"] = "key";
+            mockSettings.ApiKeys["MockGood2"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockPartial2",
+                StreamHandler = (req, model, onChunk) =>
+                {
+                    onChunk("partial");
+                    throw new RimLLMException(LLMError.ProviderOffline, "dropped mid-stream");
+                }
+            });
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockGood2",
+                StreamHandler = (req, model, onChunk) =>
+                {
+                    onChunk("final");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            });
+
+            const string modId = "test.stream.restart";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            int restartCount = 0;
+            var displayed = new System.Text.StringBuilder();
+
+            var request = LLMRequest.Create(modId, "hi")
+                .WithStreaming(
+                    chunk => displayed.Append(chunk),
+                    () => { restartCount++; displayed.Length = 0; });
+
+            string result = manager.GenerateAsync(request).GetAwaiter().GetResult();
+
+            Assert.AreEqual(1, restartCount, "供應商中途失敗後應恰好通知呼叫端重設一次");
+            Assert.AreEqual("final", result);
+            Assert.AreEqual("final", displayed.ToString(), "呼叫端在收到重設通知後顯示內容不應殘留前一段");
+        }
+
+        [Test]
         public void TestProviderStatisticsTracking()
         {
             var mockSettings = new MockSettings();

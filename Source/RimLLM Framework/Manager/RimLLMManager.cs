@@ -51,6 +51,11 @@ namespace RimLLM_Framework.Manager
         private readonly object BudgetPromptLock = new object();
         private TaskCompletionSource<bool> _activePromptTcs = null;
 
+        /// <summary>
+        /// 預算詢問對話框的最長等待時間。逾時視為拒絕，避免請求無限期佔用資源。
+        /// </summary>
+        private const int BudgetPromptTimeoutSeconds = 120;
+
         // Smart Routing state
         private struct ResolvedCandidate
         {
@@ -270,13 +275,22 @@ namespace RimLLM_Framework.Manager
         {
             LLMRequest normalizedRequest = NormalizeRequest(request);
 
-            return await _requestQueue.EnqueueRequestAsync(normalizedRequest, () => GenerateInternalDirectAsync(normalizedRequest, callingAssembly, verifyCaller)).ConfigureAwait(false);
+            // 准入檢查一律在進入佇列之前執行，且整條請求路徑只執行一次。
+            // 特別是預算對話框：若在佇列委派內等待，會持續佔用一個並行名額。
+            if (await RunAdmissionChecksAsync(normalizedRequest, callingAssembly, verifyCaller).ConfigureAwait(false)
+                is string mockResult)
+            {
+                return mockResult;
+            }
+
+            return await _requestQueue.EnqueueRequestAsync(normalizedRequest, () => GenerateInternalDirectAsync(normalizedRequest)).ConfigureAwait(false);
         }
 
         /// <summary>
-        /// 真正的非同步生成文字邏輯。
+        /// 執行呼叫端校驗、防濫用與預算檢查。
+        /// 若預算政策指示以模擬回應取代真實請求，回傳該模擬字串；否則回傳 null 代表可繼續。
         /// </summary>
-        private async Task<string> GenerateInternalDirectAsync(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
+        private async Task<string> RunAdmissionChecksAsync(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
         {
             // 1. 來源身分安全校驗 (Caller Verification)
             VerifyCallerOrThrow(request, callingAssembly, verifyCaller);
@@ -295,21 +309,20 @@ namespace RimLLM_Framework.Manager
             }
 
             // Check if budget mocked
-            if (IsBudgetMocked(request, out string mockResult))
-            {
-                return mockResult;
-            }
+            return IsBudgetMocked(request, out string mockResult) ? mockResult : null;
+        }
 
+        /// <summary>
+        /// 真正的非同步生成文字邏輯。呼叫前必須已通過 RunAdmissionChecksAsync。
+        /// </summary>
+        private async Task<string> GenerateInternalDirectAsync(LLMRequest request)
+        {
             // 1.5 檢查是否啟用串流輸出，若有則呼叫串流通道進行文字累加
             if (request.EnableStreaming)
             {
-                var sb = new StringBuilder();
-                await StreamInternalDirectAsync(request, chunk =>
-                {
-                    sb.Append(chunk);
-                    DispatchChunk(request.OnChunkReceived, chunk);
-                }, callingAssembly, verifyCaller: false).ConfigureAwait(false);
-                return sb.ToString();
+                return await StreamInternalDirectAsync(
+                    request,
+                    chunk => DispatchChunk(request.OnChunkReceived, chunk)).ConfigureAwait(false);
             }
 
             // 2. 交由共用的 Fallback Chain 執行核心處理
@@ -511,52 +524,43 @@ namespace RimLLM_Framework.Manager
         private async Task StreamInternalAsync(LLMRequest request, Action<string> onChunkReceived, Assembly callingAssembly, bool verifyCaller)
         {
             LLMRequest normalizedRequest = NormalizeRequest(request);
-            Action<string> mainThreadCallback = chunk => DispatchChunk(onChunkReceived, chunk);
-            await _requestQueue.EnqueueRequestAsync(normalizedRequest, async () =>
+
+            // 與 GenerateInternalAsync 一致：准入檢查在佇列之前執行且只執行一次。
+            if (await RunAdmissionChecksAsync(normalizedRequest, callingAssembly, verifyCaller).ConfigureAwait(false)
+                is string mockResult)
             {
-                await StreamInternalDirectAsync(normalizedRequest, mainThreadCallback, callingAssembly, verifyCaller).ConfigureAwait(false);
-                return "";
-            }).ConfigureAwait(false);
+                DispatchChunk(onChunkReceived, mockResult);
+                return;
+            }
+
+            Action<string> mainThreadCallback = chunk => DispatchChunk(onChunkReceived, chunk);
+            await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
+                StreamInternalDirectAsync(normalizedRequest, mainThreadCallback)).ConfigureAwait(false);
         }
 
         /// <summary>
-        /// 真正的非同步串流生成邏輯。
+        /// 真正的非同步串流生成邏輯。呼叫前必須已通過 RunAdmissionChecksAsync。
         /// 與非串流路徑共用相同的 Fallback Chain 執行核心，因此重試與熔斷行為一致。
+        /// 回傳成功那次嘗試所累積的完整文字。
         /// </summary>
-        private async Task StreamInternalDirectAsync(LLMRequest request, Action<string> onChunkReceived, Assembly callingAssembly, bool verifyCaller)
+        private async Task<string> StreamInternalDirectAsync(LLMRequest request, Action<string> onChunkReceived)
         {
-            // 來源身分校驗
-            VerifyCallerOrThrow(request, callingAssembly, verifyCaller);
-
-            // Anti-abuse check
-            if (_settings.EnableAntiAbuse)
-            {
-                CheckAntiAbuse(request.ModId);
-            }
-
-            // Budget check
-            bool budgetOk = await CheckBudgetLimitAsync(request).ConfigureAwait(false);
-            if (!budgetOk)
-            {
-                throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
-            }
-
-            // Check if budget mocked
-            if (IsBudgetMocked(request, out string mockResult))
-            {
-                onChunkReceived(mockResult);
-                return;
-            }
+            // 累積器由每次 attempt 各自擁有：若沿用同一個緩衝，
+            // 「先吐出部分內容再失敗」的 provider 會讓殘留文字混進下一次嘗試的結果。
+            var sink = new StreamAttemptSink(onChunkReceived, request.OnStreamRestart, DispatchRestart);
 
             await ExecuteWithFallbackAsync(
                 request,
                 async (provider, modelName) =>
                 {
-                    await StreamProviderAsync(provider, request, modelName, onChunkReceived).ConfigureAwait(false);
+                    await StreamProviderAsync(provider, request, modelName, sink.Append).ConfigureAwait(false);
                     return "";
                 },
                 LLMError.ProviderOffline,
-                "All fallback attempts failed, unable to establish stream connection.").ConfigureAwait(false);
+                "All fallback attempts failed, unable to establish stream connection.",
+                onAttemptStarting: sink.BeginAttempt).ConfigureAwait(false);
+
+            return sink.Result;
         }
 
         private async Task<string> GenerateProviderAsync(ILLMProvider provider, LLMRequest request, string model)
@@ -736,7 +740,8 @@ namespace RimLLM_Framework.Manager
             LLMRequest request,
             Func<ILLMProvider, string, Task<string>> attemptAsync,
             LLMError exhaustedError,
-            string exhaustedMessage)
+            string exhaustedMessage,
+            Action onAttemptStarting = null)
         {
             var totalStopwatch = Stopwatch.StartNew();
             DateTime startTime = DateTime.Now;
@@ -822,6 +827,9 @@ namespace RimLLM_Framework.Manager
                             : $"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName})");
 
                         var requestStopwatch = Stopwatch.StartNew();
+                        // 通知串流累積器：本次嘗試即將開始，需捨棄前一次嘗試的殘留內容。
+                        onAttemptStarting?.Invoke();
+
                         string result = await attemptAsync(provider, modelName).ConfigureAwait(false);
                         requestStopwatch.Stop();
 
@@ -1113,6 +1121,54 @@ namespace RimLLM_Framework.Manager
             RimLLMDispatcher.EnqueueOnMainThread(() => callback(chunk));
         }
 
+        private void DispatchRestart(Action callback)
+        {
+            if (callback == null) return;
+            RimLLMDispatcher.EnqueueOnMainThread(callback);
+        }
+
+        /// <summary>
+        /// 串流的單次嘗試累積器。
+        /// 每次 fallback 或重試開始前會清空緩衝，確保回傳結果只包含成功那次嘗試的內容；
+        /// 若前一次嘗試已經吐出過 chunk，會通知呼叫端重設自己的顯示緩衝。
+        /// </summary>
+        private sealed class StreamAttemptSink
+        {
+            private readonly StringBuilder _buffer = new StringBuilder();
+            private readonly Action<string> _forward;
+            private readonly Action _onRestart;
+            private readonly Action<Action> _dispatchRestart;
+            private bool _emittedAnything;
+
+            public StreamAttemptSink(Action<string> forward, Action onRestart, Action<Action> dispatchRestart)
+            {
+                _forward = forward;
+                _onRestart = onRestart;
+                _dispatchRestart = dispatchRestart;
+            }
+
+            public string Result => _buffer.ToString();
+
+            public void BeginAttempt()
+            {
+                if (_emittedAnything)
+                {
+                    // 上一次嘗試已經送出過內容，通知呼叫端捨棄那段殘留。
+                    _dispatchRestart?.Invoke(_onRestart);
+                }
+                _buffer.Length = 0;
+                _emittedAnything = false;
+            }
+
+            public void Append(string chunk)
+            {
+                if (string.IsNullOrEmpty(chunk)) return;
+                _buffer.Append(chunk);
+                _emittedAnything = true;
+                _forward?.Invoke(chunk);
+            }
+        }
+
         private string GetSampleJson<T>()
         {
             return RimLLMJsonHelper.GetSampleJson<T>();
@@ -1223,7 +1279,9 @@ namespace RimLLM_Framework.Manager
                 Prompt = $"Failed JSON:\n{failedResponse}\n\nParser Error:\n{errorMessage}\n\nTarget Structure Sample:\n{RimLLMJsonHelper.GetSampleJson<T>()}\n\nPlease output the repaired JSON string:"
             };
 
-            string repairResponse = await GenerateInternalDirectAsync(repairRequest, null, verifyCaller: false).ConfigureAwait(false);
+            // 修復重打屬於同一次邏輯請求，不再重跑呼叫端校驗、防濫用與預算檢查，
+            // 避免同一次使用者操作被扣兩次額度。
+            string repairResponse = await GenerateInternalDirectAsync(repairRequest).ConfigureAwait(false);
             string repairedJson = RimLLMJsonHelper.RepairJson(repairResponse);
             
             return JsonConvert.DeserializeObject<T>(repairedJson);
@@ -1332,13 +1390,15 @@ namespace RimLLM_Framework.Manager
                     }
                     else
                     {
-                        tcs = new TaskCompletionSource<bool>();
+                        // RunContinuationsAsynchronously：避免按鈕 callback 在 Unity 主執行緒上
+                        // 同步跑完整條後續請求鏈而卡住畫面。
+                        tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                         _activePromptTcs = tcs;
-                        
+
                         // Show the dialog on main thread
                         RimLLMDispatcher.EnqueueOnMainThread(() =>
                         {
-                            var dialog = new Dialog_MessageBox(
+                            var dialog = new Dialog_BudgetPrompt(
                                 "RimLLM_BudgetExceededPrompt".Translate(_settings.DailyAccumulatedCost.ToString("F4"), _settings.DailyBudgetLimit.ToString("F2")),
                                 "RimLLM_BudgetExceededPrompt_Approve".Translate(), () =>
                                 {
@@ -1347,7 +1407,8 @@ namespace RimLLM_Framework.Manager
                                         _budgetApprovalDate = todayStr;
                                         _activePromptTcs = null;
                                     }
-                                    tcs.SetResult(true);
+                                    // TrySetResult：按鈕可能與逾時、視窗關閉競爭，SetResult 會拋例外到主執行緒。
+                                    tcs.TrySetResult(true);
                                 },
                                 "RimLLM_BudgetExceededPrompt_Decline".Translate(), () =>
                                 {
@@ -1356,7 +1417,21 @@ namespace RimLLM_Framework.Manager
                                         _budgetDeclineDate = todayStr;
                                         _activePromptTcs = null;
                                     }
-                                    tcs.SetResult(false);
+                                    tcs.TrySetResult(false);
+                                },
+                                // 視窗被 ESC 或其他方式關閉時的收尾：若沒有這條，TCS 永遠不會完成，
+                                // 且 _activePromptTcs 會永久卡住，之後所有請求都會掛在同一個死 TCS 上。
+                                // 此處刻意不寫入 _budgetDeclineDate，讓下次請求能重新詢問。
+                                () =>
+                                {
+                                    lock (BudgetPromptLock)
+                                    {
+                                        if (ReferenceEquals(_activePromptTcs, tcs))
+                                        {
+                                            _activePromptTcs = null;
+                                        }
+                                    }
+                                    tcs.TrySetResult(false);
                                 }
                             );
                             Find.WindowStack.Add(dialog);
@@ -1364,11 +1439,49 @@ namespace RimLLM_Framework.Manager
                     }
                 }
 
-                bool approved = await tcs.Task;
-                return approved;
+                return await AwaitBudgetApprovalAsync(
+                    tcs.Task,
+                    request.CancellationToken,
+                    TimeSpan.FromSeconds(BudgetPromptTimeoutSeconds)).ConfigureAwait(false);
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// 等待預算對話框的結果，同時尊重個別請求的取消 Token 與逾時。
+        /// 關鍵在於「不能取消共用的 TCS」：多個請求可能同時等待同一個對話框，
+        /// 若直接取消共用 TCS，其中一個請求取消會連帶讓其他請求全部失敗。
+        /// 因此每個等待者持有自己的競賽 TCS，只影響自己。
+        /// </summary>
+        internal static async Task<bool> AwaitBudgetApprovalAsync(
+            Task<bool> sharedPromptTask,
+            CancellationToken requestToken,
+            TimeSpan timeout)
+        {
+            if (sharedPromptTask == null) throw new ArgumentNullException(nameof(sharedPromptTask));
+
+            var waiterTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(requestToken))
+            {
+                linked.CancelAfter(timeout);
+                using (linked.Token.Register(() => waiterTcs.TrySetResult(false)))
+                {
+                    Task<bool> winner = await Task.WhenAny(sharedPromptTask, waiterTcs.Task).ConfigureAwait(false);
+                    if (ReferenceEquals(winner, sharedPromptTask))
+                    {
+                        return await sharedPromptTask.ConfigureAwait(false);
+                    }
+
+                    if (requestToken.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException(requestToken);
+                    }
+
+                    // 逾時視為拒絕，但不寫入 _budgetDeclineDate，讓使用者稍後仍能重新被詢問。
+                    return false;
+                }
+            }
         }
 
         private bool IsBudgetMocked(LLMRequest request, out string mockResult)

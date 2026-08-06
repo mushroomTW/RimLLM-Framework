@@ -185,6 +185,22 @@ namespace RimLLM_Framework.Mod
                                                 chatScrollPosition.y = 999999f;
                                             }
                                         });
+                                    },
+                                    // 供應商中途失敗、框架改由下一家重新串流時，捨棄已顯示的殘段，
+                                    // 避免畫面出現前後兩段混接的內容。
+                                    OnStreamRestart = () =>
+                                    {
+                                        lock (replyLock)
+                                        {
+                                            accumulatedReply = "";
+                                        }
+                                        RimLLMDispatcher.EnqueueOnMainThread(() =>
+                                        {
+                                            if (aiHistoryIndex < chatHistory.Count)
+                                            {
+                                                chatHistory[aiHistoryIndex] = "RimLLM_ChatAi".Translate() + " ";
+                                            }
+                                        });
                                     }
                                 };
                                 string finalReply = await RimLLMProvider.Instance.GenerateAsync(request).ConfigureAwait(false);

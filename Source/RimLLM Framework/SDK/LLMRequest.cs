@@ -84,6 +84,14 @@ namespace RimLLM_Framework.SDK
         public string MinFallbackLevel { get; set; }
 
         /// <summary>
+        /// 串流重新開始時的通知回呼（選用）。
+        /// 當第一個供應商已經送出部分 chunk 後失敗、框架改由下一個供應商或重試接手時觸發，
+        /// 呼叫端應於此清空自己已顯示的內容，避免前後兩段文字混接。
+        /// 未設定時框架仍會回傳正確的最終結果，只是呼叫端的即時顯示可能殘留前一段。
+        /// </summary>
+        public Action OnStreamRestart { get; set; }
+
+        /// <summary>
         /// 非同步請求取消 Token。
         /// </summary>
         public System.Threading.CancellationToken CancellationToken { get; set; } = default;
@@ -154,6 +162,19 @@ namespace RimLLM_Framework.SDK
         {
             EnableStreaming = true;
             OnChunkReceived = onChunkReceived;
+            return this;
+        }
+
+        /// <summary>
+        /// 設定串流回呼與「串流重新開始」通知，並啟用統一串流模式。
+        /// 當框架因供應商中途失敗而改由其他供應商重新串流時，會先觸發
+        /// <paramref name="onStreamRestart"/>，呼叫端應在此清空已顯示的內容。
+        /// </summary>
+        public LLMRequest WithStreaming(Action<string> onChunkReceived, Action onStreamRestart)
+        {
+            EnableStreaming = true;
+            OnChunkReceived = onChunkReceived;
+            OnStreamRestart = onStreamRestart;
             return this;
         }
 
@@ -232,7 +253,8 @@ namespace RimLLM_Framework.SDK
                 EnableContextCaching = this.EnableContextCaching,
                 ReasoningEffort = this.ReasoningEffort,
                 EnableStreaming = this.EnableStreaming,
-                OnChunkReceived = this.OnChunkReceived
+                OnChunkReceived = this.OnChunkReceived,
+                OnStreamRestart = this.OnStreamRestart
             };
         }
     }
