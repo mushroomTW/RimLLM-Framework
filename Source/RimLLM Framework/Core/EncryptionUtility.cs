@@ -137,6 +137,12 @@ namespace RimLLM_Framework.Core
         /// <summary>
         /// 解密 Base64 密文，回傳原始字串。
         /// </summary>
+        /// <remarks>
+        /// 解密失敗時回傳 <c>null</c>（而非空字串），讓呼叫端能區分「金鑰本來就是空的」
+        /// 與「金鑰存在但解不開」。金鑰派生使用 deviceUniqueIdentifier 作為 salt，
+        /// 換硬體或換平台會使既有密文全部解不開；若此時回傳空字串，
+        /// 呼叫端下次存檔就會以 Encrypt("") 覆寫，造成金鑰靜默永久遺失。
+        /// </remarks>
         public static string Decrypt(string cipherText)
         {
             if (string.IsNullOrEmpty(cipherText))
@@ -174,7 +180,7 @@ namespace RimLLM_Framework.Core
                 catch (Exception ex)
                 {
                     RimLLMLog.Warning($"[RimLLM] 解密金鑰失敗 (可能格式錯誤或金鑰受損): {ex.Message}");
-                    return string.Empty;
+                    return null;
                 }
             }
         }

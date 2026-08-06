@@ -12,8 +12,28 @@ namespace RimLLM_Framework.Core
     public static class RimLLMLog
     {
         public static bool Enabled { get; set; } = true;
+        /// <summary>
+        /// 敏感字串遮罩樣式。除了通用的 api_key／authorization 賦值形式外，
+        /// 另涵蓋本框架 12 家供應商實際使用的金鑰前綴，避免漏遮。
+        /// </summary>
         private static readonly Regex SecretPattern = new Regex(
-            @"(?i)(sk-[a-z0-9_\-]{8,}|api[_\- ]?key\s*[:=]\s*[""']?[^""'\s,;}]+|authorization\s*[:=]\s*[""']?[^""'\s,;}]+|key=[^&\s]+)",
+            @"(?i)(" +
+            // 賦值形式（含 x-api-key、x-goog-api-key 等 header 名稱）
+            @"(?:x-goog-)?api[_\- ]?key\s*[:=]\s*[""']?[^""'\s,;}]+" +
+            @"|x-api-key\s*[:=]\s*[""']?[^""'\s,;}]+" +
+            // 需一併吃掉 "Bearer " 前綴，否則只會遮到 scheme 而讓後面的 token 露出。
+            @"|authorization\s*[:=]\s*[""']?(?:Bearer\s+)?[^""'\s,;}]+" +
+            @"|key=[^&\s]+" +
+            // Bearer token
+            @"|Bearer\s+[A-Za-z0-9\-._~+/]{16,}={0,2}" +
+            // 各供應商的金鑰前綴
+            @"|sk-ant-[A-Za-z0-9\-_]{16,}" +
+            @"|sk-[a-z0-9_\-]{8,}" +
+            @"|AIza[0-9A-Za-z\-_]{20,}" +
+            @"|gsk_[A-Za-z0-9]{20,}" +
+            @"|xai-[A-Za-z0-9]{20,}" +
+            @"|nvapi-[A-Za-z0-9\-_]{20,}" +
+            @")",
             RegexOptions.Compiled);
 
         public static string SanitizeForLog(string value, int maxLength = 500)

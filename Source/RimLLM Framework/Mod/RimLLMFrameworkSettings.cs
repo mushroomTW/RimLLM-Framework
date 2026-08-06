@@ -113,8 +113,33 @@ namespace RimLLM_Framework.Mod
             _telemetry.Save();
         }
 
+        /// <summary>
+        /// 標記遙測有未寫入的變更（供節流路徑呼叫）。
+        /// </summary>
+        public void MarkTelemetryDirty()
+        {
+            _telemetry.MarkDirty();
+        }
+
+        /// <summary>
+        /// 僅在有未寫入變更時才實際寫檔，供關閉遊戲時的強制 flush 使用。
+        /// </summary>
+        public void FlushTelemetryIfDirty()
+        {
+            if (_telemetry.IsDirty)
+            {
+                _telemetry.Save();
+            }
+        }
+
         private readonly object _settingsLock = new object();
         private readonly Dictionary<string, string> _apiKeys = new Dictionary<string, string>();
+
+        /// <summary>
+        /// 載入時無法解密的 provider 金鑰密文（providerId → 原始密文）。
+        /// 存檔時原樣寫回，避免換裝置導致使用者的金鑰被靜默清空。
+        /// </summary>
+        private readonly Dictionary<string, string> _undecryptableApiKeys = new Dictionary<string, string>();
         private readonly Dictionary<string, int> _apiKeyIndices = new Dictionary<string, int>();
         private readonly Dictionary<string, string> _endpoints = new Dictionary<string, string>();
         private readonly Dictionary<string, int> _modelLevelOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -192,6 +217,7 @@ namespace RimLLM_Framework.Mod
             public int RoutingStrategy = 2;
             public bool EnableNativeSchema = true;
             public bool EnableJsonRepair = true;
+            public string EncryptedEmbeddingApiKey;
             public string EmbeddingProvider = "Offline_Trigram";
             public string EmbeddingModel = "text-embedding-004";
             public string EmbeddingEndpoint = "";
@@ -213,7 +239,17 @@ namespace RimLLM_Framework.Mod
                     {
                         encryptedKeys[kvp.Key] = EncryptionUtility.Encrypt(kvp.Value);
                     }
-     
+
+                    // 載入時解不開的金鑰原樣寫回密文。若不這麼做，這些 provider 不在 _apiKeys 中，
+                    // 存檔後其密文就永久消失（使用者換回原本裝置也救不回來）。
+                    foreach (var kvp in _undecryptableApiKeys)
+                    {
+                        if (!encryptedKeys.ContainsKey(kvp.Key))
+                        {
+                            encryptedKeys[kvp.Key] = kvp.Value;
+                        }
+                    }
+
                     var dto = new SettingsDto
                     {
                         FallbackChain = this.FallbackChain,
@@ -241,7 +277,9 @@ namespace RimLLM_Framework.Mod
                         EmbeddingProvider = this.EmbeddingProvider,
                         EmbeddingModel = this.EmbeddingModel,
                         EmbeddingEndpoint = this.EmbeddingEndpoint,
-                        EmbeddingApiKey = this.EmbeddingApiKey
+                        // Embedding 金鑰與 provider 金鑰採同一套加密；明文欄位明確寫 null 以清除舊資料。
+                        EncryptedEmbeddingApiKey = EncryptionUtility.Encrypt(this.EmbeddingApiKey ?? ""),
+                        EmbeddingApiKey = null
                     };
      
                     jsonStr = JsonConvert.SerializeObject(dto, Formatting.None);
@@ -281,11 +319,22 @@ namespace RimLLM_Framework.Mod
      
                                 // _apiKeys 依然可以 Clear，因為這是完全由用戶配置決定
                                 _apiKeys.Clear();
+                                _undecryptableApiKeys.Clear();
                                 if (dto.EncryptedApiKeys != null)
                                 {
                                     foreach (var kvp in dto.EncryptedApiKeys)
                                     {
-                                        _apiKeys[kvp.Key] = EncryptionUtility.Decrypt(kvp.Value);
+                                        string plain = EncryptionUtility.Decrypt(kvp.Value);
+                                        if (plain == null)
+                                        {
+                                            // 解不開（通常是換了裝置）：保留原始密文，不要放進 _apiKeys，
+                                            // 以免下次存檔把它覆寫成空字串而永久遺失。
+                                            _undecryptableApiKeys[kvp.Key] = kvp.Value;
+                                        }
+                                        else
+                                        {
+                                            _apiKeys[kvp.Key] = plain;
+                                        }
                                     }
                                 }
 
