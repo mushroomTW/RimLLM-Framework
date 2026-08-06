@@ -135,7 +135,9 @@ namespace RimLLM_Framework.Providers
                     ["json_schema"] = new JObject
                     {
                         ["name"] = "custom_type",
-                        ["strict"] = true,
+                        // strict 模式不允許 additionalProperties 為 schema 物件，
+                        // 因此含 Dictionary 的型別必須關閉 strict，否則服務端會直接拒絕。
+                        ["strict"] = !RimLLMJsonHelper.ContainsOpenEndedMap(request.ResponseType),
                         ["schema"] = RimLLMJsonHelper.GenerateJsonSchema(request.ResponseType, uppercaseTypes: false)
                     }
                 };

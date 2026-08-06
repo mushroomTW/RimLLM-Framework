@@ -2,6 +2,7 @@
 using System;
 using System.Reflection;
 using System.Collections.Generic;
+using Newtonsoft.Json.Linq;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
@@ -1558,6 +1559,122 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestJsonSchemaRecursiveTypeDoesNotStackOverflow()
+        {
+            // NestedData.SelfRef 指回 ComplexTestDataStructure，形成循環。
+            var schema = RimLLMJsonHelper.GenerateJsonSchema(typeof(ComplexTestDataStructure));
+
+            Assert.IsNotNull(schema, "循環型別仍應產生可用的 schema，不得遞迴爆棧");
+
+            var nested = schema["properties"]?["Nested"];
+            Assert.IsNotNull(nested, "非循環的巢狀成員應正常展開");
+            Assert.AreEqual("number", nested["properties"]?["Weight"]?["type"]?.ToString());
+
+            // 循環成員應被略過，且不得列入 required。
+            Assert.IsNull(nested["properties"]?["SelfRef"], "循環引用成員應於偵測後截斷，不得展開");
+            var nestedRequired = (JArray)nested["required"];
+            foreach (var item in nestedRequired)
+            {
+                Assert.AreNotEqual("SelfRef", item.ToString(), "被截斷的循環成員不得列入 required");
+            }
+        }
+
+        [Test]
+        public void TestJsonSchemaDictionaryBecomesOpenMap()
+        {
+            var schema = RimLLMJsonHelper.GenerateJsonSchema(typeof(ComplexTestDataStructure));
+            var mapping = schema["properties"]?["Mapping"];
+
+            Assert.IsNotNull(mapping, "Dictionary 成員應出現在 schema 中");
+            Assert.AreEqual("object", mapping["type"]?.ToString());
+            Assert.AreEqual("integer", mapping["additionalProperties"]?["type"]?.ToString(),
+                "Dictionary 應產生開放式 map schema 而非空物件");
+            Assert.IsNull(mapping["properties"], "開放式 map 不應帶有固定的 properties 清單");
+
+            Assert.IsTrue(RimLLMJsonHelper.ContainsOpenEndedMap(typeof(ComplexTestDataStructure)),
+                "含 Dictionary 的型別必須被偵測為開放式 map，以便關閉 strict 模式");
+            Assert.IsFalse(RimLLMJsonHelper.ContainsOpenEndedMap(typeof(TestDataStructure)),
+                "不含 Dictionary 的型別不應被誤判為開放式 map");
+        }
+
+        [Test]
+        public void TestJsonSchemaNullableUnwrapsUnderlyingType()
+        {
+            var schema = RimLLMJsonHelper.GenerateJsonSchema(typeof(NullableTestDataStructure));
+
+            Assert.AreEqual("integer", schema["properties"]?["OptionalCount"]?["type"]?.ToString(),
+                "Nullable<int> 應解包為底層型別 integer");
+
+            var required = (JArray)schema["required"];
+            var requiredNames = new List<string>();
+            foreach (var item in required) requiredNames.Add(item.ToString());
+
+            Assert.IsTrue(requiredNames.Contains("Name"), "非 Nullable 成員應列入 required");
+            Assert.IsFalse(requiredNames.Contains("OptionalCount"), "Nullable 成員屬選填，不應列入 required");
+        }
+
+        [Test]
+        public void TestJsonSchemaGeneratorCacheReturnsIndependentInstances()
+        {
+            var first = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure));
+            first["type"] = "polluted";
+            ((JObject)first["properties"]).Remove("Value");
+
+            var second = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure));
+
+            Assert.AreEqual("object", second["type"]?.ToString(),
+                "schema 快取必須回傳深拷貝，避免呼叫端汙染");
+            Assert.IsNotNull(second["properties"]?["Value"], "快取內容不得被前一次呼叫端的修改影響");
+        }
+
+        [Test]
+        public void TestRepairJsonClosesInterleavedBracketsInOrder()
+        {
+            // 陣列在物件內：必須先補 ] 再補 }
+            string repairedArrayInObject = RimLLMJsonHelper.RepairJson("{\"items\":[1,2");
+            Assert.AreEqual("{\"items\":[1,2]}", repairedArrayInObject, "巢狀括號必須依 LIFO 順序閉合");
+            Assert.DoesNotThrow(() => JObject.Parse(repairedArrayInObject));
+
+            // 物件在陣列內：必須先補 } 再補 ]
+            string repairedObjectInArray = RimLLMJsonHelper.RepairJson("[{\"a\":1");
+            Assert.AreEqual("[{\"a\":1}]", repairedObjectInArray, "巢狀括號必須依 LIFO 順序閉合");
+            Assert.DoesNotThrow(() => JArray.Parse(repairedObjectInArray));
+
+            // 多層交錯
+            string repairedMixed = RimLLMJsonHelper.RepairJson("{\"a\":[{\"b\":[1");
+            Assert.DoesNotThrow(() => JObject.Parse(repairedMixed), "多層交錯巢狀修復後必須可解析");
+        }
+
+        [Test]
+        public void TestRepairJsonClosesDanglingString()
+        {
+            string repaired = RimLLMJsonHelper.RepairJson("{\"message\":\"unterminated");
+            Assert.DoesNotThrow(() => JObject.Parse(repaired), "未閉合的字串必須先補上引號，補的括號才不會落在字串內部");
+            Assert.AreEqual("unterminated", JObject.Parse(repaired)["message"]?.ToString());
+        }
+
+        [Test]
+        public void TestRepairJsonTrimsDanglingTokens()
+        {
+            // 截斷在鍵之後
+            string afterColon = RimLLMJsonHelper.RepairJson("{\"a\":1,\"b\":");
+            Assert.DoesNotThrow(() => JObject.Parse(afterColon), "截斷於冒號後應補 null 使其可解析");
+
+            // 截斷在逗號之後
+            string afterComma = RimLLMJsonHelper.RepairJson("{\"a\":1,");
+            Assert.DoesNotThrow(() => JObject.Parse(afterComma), "截斷於逗號後應移除懸空逗號");
+        }
+
+        [Test]
+        public void TestRepairJsonBailsOutOnMismatchedBrackets()
+        {
+            // 閉合符號與開啟順序不符，代表結構已損毀，不應嘗試補齊而讓結果更糟。
+            const string broken = "{\"a\":]";
+            string repaired = RimLLMJsonHelper.RepairJson(broken);
+            Assert.AreEqual(broken, repaired, "括號順序不符時應放棄補齊，交由後續 fallback 處理");
+        }
+
+        [Test]
         public void TestSmartRoutingMinLatency()
         {
             var mockSettings = new MockSettings
@@ -1983,6 +2100,12 @@ namespace RimLLM_Framework.Tests
     {
         public float Weight { get; set; }
         public ComplexTestDataStructure SelfRef { get; set; } // 循環引用測試
+    }
+
+    public class NullableTestDataStructure
+    {
+        public string Name { get; set; }
+        public int? OptionalCount { get; set; } // Nullable 解包測試
     }
 
     public class TestOpenAIProviderWithReasoning : OpenAIProvider

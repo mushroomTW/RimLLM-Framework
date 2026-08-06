@@ -88,7 +88,11 @@ namespace RimLLM_Framework.Manager
                 MaxOutputTokens = request.MaxTokens
             };
 
-            if (useNativeSchema && request.ResponseType != null)
+            // 含 Dictionary 的型別會產生開放式 map，而 IChatClient 的 JSON Schema response format
+            // 走的是 strict 模式，服務端會拒絕。這類型別改走提示式 JSON + RepairJson fallback，
+            // CreateDummyInstance 已能正確產生 Dictionary 的範例 JSON。
+            if (useNativeSchema && request.ResponseType != null &&
+                !RimLLMJsonHelper.ContainsOpenEndedMap(request.ResponseType))
             {
                 string schemaJson = RimLLMJsonHelper.GenerateJsonSchema(
                     request.ResponseType,
