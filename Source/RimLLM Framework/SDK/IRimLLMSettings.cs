@@ -155,26 +155,6 @@ namespace RimLLM_Framework.SDK
         bool EnableJsonRepair { get; set; }
 
         /// <summary>
-        /// 是否啟用全域語意快取。
-        /// </summary>
-        bool EnableSemanticCache { get; set; }
-
-        /// <summary>
-        /// 語意快取相似度閾值 (Cosine Similarity)。
-        /// </summary>
-        float SemanticCacheThreshold { get; set; }
-
-        /// <summary>
-        /// 語意快取記憶體容量上限。
-        /// </summary>
-        int SemanticCacheMaxCount { get; set; }
-
-        /// <summary>
-        /// 語意快取存活時間 (TTL，單位：秒)。0 代表不過期。
-        /// </summary>
-        int SemanticCacheTTL { get; set; }
-
-        /// <summary>
         /// Embedding 供應商名稱。
         /// </summary>
         string EmbeddingProvider { get; set; }

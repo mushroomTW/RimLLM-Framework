@@ -133,27 +133,14 @@
   <RimLLM_EnableNativeSchemaLabel>Enable Native JSON Schema Enforcement (highly increases output format accuracy)</RimLLM_EnableNativeSchemaLabel>
   <RimLLM_EnableJsonRepairLabel>Enable JSON Response Structural Repair (fault-tolerant JSON parser)</RimLLM_EnableJsonRepairLabel>
 
-  <RimLLM_TabSemanticCache>Semantic Cache</RimLLM_TabSemanticCache>
-  <RimLLM_TitleSemanticCache>Semantic Cache &amp; Embedding Settings</RimLLM_TitleSemanticCache>
-  <RimLLM_EnableSemanticCacheLabel>Enable Global Semantic Cache (saves tokens &amp; reduces response latency)</RimLLM_EnableSemanticCacheLabel>
-  <RimLLM_SemanticCacheThresholdLabel>Semantic Match Similarity Threshold: {0} (closer to 1.0 is more strict)</RimLLM_SemanticCacheThresholdLabel>
-  <RimLLM_SemanticCacheMaxCountLabel>In-Memory Cache Capacity Limit: {0} entries (~{1} MB)</RimLLM_SemanticCacheMaxCountLabel>
-  <RimLLM_SemanticCacheTTL_Label>Semantic Cache Expiration (TTL): {0}</RimLLM_SemanticCacheTTL_Label>
-  <RimLLM_SemanticCacheTTL_Never>Never Expire (Permanent Cache)</RimLLM_SemanticCacheTTL_Never>
-  <RimLLM_SemanticCacheTTL_Minutes>{0} minutes</RimLLM_SemanticCacheTTL_Minutes>
+  <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
+  <RimLLM_TitleEmbedding>Embedding Vector Settings</RimLLM_TitleEmbedding>
+  <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and similarity comparison. Other mods can call them through the RimLLM SDK. Offline Trigram mode needs no API and works entirely on your machine.</RimLLM_EmbeddingExplanation>
   <RimLLM_EmbeddingProviderLabel>Embedding Provider: </RimLLM_EmbeddingProviderLabel>
   <RimLLM_EmbeddingModelLabel>Embedding Model Name: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>Custom Endpoint URL: </RimLLM_EmbeddingEndpointLabel>
   <RimLLM_EmbeddingApiKeyLabel>Custom API Key (optional, defaults to provider key if empty): </RimLLM_EmbeddingApiKeyLabel>
-  <RimLLM_CacheStatsLabel>Cache Statistics: </RimLLM_CacheStatsLabel>
-  <RimLLM_CacheTotalCountLabel>Cache Size: {0} / {1} entries</RimLLM_CacheTotalCountLabel>
-  <RimLLM_CacheHitsLabel>Cache Hits: {0} times</RimLLM_CacheHitsLabel>
-  <RimLLM_CacheMissesLabel>Cache Misses: {0} times</RimLLM_CacheMissesLabel>
-  <RimLLM_CacheHitRateLabel>Average Cache Hit Rate: {0}</RimLLM_CacheHitRateLabel>
-  <RimLLM_EstTokensSavedLabel>Estimated Tokens Saved: {0} Tokens</RimLLM_EstTokensSavedLabel>
-  <RimLLM_ClearCacheBtn>Clear Semantic Cache Manually</RimLLM_ClearCacheBtn>
-  <RimLLM_MsgCacheCleared>Semantic Cache has been cleared manually.</RimLLM_MsgCacheCleared>
-  
+
   <RimLLM_EmbeddingProvider_Offline_Trigram>Offline Trigram Calculation (Offline)</RimLLM_EmbeddingProvider_Offline_Trigram>
   <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
   <RimLLM_EmbeddingProvider_LocalAPI_Ollama>Local Ollama API (Ollama)</RimLLM_EmbeddingProvider_LocalAPI_Ollama>

@@ -1,4 +1,4 @@
-using NUnit.Framework;
+﻿using NUnit.Framework;
 using System;
 using System.Reflection;
 using System.Collections.Generic;
@@ -1715,224 +1715,53 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestTrigramCosineSimilarity()
+        public void TestTrigramSimilarityOnEmbeddingService()
         {
             // 1. 相同字串相似度為 1.0
-            float simSelf = RimLLMSemanticCache.CalculateTrigramSimilarity("Colony status is good", "Colony status is good");
-            Assert.AreEqual(1.0f, simSelf, 0.001f);
+            float simSelf = RimLLMEmbeddingService.CalculateTrigramSimilarity("Colony status is good", "Colony status is good");
+            Assert.AreEqual(1.0f, simSelf, 0.001f, "完全相同的字串相似度必須為 1.0");
 
             // 2. 完全無關字串相似度接近 0.0
-            float simDiff = RimLLMSemanticCache.CalculateTrigramSimilarity("Colony status is good", "Starve event happened");
-            Assert.IsTrue(simDiff < 0.2f);
+            float simDiff = RimLLMEmbeddingService.CalculateTrigramSimilarity("Colony status is good", "Starve event happened");
+            Assert.IsTrue(simDiff < 0.2f, "無關字串的相似度應該偏低");
 
             // 3. 相似字串相似度較高
-            float simClose = RimLLMSemanticCache.CalculateTrigramSimilarity("We have 10 colonists", "We have 11 colonists");
-            Assert.IsTrue(simClose > 0.75f);
+            float simClose = RimLLMEmbeddingService.CalculateTrigramSimilarity("We have 10 colonists", "We have 11 colonists");
+            Assert.IsTrue(simClose > 0.75f, "僅有些微差異的字串相似度應該偏高");
         }
 
         [Test]
-        public void TestSemanticCacheExactMatch()
+        public void TestCosineSimilarityHandlesMismatchedLength()
         {
-            var mockSettings = new MockSettings
-            {
-                FallbackChain = new List<string> { "MockProv:model-a" },
-                EnableSemanticCache = true,
-                EmbeddingProvider = "Offline_Trigram",
-                SemanticCacheThreshold = 0.95f
-            };
-            mockSettings.EnabledProviders["MockProv"] = true;
-            mockSettings.ApiKeys["MockProv"] = "key-a";
+            float[] a = new float[] { 1f, 0f, 0f };
+            float[] b = new float[] { 1f, 0f };
 
+            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(a, b), 0.0001f, "長度不一致的向量應回傳 0 而非拋出例外");
+            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(a, null), 0.0001f, "任一向量為 null 時應回傳 0");
+            Assert.AreEqual(1f, RimLLMEmbeddingService.CalculateCosineSimilarity(a, a), 0.0001f, "相同向量的餘弦相似度必須為 1");
+        }
+
+        [Test]
+        public void TestEmbeddingServiceRejectsOfflineProvider()
+        {
+            var mockSettings = new MockSettings { EmbeddingProvider = "Offline_Trigram" };
+            var service = new RimLLMEmbeddingService(mockSettings);
+
+            var ex = Assert.Throws<RimLLMException>(() =>
+                service.ComputeEmbeddingAsync("hello").GetAwaiter().GetResult());
+            Assert.IsTrue(ex.Message.Contains("Trigram"), "離線模式不支援向量運算，應明確拋出錯誤");
+        }
+
+        [Test]
+        public void TestEmbeddingRequestVerifiesCaller()
+        {
+            var mockSettings = new MockSettings { EmbeddingProvider = "Google" };
             var manager = new RimLLMManager(mockSettings);
-            int providerCalls = 0;
-            var mockProv = new MockTestProvider
-            {
-                ProviderId = "MockProv",
-                GenerateHandler = (req, model) =>
-                {
-                    providerCalls++;
-                    return System.Threading.Tasks.Task.FromResult("mocked-response");
-                }
-            };
-            manager.RegisterProvider(mockProv);
 
-            const string modId = "test.cache.exact";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
-
-            var request = new LLMRequest { ModId = modId, Prompt = "Tell me a story about colony" };
-
-            // 第一次呼叫，會快取未命中，並呼叫 Provider
-            string res1 = manager.GenerateAsync(request).GetAwaiter().GetResult();
-            Assert.AreEqual("mocked-response", res1);
-            Assert.AreEqual(1, providerCalls);
-            Assert.AreEqual(1, manager.SemanticCache.CacheCount);
-            Assert.AreEqual(0, manager.SemanticCache.CacheHits);
-            Assert.AreEqual(1, manager.SemanticCache.CacheMisses);
-
-            // 第二次相同呼叫，會精確字串命中快取，不呼叫 Provider
-            string res2 = manager.GenerateAsync(request).GetAwaiter().GetResult();
-            Assert.AreEqual("mocked-response", res2);
-            Assert.AreEqual(1, providerCalls); // 呼叫次數維持 1
-            Assert.AreEqual(1, manager.SemanticCache.CacheHits);
-            Assert.AreEqual(1, manager.SemanticCache.CacheMisses);
-        }
-
-        [Test]
-        public void TestSemanticCacheEvictionLRU()
-        {
-            var mockSettings = new MockSettings
-            {
-                FallbackChain = new List<string> { "MockProv:model-a" },
-                EnableSemanticCache = true,
-                EmbeddingProvider = "Offline_Trigram",
-                SemanticCacheMaxCount = 2,
-                SemanticCacheThreshold = 0.95f
-            };
-            mockSettings.EnabledProviders["MockProv"] = true;
-            mockSettings.ApiKeys["MockProv"] = "key-a";
-
-            var manager = new RimLLMManager(mockSettings);
-            int callVal = 0;
-            var mockProv = new MockTestProvider
-            {
-                ProviderId = "MockProv",
-                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("res:" + (++callVal))
-            };
-            manager.RegisterProvider(mockProv);
-
-            const string modId = "test.cache.lru";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
-
-            // 依序發送 3 個不同請求
-            var req1 = new LLMRequest { ModId = modId, Prompt = "Prompt A" };
-            var req2 = new LLMRequest { ModId = modId, Prompt = "Prompt B" };
-            var req3 = new LLMRequest { ModId = modId, Prompt = "Prompt C" };
-
-            manager.GenerateAsync(req1).GetAwaiter().GetResult(); // 快取入 [A]
-            manager.GenerateAsync(req2).GetAwaiter().GetResult(); // 快取入 [A, B]
-            
-            // 此時存取一次 A，使其成為最新存取的
-            manager.GenerateAsync(req1).GetAwaiter().GetResult(); // Hit A, [B, A]
-            
-            manager.GenerateAsync(req3).GetAwaiter().GetResult(); // 快取入 [A, C]，B 應被剔除
-
-            Assert.AreEqual(2, manager.SemanticCache.CacheCount);
-
-            // B 應該不在快取中（如果呼叫 B 會導致重新調用 Provider 得到 res:4）
-            var reqB = new LLMRequest { ModId = modId, Prompt = "Prompt B" };
-            string resB = manager.GenerateAsync(reqB).GetAwaiter().GetResult();
-            Assert.AreEqual("res:4", resB);
-        }
-
-        [Test]
-        public async System.Threading.Tasks.Task TestSemanticCacheExpiration()
-        {
-            var mockSettings = new MockSettings
-            {
-                EnableSemanticCache = true,
-                SemanticCacheThreshold = 0.90f,
-                SemanticCacheTTL = 2 // 2 seconds
-            };
-            var cache = new RimLLMSemanticCache(mockSettings);
-            var req = LLMRequest.Create("test-mod", "Calculate optimal mining route");
-
-            // 1. Add cache and retrieve immediately
-            await cache.AddCacheEntryAsync(req, "Mine path A");
-            string resImmediate = await cache.TryGetCachedResponseAsync(req);
-            Assert.AreEqual("Mine path A", resImmediate, "Should hit cache immediately");
-
-            // 2. Wait 3 seconds (greater than 2s TTL)
-            await System.Threading.Tasks.Task.Delay(3000);
-            string resAfterExpiry = await cache.TryGetCachedResponseAsync(req);
-            Assert.IsNull(resAfterExpiry, "Should miss cache after TTL expiration");
-            Assert.AreEqual(0, cache.CacheCount, "Expired cache entry should have been removed");
-        }
-
-        [Test]
-        public void TestRequestBypassSemanticCache()
-        {
-            var mockSettings = new MockSettings
-            {
-                FallbackChain = new List<string> { "MockProv:model-a" },
-                EnableSemanticCache = true,
-                EmbeddingProvider = "Offline_Trigram",
-                SemanticCacheThreshold = 0.95f
-            };
-            mockSettings.EnabledProviders["MockProv"] = true;
-            mockSettings.ApiKeys["MockProv"] = "key-a";
-
-            var manager = new RimLLMManager(mockSettings);
-            int providerCalls = 0;
-            var mockProv = new MockTestProvider
-            {
-                ProviderId = "MockProv",
-                GenerateHandler = (req, model) =>
-                {
-                    providerCalls++;
-                    return System.Threading.Tasks.Task.FromResult("res-" + providerCalls);
-                }
-            };
-            manager.RegisterProvider(mockProv);
-
-            const string modId = "test.cache.bypass";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
-
-            var request = new LLMRequest { ModId = modId, Prompt = "Test Prompt" };
-
-            // 第一次生成
-            string res1 = manager.GenerateAsync(request).GetAwaiter().GetResult();
-            Assert.AreEqual("res-1", res1);
-
-            // 第二次生成，但是啟用 BypassSemanticCache = true
-            var requestBypass = new LLMRequest { ModId = modId, Prompt = "Test Prompt", BypassSemanticCache = true };
-            string res2 = manager.GenerateAsync(requestBypass).GetAwaiter().GetResult();
-            
-            Assert.AreEqual("res-2", res2); // 應該直接呼叫 Provider，得到 res-2
-            Assert.AreEqual(2, providerCalls);
-        }
-
-        [Test]
-        public void TestSemanticCacheThreshold()
-        {
-            var mockSettings = new MockSettings
-            {
-                FallbackChain = new List<string> { "MockProv:model-a" },
-                EnableSemanticCache = true,
-                EmbeddingProvider = "Offline_Trigram",
-                SemanticCacheThreshold = 0.95f // 嚴格閾值
-            };
-            mockSettings.EnabledProviders["MockProv"] = true;
-            mockSettings.ApiKeys["MockProv"] = "key-a";
-
-            var manager = new RimLLMManager(mockSettings);
-            int providerCalls = 0;
-            var mockProv = new MockTestProvider
-            {
-                ProviderId = "MockProv",
-                GenerateHandler = (req, model) =>
-                {
-                    providerCalls++;
-                    return System.Threading.Tasks.Task.FromResult("success");
-                }
-            };
-            manager.RegisterProvider(mockProv);
-
-            const string modId = "test.cache.threshold";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
-
-            // 1. 寫入快取 "We have 10 colonists"
-            var req1 = new LLMRequest { ModId = modId, Prompt = "We have 10 colonists" };
-            manager.GenerateAsync(req1).GetAwaiter().GetResult();
-
-            // 2. 當 Threshold = 0.95 時，呼叫相似的 "We have 11 colonists" 應該未命中（miss）
-            var req2 = new LLMRequest { ModId = modId, Prompt = "We have 11 colonists" };
-            string res2 = manager.GenerateAsync(req2).GetAwaiter().GetResult();
-            Assert.AreEqual(2, providerCalls); // 再次呼叫了 Provider
-
-            // 3. 當 Threshold 下調至 0.70 時，再次呼叫應該命中（hit）
-            mockSettings.SemanticCacheThreshold = 0.70f;
-            string res3 = manager.GenerateAsync(req2).GetAwaiter().GetResult();
-            Assert.AreEqual(2, providerCalls); // 未再次呼叫，說明命中了快取！
+            // 未透過 ClientRegistry 註冊的 ModId 不得取用計費的 Embedding API。
+            Assert.Throws<RimLLMException>(() =>
+                manager.GetEmbeddingAsync("unregistered.mod.id", "hello").GetAwaiter().GetResult(),
+                "Embedding 為計費 API，必須通過呼叫端身分校驗");
         }
 
         [Test]
@@ -1990,10 +1819,6 @@ namespace RimLLM_Framework.Tests
         public bool EnableNativeSchema { get; set; } = true;
         public bool EnableJsonRepair { get; set; } = true;
 
-        public bool EnableSemanticCache { get; set; } = false;
-        public float SemanticCacheThreshold { get; set; } = 0.90f;
-        public int SemanticCacheMaxCount { get; set; } = 200;
-        public int SemanticCacheTTL { get; set; } = 300;
         public string EmbeddingProvider { get; set; } = "Offline_Trigram";
         public string EmbeddingModel { get; set; } = "text-embedding-004";
         public string EmbeddingEndpoint { get; set; } = "";

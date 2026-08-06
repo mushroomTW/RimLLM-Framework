@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.AI;
 using Newtonsoft.Json;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
@@ -33,9 +34,9 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMCircuitBreaker _circuitBreaker;
         private readonly RimLLMUsageTracker _usageTracker;
-        private readonly RimLLMSemanticCache _semanticCache;
+        private readonly RimLLMEmbeddingService _embeddingService;
 
-        public RimLLMSemanticCache SemanticCache => _semanticCache;
+        public RimLLMEmbeddingService EmbeddingService => _embeddingService;
         public RimLLMUsageTracker UsageTracker => _usageTracker;
 
         // Anti-abuse state
@@ -107,7 +108,7 @@ namespace RimLLM_Framework.Manager
             RegisterBuiltInProvider(new NvidiaProvider(settings));
             RegisterBuiltInProvider(new ZaiProvider(settings));
 
-            _semanticCache = new RimLLMSemanticCache(settings);
+            _embeddingService = new RimLLMEmbeddingService(settings);
         }
 
         private void RegisterBuiltInProvider(ILLMProvider provider)
@@ -153,6 +154,39 @@ namespace RimLLM_Framework.Manager
             lock (_providerLock)
             {
                 return new List<string>(_providerOrder);
+            }
+        }
+
+        /// <summary>
+        /// 取得指定供應商的能力描述。
+        /// 未實作能力介面的舊版／自訂供應商會回傳保守的相容能力，確保既有 Provider 不需改版。
+        /// </summary>
+        /// <param name="providerId">供應商識別碼。</param>
+        /// <returns>供應商能力；找不到供應商時回傳所有能力為 false 的物件。</returns>
+        public LLMProviderCapabilities GetProviderCapabilities(string providerId)
+        {
+            if (string.IsNullOrEmpty(providerId))
+            {
+                return new LLMProviderCapabilities();
+            }
+
+            lock (_providerLock)
+            {
+                if (!_providers.TryGetValue(providerId, out ILLMProvider provider))
+                {
+                    return new LLMProviderCapabilities();
+                }
+
+                if (provider is IChatClientProvider chatClientProvider && chatClientProvider.Capabilities != null)
+                {
+                    return chatClientProvider.Capabilities;
+                }
+
+                // 舊版 ILLMProvider 至少已實作既有串流介面；原生 Schema／Usage 仍視為不支援。
+                return new LLMProviderCapabilities
+                {
+                    SupportsStreaming = true
+                };
             }
         }
 
@@ -236,25 +270,7 @@ namespace RimLLM_Framework.Manager
         {
             LLMRequest normalizedRequest = NormalizeRequest(request);
 
-            // 1. 嘗試從語意快取中讀取（僅非串流請求啟用）
-            if (!normalizedRequest.EnableStreaming)
-            {
-                string cachedResponse = await _semanticCache.TryGetCachedResponseAsync(normalizedRequest).ConfigureAwait(false);
-                if (cachedResponse != null)
-                {
-                    return cachedResponse;
-                }
-            }
-
-            string result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () => GenerateInternalDirectAsync(normalizedRequest, callingAssembly, verifyCaller)).ConfigureAwait(false);
-
-            // 2. 成功生成後，異步寫入語意快取
-            if (!normalizedRequest.EnableStreaming)
-            {
-                await _semanticCache.AddCacheEntryAsync(normalizedRequest, result).ConfigureAwait(false);
-            }
-
-            return result;
+            return await _requestQueue.EnqueueRequestAsync(normalizedRequest, () => GenerateInternalDirectAsync(normalizedRequest, callingAssembly, verifyCaller)).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -299,7 +315,7 @@ namespace RimLLM_Framework.Manager
             // 2. 交由共用的 Fallback Chain 執行核心處理
             return await ExecuteWithFallbackAsync(
                 request,
-                (provider, modelName) => provider.GenerateAsync(request, modelName),
+                (provider, modelName) => GenerateProviderAsync(provider, request, modelName),
                 LLMError.Unknown,
                 "All fallback attempts failed.").ConfigureAwait(false);
         }
@@ -332,22 +348,13 @@ namespace RimLLM_Framework.Manager
             var requestClone = request.Clone();
             requestClone.ResponseType = typeof(T);
 
-            // 在 SystemPrompt 後方附加 JSON schema 格式指示
-            string schemaInstructions = $"\n\n[CRITICAL REQUIREMENT: You MUST respond ONLY with a raw JSON object matching the following structure. Do not include markdown code block syntax (like ```json). Just the raw json text. Example:\n{RimLLMJsonHelper.GetSampleJson<T>()}]";
-            
-            string originalSystemPrompt = requestClone.SystemPrompt ?? "";
-            requestClone.SystemPrompt = originalSystemPrompt + schemaInstructions;
-
             // 驗證呼叫者身份
             string rawResponse = await GenerateInternalAsync(requestClone, callingAssembly, verifyCaller: true).ConfigureAwait(false);
-            
-            // 執行 JSON 修復
-            string repairedJson = _settings.EnableJsonRepair ? RimLLMJsonHelper.RepairJson(rawResponse) : rawResponse;
 
             try
             {
-                T result = JsonConvert.DeserializeObject<T>(repairedJson);
-                return result;
+                // 原生 schema provider 的回應先直接解析；只有解析失敗才進入 repair fallback。
+                return DeserializeAndValidate<T>(rawResponse);
             }
             catch (Exception ex)
             {
@@ -359,12 +366,12 @@ namespace RimLLM_Framework.Manager
                         ex);
                 }
 
+                string repairedJson = RimLLMJsonHelper.RepairJson(rawResponse);
                 RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting fallback repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
                 try
                 {
                     string fallbackExtracted = RimLLMJsonHelper.ExtractJsonBlock(repairedJson);
-                    T result = JsonConvert.DeserializeObject<T>(fallbackExtracted);
-                    return result;
+                    return DeserializeAndValidate<T>(fallbackExtracted);
                 }
                 catch
                 {
@@ -373,6 +380,7 @@ namespace RimLLM_Framework.Manager
                     try
                     {
                         T repairedObj = await PerformDoubleRepairAsync<T>(request, rawResponse, ex.Message).ConfigureAwait(false);
+                        ValidateStructuredObject(repairedObj);
                         return repairedObj;
                     }
                     catch (Exception repairEx)
@@ -384,6 +392,89 @@ namespace RimLLM_Framework.Manager
                     }
                 }
             }
+        }
+
+        private static T DeserializeAndValidate<T>(string json)
+        {
+            T result = JsonConvert.DeserializeObject<T>(json);
+            ValidateStructuredObject(result);
+            return result;
+        }
+
+        private static void ValidateStructuredObject<T>(T result)
+        {
+            if (ReferenceEquals(result, null))
+            {
+                throw new InvalidOperationException("Structured response deserialized to null.");
+            }
+
+            ValidateRequiredMembers(result, typeof(T), new HashSet<Type>());
+        }
+
+        private static void ValidateRequiredMembers(object value, Type type, HashSet<Type> visitedTypes)
+        {
+            if (value == null || type == typeof(string) || type.IsPrimitive || type.IsEnum || type == typeof(decimal))
+            {
+                return;
+            }
+            if (!visitedTypes.Add(type))
+            {
+                return;
+            }
+
+            var enumerable = value as System.Collections.IEnumerable;
+            if (enumerable != null && type != typeof(string))
+            {
+                foreach (object item in enumerable)
+                {
+                    if (item != null)
+                    {
+                        ValidateRequiredMembers(item, item.GetType(), visitedTypes);
+                    }
+                }
+                return;
+            }
+
+            foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!property.CanRead || !property.CanWrite || property.GetIndexParameters().Length > 0)
+                {
+                    continue;
+                }
+
+                object memberValue = property.GetValue(value, null);
+                if (memberValue == null && IsNullableReferenceOrNullableValue(property.PropertyType))
+                {
+                    throw new InvalidOperationException($"Required structured response member '{property.Name}' is null.");
+                }
+                if (memberValue != null)
+                {
+                    ValidateRequiredMembers(memberValue, property.PropertyType, visitedTypes);
+                }
+            }
+
+            foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (field.IsLiteral || field.IsInitOnly)
+                {
+                    continue;
+                }
+
+                object memberValue = field.GetValue(value);
+                if (memberValue == null && IsNullableReferenceOrNullableValue(field.FieldType))
+                {
+                    throw new InvalidOperationException($"Required structured response member '{field.Name}' is null.");
+                }
+                if (memberValue != null)
+                {
+                    ValidateRequiredMembers(memberValue, field.FieldType, visitedTypes);
+                }
+            }
+        }
+
+        private static bool IsNullableReferenceOrNullableValue(Type type)
+        {
+            return !type.IsValueType || Nullable.GetUnderlyingType(type) != null;
         }
 
         /// <summary>
@@ -461,11 +552,176 @@ namespace RimLLM_Framework.Manager
                 request,
                 async (provider, modelName) =>
                 {
-                    await provider.StreamAsync(request, modelName, onChunkReceived).ConfigureAwait(false);
+                    await StreamProviderAsync(provider, request, modelName, onChunkReceived).ConfigureAwait(false);
                     return "";
                 },
                 LLMError.ProviderOffline,
                 "All fallback attempts failed, unable to establish stream connection.").ConfigureAwait(false);
+        }
+
+        private async Task<string> GenerateProviderAsync(ILLMProvider provider, LLMRequest request, string model)
+        {
+            if (provider is IChatClientProvider chatProvider && chatProvider.UsesIChatClient)
+            {
+                bool useNativeSchema = request.ResponseType != null &&
+                                        _settings.EnableNativeSchema &&
+                                        chatProvider.Capabilities.SupportsNativeStructuredOutput;
+                if (useNativeSchema)
+                {
+                    try
+                    {
+                        if (provider is INativeStructuredOutputProvider nativeProvider)
+                        {
+                            return await nativeProvider.GenerateStructuredAsync(request, model).ConfigureAwait(false);
+                        }
+
+                        using (IChatClient nativeClient = chatProvider.CreateChatClient(model))
+                        {
+                            return await RimLLMChatClientExecutor.GenerateAsync(
+                                nativeClient,
+                                request,
+                                model,
+                                useNativeSchema: true,
+                                provider.ProviderId).ConfigureAwait(false);
+                        }
+                    }
+                    catch (Exception ex) when (IsNativeSchemaRejected(ex))
+                    {
+                        // 服務拒絕原生 schema 時，降級至既有提示式 JSON 與 repair fallback。
+                        return await GenerateWithoutNativeSchemaAsync(provider, request, model).ConfigureAwait(false);
+                    }
+                }
+
+                using (IChatClient client = chatProvider.CreateChatClient(model))
+                {
+                    // IChatClient 供應商若不支援原生 schema，仍要沿用既有的提示式 JSON fallback。
+                    LLMRequest providerRequest = PrepareRequestForProvider(provider, request);
+                    return await RimLLMChatClientExecutor.GenerateAsync(
+                        client,
+                        providerRequest,
+                        model,
+                        useNativeSchema: false,
+                        provider.ProviderId).ConfigureAwait(false);
+                }
+            }
+
+            return await provider.GenerateAsync(
+                PrepareRequestForProvider(provider, request),
+                model).ConfigureAwait(false);
+        }
+
+        private async Task StreamProviderAsync(
+            ILLMProvider provider,
+            LLMRequest request,
+            string model,
+            Action<string> onChunkReceived)
+        {
+            if (provider is IChatClientProvider chatProvider && chatProvider.UsesIChatClient)
+            {
+                using (IChatClient client = chatProvider.CreateChatClient(model))
+                {
+                    // IChatClient 供應商若不支援原生 schema，仍要沿用既有的提示式 JSON fallback。
+                    LLMRequest providerRequest = PrepareRequestForProvider(provider, request);
+                    await RimLLMChatClientExecutor.StreamAsync(
+                        client,
+                        providerRequest,
+                        model,
+                        request.ResponseType != null &&
+                        _settings.EnableNativeSchema &&
+                        chatProvider.Capabilities.SupportsNativeStructuredOutput,
+                        provider.ProviderId,
+                        onChunkReceived).ConfigureAwait(false);
+                }
+                return;
+            }
+
+            await provider.StreamAsync(
+                PrepareRequestForProvider(provider, request),
+                model,
+                onChunkReceived).ConfigureAwait(false);
+        }
+
+        private async Task<string> GenerateWithoutNativeSchemaAsync(
+            ILLMProvider provider,
+            LLMRequest request,
+            string model)
+        {
+            LLMRequest fallbackRequest = PrepareRequestForProvider(
+                provider,
+                request,
+                forceJsonFallback: true);
+
+            if (provider is IChatClientProvider chatProvider && chatProvider.UsesIChatClient)
+            {
+                using (IChatClient client = chatProvider.CreateChatClient(model))
+                {
+                    return await RimLLMChatClientExecutor.GenerateAsync(
+                        client,
+                        fallbackRequest,
+                        model,
+                        useNativeSchema: false,
+                        provider.ProviderId).ConfigureAwait(false);
+                }
+            }
+
+            return await provider.GenerateAsync(fallbackRequest, model).ConfigureAwait(false);
+        }
+
+        private static bool IsNativeSchemaRejected(Exception exception)
+        {
+            if (exception == null || exception is OperationCanceledException)
+            {
+                return false;
+            }
+
+            for (Exception current = exception; current != null; current = current.InnerException)
+            {
+                if (current is RimLLMException rimException && rimException.Error == LLMError.InvalidResponse)
+                {
+                    return true;
+                }
+            }
+
+            string message = exception.ToString().ToLowerInvariant();
+            bool mentionsSchema = message.Contains("schema") ||
+                                  message.Contains("response_format") ||
+                                  message.Contains("response format") ||
+                                  message.Contains("structured output");
+            bool looksLikeRejection = message.Contains("400") ||
+                                      message.Contains("invalid") ||
+                                      message.Contains("unsupported") ||
+                                      message.Contains("not support") ||
+                                      message.Contains("unrecognized");
+            return mentionsSchema && looksLikeRejection;
+        }
+
+        private LLMRequest PrepareRequestForProvider(
+            ILLMProvider provider,
+            LLMRequest request,
+            bool forceJsonFallback = false)
+        {
+            if (request.ResponseType == null ||
+                (!forceJsonFallback && IsNativeStructuredProvider(provider)))
+            {
+                return request;
+            }
+
+            // 非原生 schema 供應商，或原生 schema 被拒絕時，使用既有提示式 JSON fallback。
+            LLMRequest clone = request.Clone();
+            string originalSystemPrompt = clone.SystemPrompt ?? string.Empty;
+            string schemaInstructions =
+                "\n\n[結構化輸出要求：只能回傳符合下列結構的原始 JSON，不要加入 Markdown code fence 或其他說明。範例：\n" +
+                RimLLMJsonHelper.GetSampleJson(request.ResponseType) + "]";
+            clone.SystemPrompt = originalSystemPrompt + schemaInstructions;
+            return clone;
+        }
+
+        private bool IsNativeStructuredProvider(ILLMProvider provider)
+        {
+            return provider is IChatClientProvider chatProvider &&
+                   chatProvider.UsesIChatClient &&
+                   chatProvider.Capabilities.SupportsNativeStructuredOutput &&
+                   _settings.EnableNativeSchema;
         }
 
         /// <summary>
@@ -737,6 +993,38 @@ namespace RimLLM_Framework.Manager
             }
 
             return await provider.FetchAvailableModelsAsync().ConfigureAwait(false);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public Task<float[]> GetEmbeddingAsync(string modId, string text, CancellationToken cancellationToken = default)
+        {
+            Assembly callingAssembly = Assembly.GetCallingAssembly();
+            VerifyEmbeddingCallerOrThrow(modId, callingAssembly);
+            return _embeddingService.ComputeEmbeddingAsync(text, cancellationToken);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public Task<IReadOnlyList<float[]>> GetEmbeddingsAsync(string modId, IEnumerable<string> texts, CancellationToken cancellationToken = default)
+        {
+            Assembly callingAssembly = Assembly.GetCallingAssembly();
+            VerifyEmbeddingCallerOrThrow(modId, callingAssembly);
+            return _embeddingService.ComputeEmbeddingsAsync(texts, cancellationToken);
+        }
+
+        /// <summary>
+        /// Embedding 為計費 API，因此與一般生成請求共用相同的呼叫端校驗與防濫用檢查。
+        /// </summary>
+        private void VerifyEmbeddingCallerOrThrow(string modId, Assembly callingAssembly)
+        {
+            if (callingAssembly != null && !ClientRegistry.Verify(modId, callingAssembly))
+            {
+                throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{modId}' did not pass.");
+            }
+
+            if (_settings.EnableAntiAbuse)
+            {
+                CheckAntiAbuse(modId);
+            }
         }
 
         public void RegisterResponseType<T>()

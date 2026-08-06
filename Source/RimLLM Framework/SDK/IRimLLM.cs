@@ -97,6 +97,27 @@ namespace RimLLM_Framework.SDK
         Task<List<string>> FetchProviderModelsAsync(string providerId);
 
         /// <summary>
+        /// 計算單筆文字的 Embedding 向量，供語意檢索、相似度比對等用途。
+        /// 此為計費 API，需先以 RimLLMProvider.RegisterClient 註冊呼叫端，並受防濫用限制。
+        /// 使用者需在設定的「Embedding」分頁選擇線上供應商，離線 Trigram 模式會擲出例外。
+        /// </summary>
+        /// <param name="modId">呼叫端 Mod 的唯一識別碼</param>
+        /// <param name="text">要計算向量的文字</param>
+        /// <param name="cancellationToken">取消權杖</param>
+        /// <returns>Embedding 向量</returns>
+        Task<float[]> GetEmbeddingAsync(string modId, string text, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 批次計算多筆文字的 Embedding 向量，回傳順序與輸入順序一致。
+        /// 其他行為與 GetEmbeddingAsync 相同。
+        /// </summary>
+        /// <param name="modId">呼叫端 Mod 的唯一識別碼</param>
+        /// <param name="texts">要計算向量的文字集合</param>
+        /// <param name="cancellationToken">取消權杖</param>
+        /// <returns>與輸入順序對應的 Embedding 向量清單</returns>
+        Task<IReadOnlyList<float[]>> GetEmbeddingsAsync(string modId, IEnumerable<string> texts, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// 註冊外部 LLM 供應商，供第三方 Mod 擴充自訂供應商（如自架伺服器或新興 API）。
         /// 外部供應商註冊後即視為啟用，使用者透過 Fallback Chain 控制其參與。
         /// ProviderId 不得與既有供應商重複。

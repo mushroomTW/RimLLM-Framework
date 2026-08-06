@@ -83,10 +83,6 @@ namespace RimLLM_Framework.Mod
         public bool EnableNativeSchema { get; set; } = true;
         public bool EnableJsonRepair { get; set; } = true;
 
-        public bool EnableSemanticCache { get; set; } = false;
-        public float SemanticCacheThreshold { get; set; } = 0.90f;
-        public int SemanticCacheMaxCount { get; set; } = 200;
-        public int SemanticCacheTTL { get; set; } = 300;
         public string EmbeddingProvider { get; set; } = "Offline_Trigram";
         public string EmbeddingModel { get; set; } = "text-embedding-004";
         public string EmbeddingEndpoint { get; set; } = "";
@@ -196,10 +192,6 @@ namespace RimLLM_Framework.Mod
             public int RoutingStrategy = 2;
             public bool EnableNativeSchema = true;
             public bool EnableJsonRepair = true;
-            public bool EnableSemanticCache = false;
-            public float SemanticCacheThreshold = 0.90f;
-            public int SemanticCacheMaxCount = 200;
-            public int SemanticCacheTTL = 300;
             public string EmbeddingProvider = "Offline_Trigram";
             public string EmbeddingModel = "text-embedding-004";
             public string EmbeddingEndpoint = "";
@@ -246,10 +238,6 @@ namespace RimLLM_Framework.Mod
                         RoutingStrategy = this.RoutingStrategy,
                         EnableNativeSchema = this.EnableNativeSchema,
                         EnableJsonRepair = this.EnableJsonRepair,
-                        EnableSemanticCache = this.EnableSemanticCache,
-                        SemanticCacheThreshold = this.SemanticCacheThreshold,
-                        SemanticCacheMaxCount = this.SemanticCacheMaxCount,
-                        SemanticCacheTTL = this.SemanticCacheTTL,
                         EmbeddingProvider = this.EmbeddingProvider,
                         EmbeddingModel = this.EmbeddingModel,
                         EmbeddingEndpoint = this.EmbeddingEndpoint,
@@ -347,10 +335,6 @@ namespace RimLLM_Framework.Mod
                                 this.RoutingStrategy = dto.RoutingStrategy < 0 ? 0 : dto.RoutingStrategy;
                                 this.EnableNativeSchema = dto.EnableNativeSchema;
                                 this.EnableJsonRepair = dto.EnableJsonRepair;
-                                this.EnableSemanticCache = dto.EnableSemanticCache;
-                                this.SemanticCacheThreshold = dto.SemanticCacheThreshold <= 0f ? 0.90f : dto.SemanticCacheThreshold;
-                                this.SemanticCacheMaxCount = dto.SemanticCacheMaxCount <= 0 ? 200 : dto.SemanticCacheMaxCount;
-                                this.SemanticCacheTTL = dto.SemanticCacheTTL < 0 ? 300 : dto.SemanticCacheTTL;
                                 this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? "Offline_Trigram" : dto.EmbeddingProvider;
                                 this.EmbeddingModel = string.IsNullOrEmpty(dto.EmbeddingModel) ? "text-embedding-004" : dto.EmbeddingModel;
                                 this.EmbeddingEndpoint = dto.EmbeddingEndpoint ?? "";

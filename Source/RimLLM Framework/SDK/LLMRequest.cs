@@ -84,11 +84,6 @@ namespace RimLLM_Framework.SDK
         public string MinFallbackLevel { get; set; }
 
         /// <summary>
-        /// 指示是否跳過語意快取直接呼叫 LLM 進行新鮮回答。
-        /// </summary>
-        public bool BypassSemanticCache { get; set; } = false;
-
-        /// <summary>
         /// 非同步請求取消 Token。
         /// </summary>
         public System.Threading.CancellationToken CancellationToken { get; set; } = default;
@@ -190,15 +185,6 @@ namespace RimLLM_Framework.SDK
         }
 
         /// <summary>
-        /// 設定是否跳過語意快取。
-        /// </summary>
-        public LLMRequest WithBypassSemanticCache(bool bypass)
-        {
-            BypassSemanticCache = bypass;
-            return this;
-        }
-
-        /// <summary>
         /// 以最簡方式啟用上下文快取，適合放「大型且短時間內會重複使用」的穩定內容，例如世界觀規則、固定角色設定、輸出 Schema。
         /// 請勿放每回合變動的即時資料（如當前世界狀態、隨機事件），否則 Gemini 顯式快取無法重用，反而墊高成本——詳見 <see cref="CachedContext"/>。
         /// </summary>
@@ -246,8 +232,7 @@ namespace RimLLM_Framework.SDK
                 EnableContextCaching = this.EnableContextCaching,
                 ReasoningEffort = this.ReasoningEffort,
                 EnableStreaming = this.EnableStreaming,
-                OnChunkReceived = this.OnChunkReceived,
-                BypassSemanticCache = this.BypassSemanticCache
+                OnChunkReceived = this.OnChunkReceived
             };
         }
     }

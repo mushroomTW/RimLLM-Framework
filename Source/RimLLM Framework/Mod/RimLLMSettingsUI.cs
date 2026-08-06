@@ -97,7 +97,7 @@ namespace RimLLM_Framework.Mod
             listing.Gap(4f);
             DrawCategoryButton(listing, "RimLLM_TabGlobalConfig".Translate(), "GlobalConfig");
             listing.Gap(4f);
-            DrawCategoryButton(listing, "RimLLM_TabSemanticCache".Translate(), "SemanticCache");
+            DrawCategoryButton(listing, "RimLLM_TabEmbedding".Translate(), "Embedding");
             listing.Gap(4f);
             DrawCategoryButton(listing, "RimLLM_TabBudget".Translate(), "Budget");
             listing.Gap(4f);
@@ -159,9 +159,9 @@ namespace RimLLM_Framework.Mod
             {
                 titleText = "RimLLM_TitleGlobalConfig".Translate();
             }
-            else if (activeMainCategory == "SemanticCache")
+            else if (activeMainCategory == "Embedding")
             {
-                titleText = "RimLLM_TitleSemanticCache".Translate();
+                titleText = "RimLLM_TitleEmbedding".Translate();
             }
             else if (activeMainCategory == "Budget")
             {
@@ -197,9 +197,9 @@ namespace RimLLM_Framework.Mod
             {
                 GlobalConfigDrawer.DrawGlobalConfigSettings(listing);
             }
-            else if (activeMainCategory == "SemanticCache")
+            else if (activeMainCategory == "Embedding")
             {
-                SemanticCacheSettingsDrawer.DrawSemanticCacheSettings(listing);
+                EmbeddingSettingsDrawer.DrawEmbeddingSettings(listing);
             }
             else if (activeMainCategory == "Budget")
             {
@@ -232,9 +232,9 @@ namespace RimLLM_Framework.Mod
             {
                 return GlobalConfigDrawer.GetHeight(width);
             }
-            else if (activeMainCategory == "SemanticCache")
+            else if (activeMainCategory == "Embedding")
             {
-                return SemanticCacheSettingsDrawer.GetHeight(width);
+                return EmbeddingSettingsDrawer.GetHeight(width);
             }
             else if (activeMainCategory == "Budget")
             {

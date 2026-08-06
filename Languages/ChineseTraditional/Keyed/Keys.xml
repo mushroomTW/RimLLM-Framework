@@ -133,27 +133,15 @@
   <RimLLM_EnableNativeSchemaLabel>啟用原生 JSON Schema 強制執行 (提升結構化輸出精準度)</RimLLM_EnableNativeSchemaLabel>
   <RimLLM_EnableJsonRepairLabel>啟用 JSON 回傳格式修復輔助 (容錯非標準 JSON)</RimLLM_EnableJsonRepairLabel>
 
-  <RimLLM_TabSemanticCache>語意快取</RimLLM_TabSemanticCache>
-  <RimLLM_TitleSemanticCache>語意快取與 Embedding 設定</RimLLM_TitleSemanticCache>
-  <RimLLM_EnableSemanticCacheLabel>啟用全域語意快取 (節省 Token 與縮短響應時間)</RimLLM_EnableSemanticCacheLabel>
-  <RimLLM_SemanticCacheThresholdLabel>語意匹配相似度閾值: {0} (越接近 1.0 匹配越嚴格)</RimLLM_SemanticCacheThresholdLabel>
-  <RimLLM_SemanticCacheMaxCountLabel>記憶體快取容量上限: {0} 條 (約 {1} MB)</RimLLM_SemanticCacheMaxCountLabel>
-  <RimLLM_SemanticCacheTTL_Label>語意快取生命週期 (TTL): {0}</RimLLM_SemanticCacheTTL_Label>
-  <RimLLM_SemanticCacheTTL_Never>不過期 (永久快取)</RimLLM_SemanticCacheTTL_Never>
-  <RimLLM_SemanticCacheTTL_Minutes>{0} 分鐘</RimLLM_SemanticCacheTTL_Minutes>
+  <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
+  <RimLLM_TitleEmbedding>Embedding 向量設定</RimLLM_TitleEmbedding>
+  <RimLLM_EmbeddingExplanation>Embedding 會把文字轉換成數值向量，可用於語意檢索與相似度比對，其他 Mod 能透過 RimLLM SDK 呼叫。離線 Trigram 模式完全在本機運算，不需要 API。</RimLLM_EmbeddingExplanation>
   <RimLLM_EmbeddingProviderLabel>Embedding 供應商: </RimLLM_EmbeddingProviderLabel>
   <RimLLM_EmbeddingModelLabel>Embedding 模型名稱: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>自訂服務端點: </RimLLM_EmbeddingEndpointLabel>
   <RimLLM_EmbeddingApiKeyLabel>自訂 API 金鑰 (選填，為空時預設與主 API 相同): </RimLLM_EmbeddingApiKeyLabel>
-  <RimLLM_CacheStatsLabel>快取運行統計: </RimLLM_CacheStatsLabel>
-  <RimLLM_CacheTotalCountLabel>快取項目數量: {0} / {1} 條</RimLLM_CacheTotalCountLabel>
-  <RimLLM_CacheHitsLabel>快取命中次數: {0} 次</RimLLM_CacheHitsLabel>
-  <RimLLM_CacheMissesLabel>快取未命中次數: {0} 次</RimLLM_CacheMissesLabel>
-  <RimLLM_CacheHitRateLabel>平均快取命中率: {0}</RimLLM_CacheHitRateLabel>
-  <RimLLM_EstTokensSavedLabel>預估節省 Token 數: {0} Tokens</RimLLM_EstTokensSavedLabel>
-  <RimLLM_ClearCacheBtn>手動清除語意快取</RimLLM_ClearCacheBtn>
-  <RimLLM_MsgCacheCleared>語意快取已手動清除。</RimLLM_MsgCacheCleared>
-  
+
+
   <RimLLM_EmbeddingProvider_Offline_Trigram>離線 Trigram 計算</RimLLM_EmbeddingProvider_Offline_Trigram>
   <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
   <RimLLM_EmbeddingProvider_LocalAPI_Ollama>本地 Ollama API</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
