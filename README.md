@@ -257,8 +257,17 @@ public async void CallWithCaching()
 ### 4. 容錯結構化輸出 (Structured Output & JSON Repair)
 
 * 許多時候開發者需要模型回傳特定的 JSON 格式。
-* 框架會自動在 SystemPrompt 中附加基於泛型型別轉換的 JSON Schema 規則指示。
-* 由於模型生成的不確定性，回傳的 JSON 可能帶有 Markdown 標記（如 ` ```json `）或是括號未閉合、多餘逗號等瑕疵。框架內置了 `RepairJson` 容錯模組，能自動修復並透過極限正則提取 JSON 區塊，再反序列化為 C# 目標物件，大幅提升結構化輸出的成功率。
+* 內建 OpenAI 與 Gemini provider 會優先使用官方 SDK 的原生結構化輸出：OpenAI 透過 `IChatClient` 的 JSON Schema response format，Gemini 透過 `ResponseMimeType = "application/json"` 與 `ResponseSchema`。框架會在回應後驗證必要成員與 null 狀態，再反序列化為 C# 目標物件。
+* 只有 provider 不支援原生 Schema、服務拒絕 Schema，或模型回傳格式仍不完整時，才會進入 `RepairJson` fallback。此 fallback 能處理 Markdown 標記（如 ` ```json `）、括號未閉合、多餘逗號與 JSON 區塊提取。
+
+---
+
+### 5. 官方 SDK 與 provider 分工
+
+* 主專案與測試專案維持 `net472`，不要求 RimWorld Mod 升級到 .NET 8；官方 SDK 的相依 DLL 會隨 Mod 輸出，並在啟動相容性閘門中確認可載入。`System.ValueTuple` 雖會被 .NET Framework 視為 framework assembly，建置時仍會明確部署其 `4.0.5.0` DLL，避免 RimWorld Mono 反射掃描 MEAI 時發生 `ReflectionTypeLoadException`。
+* **OpenAI** 使用 `OpenAI` SDK `2.12.0` 與 `Microsoft.Extensions.AI`／`Microsoft.Extensions.AI.OpenAI` `10.8.3`。內建 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用管理器；LM Studio、Ollama、vLLM 等真正符合 OpenAI Chat Completions 協定的 endpoint 才適合使用 OpenAI-compatible adapter。
+* **Gemini** 使用官方 `Google.GenAI` `1.16.0`，以 API key 建立 Gemini Developer API client。文字與一般串流可使用其內建 `IChatClient` adapter；Gemini 原生 Schema、thinking、context cache、Safety 與 models API 則由 `Google.GenAI` 原生路徑處理，不使用 `OpenAI.Chat.ChatClient` 模擬 Gemini。
+* provider-specific SDK 不會出現在 `RimLLMManager` 或既有 SDK façade；共用層只依賴 `IChatClient`、`LLMProviderCapabilities` 與既有 `ILLMProvider` API。API key 一律由目前加密設定提供，不寫入程式碼或一般日誌。
 
 ---
 

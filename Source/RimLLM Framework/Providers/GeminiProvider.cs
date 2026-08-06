@@ -5,6 +5,9 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using Google.GenAI;
+using Google.GenAI.Types;
+using Microsoft.Extensions.AI;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
@@ -16,7 +19,7 @@ namespace RimLLM_Framework.Providers
     /// <summary>
     /// Google Gemini API 供應商，支援 generateContent 與 streamGenerateContent。
     /// </summary>
-    public class GeminiProvider : BaseHttpProvider
+    public class GeminiProvider : BaseHttpProvider, IChatClientProvider, INativeStructuredOutputProvider
     {
         public override string ProviderId => ProviderIds.Gemini;
 
@@ -33,12 +36,68 @@ namespace RimLLM_Framework.Providers
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.SemaphoreSlim> _cacheCreationLocks =
             new System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.SemaphoreSlim>();
 
-        public GeminiProvider(IRimLLMSettings settings) : base(settings)
+        private readonly IGeminiChatClientFactory _chatClientFactory;
+
+        /// <summary>
+        /// Gemini 原生安全設定。維持空集合時使用 Gemini API 預設安全策略。
+        /// 這是 provider-specific 設定，不會洩漏到共用 SDK facade。
+        /// </summary>
+        public IList<SafetySetting> SafetySettings { get; } = new List<SafetySetting>();
+
+        /// <summary>
+        /// 只有內建 Gemini provider 使用官方 Google.GenAI；衍生 provider 保留既有 HTTP mock/格式。
+        /// </summary>
+        protected virtual bool UseGoogleGenAiSdk => GetType() == typeof(GeminiProvider);
+
+        public bool UsesIChatClient => UseGoogleGenAiSdk;
+
+        public LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
         {
+            SupportsNativeStructuredOutput = UseGoogleGenAiSdk,
+            SupportsStreaming = true,
+            SupportsUsageMetadata = true
+        };
+
+        public GeminiProvider(IRimLLMSettings settings) : this(settings, new GeminiChatClientFactory())
+        {
+        }
+
+        protected GeminiProvider(IRimLLMSettings settings, IGeminiChatClientFactory chatClientFactory) : base(settings)
+        {
+            _chatClientFactory = chatClientFactory ?? throw new ArgumentNullException(nameof(chatClientFactory));
+        }
+
+        public IChatClient CreateChatClient(string model)
+        {
+            return _chatClientFactory.Create(Settings.GetActiveApiKey(ProviderId), model);
+        }
+
+        public Task<string> GenerateStructuredAsync(LLMRequest request, string model)
+        {
+            return GenerateWithGoogleGenAiAsync(request, model);
+        }
+
+        private async Task StreamWithChatClientAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        {
+            using (IChatClient client = CreateChatClient(model))
+            {
+                await RimLLMChatClientExecutor.StreamAsync(
+                    client,
+                    request,
+                    model,
+                    request.ResponseType != null && Settings.EnableNativeSchema,
+                    ProviderId,
+                    onChunkReceived).ConfigureAwait(false);
+            }
         }
 
         public override async Task<string> GenerateAsync(LLMRequest request, string model)
         {
+            if (UseGoogleGenAiSdk)
+            {
+                return await GenerateWithGoogleGenAiAsync(request, model).ConfigureAwait(false);
+            }
+
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             // API Key 以 x-goog-api-key Header 傳遞（由 ApplyAuthHeaders 套用），避免金鑰出現在 URL / 日誌中
@@ -122,6 +181,12 @@ namespace RimLLM_Framework.Providers
 
         public override async Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
         {
+            if (UseGoogleGenAiSdk)
+            {
+                await StreamWithGoogleGenAiAsync(request, model, onChunkReceived).ConfigureAwait(false);
+                return;
+            }
+
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             string url = $"{baseEndpoint}/models/{model}:streamGenerateContent";
@@ -276,10 +341,377 @@ namespace RimLLM_Framework.Providers
             }
         }
 
+        private async Task<string> GenerateWithGoogleGenAiAsync(LLMRequest request, string model)
+        {
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            try
+            {
+                using (var client = new Client(apiKey: apiKey))
+                {
+                    Content contents = BuildTextContent(request.Prompt);
+                    GenerateContentConfig config = await BuildNativeConfigAsync(request, model, apiKey).ConfigureAwait(false);
+                    GenerateContentResponse response = await client.Models.GenerateContentAsync(
+                        model,
+                        contents,
+                        config,
+                        request.CancellationToken).ConfigureAwait(false);
+                    return ReadGeminiResponse(response, model, request);
+                }
+            }
+            catch (RimLLMException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw TranslateGoogleException(ex, "generateContent");
+            }
+        }
+
+        private async Task StreamWithGoogleGenAiAsync(
+            LLMRequest request,
+            string model,
+            Action<string> onChunkReceived)
+        {
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            try
+            {
+                using (var client = new Client(apiKey: apiKey))
+                {
+                    Content contents = BuildTextContent(request.Prompt);
+                    GenerateContentConfig config = await BuildNativeConfigAsync(request, model, apiKey).ConfigureAwait(false);
+                    bool inReasoning = false;
+                    bool hasFinishedReasoning = false;
+                    int completionChars = 0;
+                    int promptTokens = 0;
+                    int completionTokens = 0;
+                    int cachedTokens = 0;
+                    bool hasUsage = false;
+
+                    await foreach (GenerateContentResponse response in client.Models.GenerateContentStreamAsync(
+                        model,
+                        contents,
+                        config,
+                        request.CancellationToken))
+                    {
+                        if (response?.PromptFeedback != null && (response.Parts == null || response.Parts.Count == 0))
+                        {
+                            throw new RimLLMException(
+                                LLMError.ContentFilter,
+                                "Gemini blocked the prompt or response because of safety settings.");
+                        }
+
+                        if (response?.UsageMetadata != null)
+                        {
+                            promptTokens = response.UsageMetadata.PromptTokenCount ?? 0;
+                            completionTokens = response.UsageMetadata.CandidatesTokenCount ?? 0;
+                            cachedTokens = response.UsageMetadata.CachedContentTokenCount ?? 0;
+                            hasUsage = true;
+                        }
+
+                        if (response?.Parts == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (Part part in response.Parts)
+                        {
+                            if (string.IsNullOrEmpty(part?.Text))
+                            {
+                                continue;
+                            }
+                            completionChars += part.Text.Length;
+                            EmitGeminiPart(part, onChunkReceived, ref inReasoning, ref hasFinishedReasoning);
+                        }
+                    }
+
+                    if (inReasoning)
+                    {
+                        onChunkReceived?.Invoke("</think>");
+                    }
+
+                    if (RimLLMProvider.Instance is RimLLMManager manager)
+                    {
+                        if (hasUsage)
+                        {
+                            manager.RecordUsage(ProviderId, model, promptTokens, completionTokens, cachedTokens);
+                        }
+                        else
+                        {
+                            int promptChars = (request.GetEffectiveSystemPrompt()?.Length ?? 0) + (request.Prompt?.Length ?? 0);
+                            manager.RecordUsage(
+                                ProviderId,
+                                model,
+                                Math.Max(1, (int)(promptChars * 0.8f)),
+                                Math.Max(1, (int)(completionChars * 0.8f)));
+                        }
+                    }
+                }
+            }
+            catch (RimLLMException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw TranslateGoogleException(ex, "streamGenerateContent");
+            }
+        }
+
+        private async Task<GenerateContentConfig> BuildNativeConfigAsync(
+            LLMRequest request,
+            string model,
+            string apiKey)
+        {
+            var config = new GenerateContentConfig
+            {
+                Temperature = request.Temperature,
+                MaxOutputTokens = request.MaxTokens,
+                ThinkingConfig = BuildNativeThinkingConfig(model, request.ReasoningEffort),
+                SafetySettings = this.SafetySettings.Count == 0
+                    ? null
+                    : new List<SafetySetting>(this.SafetySettings)
+            };
+
+            string systemContext = request.GetEffectiveSystemPrompt();
+            string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
+            string cacheId = null;
+            if (request.EnableContextCaching && !string.IsNullOrEmpty(systemContext))
+            {
+                cacheId = await GetOrCreateCachedContentAsync(
+                    apiKey,
+                    baseEndpoint,
+                    model,
+                    systemContext,
+                    request.CancellationToken).ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrEmpty(cacheId))
+            {
+                config.CachedContent = cacheId;
+            }
+            else if (!string.IsNullOrEmpty(systemContext))
+            {
+                config.SystemInstruction = BuildTextContent(systemContext);
+            }
+
+            if (request.ResponseType != null && Settings.EnableNativeSchema)
+            {
+                config.ResponseMimeType = "application/json";
+                string schemaJson = RimLLMJsonHelper.GenerateJsonSchema(request.ResponseType, uppercaseTypes: true).ToString();
+                config.ResponseSchema = Schema.FromJson(schemaJson);
+            }
+
+            return config;
+        }
+
+        private ThinkingConfig BuildNativeThinkingConfig(string model, LLMReasoningEffort effort)
+        {
+            if (string.IsNullOrEmpty(model))
+            {
+                return null;
+            }
+
+            DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
+            if (isThinkingBudgetModel)
+            {
+                int budget = -1;
+                if (effort == LLMReasoningEffort.Low) budget = 1024;
+                else if (effort == LLMReasoningEffort.Medium) budget = 2048;
+                else if (effort == LLMReasoningEffort.High) budget = 4096;
+                else if (effort == LLMReasoningEffort.None) budget = 0;
+
+                return new ThinkingConfig
+                {
+                    ThinkingBudget = budget,
+                    IncludeThoughts = effort != LLMReasoningEffort.None
+                };
+            }
+
+            if (isThinkingLevelModel)
+            {
+                ThinkingLevel level = ThinkingLevel.ThinkingLevelUnspecified;
+                if (effort == LLMReasoningEffort.Low) level = ThinkingLevel.Low;
+                else if (effort == LLMReasoningEffort.Medium) level = ThinkingLevel.Medium;
+                else if (effort == LLMReasoningEffort.High) level = ThinkingLevel.High;
+                else if (effort == LLMReasoningEffort.None) level = ThinkingLevel.Minimal;
+
+                return new ThinkingConfig
+                {
+                    ThinkingLevel = level,
+                    IncludeThoughts = effort != LLMReasoningEffort.None
+                };
+            }
+
+            return null;
+        }
+
+        private static Content BuildTextContent(string text)
+        {
+            return new Content
+            {
+                Parts = new List<Part>
+                {
+                    new Part { Text = text ?? string.Empty }
+                }
+            };
+        }
+
+        private string ReadGeminiResponse(GenerateContentResponse response, string model, LLMRequest request)
+        {
+            if (response == null)
+            {
+                throw new RimLLMException(LLMError.InvalidResponse, "Gemini returned no response.");
+            }
+            if (response.PromptFeedback != null && (response.Parts == null || response.Parts.Count == 0))
+            {
+                throw new RimLLMException(
+                    LLMError.ContentFilter,
+                    "Gemini blocked the prompt or response because of safety settings.");
+            }
+            if (response.Parts == null || response.Parts.Count == 0)
+            {
+                throw new RimLLMException(LLMError.InvalidResponse, "Gemini response contains no content parts.");
+            }
+
+            var builder = new StringBuilder();
+            bool inReasoning = false;
+            bool hasFinishedReasoning = false;
+            foreach (Part part in response.Parts)
+            {
+                if (string.IsNullOrEmpty(part?.Text))
+                {
+                    continue;
+                }
+                EmitGeminiPart(part, value => builder.Append(value), ref inReasoning, ref hasFinishedReasoning);
+            }
+            if (inReasoning)
+            {
+                builder.Append("\n</think>");
+            }
+
+            string result = builder.ToString();
+            if (string.IsNullOrEmpty(result))
+            {
+                throw new RimLLMException(LLMError.InvalidResponse, "Gemini response text is empty.");
+            }
+
+            if (response.UsageMetadata != null && RimLLMProvider.Instance is RimLLMManager manager)
+            {
+                manager.RecordUsage(
+                    ProviderId,
+                    model,
+                    response.UsageMetadata.PromptTokenCount ?? 0,
+                    response.UsageMetadata.CandidatesTokenCount ?? 0,
+                    response.UsageMetadata.CachedContentTokenCount ?? 0);
+            }
+            return result;
+        }
+
+        private static void EmitGeminiPart(
+            Part part,
+            Action<string> emit,
+            ref bool inReasoning,
+            ref bool hasFinishedReasoning)
+        {
+            bool isThought = part.Thought == true;
+            if (isThought)
+            {
+                if (!hasFinishedReasoning)
+                {
+                    if (!inReasoning)
+                    {
+                        inReasoning = true;
+                        emit("<think>\n");
+                    }
+                    emit(part.Text);
+                }
+                else
+                {
+                    emit(part.Text);
+                }
+                return;
+            }
+
+            if (inReasoning)
+            {
+                inReasoning = false;
+                hasFinishedReasoning = true;
+                emit("\n</think>\n");
+            }
+            emit(part.Text);
+        }
+
+        private static Exception TranslateGoogleException(Exception exception, string operation)
+        {
+            if (exception is OperationCanceledException)
+            {
+                return new RimLLMException(LLMError.Cancelled, $"Gemini {operation} was cancelled.", exception);
+            }
+            if (exception is ClientError clientError)
+            {
+                LLMError error = clientError.StatusCode == 429
+                    ? LLMError.RateLimit
+                    : clientError.StatusCode == 401 || clientError.StatusCode == 403
+                        ? LLMError.InvalidKey
+                        : clientError.StatusCode == 404
+                            ? LLMError.ModelNotFound
+                            : LLMError.InvalidResponse;
+                return new RimLLMException(
+                    error,
+                    $"Gemini {operation} failed ({clientError.StatusCode}): {RimLLMLog.SanitizeForLog(clientError.Message, 300)}",
+                    exception);
+            }
+            if (exception is ServerError serverError)
+            {
+                return new RimLLMException(
+                    LLMError.ProviderOffline,
+                    $"Gemini {operation} failed with a server error: {RimLLMLog.SanitizeForLog(serverError.Message, 300)}",
+                    exception);
+            }
+            return new RimLLMException(
+                LLMError.Unknown,
+                $"Gemini {operation} failed: {RimLLMLog.SanitizeForLog(exception.Message, 300)}",
+                exception);
+        }
+
         protected override string DefaultTestModel => "gemini-3.5-flash";
 
         public override async Task<List<string>> FetchAvailableModelsAsync()
         {
+            if (UseGoogleGenAiSdk)
+            {
+                string sdkApiKey = Settings.GetActiveApiKey(ProviderId);
+                try
+                {
+                    using (var client = new Client(apiKey: sdkApiKey))
+                    {
+                        var pager = await client.Models.ListAsync().ConfigureAwait(false);
+                        var models = new List<string>();
+                        await foreach (Model item in pager)
+                        {
+                            string name = item?.Name;
+                            if (string.IsNullOrEmpty(name))
+                            {
+                                continue;
+                            }
+                            models.Add(name.StartsWith("models/", StringComparison.OrdinalIgnoreCase)
+                                ? name.Substring("models/".Length)
+                                : name);
+                        }
+                        return models;
+                    }
+                }
+                catch (RimLLMException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    throw TranslateGoogleException(ex, "list models");
+                }
+            }
+
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             string url = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/models";

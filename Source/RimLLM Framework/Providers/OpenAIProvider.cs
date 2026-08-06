@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using Microsoft.Extensions.AI;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Core;
@@ -15,26 +16,91 @@ namespace RimLLM_Framework.Providers
     /// <summary>
     /// OpenAI API 供應商，支援 Chat Completion 與 SSE 串流。
     /// </summary>
-    public class OpenAIProvider : BaseHttpProvider
+    public class OpenAIProvider : BaseHttpProvider, IChatClientProvider, INativeStructuredOutputProvider
     {
         private readonly string _providerId;
         private readonly string _defaultEndpoint;
         private readonly string _defaultTestModel;
+        private readonly IOpenAIChatClientFactory _chatClientFactory;
 
         public override string ProviderId => _providerId;
         protected virtual string DefaultEndpoint => _defaultEndpoint;
 
+        /// <summary>
+        /// 只有內建 OpenAI provider 使用官方 SDK；衍生 provider 保留各自的 HTTP 格式。
+        /// </summary>
+        protected virtual bool UseChatClientAdapter => GetType() == typeof(OpenAIProvider);
+
+        public bool UsesIChatClient => UseChatClientAdapter;
+
+        public LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
+        {
+            SupportsNativeStructuredOutput = UsesIChatClient,
+            SupportsStreaming = true,
+            SupportsUsageMetadata = true
+        };
+
         public OpenAIProvider(IRimLLMSettings settings)
-            : this(settings, ProviderIds.OpenAI, "https://api.openai.com/v1/chat/completions", "gpt-4o-mini")
+            : this(settings, ProviderIds.OpenAI, "https://api.openai.com/v1/chat/completions", "gpt-4o-mini", new OpenAIChatClientFactory())
         {
         }
 
         protected OpenAIProvider(IRimLLMSettings settings, string providerId, string defaultEndpoint, string defaultTestModel)
+            : this(settings, providerId, defaultEndpoint, defaultTestModel, new OpenAIChatClientFactory())
+        {
+        }
+
+        protected OpenAIProvider(
+            IRimLLMSettings settings,
+            string providerId,
+            string defaultEndpoint,
+            string defaultTestModel,
+            IOpenAIChatClientFactory chatClientFactory)
             : base(settings)
         {
             _providerId = providerId;
             _defaultEndpoint = defaultEndpoint;
             _defaultTestModel = defaultTestModel;
+            _chatClientFactory = chatClientFactory ?? throw new ArgumentNullException(nameof(chatClientFactory));
+        }
+
+        public IChatClient CreateChatClient(string model)
+        {
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
+            return _chatClientFactory.Create(apiKey, model, endpoint);
+        }
+
+        public Task<string> GenerateStructuredAsync(LLMRequest request, string model)
+        {
+            return GenerateWithChatClientAsync(request, model, true);
+        }
+
+        private async Task<string> GenerateWithChatClientAsync(LLMRequest request, string model, bool useNativeSchema)
+        {
+            using (IChatClient client = CreateChatClient(model))
+            {
+                return await RimLLMChatClientExecutor.GenerateAsync(
+                    client,
+                    request,
+                    model,
+                    useNativeSchema,
+                    ProviderId).ConfigureAwait(false);
+            }
+        }
+
+        private async Task StreamWithChatClientAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        {
+            using (IChatClient client = CreateChatClient(model))
+            {
+                await RimLLMChatClientExecutor.StreamAsync(
+                    client,
+                    request,
+                    model,
+                    request.ResponseType != null && Settings.EnableNativeSchema,
+                    ProviderId,
+                    onChunkReceived).ConfigureAwait(false);
+            }
         }
 
         protected virtual JObject BuildPayload(LLMRequest request, string model, bool stream = false)
@@ -116,6 +182,14 @@ namespace RimLLM_Framework.Providers
 
         public override async Task<string> GenerateAsync(LLMRequest request, string model)
         {
+            if (UseChatClientAdapter)
+            {
+                return await GenerateWithChatClientAsync(
+                    request,
+                    model,
+                    request.ResponseType != null && Settings.EnableNativeSchema).ConfigureAwait(false);
+            }
+
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
             if (!endpoint.EndsWith("/chat/completions"))
@@ -184,6 +258,12 @@ namespace RimLLM_Framework.Providers
 
         public override async Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
         {
+            if (UseChatClientAdapter)
+            {
+                await StreamWithChatClientAsync(request, model, onChunkReceived).ConfigureAwait(false);
+                return;
+            }
+
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
             if (!endpoint.EndsWith("/chat/completions"))

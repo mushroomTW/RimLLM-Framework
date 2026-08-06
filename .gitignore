@@ -4,6 +4,9 @@ SteamDescriptions
 .claude
 docs
 AGENTS.md
+CLAUDE.md
+.testagent
+.docs
 
 # IDE state
 .vs/

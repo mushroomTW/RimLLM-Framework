@@ -1,4 +1,0 @@
-- 修正 OpenAI/OpenRouter 相容 API 提示快取 (Prompt Caching) 命中率統計缺失問題
-- 在 OpenAIProvider 中加入非串流與串流模式下 prompt_tokens_details.cached_tokens 與外層 cached_tokens 的解析與記錄
-- 於 FrameworkTests.cs 中新增單元測試 TestOpenAIProviderCacheUsage 驗證快取 token 解析與統計計算
-- 更新 About.xml 的 modVersion 至 2026.07.10.2

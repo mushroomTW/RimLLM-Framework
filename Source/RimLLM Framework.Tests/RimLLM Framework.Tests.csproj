@@ -36,4 +36,11 @@
   <Target Name="WarnMissingRimWorldAssemblies" AfterTargets="Build" Condition="!Exists('$(RimWorldManagedDir)')">
     <Warning Text="RimWorld managed assembly folder not found: $(RimWorldManagedDir). Set RimWorldManagedDir or RIMWORLD_MANAGED_DIR before running integration-style tests." />
   </Target>
+  <ItemGroup>
+    <!-- 讓測試也驗證 provider SDK 與 net472 載入依賴。 -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.3" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
+    <PackageReference Include="OpenAI" Version="2.12.0" />
+    <PackageReference Include="Google.GenAI" Version="1.16.0" />
+  </ItemGroup>
 </Project>

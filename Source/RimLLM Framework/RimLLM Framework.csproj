@@ -1,8 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
+    <!-- 官方 SDK 與 MEAI 相依 DLL 必須隨 Mod 輸出，才能在 RimWorld managed assembly 環境載入。 -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <AssemblyName>RimLLM Framework</AssemblyName>
     <RootNamespace>RimLLM_Framework</RootNamespace>
+    <!-- Mod 發佈不需要 PDB 偵錯符號，避免建置時輸出 RimLLM Framework.pdb。 -->
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
     <!-- 確保建置時不會自動在路徑後附加 net472/ 資料夾 -->
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>..\..\Assemblies\</OutputPath>
@@ -11,10 +16,29 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <!-- 啟用 C# 8.0 語言版本，以支援非同步資料流 (IAsyncEnumerable) -->
     <LangVersion>8.0</LangVersion>
+    <BaseOutputPath>~\Assemblies\</BaseOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4871" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!--
+      AI 抽象層與 provider SDK 版本刻意固定。Mod 維持 net472，這些套件必須
+      持續提供 netstandard2.0 資產，才能在 RimWorld Mono 執行環境中使用。
+    -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.3" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
+    <PackageReference Include="OpenAI" Version="2.12.0" />
+    <PackageReference Include="Google.GenAI" Version="1.16.0" />
   </ItemGroup>
+
+  <Target Name="CopyRimWorldMonoRuntimeDependencies" AfterTargets="Build">
+    <ItemGroup>
+      <RimWorldMonoRuntimeDependency Include="$(NuGetPackageRoot)\system.valuetuple\4.6.2\lib\net47\System.ValueTuple.dll" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(RimWorldMonoRuntimeDependency)"
+      DestinationFolder="$(OutputPath)"
+      SkipUnchangedFiles="true" />
+  </Target>
 </Project>
