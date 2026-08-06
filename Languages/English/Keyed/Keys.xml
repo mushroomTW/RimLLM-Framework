@@ -133,6 +133,17 @@
   <RimLLM_EnableNativeSchemaLabel>Enable Native JSON Schema Enforcement (highly increases output format accuracy)</RimLLM_EnableNativeSchemaLabel>
   <RimLLM_EnableJsonRepairLabel>Enable JSON Response Structural Repair (fault-tolerant JSON parser)</RimLLM_EnableJsonRepairLabel>
 
+  <RimLLM_FallbackLevelAuto>Auto</RimLLM_FallbackLevelAuto>
+  <RimLLM_FallbackLevelLow>Low</RimLLM_FallbackLevelLow>
+  <RimLLM_FallbackLevelMedium>Medium</RimLLM_FallbackLevelMedium>
+  <RimLLM_FallbackLevelHigh>High</RimLLM_FallbackLevelHigh>
+  <RimLLM_StatusRequestSuccess>SUCCESS ({0}ms)</RimLLM_StatusRequestSuccess>
+  <RimLLM_StatusRequestFailed>FAILED (Err: {0})</RimLLM_StatusRequestFailed>
+  <RimLLM_ThinkProcessLabel>[Reasoning]</RimLLM_ThinkProcessLabel>
+  <RimLLM_ThinkProcessEndLabel>[/Reasoning]</RimLLM_ThinkProcessEndLabel>
+  <RimLLM_ThinkingLabel>[Thinking...]</RimLLM_ThinkingLabel>
+  <RimLLM_MsgApiKeyDecryptFailed>Could not decrypt the saved API key for {0} (the device may have changed). The original ciphertext is preserved; please re-enter the key.</RimLLM_MsgApiKeyDecryptFailed>
+
   <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
   <RimLLM_TitleEmbedding>Embedding Vector Settings</RimLLM_TitleEmbedding>
   <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and similarity comparison. Other mods can call them through the RimLLM SDK. Offline Trigram mode needs no API and works entirely on your machine.</RimLLM_EmbeddingExplanation>

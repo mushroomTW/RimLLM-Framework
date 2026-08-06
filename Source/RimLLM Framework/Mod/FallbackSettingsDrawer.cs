@@ -159,16 +159,16 @@ namespace RimLLM_Framework.Mod
                         switch (currentLevel)
                         {
                             case 1:
-                                levelLabel = "低";
+                                levelLabel = "RimLLM_FallbackLevelLow".Translate();
                                 break;
                             case 2:
-                                levelLabel = "中";
+                                levelLabel = "RimLLM_FallbackLevelMedium".Translate();
                                 break;
                             case 3:
-                                levelLabel = "高";
+                                levelLabel = "RimLLM_FallbackLevelHigh".Translate();
                                 break;
                             default:
-                                levelLabel = "自動";
+                                levelLabel = "RimLLM_FallbackLevelAuto".Translate();
                                 break;
                         }
 
@@ -176,10 +176,10 @@ namespace RimLLM_Framework.Mod
                         {
                             List<FloatMenuOption> options = new List<FloatMenuOption>
                             {
-                                new FloatMenuOption("自動", () => { Settings.SetModelLevelOverride(modelName, 0); Settings.Write(); }),
-                                new FloatMenuOption("低", () => { Settings.SetModelLevelOverride(modelName, 1); Settings.Write(); }),
-                                new FloatMenuOption("中", () => { Settings.SetModelLevelOverride(modelName, 2); Settings.Write(); }),
-                                new FloatMenuOption("高", () => { Settings.SetModelLevelOverride(modelName, 3); Settings.Write(); })
+                                new FloatMenuOption("RimLLM_FallbackLevelAuto".Translate(), () => { Settings.SetModelLevelOverride(modelName, 0); Settings.Write(); }),
+                                new FloatMenuOption("RimLLM_FallbackLevelLow".Translate(), () => { Settings.SetModelLevelOverride(modelName, 1); Settings.Write(); }),
+                                new FloatMenuOption("RimLLM_FallbackLevelMedium".Translate(), () => { Settings.SetModelLevelOverride(modelName, 2); Settings.Write(); }),
+                                new FloatMenuOption("RimLLM_FallbackLevelHigh".Translate(), () => { Settings.SetModelLevelOverride(modelName, 3); Settings.Write(); })
                             };
                             Find.WindowStack.Add(new FloatMenu(options));
                         }

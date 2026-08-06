@@ -133,6 +133,17 @@
   <RimLLM_EnableNativeSchemaLabel>啟用原生 JSON Schema 強制執行 (提升結構化輸出精準度)</RimLLM_EnableNativeSchemaLabel>
   <RimLLM_EnableJsonRepairLabel>啟用 JSON 回傳格式修復輔助 (容錯非標準 JSON)</RimLLM_EnableJsonRepairLabel>
 
+  <RimLLM_FallbackLevelAuto>自動</RimLLM_FallbackLevelAuto>
+  <RimLLM_FallbackLevelLow>低</RimLLM_FallbackLevelLow>
+  <RimLLM_FallbackLevelMedium>中</RimLLM_FallbackLevelMedium>
+  <RimLLM_FallbackLevelHigh>高</RimLLM_FallbackLevelHigh>
+  <RimLLM_StatusRequestSuccess>成功 ({0}ms)</RimLLM_StatusRequestSuccess>
+  <RimLLM_StatusRequestFailed>失敗 (錯誤: {0})</RimLLM_StatusRequestFailed>
+  <RimLLM_ThinkProcessLabel>[思考過程]</RimLLM_ThinkProcessLabel>
+  <RimLLM_ThinkProcessEndLabel>[/思考過程]</RimLLM_ThinkProcessEndLabel>
+  <RimLLM_ThinkingLabel>[思考中...]</RimLLM_ThinkingLabel>
+  <RimLLM_MsgApiKeyDecryptFailed>無法解密 {0} 已儲存的 API 金鑰（可能已更換裝置）。原始密文已保留，請重新輸入金鑰。</RimLLM_MsgApiKeyDecryptFailed>
+
   <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
   <RimLLM_TitleEmbedding>Embedding 向量設定</RimLLM_TitleEmbedding>
   <RimLLM_EmbeddingExplanation>Embedding 會把文字轉換成數值向量，可用於語意檢索與相似度比對，其他 Mod 能透過 RimLLM SDK 呼叫。離線 Trigram 模式完全在本機運算，不需要 API。</RimLLM_EmbeddingExplanation>

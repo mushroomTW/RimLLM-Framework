@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
@@ -23,6 +23,34 @@ namespace RimLLM_Framework.Mod
         private static bool chatLoading = false;
         private static LLMReasoningEffort chatReasoningEffort = LLMReasoningEffort.Auto;
         private static bool chatReasoningInitialized = false;
+
+        /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
+        private const string ChatInputControlName = "RimLLM_ChatInput";
+
+        /// <summary>目前進行中請求的取消來源，供「清空」按鈕中止長時間回應。</summary>
+        private static System.Threading.CancellationTokenSource chatCts;
+
+        /// <summary>
+        /// 判斷聊天輸入是否應該送出。純空白視為未輸入。
+        /// </summary>
+        internal static bool ShouldSendChatInput(string rawInput)
+        {
+            return !string.IsNullOrEmpty(rawInput) && rawInput.Trim().Length > 0;
+        }
+
+        /// <summary>
+        /// 中止進行中的聊天請求（若有）。
+        /// </summary>
+        private static void CancelActiveChatRequest()
+        {
+            var cts = chatCts;
+            chatCts = null;
+            if (cts == null) return;
+
+            try { cts.Cancel(); } catch { }
+            try { cts.Dispose(); } catch { }
+            chatLoading = false;
+        }
 
         /// <summary>
         /// 初始化對話歷史紀錄。
@@ -123,23 +151,32 @@ namespace RimLLM_Framework.Mod
             }
             else
             {
+                GUI.SetNextControlName(ChatInputControlName);
                 chatInput = Widgets.TextField(textInputRect, chatInput);
             }
 
             // 點擊清空按鈕邏輯
             if (!chatLoading && Widgets.ButtonText(clearBtnRect, "RimLLM_ClearBtn".Translate()))
             {
+                CancelActiveChatRequest();
                 chatHistory.Clear();
                 Settings.ChatHistory.Clear();
                 Settings.SaveTelemetry();
                 chatInput = "";
             }
 
-            bool pressEnter = (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return);
+            // Enter 僅在聊天輸入框取得焦點時才觸發送出。
+            // 先前是全域 KeyDown 偵測，在設定視窗任何位置按 Enter 都會送出請求。
+            bool pressEnter = Event.current.type == EventType.KeyDown &&
+                              Event.current.keyCode == KeyCode.Return &&
+                              GUI.GetNameOfFocusedControl() == ChatInputControlName;
 
             if (!chatLoading && (Widgets.ButtonText(sendBtnRect, "RimLLM_Send".Translate()) || pressEnter))
             {
-                if (!string.IsNullOrEmpty(chatInput))
+                // 消耗事件，避免同一個 Enter 被 RimWorld 視窗系統重複處理（重複送出或誤關視窗）。
+                if (pressEnter) Event.current.Use();
+
+                if (ShouldSendChatInput(chatInput))
                 {
                     string trimmedInput = chatInput.Trim();
                     string userPrompt = trimmedInput;
@@ -157,6 +194,11 @@ namespace RimLLM_Framework.Mod
                         object replyLock = new object();
                         string accumulatedReply = "";
 
+                        CancelActiveChatRequest();
+                        chatLoading = true;
+                        var requestCts = new System.Threading.CancellationTokenSource();
+                        chatCts = requestCts;
+
                         Task.Run(async () =>
                         {
                             try
@@ -168,6 +210,7 @@ namespace RimLLM_Framework.Mod
                                     MaxTokens = 4096,
                                     Temperature = 0.7f,
                                     ReasoningEffort = chatReasoningEffort,
+                                    CancellationToken = requestCts.Token,
                                     EnableStreaming = true,
                                     OnChunkReceived = chunk =>
                                     {
@@ -241,18 +284,24 @@ namespace RimLLM_Framework.Mod
             }
         }
 
+        private static string ThinkStartLabel => "RimLLM_ThinkProcessLabel".Translate();
+        private static string ThinkEndLabel => "RimLLM_ThinkProcessEndLabel".Translate();
+        private static string ThinkingLabel => "RimLLM_ThinkingLabel".Translate();
+
         private static string FormatThinkProcess(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            if (Settings.DetailedLogging)
-            {
-                RimLLMLog.Message($"[RimLLM-DEBUG] FormatThinkProcess Input: {text}");
-            }
+
+            // 註：此處原本在 DetailedLogging 下記錄完整的模型輸出。
+            // 該日誌未經 SanitizeForLog、未截斷，且因為由 OnChunkReceived 觸發，
+            // 會對每個 chunk 重複輸出整段累積內容，使 PII、prompt 或意外出現的金鑰
+            // 長期留存於 Player.log。已移除（稽核 SEC-002）。
+
             // 1. 處理已閉合的 <think>...</think> 或 <thought>...</thought> -> 標記為灰色
             string result = System.Text.RegularExpressions.Regex.Replace(text, @"<(think|thought)>([\s\S]*?)</\1>", m =>
             {
                 string thinkContent = m.Groups[2].Value.Trim();
-                return string.IsNullOrEmpty(thinkContent) ? "" : $"\n<color=silver>[思考過程]\n{thinkContent}\n[/思考過程]</color>\n\n";
+                return string.IsNullOrEmpty(thinkContent) ? "" : $"\n<color=silver>{ThinkStartLabel}\n{thinkContent}\n{ThinkEndLabel}</color>\n\n";
             });
             // 2. 處理未閉合的 <think> 或 <thought>（串流中常遇到） -> 將後續全部標記為灰色
             var matchUnclosedXml = System.Text.RegularExpressions.Regex.Match(result, @"<(think|thought)>(?![\s\S]*</\1>)");
@@ -261,13 +310,13 @@ namespace RimLLM_Framework.Mod
                 int index = matchUnclosedXml.Index;
                 string before = result.Substring(0, index);
                 string after = result.Substring(index + matchUnclosedXml.Length);
-                result = before + $"\n<color=silver>[思考中...]\n{after} ...</color>";
+                result = before + $"\n<color=silver>{ThinkingLabel}\n{after} ...</color>";
             }
             // 3. 處理已閉合的 markdown 思考區塊 ```thought...``` -> 標記為灰色
             result = System.Text.RegularExpressions.Regex.Replace(result, @"```thought([\s\S]*?)```", m =>
             {
                 string thinkContent = m.Groups[1].Value.Trim();
-                return string.IsNullOrEmpty(thinkContent) ? "" : $"\n<color=silver>[思考過程]\n{thinkContent}\n[/思考過程]</color>\n\n";
+                return string.IsNullOrEmpty(thinkContent) ? "" : $"\n<color=silver>{ThinkStartLabel}\n{thinkContent}\n{ThinkEndLabel}</color>\n\n";
             });
             // 4. 處理未閉合的 markdown 思考區塊 ```thought （串流中常遇到）-> 將後續全部標記為灰色
             if (result.Contains("```thought"))
@@ -275,7 +324,7 @@ namespace RimLLM_Framework.Mod
                 int index = result.IndexOf("```thought");
                 string before = result.Substring(0, index);
                 string after = result.Substring(index + 10);
-                result = before + $"\n<color=silver>[思考中...]\n{after} ...</color>";
+                result = before + $"\n<color=silver>{ThinkingLabel}\n{after} ...</color>";
             }
             return result.Trim();
         }

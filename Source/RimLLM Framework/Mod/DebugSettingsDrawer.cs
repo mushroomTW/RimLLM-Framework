@@ -129,9 +129,10 @@ namespace RimLLM_Framework.Mod
                         Rect lineRect = new Rect(4f, i * logHeight + 4f, contentWidth - 8f, logHeight - 2f);
 
                         string timeStr = log.Timestamp.ToString("HH:mm:ss");
+                        // 色碼保留在程式碼中，只有文字部分抽成翻譯鍵，避免譯者需要處理富文字標記。
                         string statusText = log.Success
-                            ? $"<color=#22c55e>SUCCESS</color> ({log.LatencyMs}ms)"
-                            : $"<color=#ef4444>FAILED</color> (Err: {RimLLMLog.SanitizeForLog(log.ErrorMessage, 160)})";
+                            ? $"<color=#22c55e>{"RimLLM_StatusRequestSuccess".Translate(log.LatencyMs)}</color>"
+                            : $"<color=#ef4444>{"RimLLM_StatusRequestFailed".Translate(RimLLMLog.SanitizeForLog(log.ErrorMessage, 160))}</color>";
 
                         string logLine = $"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}";
 
