@@ -26,13 +26,38 @@ namespace RimLLM_Framework.Mod
             // 2. 註冊 SDK 服務管理器到 Provider 入口 (依賴注入 Settings)
             RimLLMProvider.Initialize(new RimLLMManager(Settings));
 
-            // 3. 強制觸發 Unity 主線程派遣器 (RimLLMDispatcher) 單例建立
-            var dispatcher = RimLLMDispatcher.Instance;
+            // 3. 於主線程建立 Unity 主線程派遣器 (RimLLMDispatcher)。
+            //    背景執行緒不得建立 Unity GameObject，因此建立時機必須固定在此。
+            RimLLMDispatcher.EnsureInitialized();
 
             // 4. 初始化 UI 狀態
             RimLLMSettingsUI.Initialize(Settings);
-            
+
+            // 5. 註冊關閉時的遙測強制寫入。
+            //    用量統計採 15 秒節流，若沒有這步，session 最後一段用量與費用會遺失。
+            //    RimWorld 沒有保證的關閉回呼，因此兩個掛勾互補註冊。
+            RegisterShutdownFlush();
+
             Log.Message("[RimLLM] RimLLM Framework 載入成功。");
+        }
+
+        private static void RegisterShutdownFlush()
+        {
+            Application.quitting += FlushTelemetryQuietly;
+            AppDomain.CurrentDomain.ProcessExit += (sender, args) => FlushTelemetryQuietly();
+        }
+
+        private static void FlushTelemetryQuietly()
+        {
+            try
+            {
+                Settings?.FlushTelemetryIfDirty();
+            }
+            catch (Exception ex)
+            {
+                // 關閉期間 GenFilePaths 等 Verse 服務可能已不可用，不得讓例外中斷關機流程。
+                try { Log.Warning($"[RimLLM] 關閉時寫入遙測失敗: {ex.Message}"); } catch { }
+            }
         }
 
         public override string SettingsCategory()

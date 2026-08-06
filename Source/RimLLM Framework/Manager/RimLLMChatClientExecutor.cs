@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.SDK;
@@ -11,52 +12,91 @@ namespace RimLLM_Framework.Manager
     /// <summary>將共用 LLMRequest 轉換為 MEAI IChatClient 呼叫。</summary>
     internal static class RimLLMChatClientExecutor
     {
+        /// <summary>
+        /// 非串流請求：以 <paramref name="timeoutSeconds"/> 建立整體逾時，並與呼叫端的取消 Token 連動。
+        /// 官方 SDK 的 client 本身沒有套用使用者設定的 ApiTimeout，因此在此統一補上，
+        /// 使 SDK 路徑與 raw HTTP 路徑的逾時語意一致。
+        /// </summary>
         public static async Task<string> GenerateAsync(
             IChatClient client,
             LLMRequest request,
             string model,
             bool useNativeSchema,
-            string providerId)
+            string providerId,
+            float timeoutSeconds)
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (request == null) throw new ArgumentNullException(nameof(request));
 
-            ChatResponse response = await client.GetResponseAsync(
-                BuildMessages(request),
-                BuildOptions(request, model, useNativeSchema),
-                request.CancellationToken).ConfigureAwait(false);
-
-            string text = response?.Text;
-            if (string.IsNullOrWhiteSpace(text))
+            using (var timeoutCts = new CancellationTokenSource(ResolveTimeout(timeoutSeconds)))
+            using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, request.CancellationToken))
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} 回傳空白內容。");
-            }
+                ChatResponse response;
+                try
+                {
+                    response = await client.GetResponseAsync(
+                        BuildMessages(request),
+                        BuildOptions(request, model, useNativeSchema),
+                        linkedCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!request.CancellationToken.IsCancellationRequested)
+                {
+                    throw new RimLLMException(LLMError.Timeout, $"{providerId} 請求逾時（{timeoutSeconds} 秒）。");
+                }
 
-            RecordUsage(providerId, model, request, text, response?.Usage);
-            return text;
+                string text = response?.Text;
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} 回傳空白內容。");
+                }
+
+                RecordUsage(providerId, model, request, text, response?.Usage);
+                return text;
+            }
         }
 
+        /// <summary>
+        /// 串流請求：採「閒置逾時」語意 —— 每收到一個 chunk 就重設計時器。
+        /// 對長回應而言整體逾時並不合理，因此 ApiTimeout 在此代表「多久沒有新內容就視為斷線」。
+        /// </summary>
         public static async Task StreamAsync(
             IChatClient client,
             LLMRequest request,
             string model,
             bool useNativeSchema,
             string providerId,
-            Action<string> onChunkReceived)
+            Action<string> onChunkReceived,
+            float timeoutSeconds)
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (request == null) throw new ArgumentNullException(nameof(request));
 
+            TimeSpan idleTimeout = ResolveTimeout(timeoutSeconds);
             var responseBuilder = new StringBuilder();
-            await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync(
-                BuildMessages(request),
-                BuildOptions(request, model, useNativeSchema),
-                request.CancellationToken))
+
+            using (var timeoutCts = new CancellationTokenSource(idleTimeout))
+            using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, request.CancellationToken))
             {
-                string text = update?.Text;
-                if (string.IsNullOrEmpty(text)) continue;
-                responseBuilder.Append(text);
-                onChunkReceived?.Invoke(text);
+                try
+                {
+                    await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync(
+                        BuildMessages(request),
+                        BuildOptions(request, model, useNativeSchema),
+                        linkedCts.Token))
+                    {
+                        // 收到任何更新即重設閒置計時器，避免長回應被整體逾時誤殺。
+                        timeoutCts.CancelAfter(idleTimeout);
+
+                        string text = update?.Text;
+                        if (string.IsNullOrEmpty(text)) continue;
+                        responseBuilder.Append(text);
+                        onChunkReceived?.Invoke(text);
+                    }
+                }
+                catch (OperationCanceledException) when (!request.CancellationToken.IsCancellationRequested)
+                {
+                    throw new RimLLMException(LLMError.Timeout, $"{providerId} 串流閒置逾時（{timeoutSeconds} 秒未收到新內容）。");
+                }
             }
 
             if (responseBuilder.Length == 0)
@@ -66,6 +106,11 @@ namespace RimLLM_Framework.Manager
             }
 
             RecordUsage(providerId, model, request, responseBuilder.ToString(), null);
+        }
+
+        private static TimeSpan ResolveTimeout(float timeoutSeconds)
+        {
+            return TimeSpan.FromSeconds(timeoutSeconds > 0f ? timeoutSeconds : 30f);
         }
 
         private static IList<ChatMessage> BuildMessages(LLMRequest request)

@@ -142,6 +142,12 @@ namespace RimLLM_Framework.Manager
                                 RimLLMLog.Warning($"[RimLLM] Throttled telemetry write failed: {ex.Message}");
                             }
                         }
+                        else
+                        {
+                            // 被節流跳過的變更需標記為待寫入，關閉遊戲時才會強制 flush，
+                            // 否則 session 最後一段用量永遠寫不進去。
+                            frameworkSettings.MarkTelemetryDirty();
+                        }
                     }
                 });
             }

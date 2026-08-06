@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -87,7 +87,8 @@ namespace RimLLM_Framework.Providers
                     model,
                     request.ResponseType != null && Settings.EnableNativeSchema,
                     ProviderId,
-                    onChunkReceived).ConfigureAwait(false);
+                    onChunkReceived,
+                    Settings?.ApiTimeout ?? 30f).ConfigureAwait(false);
             }
         }
 

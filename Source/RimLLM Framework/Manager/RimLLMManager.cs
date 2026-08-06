@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -586,7 +586,8 @@ namespace RimLLM_Framework.Manager
                                 request,
                                 model,
                                 useNativeSchema: true,
-                                provider.ProviderId).ConfigureAwait(false);
+                                provider.ProviderId,
+                                _settings.ApiTimeout).ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex) when (IsNativeSchemaRejected(ex))
@@ -605,7 +606,8 @@ namespace RimLLM_Framework.Manager
                         providerRequest,
                         model,
                         useNativeSchema: false,
-                        provider.ProviderId).ConfigureAwait(false);
+                        provider.ProviderId,
+                        _settings.ApiTimeout).ConfigureAwait(false);
                 }
             }
 
@@ -634,7 +636,8 @@ namespace RimLLM_Framework.Manager
                         _settings.EnableNativeSchema &&
                         chatProvider.Capabilities.SupportsNativeStructuredOutput,
                         provider.ProviderId,
-                        onChunkReceived).ConfigureAwait(false);
+                        onChunkReceived,
+                        _settings.ApiTimeout).ConfigureAwait(false);
                 }
                 return;
             }
@@ -664,7 +667,8 @@ namespace RimLLM_Framework.Manager
                         fallbackRequest,
                         model,
                         useNativeSchema: false,
-                        provider.ProviderId).ConfigureAwait(false);
+                        provider.ProviderId,
+                        _settings.ApiTimeout).ConfigureAwait(false);
                 }
             }
 
