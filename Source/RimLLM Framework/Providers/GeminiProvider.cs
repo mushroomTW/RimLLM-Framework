@@ -241,6 +241,7 @@ namespace RimLLM_Framework.Providers
                     int finalCompletionTokens = 0;
                     int finalCachedTokens = 0;
                     bool hasUsage = false;
+                    bool producedText = false;
 
                     try
                     {
@@ -266,6 +267,7 @@ namespace RimLLM_Framework.Providers
                                         {
                                             string partText = part["text"]?.ToString();
                                             if (string.IsNullOrEmpty(partText)) continue;
+                                            producedText = true;
                                             totalCompletionChars += partText.Length;
 
                                             bool isThought = part["thought"]?.Type == JTokenType.Boolean && (bool)part["thought"];
@@ -320,6 +322,12 @@ namespace RimLLM_Framework.Providers
                     if (inReasoning)
                     {
                         onChunkReceived?.Invoke("</think>");
+                    }
+
+                    // 零輸出的串流不得視為成功，否則會阻擋 fallback 並讓呼叫端收到空字串。
+                    if (!producedText)
+                    {
+                        throw new RimLLMException(LLMError.NetworkError, $"{ProviderId} 串流未回傳任何內容。");
                     }
 
                     if (RimLLMProvider.Instance is RimLLMManager manager)
@@ -428,6 +436,12 @@ namespace RimLLM_Framework.Providers
                     if (inReasoning)
                     {
                         onChunkReceived?.Invoke("</think>");
+                    }
+
+                    // 零輸出的串流不得視為成功，否則會阻擋 fallback 並讓呼叫端收到空字串。
+                    if (completionChars == 0)
+                    {
+                        throw new RimLLMException(LLMError.NetworkError, $"{ProviderId} 串流未回傳任何內容。");
                     }
 
                     if (RimLLMProvider.Instance is RimLLMManager manager)

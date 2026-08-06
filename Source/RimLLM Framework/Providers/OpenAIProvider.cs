@@ -33,9 +33,17 @@ namespace RimLLM_Framework.Providers
 
         public bool UsesIChatClient => UseChatClientAdapter;
 
+        /// <summary>
+        /// 衍生 provider 是否確定支援 OpenAI 相容的 <c>response_format: json_schema</c> 欄位。
+        /// 預設為 false：不支援的服務端收到此欄位會直接回 400，且會讓框架原本的
+        /// 提示式 JSON fallback 失效。僅在已驗證支援的 provider 覆寫為 true。
+        /// 此旗標只作用於原生 HTTP 路徑；走官方 SDK 的 OpenAIProvider 本體不受影響。
+        /// </summary>
+        protected virtual bool SupportsNativeJsonSchemaPayload => false;
+
         public LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
         {
-            SupportsNativeStructuredOutput = UsesIChatClient,
+            SupportsNativeStructuredOutput = UsesIChatClient || SupportsNativeJsonSchemaPayload,
             SupportsStreaming = true,
             SupportsUsageMetadata = true
         };
@@ -127,7 +135,7 @@ namespace RimLLM_Framework.Providers
                 ["messages"] = messages
             };
 
-            if (request.ResponseType != null && Settings.EnableNativeSchema)
+            if (request.ResponseType != null && Settings.EnableNativeSchema && SupportsNativeJsonSchemaPayload)
             {
                 payload["response_format"] = new JObject
                 {
@@ -316,6 +324,8 @@ namespace RimLLM_Framework.Providers
                     int finalCompletionTokens = 0;
                     int finalCachedTokens = 0;
                     bool hasUsage = false;
+                    bool producedText = false;
+                    int malformedFrames = 0;
 
                     while (!reader.EndOfStream)
                     {
@@ -328,7 +338,8 @@ namespace RimLLM_Framework.Providers
                         if (line == null) continue;
                         line = line.Trim();
 
-                        if (line == "data: [DONE]")
+                        // 部分 OpenAI 相容服務端不會在 data: 後加空白，因此放寬比對。
+                        if (line.StartsWith("data:") && line.Substring(5).Trim() == "[DONE]")
                             break;
 
                         if (line.StartsWith("data: "))
@@ -357,11 +368,17 @@ namespace RimLLM_Framework.Providers
                             }
                             catch
                             {
-                                // 忽略損毀或心跳包等非 JSON 片段
+                                // 損毀或心跳包等非 JSON 片段：不中斷串流，但計數以利診斷。
+                                malformedFrames++;
+                                if (Settings != null && Settings.DetailedLogging)
+                                {
+                                    RimLLMLog.Message($"[RimLLM] {ProviderId} SSE 封包解析失敗: {RimLLMLog.SanitizeForLog(line, 200)}");
+                                }
                             }
 
                             if (!string.IsNullOrEmpty(reasoning))
                             {
+                                producedText = true;
                                 totalCompletionChars += reasoning.Length;
                                 if (!inReasoning)
                                 {
@@ -373,6 +390,7 @@ namespace RimLLM_Framework.Providers
 
                             if (!string.IsNullOrEmpty(content))
                             {
+                                producedText = true;
                                 totalCompletionChars += content.Length;
                                 if (inReasoning)
                                 {
@@ -386,6 +404,15 @@ namespace RimLLM_Framework.Providers
                     if (inReasoning)
                     {
                         onChunkReceived?.Invoke("</think>");
+                    }
+
+                    // 零輸出的串流不得視為成功，否則會阻擋 fallback 並讓呼叫端收到空字串。
+                    // 選用 NetworkError 而非 InvalidResponse：這種情況幾乎都是連線被中斷，屬可重試。
+                    if (!producedText)
+                    {
+                        throw new RimLLMException(
+                            LLMError.NetworkError,
+                            $"{ProviderId} 串流未回傳任何內容（損毀封包 {malformedFrames} 筆）。");
                     }
 
                     if (RimLLMProvider.Instance is RimLLMManager manager)

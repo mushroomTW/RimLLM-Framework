@@ -290,9 +290,33 @@ namespace RimLLM_Framework.Providers
             {
                 throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {friendlyErr}");
             }
+            if (statusCode == 402)
+            {
+                throw new RimLLMException(LLMError.QuotaExceeded, $"Payment required, please check your account balance: {friendlyErr}");
+            }
+            if (statusCode == 404)
+            {
+                // 模型或端點不存在屬於不可重試錯誤，重試只會空耗延遲。
+                throw new RimLLMException(LLMError.ModelNotFound, $"Model or endpoint not found: {friendlyErr}");
+            }
+            if (statusCode == 408)
+            {
+                throw new RimLLMException(LLMError.Timeout, $"Request timed out on the server side: {friendlyErr}")
+                {
+                    RetryAfter = ParseRetryAfter(response)
+                };
+            }
+            if (statusCode == 400 || statusCode == 413 || statusCode == 422)
+            {
+                // 請求本身有問題，以同一份 payload 重試必然再次失敗。
+                throw new RimLLMException(LLMError.InvalidResponse, $"The request was rejected by the provider: {friendlyErr}")
+                {
+                    IsSchemaRejection = LooksLikeSchemaRejection(friendlyErr)
+                };
+            }
             if (statusCode == 429)
             {
-                if (friendlyErr.Contains("quota") || friendlyErr.Contains("insufficient"))
+                if (ContainsIgnoreCase(friendlyErr, "quota") || ContainsIgnoreCase(friendlyErr, "insufficient"))
                 {
                     throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.")
                     {
@@ -312,6 +336,23 @@ namespace RimLLM_Framework.Providers
                 };
             }
             throw new RimLLMException(LLMError.Unknown, $"API request failed: {friendlyErr}");
+        }
+
+        private static bool ContainsIgnoreCase(string haystack, string needle)
+        {
+            return !string.IsNullOrEmpty(haystack) &&
+                   haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// 判斷 4xx 錯誤訊息是否指向「服務端不接受原生 JSON Schema」，
+        /// 供框架決定是否降級為提示式 JSON 重打一次。
+        /// </summary>
+        private static bool LooksLikeSchemaRejection(string friendlyErr)
+        {
+            return ContainsIgnoreCase(friendlyErr, "response_format") ||
+                   ContainsIgnoreCase(friendlyErr, "json_schema") ||
+                   ContainsIgnoreCase(friendlyErr, "schema");
         }
 
         /// <summary>

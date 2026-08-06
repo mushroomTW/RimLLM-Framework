@@ -19,6 +19,13 @@ namespace RimLLM_Framework.SDK
         /// </summary>
         public TimeSpan? RetryAfter { get; set; }
 
+        /// <summary>
+        /// 標記此錯誤是否為「服務端拒絕原生 JSON Schema」。
+        /// 只有明確標記為 true 的錯誤才會觸發框架的非原生 Schema 降級重打，
+        /// 避免一般的 InvalidResponse 失敗被誤判而掩蓋真正的錯誤。
+        /// </summary>
+        public bool IsSchemaRejection { get; set; }
+
         public RimLLMException(LLMError error, string message) : base(message)
         {
             Error = error;

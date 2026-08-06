@@ -674,9 +674,12 @@ namespace RimLLM_Framework.Manager
                 return false;
             }
 
+            // 只有 provider 明確標記為 schema 拒絕的錯誤才觸發降級重打。
+            // 先前的實作把「任何巢狀 InvalidResponse」都視為 schema 拒絕，
+            // 會讓空回應等真正的失敗被誤判並靜默重打，掩蓋真實錯誤。
             for (Exception current = exception; current != null; current = current.InnerException)
             {
-                if (current is RimLLMException rimException && rimException.Error == LLMError.InvalidResponse)
+                if (current is RimLLMException rimException && rimException.IsSchemaRejection)
                 {
                     return true;
                 }
@@ -1090,6 +1093,15 @@ namespace RimLLM_Framework.Manager
                     default:
                         return false;
                 }
+            }
+
+            // 參數、狀態與解析類例外代表呼叫本身有問題，以相同輸入重試必然再次失敗。
+            if (ex is ArgumentException ||
+                ex is NotSupportedException ||
+                ex is InvalidOperationException ||
+                ex is Newtonsoft.Json.JsonException)
+            {
+                return false;
             }
 
             return true;

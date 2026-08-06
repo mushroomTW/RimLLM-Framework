@@ -14,6 +14,11 @@ namespace RimLLM_Framework.Providers
         public override string ProviderId => "OpenRouter";
         protected override string DefaultEndpoint => "https://openrouter.ai/api/v1";
 
+        /// <summary>
+        /// OpenRouter 支援 OpenAI 相容的 response_format: json_schema。
+        /// </summary>
+        protected override bool SupportsNativeJsonSchemaPayload => true;
+
         public OpenRouterProvider(IRimLLMSettings settings) : base(settings)
         {
         }

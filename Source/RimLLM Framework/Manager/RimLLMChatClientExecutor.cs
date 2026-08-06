@@ -61,7 +61,8 @@ namespace RimLLM_Framework.Manager
 
             if (responseBuilder.Length == 0)
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} 回傳空白串流內容。");
+                // 空串流幾乎都是連線被中斷，屬可重試錯誤；用 InvalidResponse 會讓 fallback 失效。
+                throw new RimLLMException(LLMError.NetworkError, $"{providerId} 回傳空白串流內容。");
             }
 
             RecordUsage(providerId, model, request, responseBuilder.ToString(), null);

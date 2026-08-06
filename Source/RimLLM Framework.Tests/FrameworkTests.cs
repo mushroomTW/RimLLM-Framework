@@ -1882,6 +1882,244 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestHttpStatusCodeMapping()
+        {
+            var probe = new HttpErrorProbeProvider(new MockSettings());
+
+            var notFound = Assert.Throws<RimLLMException>(() =>
+                probe.Probe(System.Net.HttpStatusCode.NotFound, "{\"error\":{\"message\":\"model does not exist\"}}"));
+            Assert.AreEqual(LLMError.ModelNotFound, notFound.Error, "404 應對應 ModelNotFound 而非可重試的 Unknown");
+
+            var badRequest = Assert.Throws<RimLLMException>(() =>
+                probe.Probe(System.Net.HttpStatusCode.BadRequest, "{\"error\":{\"message\":\"bad input\"}}"));
+            Assert.AreEqual(LLMError.InvalidResponse, badRequest.Error, "400 屬於請求本身的問題，應對應 InvalidResponse");
+            Assert.IsFalse(badRequest.IsSchemaRejection, "與 schema 無關的 400 不應標記為 schema 拒絕");
+
+            var timeout = Assert.Throws<RimLLMException>(() =>
+                probe.Probe(System.Net.HttpStatusCode.RequestTimeout, "timeout"));
+            Assert.AreEqual(LLMError.Timeout, timeout.Error, "408 應對應 Timeout");
+
+            var paymentRequired = Assert.Throws<RimLLMException>(() =>
+                probe.Probe((System.Net.HttpStatusCode)402, "payment required"));
+            Assert.AreEqual(LLMError.QuotaExceeded, paymentRequired.Error, "402 應對應 QuotaExceeded");
+        }
+
+        [Test]
+        public void TestSchemaRejectionIsMarkedOnRelevant400()
+        {
+            var probe = new HttpErrorProbeProvider(new MockSettings());
+
+            var ex = Assert.Throws<RimLLMException>(() =>
+                probe.Probe(System.Net.HttpStatusCode.BadRequest,
+                    "{\"error\":{\"message\":\"response_format json_schema is not supported\"}}"));
+
+            Assert.AreEqual(LLMError.InvalidResponse, ex.Error);
+            Assert.IsTrue(ex.IsSchemaRejection, "提及 response_format／json_schema 的 400 應標記為 schema 拒絕");
+        }
+
+        [Test]
+        public void TestQuotaDetectionIsCaseInsensitive()
+        {
+            var probe = new HttpErrorProbeProvider(new MockSettings());
+
+            var ex = Assert.Throws<RimLLMException>(() =>
+                probe.Probe((System.Net.HttpStatusCode)429, "Insufficient_Quota for this account"));
+
+            Assert.AreEqual(LLMError.QuotaExceeded, ex.Error, "配額關鍵字比對必須大小寫不敏感");
+        }
+
+        [Test]
+        public void TestModelNotFoundDoesNotConsumeRetries()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockNotFound:model-a" },
+                MaxRetries = 3,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockNotFound"] = true;
+            mockSettings.ApiKeys["MockNotFound"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+            int calls = 0;
+            manager.RegisterProvider(new MockTestProvider
+            {
+                ProviderId = "MockNotFound",
+                GenerateHandler = (req, model) =>
+                {
+                    calls++;
+                    throw new RimLLMException(LLMError.ModelNotFound, "Model or endpoint not found");
+                }
+            });
+
+            const string modId = "test.modelnotfound";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            Assert.Throws<RimLLMException>(() =>
+                manager.GenerateAsync(new LLMRequest { ModId = modId, Prompt = "hi" }).GetAwaiter().GetResult());
+            Assert.AreEqual(1, calls, "404 屬於不可重試錯誤，不應消耗重試次數");
+        }
+
+        [Test]
+        public void TestEmptyStreamErrorIsRetryable()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockEmptyStream:model-a", "MockGoodStream:model-b" },
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockEmptyStream"] = true;
+            mockSettings.EnabledProviders["MockGoodStream"] = true;
+            mockSettings.ApiKeys["MockEmptyStream"] = "key";
+            mockSettings.ApiKeys["MockGoodStream"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+
+            // 模擬 provider 偵測到零輸出後擲出的錯誤（與 OpenAI／Gemini 串流實作一致，
+            // 刻意使用可重試的 NetworkError，讓 fallback 能接手）。
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockEmptyStream",
+                StreamHandler = (req, model, onChunk) =>
+                    throw new RimLLMException(LLMError.NetworkError, "串流未回傳任何內容。")
+            });
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockGoodStream",
+                StreamHandler = (req, model, onChunk) =>
+                {
+                    onChunk("recovered");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            });
+
+            const string modId = "test.emptystream.fallback";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            var received = new List<string>();
+            string result = manager.GenerateStreamingAsync(modId, "hi", c => received.Add(c)).GetAwaiter().GetResult();
+
+            Assert.AreEqual("recovered", result, "零輸出串流應視為可重試失敗並由下一個供應商接手");
+            CollectionAssert.Contains(received, "recovered");
+        }
+
+        [Test]
+        public void TestDerivedProviderDoesNotSendNativeSchemaPayload()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "Kimi:moonshot-v1-8k" },
+                EnableNativeSchema = true
+            };
+            mockSettings.EnabledProviders["Kimi"] = true;
+            mockSettings.ApiKeys["Kimi"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+            var provider = new TestKimiPayloadProvider(mockSettings);
+
+            const string modId = "test.kimi.payload";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            provider.GenerateAsync(
+                new LLMRequest { ModId = modId, Prompt = "hi", ResponseType = typeof(TestDataStructure) },
+                "moonshot-v1-8k").GetAwaiter().GetResult();
+
+            var payload = JObject.Parse(provider.CapturedPayload);
+            Assert.IsNull(payload["response_format"],
+                "未宣告支援原生 schema 的衍生供應商不應收到 response_format");
+        }
+
+        [Test]
+        public void TestWhitelistedDerivedProviderSendsNativeSchemaPayload()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "DeepSeek:deepseek-chat" },
+                EnableNativeSchema = true
+            };
+            mockSettings.EnabledProviders["DeepSeek"] = true;
+            mockSettings.ApiKeys["DeepSeek"] = "key";
+
+            var provider = new TestDeepSeekPayloadProvider(mockSettings);
+
+            const string modId = "test.deepseek.payload";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            provider.GenerateAsync(
+                new LLMRequest { ModId = modId, Prompt = "hi", ResponseType = typeof(TestDataStructure) },
+                "deepseek-chat").GetAwaiter().GetResult();
+
+            var payload = JObject.Parse(provider.CapturedPayload);
+            Assert.IsNotNull(payload["response_format"], "已驗證支援的衍生供應商應收到 response_format");
+            Assert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());
+            Assert.AreEqual(true, payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>(),
+                "不含 Dictionary 的型別應維持 strict 模式");
+        }
+
+        [Test]
+        public void TestDictionaryTypeDisablesStrictMode()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "DeepSeek:deepseek-chat" },
+                EnableNativeSchema = true
+            };
+            mockSettings.EnabledProviders["DeepSeek"] = true;
+            mockSettings.ApiKeys["DeepSeek"] = "key";
+
+            var provider = new TestDeepSeekPayloadProvider(mockSettings);
+
+            const string modId = "test.deepseek.strict";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            provider.GenerateAsync(
+                new LLMRequest { ModId = modId, Prompt = "hi", ResponseType = typeof(ComplexTestDataStructure) },
+                "deepseek-chat").GetAwaiter().GetResult();
+
+            var payload = JObject.Parse(provider.CapturedPayload);
+            Assert.AreEqual(false, payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>(),
+                "含 Dictionary 的型別必須關閉 strict，否則服務端會拒絕開放式 map");
+        }
+
+        [Test]
+        public void TestNativeSchemaRejectionRequiresExplicitMarker()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockInvalid:model-a" },
+                MaxRetries = 0,
+                RetryDelay = 0f,
+                EnableNativeSchema = true,
+                EnableJsonRepair = false
+            };
+            mockSettings.EnabledProviders["MockInvalid"] = true;
+            mockSettings.ApiKeys["MockInvalid"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+            int calls = 0;
+            manager.RegisterProvider(new MockTestProvider
+            {
+                ProviderId = "MockInvalid",
+                GenerateHandler = (req, model) =>
+                {
+                    calls++;
+                    // 未標記 IsSchemaRejection 的一般 InvalidResponse
+                    throw new RimLLMException(LLMError.InvalidResponse, "provider returned garbage");
+                }
+            });
+
+            const string modId = "test.schema.marker";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
+            Assert.Throws<RimLLMException>(() =>
+                manager.GenerateObjectAsync<TestDataStructure>(
+                    new LLMRequest { ModId = modId, Prompt = "hi" }).GetAwaiter().GetResult());
+
+            Assert.AreEqual(1, calls, "僅標記為 schema 拒絕的錯誤才可觸發降級重打");
+        }
+
+        [Test]
         public void TestProviderStatisticsTracking()
         {
             var mockSettings = new MockSettings();
@@ -2135,12 +2373,62 @@ namespace RimLLM_Framework.Tests
     public class TestOpenAIProviderWithUsage : OpenAIProvider
     {
         public string MockResponse { get; set; }
-        
+
         public TestOpenAIProviderWithUsage(IRimLLMSettings settings) : base(settings) {}
-        
+
         protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
         {
             return System.Threading.Tasks.Task.FromResult(MockResponse);
+        }
+    }
+
+    /// <summary>
+    /// 對外開放 protected 的 ThrowHttpError，供 HTTP 狀態碼對照測試直接驗證。
+    /// </summary>
+    public class HttpErrorProbeProvider : OpenAIProvider
+    {
+        public HttpErrorProbeProvider(IRimLLMSettings settings) : base(settings) {}
+
+        public void Probe(System.Net.HttpStatusCode statusCode, string responseBody)
+        {
+            using (var response = new System.Net.Http.HttpResponseMessage(statusCode))
+            {
+                ThrowHttpError(response, responseBody);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 未宣告支援原生 JSON Schema 的衍生供應商（沿用預設 false）。
+    /// </summary>
+    public class TestKimiPayloadProvider : KimiProvider
+    {
+        public string CapturedPayload { get; private set; }
+
+        public TestKimiPayloadProvider(IRimLLMSettings settings) : base(settings) {}
+
+        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        {
+            CapturedPayload = payload;
+            return System.Threading.Tasks.Task.FromResult(
+                "{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"{\\\"Value\\\":1,\\\"Message\\\":\\\"ok\\\"}\"}}]}");
+        }
+    }
+
+    /// <summary>
+    /// 已驗證支援原生 JSON Schema 的衍生供應商。
+    /// </summary>
+    public class TestDeepSeekPayloadProvider : DeepSeekProvider
+    {
+        public string CapturedPayload { get; private set; }
+
+        public TestDeepSeekPayloadProvider(IRimLLMSettings settings) : base(settings) {}
+
+        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        {
+            CapturedPayload = payload;
+            return System.Threading.Tasks.Task.FromResult(
+                "{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"{\\\"Value\\\":1,\\\"Message\\\":\\\"ok\\\"}\"}}]}");
         }
     }
 }
