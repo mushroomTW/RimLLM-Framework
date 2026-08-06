@@ -158,7 +158,7 @@ public void StreamResponse()
 
 若您的 Mod 擁有非常龐大、且**短時間內會重複使用**的穩定上下文（例如世界觀規則、固定的角色背景設定、輸出用的 XML/JSON Schema 等），且需要高頻率呼叫 API，您可以啟用 **上下文快取 (Context Caching)**。
 
-這會自動利用 API 供應商（如 Google Gemini 或 Anthropic Claude）的快取機制，避免每次呼叫都重新計算穩定上下文的 Token，進而大幅降低 Token 費用與響應延遲：
+這會自動利用 API 供應商（如 Google Gemini 或 OpenAI）的快取機制，避免每次呼叫都重新計算穩定上下文的 Token，進而大幅降低 Token 費用與響應延遲：
 
 > [!IMPORTANT]
 > **請只快取「穩定且會重複使用」的內容。** `CachedContext` 不適合放每回合都變動的即時資料（如當前殖民地快照、隨機事件、即時心情值）。對 Gemini 而言，顯式快取需付「建立費 + 儲存費」，若內容每次都不同便無法重用，反而會墊高成本——此類易變內容請改放 `Prompt`。
@@ -193,8 +193,8 @@ public async void CallWithCaching()
 > * **Gemini** 預設會將 `SystemPrompt + CachedContext` 以 `cachedContents` 方式快取 5 分鐘（TTL 300s），後續相同上下文與模型的請求會自動對齊該快取。
 >   * **最小門檻保護**：當上下文過小（Pro 模型約 < 2048、其餘模型約 < 1024）時，建立顯式快取並不划算，框架會自動略過快取、改走一般 `systemInstruction`，避免付了建立費卻無法回收。
 >   * 同一上下文的快取建立流程具備並發鎖保護，避免多執行緒同時送出而重複建立快取資源。
-> * **Anthropic (Claude)** 則會套用 `ephemeral` 快取標記，對重複輸入的 Prompt 提供高達 90% 的費用折扣。
-> * **成本面板反映節省**：Debug 分頁的費用估算會自動讀取 API 回傳的快取命中量（Anthropic 的 `cache_read_input_tokens`、Gemini 的 `cachedContentTokenCount`），並以折扣費率計入，因此面板數字會真實反映 Context Caching 省下的金額。
+> * **OpenAI** 則由服務端自動對重複的 prompt 前綴套用 Prompt Caching，無需額外設定。
+> * **成本面板反映節省**：Debug 分頁的費用估算會自動讀取 API 回傳的快取命中量（OpenAI 的 `cached_tokens`、Gemini 的 `cachedContentTokenCount`），並以折扣費率計入，因此面板數字會真實反映 Context Caching 省下的金額。
 
 ---
 
@@ -222,17 +222,17 @@ public async void CallWithCaching()
    * 遊戲運行中所有設定字典皆具備同步鎖機制防範多線程並行讀寫衝突。
    * 所有日誌寫入 `RecordLog` 中的 Scribe 存檔均以 `RimLLMDispatcher` 調度回 Unity 主線程執行，並加入 15 秒寫入節流 (Throttle)，避免背景存檔導致遊戲崩潰或 TPS 抖動。
 8. **推理性思考模型與思維鏈高亮 (Reasoning Models & think Tagging)**
-   * 原生支援 **DeepSeek-R1**、**Gemini 2.0/2.5 Thinking**、**Claude 3.7** 等推理性思考模型。
-   * 底層自動擷取 API 返回的思維鏈（如 OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位、Anthropic 的 `thinking` 區塊），並統一以 XML 標記 `<think>...</think>` 封裝回傳。
+   * 原生支援 **DeepSeek-R1**、**Gemini 2.0/2.5 Thinking**、**OpenAI o1/o3** 等推理性思考模型。
+   * 底層自動擷取 API 返回的思維鏈（如 OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位），並統一以 XML 標記 `<think>...</think>` 封裝回傳。
    * GUI 聊天測試頁面會自動解析該標記，將其渲染為精緻的灰色斜體思考過程；呼叫端 Mod 亦能極易使用正則表達式剝離或保留思維鏈，確保高相容性。
-   * **智慧思考強度控制 (Reasoning Effort)**：預設思考強度改為「自動 / 預設 (Auto)」。在此模式下，各大供應商能運行其原生的適應性或動態思考配置（如 Gemini 的 `thinkingBudget = -1`，Anthropic 的 `"type": "adaptive"`，OpenAI 的動態 `reasoning_effort` 控制等），並支援在選單中一鍵「關閉 (Disabled)」或手動調整思考強度（低/中/高）。
+   * **智慧思考強度控制 (Reasoning Effort)**：預設思考強度為「自動 / 預設 (Auto)」。在此模式下，各大供應商能運行其原生的適應性或動態思考配置（如 Gemini 的 `thinkingBudget = -1`、OpenAI 的動態 `reasoning_effort` 控制等），並支援在選單中一鍵「關閉 (Disabled)」或手動調整思考強度（低/中/高）。
 9. **智慧上下文快取與 Prompt Caching (Context Caching)**
-   * 原生支援 **Gemini Context Caching** 與 **Anthropic Prompt Caching (Ephemeral)**。開發者只需在 `LLMRequest` 中設定 `CachedContext` 並啟用 `EnableContextCaching = true`，底層即會自動將 `SystemPrompt + CachedContext` 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
+   * 原生支援 **Gemini Context Caching** 與 **OpenAI Prompt Caching**。開發者只需在 `LLMRequest` 中設定 `CachedContext` 並啟用 `EnableContextCaching = true`，底層即會自動將 `SystemPrompt + CachedContext` 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
    * **成本防呆**：Gemini 顯式快取設有最小門檻，內容過小時自動略過快取改走 `systemInstruction`，避免「付建立費卻無法回收」的反效果；同一上下文的快取建立亦具併發鎖保護以防重複建立。
-   * **節省可量化**：用量統計會解析 API 回傳的快取命中 Token（Anthropic `cache_read`、Gemini `cachedContentTokenCount`）並套用折扣費率計入成本估算，讓費用面板真實反映快取帶來的節省。
-10. **全域語意快取 (Semantic Caching) 與生命週期控制 (TTL)**
-    * 框架提供全域語意快取機制，支援「精確字串比對」與「模糊語意相似度比對（Trigram 餘弦 / Embedding 向量）」。在玩家頻繁點擊或短時間內發送極度相似之指令時能立刻由快取返回響應，節省 Token 並大幅降低冷啟動延遲。
-    * **快取生命週期 (TTL) 機制**：為解決高重複性週期任務（如 AI 調度、世界狀態監控）因重複命中快取而失去即時適應彈性的問題，框架新增快取過期時間（TTL，可於 UI 設定為 0 ~ 60 分鐘）。快取項目在超出時間後會自動被判定過期並清除，確保在維持快取防護效益的同時，AI 決策仍具備隨遊戲時間進展而動態調整的彈性。
+   * **節省可量化**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`）並套用折扣費率計入成本估算，讓費用面板真實反映快取帶來的節省。
+10. **Embedding 向量 SDK (Embeddings)**
+    * 框架提供公開的 Embedding 運算能力，支援 Google、Ollama 與 OpenAI 相容三種來源，並附帶餘弦相似度與離線 Trigram 相似度工具。其他 Mod 可透過 `RimLLMProvider.Instance.GetEmbeddingAsync` 直接取用，用於語意檢索、聚類或相似度比對。
+    * Embedding 屬於計費 API，因此與一般生成請求共用同一套呼叫端校驗與防濫用檢查；金鑰亦與 provider 金鑰採同一套 AES 加密儲存。
 
 ---
 
@@ -283,7 +283,11 @@ public async void CallWithCaching()
 
 ## 🧪 單元測試與驗證
 
-本專案附帶完整的單元測試套件 `Source/RimLLM Framework.Tests`（與主專案平行的獨立專案），覆蓋了 AES 加解密、來源註冊校驗、模型 Fallback 機制等核心功能。
+本專案附帶完整的單元測試套件 `Source/RimLLM Framework.Tests`（與主專案平行的獨立專案），覆蓋 AES 加解密、來源註冊校驗、模型 Fallback 機制、JSON Schema 產生與修復、HTTP 錯誤對照、串流重試與預算控制等核心功能。
+
+> **前置需求**：測試執行期需要 RimWorld 的 `Assembly-CSharp` 與 Unity DLL，這些檔案不可散布，因此必須有本機的 RimWorld 安裝。
+> 預設路徑為 `C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed`，
+> 可透過 MSBuild property `RimWorldManagedDir` 或環境變數 `RIMWORLD_MANAGED_DIR` 覆寫。
 
 您可以在專案根目錄下使用 `dotnet-cli` 執行建置與測試驗證：
 
@@ -294,3 +298,8 @@ dotnet build "Source/RimLLM Framework.slnx"
 # 執行所有 NUnit 單元測試
 dotnet test "Source/RimLLM Framework.Tests/RimLLM Framework.Tests.csproj"
 ```
+
+> **注意**：撰寫程式碼時，`Krafs.Rimworld.Ref` 參考組件並不會限制 BCL 的 API 範圍，
+> 因此可能出現「編譯通過但在 RimWorld 的 Mono 執行環境失敗」的情況
+> （已知例子：`Stack<T>` 會擲出 `TypeLoadException`、無參數的 `String.TrimEnd()` 不存在）。
+> 請務必實際執行 `dotnet test` 驗證，不要只依賴建置成功。

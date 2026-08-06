@@ -8,7 +8,11 @@ namespace RimLLM_Framework.Providers
         /// <summary>標準 Authorization: Bearer 認證。</summary>
         public const string Bearer = "Bearer";
 
-        /// <summary>Anthropic 的 x-api-key 與版本 Header 認證。</summary>
+        /// <summary>
+        /// Anthropic 的 x-api-key 與版本 Header 認證。
+        /// 目前沒有內建供應商使用此方案（框架未內建 Anthropic provider），
+        /// 保留供未來擴充與第三方自訂 provider 引用；此為公開常數，移除將造成破壞性變更。
+        /// </summary>
         public const string Anthropic = "Anthropic";
 
         /// <summary>Gemini 採 URL query 認證，不加任何 Header。</summary>

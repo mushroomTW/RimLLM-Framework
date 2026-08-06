@@ -2302,6 +2302,262 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestSanitizeForLogRedactsProviderSpecificKeys()
+        {
+            var secrets = new Dictionary<string, string>
+            {
+                { "Google", "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7" },
+                { "Groq", "gsk_abcdefghijklmnopqrstuvwxyz0123456789" },
+                { "Grok", "xai-abcdefghijklmnopqrstuvwxyz0123456789" },
+                { "Nvidia", "nvapi-abcdefghijklmnopqrstuvwxyz0123456789" },
+                { "OpenAI", "sk-abcdefghijklmnopqrstuvwxyz0123456789" },
+                { "Anthropic", "sk-ant-abcdefghijklmnopqrstuvwxyz0123" }
+            };
+
+            foreach (var kvp in secrets)
+            {
+                string sanitized = RimLLMLog.SanitizeForLog($"request failed with key {kvp.Value}");
+                Assert.IsFalse(sanitized.Contains(kvp.Value),
+                    $"日誌遮罩必須涵蓋全部供應商的金鑰格式（{kvp.Key} 未被遮罩）");
+            }
+
+            string bearer = RimLLMLog.SanitizeForLog("Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345");
+            Assert.IsFalse(bearer.Contains("abcdefghijklmnopqrstuvwxyz012345"), "Bearer token 必須被遮罩");
+        }
+
+        [Test]
+        public void TestSanitizeForLogTruncatesAndEscapesNewlines()
+        {
+            string sanitized = RimLLMLog.SanitizeForLog("line1\r\nline2", 500);
+            Assert.IsFalse(sanitized.Contains("\n"), "換行必須被跳脫以防日誌注入");
+            Assert.IsTrue(sanitized.Contains("\\r\\n"));
+
+            string longText = new string('x', 600);
+            Assert.IsTrue(RimLLMLog.SanitizeForLog(longText, 100).Length <= 103, "超長內容必須被截斷");
+        }
+
+        [Test]
+        public void TestChatInputWhitespaceOnlyIsRejected()
+        {
+            Assert.IsFalse(ChatTestDrawer.ShouldSendChatInput(null));
+            Assert.IsFalse(ChatTestDrawer.ShouldSendChatInput(""));
+            Assert.IsFalse(ChatTestDrawer.ShouldSendChatInput("   \t \n "),
+                "僅含空白的聊天輸入不應送出請求");
+            Assert.IsTrue(ChatTestDrawer.ShouldSendChatInput(" hi "));
+        }
+
+        [Test]
+        public void TestDispatcherQueueIsBounded()
+        {
+            RimLLMDispatcher.ResetQueueForTests();
+            try
+            {
+                for (int i = 0; i < 5000; i++)
+                {
+                    RimLLMDispatcher.TryEnqueueBounded(() => { });
+                }
+
+                Assert.LessOrEqual(RimLLMDispatcher.QueuedCount, 4096,
+                    "派遣器佇列必須有上限，避免無限成長");
+            }
+            finally
+            {
+                RimLLMDispatcher.ResetQueueForTests();
+            }
+        }
+
+        [Test]
+        public void TestDispatcherDrainRespectsPerFrameBudget()
+        {
+            RimLLMDispatcher.ResetQueueForTests();
+            try
+            {
+                int executed = 0;
+                for (int i = 0; i < 500; i++)
+                {
+                    RimLLMDispatcher.TryEnqueueBounded(() => executed++);
+                }
+
+                int processed = RimLLMDispatcher.DrainWithBudget(128, long.MaxValue);
+
+                Assert.AreEqual(128, processed, "單次清空不得超過每幀項目上限");
+                Assert.AreEqual(128, executed);
+                Assert.Greater(RimLLMDispatcher.QueuedCount, 0, "剩餘項目應留待下一幀處理");
+            }
+            finally
+            {
+                RimLLMDispatcher.ResetQueueForTests();
+            }
+        }
+
+        [Test]
+        public void TestTelemetrySaveIsAtomicAndEncryptsChatHistory()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RimLLMTelemetryTest_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "telemetry.json");
+
+            var previousResolver = RimLLMTelemetryStore.FilePathResolver;
+            RimLLMTelemetryStore.FilePathResolver = () => path;
+            try
+            {
+                var store = new RimLLMTelemetryStore();
+                store.ChatHistory.Add("SENTINEL-CONVERSATION-CONTENT");
+                store.Save();
+
+                Assert.IsFalse(System.IO.File.Exists(path + ".tmp"),
+                    "遙測寫入必須先寫暫存檔再原子替換，不得留下 .tmp");
+
+                string raw = System.IO.File.ReadAllText(path);
+                Assert.IsFalse(raw.Contains("SENTINEL-CONVERSATION-CONTENT"),
+                    "對話歷史不得以明文寫入遙測檔");
+
+                var reloaded = new RimLLMTelemetryStore();
+                reloaded.Load();
+                CollectionAssert.Contains(reloaded.ChatHistory, "SENTINEL-CONVERSATION-CONTENT");
+            }
+            finally
+            {
+                RimLLMTelemetryStore.FilePathResolver = previousResolver;
+                try { System.IO.Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        [Test]
+        public void TestTelemetryLoadRecoversFromCorruptFileUsingBackup()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RimLLMTelemetryTest_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "telemetry.json");
+
+            var previousResolver = RimLLMTelemetryStore.FilePathResolver;
+            RimLLMTelemetryStore.FilePathResolver = () => path;
+            try
+            {
+                // 先寫一份有效檔，再寫第二次讓第一份成為 .bak，最後把主檔弄壞。
+                var store = new RimLLMTelemetryStore { TotalPromptTokens = 1234 };
+                store.Save();
+                store.TotalPromptTokens = 5678;
+                store.Save();
+                System.IO.File.WriteAllText(path, "{ this is not valid json");
+
+                var reloaded = new RimLLMTelemetryStore();
+                reloaded.Load();
+
+                Assert.AreEqual(1234, reloaded.TotalPromptTokens,
+                    "主檔損毀時應改由備份檔還原");
+            }
+            finally
+            {
+                RimLLMTelemetryStore.FilePathResolver = previousResolver;
+                try { System.IO.Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        [Test]
+        public void TestLegacyPlaintextChatHistoryIsMigratedOnSave()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RimLLMTelemetryTest_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "telemetry.json");
+
+            var previousResolver = RimLLMTelemetryStore.FilePathResolver;
+            RimLLMTelemetryStore.FilePathResolver = () => path;
+            try
+            {
+                // 模擬舊版明文格式
+                System.IO.File.WriteAllText(path,
+                    "{\"ChatHistory\":[\"LEGACY-PLAINTEXT-LINE\"],\"TotalPromptTokens\":7}");
+
+                var store = new RimLLMTelemetryStore();
+                store.Load();
+                CollectionAssert.Contains(store.ChatHistory, "LEGACY-PLAINTEXT-LINE");
+                Assert.IsTrue(store.IsDirty, "讀到舊版明文歷史後應標記為待重寫以完成加密遷移");
+
+                store.Save();
+                string raw = System.IO.File.ReadAllText(path);
+                Assert.IsFalse(raw.Contains("LEGACY-PLAINTEXT-LINE"),
+                    "遷移後舊版明文歷史必須從磁碟消失");
+            }
+            finally
+            {
+                RimLLMTelemetryStore.FilePathResolver = previousResolver;
+                try { System.IO.Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        [Test]
+        public void TestDecryptFailureReturnsNullInsteadOfEmpty()
+        {
+            // 無法解密的內容（既非 v2 格式也不是合法 Base64 密文）
+            string result = EncryptionUtility.Decrypt("v2:bm90LWEtdmFsaWQtcGF5bG9hZA==");
+
+            Assert.IsNull(result,
+                "解密失敗必須回傳 null 而非空字串，呼叫端才能保留原始密文而不覆寫為空");
+            Assert.AreEqual(string.Empty, EncryptionUtility.Decrypt(""),
+                "空輸入仍應回傳空字串，與解密失敗區分");
+        }
+
+        [Test]
+        public void TestLanguageKeysAreConsistentAcrossLocales()
+        {
+            string repoRoot = FindRepositoryRoot();
+            if (repoRoot == null)
+            {
+                Assert.Ignore("找不到 repository 根目錄，略過語言檔一致性檢查。");
+            }
+
+            var localeKeys = new Dictionary<string, List<string>>();
+            foreach (string locale in new[] { "English", "ChineseSimplified", "ChineseTraditional" })
+            {
+                string path = System.IO.Path.Combine(repoRoot, "Languages", locale, "Keyed", "Keys.xml");
+                Assert.IsTrue(System.IO.File.Exists(path), $"缺少語言檔: {path}");
+
+                var doc = System.Xml.Linq.XDocument.Load(path);
+                var keys = new List<string>();
+                foreach (var element in doc.Root.Elements())
+                {
+                    keys.Add(element.Name.LocalName);
+                }
+
+                var duplicates = new List<string>();
+                var seen = new HashSet<string>();
+                foreach (string key in keys)
+                {
+                    if (!seen.Add(key)) duplicates.Add(key);
+                }
+                Assert.IsEmpty(duplicates, $"{locale} 語言檔含重複鍵: {string.Join(", ", duplicates.ToArray())}");
+
+                keys.Sort(StringComparer.Ordinal);
+                localeKeys[locale] = keys;
+            }
+
+            CollectionAssert.AreEqual(localeKeys["English"], localeKeys["ChineseTraditional"],
+                "三語系語言檔的鍵集合必須完全一致");
+            CollectionAssert.AreEqual(localeKeys["English"], localeKeys["ChineseSimplified"],
+                "三語系語言檔的鍵集合必須完全一致");
+        }
+
+        private static string FindRepositoryRoot()
+        {
+            string envRoot = Environment.GetEnvironmentVariable("RIMLLM_REPO_ROOT");
+            if (!string.IsNullOrEmpty(envRoot) && System.IO.Directory.Exists(envRoot))
+            {
+                return envRoot;
+            }
+
+            var dir = new System.IO.DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+            for (int i = 0; i < 8 && dir != null; i++, dir = dir.Parent)
+            {
+                if (System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "About", "About.xml")))
+                {
+                    return dir.FullName;
+                }
+            }
+            return null;
+        }
+
+        [Test]
         public void TestProviderStatisticsTracking()
         {
             var mockSettings = new MockSettings();
