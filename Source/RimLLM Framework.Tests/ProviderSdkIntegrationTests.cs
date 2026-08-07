@@ -201,6 +201,30 @@ namespace RimLLM_Framework.Tests
             Assert.IsTrue(sdkGemini.Capabilities.SupportsNativeStructuredOutput);
         }
 
+        [Test]
+        public void CreateChatClient_ReturnsBoundFacade()
+        {
+            var settings = new MockSettings();
+            var manager = new RimLLMManager(settings);
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient("sdk.integration.test");
+            IChatClient client = RimLLMProvider.CreateChatClient("sdk.integration.test");
+            Assert.IsNotNull(client);
+            Assert.IsInstanceOf<RimLLMChatClient>(client);
+            ChatClientMetadata metadata = client.GetService<ChatClientMetadata>();
+            Assert.IsNotNull(metadata);
+            Assert.AreEqual("RimLLM", metadata.ProviderName);
+        }
+
+        [Test]
+        public void CreateChatClient_UnregisteredModThrows()
+        {
+            var settings = new MockSettings();
+            var manager = new RimLLMManager(settings);
+            RimLLMProvider.Initialize(manager);
+            Assert.Throws<RimLLMException>(() => RimLLMProvider.CreateChatClient("never.registered"));
+        }
+
         private sealed class StructuredResponse
         {
             public string Name { get; set; }

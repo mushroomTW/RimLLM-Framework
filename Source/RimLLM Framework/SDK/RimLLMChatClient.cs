@@ -1,4 +1,4 @@
-﻿extern alias bclasync;
+extern alias bclasync;
 extern alias ste;
 using System;
 using System.Collections.Generic;
@@ -290,6 +290,10 @@ namespace RimLLM_Framework.SDK
 
         public object GetService(Type serviceType, object serviceKey = null)
         {
+            if (serviceType == typeof(ChatClientMetadata))
+            {
+                return Metadata;
+            }
             return null;
         }
 
