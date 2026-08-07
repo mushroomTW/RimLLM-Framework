@@ -245,6 +245,45 @@ namespace RimLLM_Framework.Manager
             return request;
         }
 
+        /// <summary>暫時的 LLMRequest → RimLLMRequest 轉譯（公開契約遷移完成後移除）。</summary>
+        private static RimLLMRequest CreateProviderRequest(LLMRequest legacy)
+        {
+            var messages = new List<ChatMessage>();
+            if (!string.IsNullOrEmpty(legacy.GetEffectiveSystemPrompt()))
+            {
+                messages.Add(new ChatMessage(ChatRole.System, legacy.GetEffectiveSystemPrompt()));
+            }
+            messages.Add(new ChatMessage(ChatRole.User, legacy.Prompt ?? string.Empty));
+            return new RimLLMRequest
+            {
+                ModId = legacy.ModId,
+                Messages = messages,
+                SystemPrompt = legacy.SystemPrompt,
+                CachedContext = legacy.CachedContext,
+                EnableContextCaching = legacy.EnableContextCaching,
+                Temperature = legacy.Temperature,
+                MaxOutputTokens = legacy.MaxTokens,
+                ReasoningEffort = MapLegacyReasoningEffort(legacy.ReasoningEffort),
+                DisableReasoning = legacy.ReasoningEffort == LLMReasoningEffort.None,
+                Priority = legacy.Priority,
+                MinFallbackLevel = legacy.MinFallbackLevel,
+                OnStreamRestart = legacy.OnStreamRestart,
+                CancellationToken = legacy.CancellationToken,
+                ResponseType = legacy.ResponseType
+            };
+        }
+
+        private static ReasoningEffort? MapLegacyReasoningEffort(LLMReasoningEffort effort)
+        {
+            switch (effort)
+            {
+                case LLMReasoningEffort.Low: return ReasoningEffort.Low;
+                case LLMReasoningEffort.Medium: return ReasoningEffort.Medium;
+                case LLMReasoningEffort.High: return ReasoningEffort.High;
+                default: return null;
+            }
+        }
+
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public Task<string> GenerateAsync(LLMRequest request)
         {
@@ -581,14 +620,15 @@ namespace RimLLM_Framework.Manager
 
                         using (IChatClient nativeClient = chatProvider.CreateChatClient(model))
                         {
-                            return await RimLLMChatClientExecutor.GenerateAsync(
+                            var result = await RimLLMChatClientExecutor.GenerateAsync(
                                 nativeClient,
-                                request,
+                                CreateProviderRequest(request),
                                 model,
                                 useNativeSchema: true,
                                 provider.ProviderId,
                                 _settings.ApiTimeout,
                                 ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
+                            return result.Text;
                         }
                     }
                     catch (Exception ex) when (IsNativeSchemaRejected(ex))
@@ -602,14 +642,15 @@ namespace RimLLM_Framework.Manager
                 {
                     // IChatClient 供應商若不支援原生 schema，仍要沿用既有的提示式 JSON fallback。
                     LLMRequest providerRequest = PrepareRequestForProvider(provider, request);
-                    return await RimLLMChatClientExecutor.GenerateAsync(
+                    var result = await RimLLMChatClientExecutor.GenerateAsync(
                         client,
-                        providerRequest,
+                        CreateProviderRequest(providerRequest),
                         model,
                         useNativeSchema: false,
                         provider.ProviderId,
                         _settings.ApiTimeout,
                         ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
+                    return result.Text;
                 }
             }
 
@@ -632,7 +673,7 @@ namespace RimLLM_Framework.Manager
                     LLMRequest providerRequest = PrepareRequestForProvider(provider, request);
                     await RimLLMChatClientExecutor.StreamAsync(
                         client,
-                        providerRequest,
+                        CreateProviderRequest(providerRequest),
                         model,
                         request.ResponseType != null &&
                         _settings.EnableNativeSchema &&
@@ -665,14 +706,15 @@ namespace RimLLM_Framework.Manager
             {
                 using (IChatClient client = chatProvider.CreateChatClient(model))
                 {
-                    return await RimLLMChatClientExecutor.GenerateAsync(
+                    var result = await RimLLMChatClientExecutor.GenerateAsync(
                         client,
-                        fallbackRequest,
+                        CreateProviderRequest(fallbackRequest),
                         model,
                         useNativeSchema: false,
                         provider.ProviderId,
                         _settings.ApiTimeout,
                         ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
+                    return result.Text;
                 }
             }
 

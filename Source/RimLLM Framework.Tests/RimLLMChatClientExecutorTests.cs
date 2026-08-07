@@ -24,14 +24,19 @@ namespace RimLLM_Framework.Tests
                 ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "hello"))
             };
 
-            var request = LLMRequest.Create("test-mod", "hi")
-                .WithSystemPrompt("be brief")
-                .WithSampling(maxTokens: 256, temperature: 0.2f);
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
+                SystemPrompt = "be brief",
+                MaxOutputTokens = 256,
+                Temperature = 0.2f
+            };
 
-            string result = RimLLMChatClientExecutor.GenerateAsync(
+            var result = RimLLMChatClientExecutor.GenerateAsync(
                 client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult();
 
-            Assert.AreEqual("hello", result);
+            Assert.AreEqual("hello", result.Text);
             Assert.AreEqual(1, client.ReceivedOptions.Count);
             Assert.AreEqual("gpt-test", client.ReceivedOptions[0].ModelId);
             Assert.AreEqual(0.2f, client.ReceivedOptions[0].Temperature);
@@ -50,7 +55,11 @@ namespace RimLLM_Framework.Tests
                 ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "{}"))
             };
 
-            var request = LLMRequest.Create("test-mod", "give data");
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "give data") }
+            };
             request.ResponseType = typeof(TestDataStructure);
 
             RimLLMChatClientExecutor.GenerateAsync(
@@ -69,7 +78,11 @@ namespace RimLLM_Framework.Tests
                 ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "{}"))
             };
 
-            var request = LLMRequest.Create("test-mod", "give data");
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "give data") }
+            };
             request.ResponseType = typeof(Dictionary<string, string>);
 
             RimLLMChatClientExecutor.GenerateAsync(
@@ -94,12 +107,16 @@ namespace RimLLM_Framework.Tests
                     }))
             };
 
-            var request = LLMRequest.Create("test-mod", "solve");
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "solve") }
+            };
 
-            string result = RimLLMChatClientExecutor.GenerateAsync(
+            var result = RimLLMChatClientExecutor.GenerateAsync(
                 client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult();
 
-            Assert.AreEqual("<think>\nstep one\n</think>\n\nfinal answer", result);
+            Assert.AreEqual("<think>\nstep one\n</think>\n\nfinal answer", result.Text);
         }
 
         [Test]
@@ -110,7 +127,11 @@ namespace RimLLM_Framework.Tests
                 ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))
             };
 
-            var request = LLMRequest.Create("test-mod", "hi");
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }
+            };
             bool invoked = false;
 
             RimLLMChatClientExecutor.GenerateAsync(
@@ -133,7 +154,11 @@ namespace RimLLM_Framework.Tests
                 ResponseException = new TestClientResultException("bad request", 400)
             };
 
-            var request = LLMRequest.Create("test-mod", "hi");
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }
+            };
 
             RimLLMException ex = Assert.Throws<RimLLMException>(() =>
                 RimLLMChatClientExecutor.GenerateAsync(
@@ -150,7 +175,11 @@ namespace RimLLM_Framework.Tests
                 ResponseException = new TestClientResultException("rate limited", 429)
             };
 
-            var request = LLMRequest.Create("test-mod", "hi");
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }
+            };
 
             RimLLMException ex = Assert.Throws<RimLLMException>(() =>
                 RimLLMChatClientExecutor.GenerateAsync(
@@ -181,7 +210,11 @@ namespace RimLLM_Framework.Tests
                 }
             };
 
-            var request = LLMRequest.Create("test-mod", "solve");
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "solve") }
+            };
             var chunks = new List<string>();
 
             RimLLMChatClientExecutor.StreamAsync(
@@ -214,7 +247,11 @@ namespace RimLLM_Framework.Tests
                 }
             };
 
-            var request = LLMRequest.Create("test-mod", "hello");
+            var request = new RimLLMRequest
+            {
+                ModId = "test-mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }
+            };
             var chunks = new List<string>();
 
             RimLLMChatClientExecutor.StreamAsync(

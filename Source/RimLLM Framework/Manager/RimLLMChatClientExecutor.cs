@@ -12,7 +12,7 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
 {
-    /// <summary>將共用 LLMRequest 轉換為 MEAI IChatClient 呼叫。</summary>
+    /// <summary>將內部 RimLLMRequest 轉換為 MEAI IChatClient 呼叫。</summary>
     internal static class RimLLMChatClientExecutor
     {
         /// <summary>
@@ -21,9 +21,9 @@ namespace RimLLM_Framework.Manager
         /// 使 SDK 路徑與 raw HTTP 路徑的逾時語意一致。
         /// <paramref name="customizeOptions"/> 為供應商專屬的 options 客製化（如 reasoning、Patch 逃生門）。
         /// </summary>
-        public static async Task<string> GenerateAsync(
+        public static async Task<RimLLMGenerationResult> GenerateAsync(
             IChatClient client,
-            LLMRequest request,
+            RimLLMRequest request,
             string model,
             bool useNativeSchema,
             string providerId,
@@ -77,8 +77,23 @@ namespace RimLLM_Framework.Manager
                     throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} 回傳空白內容。");
                 }
 
+                int promptTokens = 0, completionTokens = 0, cachedPromptTokens = 0;
+                if (response?.Usage != null)
+                {
+                    promptTokens = ToInt32(response.Usage.InputTokenCount);
+                    completionTokens = ToInt32(response.Usage.OutputTokenCount);
+                    cachedPromptTokens = ToInt32(response.Usage.CachedInputTokenCount);
+                }
                 RecordUsage(providerId, model, request, result, response?.Usage);
-                return result;
+                return new RimLLMGenerationResult
+                {
+                    Text = result,
+                    ProviderId = providerId,
+                    ModelName = model,
+                    PromptTokens = Math.Max(1, promptTokens),
+                    CompletionTokens = Math.Max(1, completionTokens),
+                    CachedPromptTokens = Math.Max(0, cachedPromptTokens)
+                };
             }
         }
 
@@ -86,9 +101,9 @@ namespace RimLLM_Framework.Manager
         /// 串流請求：採「閒置逾時」語意 —— 每收到一個 chunk 就重設計時器。
         /// 對長回應而言整體逾時並不合理，因此 ApiTimeout 在此代表「多久沒有新內容就視為斷線」。
         /// </summary>
-        public static async Task StreamAsync(
+        public static async Task<RimLLMGenerationResult> StreamAsync(
             IChatClient client,
-            LLMRequest request,
+            RimLLMRequest request,
             string model,
             bool useNativeSchema,
             string providerId,
@@ -181,6 +196,23 @@ namespace RimLLM_Framework.Manager
 
             RecordUsage(providerId, model, request, responseBuilder.ToString(), lastUsage);
 
+            int promptTokens = 0, completionTokens = 0, cachedPromptTokens = 0;
+            if (lastUsage != null)
+            {
+                promptTokens = ToInt32(lastUsage.InputTokenCount);
+                completionTokens = ToInt32(lastUsage.OutputTokenCount);
+                cachedPromptTokens = ToInt32(lastUsage.CachedInputTokenCount);
+            }
+            return new RimLLMGenerationResult
+            {
+                Text = responseBuilder.ToString(),
+                ProviderId = providerId,
+                ModelName = model,
+                PromptTokens = Math.Max(1, promptTokens),
+                CompletionTokens = Math.Max(1, completionTokens),
+                CachedPromptTokens = Math.Max(0, cachedPromptTokens)
+            };
+
             void Emit(string chunk)
             {
                 responseBuilder.Append(chunk);
@@ -193,20 +225,35 @@ namespace RimLLM_Framework.Manager
             return TimeSpan.FromSeconds(timeoutSeconds > 0f ? timeoutSeconds : 30f);
         }
 
-        private static IList<ChatMessage> BuildMessages(LLMRequest request)
+        internal static IList<ChatMessage> BuildMessages(RimLLMRequest request)
         {
-            var messages = new List<ChatMessage>();
+            var messages = new List<ChatMessage>(request.Messages ?? new List<ChatMessage>());
             string systemPrompt = request.GetEffectiveSystemPrompt();
             if (!string.IsNullOrEmpty(systemPrompt))
             {
-                messages.Add(new ChatMessage(ChatRole.System, systemPrompt));
+                bool hasSystem = false;
+                foreach (var m in messages)
+                {
+                    if (m != null && m.Role == ChatRole.System)
+                    {
+                        hasSystem = true;
+                        break;
+                    }
+                }
+                if (!hasSystem)
+                {
+                    messages.Insert(0, new ChatMessage(ChatRole.System, systemPrompt));
+                }
             }
-            messages.Add(new ChatMessage(ChatRole.User, request.Prompt ?? string.Empty));
+            if (messages.Count == 0)
+            {
+                messages.Add(new ChatMessage(ChatRole.User, string.Empty));
+            }
             return messages;
         }
 
-        private static ChatOptions BuildOptions(
-            LLMRequest request,
+        internal static ChatOptions BuildOptions(
+            RimLLMRequest request,
             string model,
             bool useNativeSchema,
             Action<ChatOptions> customizeOptions)
@@ -214,9 +261,16 @@ namespace RimLLM_Framework.Manager
             var options = new ChatOptions
             {
                 ModelId = model,
-                Temperature = request.Temperature,
-                MaxOutputTokens = request.MaxTokens
+                Temperature = request.Temperature ?? 0.7f,
+                MaxOutputTokens = request.MaxOutputTokens ?? 1024
             };
+
+            // 框架私有欄位以 AdditionalProperties 傳遞給 provider hook（adapter 不透傳，僅框架內部讀取）
+            if (options.AdditionalProperties == null)
+            {
+                options.AdditionalProperties = new AdditionalPropertiesDictionary();
+            }
+            options.AdditionalProperties["rimllm_disable_reasoning"] = request.DisableReasoning;
 
             // 與 raw 路徑一致：含 Dictionary 的開放式 map 型別仍送出 response_format，
             // 但 strict 改為 false，否則服務端會拒絕（AdditionalProperties["strict"] 控制
@@ -232,11 +286,6 @@ namespace RimLLM_Framework.Manager
                         document.RootElement.Clone(),
                         "custom_type",
                         "RimLLM structured response");
-                }
-
-                if (options.AdditionalProperties == null)
-                {
-                    options.AdditionalProperties = new AdditionalPropertiesDictionary();
                 }
                 options.AdditionalProperties["strict"] = !RimLLMJsonHelper.ContainsOpenEndedMap(request.ResponseType);
             }
@@ -387,7 +436,7 @@ namespace RimLLM_Framework.Manager
         private static void RecordUsage(
             string providerId,
             string model,
-            LLMRequest request,
+            RimLLMRequest request,
             string responseText,
             UsageDetails usage)
         {
@@ -403,21 +452,23 @@ namespace RimLLM_Framework.Manager
             else
             {
                 string systemPrompt = request.GetEffectiveSystemPrompt();
-                promptTokens = EstimateTokens((systemPrompt?.Length ?? 0) + (request.Prompt?.Length ?? 0));
+                int promptChars = systemPrompt?.Length ?? 0;
+                foreach (var m in request.Messages)
+                {
+                    if (m != null && !string.IsNullOrEmpty(m.Text)) promptChars += m.Text.Length;
+                }
+                promptTokens = EstimateTokens(promptChars);
                 completionTokens = EstimateTokens(responseText?.Length ?? 0);
             }
 
             try
             {
-                if (RimLLMProvider.Instance is RimLLMManager manager)
-                {
-                    manager.RecordUsage(
-                        providerId,
-                        model,
-                        Math.Max(1, promptTokens),
-                        Math.Max(1, completionTokens),
-                        Math.Max(0, cachedPromptTokens));
-                }
+                RimLLMProvider.Manager.RecordUsage(
+                    providerId,
+                    model,
+                    Math.Max(1, promptTokens),
+                    Math.Max(1, completionTokens),
+                    Math.Max(0, cachedPromptTokens));
             }
             catch (InvalidOperationException)
             {

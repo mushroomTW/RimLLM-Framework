@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using RimLLM_Framework.Core;
+using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.SDK
 {
@@ -24,6 +25,19 @@ namespace RimLLM_Framework.SDK
                     throw new InvalidOperationException("[RimLLM] SDK has not been initialized. Please make sure the RimLLM Framework mod is active.");
                 }
                 return _instance;
+            }
+        }
+
+        /// <summary>內部存取目前 manager 執行個體（同 assembly 使用，取代 Instance 依賴）。</summary>
+        internal static RimLLMManager Manager
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    throw new InvalidOperationException("[RimLLM] SDK has not been initialized. Please make sure the RimLLM Framework mod is active.");
+                }
+                return (RimLLMManager)_instance;
             }
         }
 

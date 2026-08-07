@@ -148,26 +148,31 @@ namespace RimLLM_Framework.Providers
             // 與 raw 路徑 BuildRequestPayloadAsync 的判斷一致。
             bool effectiveNativeSchema = useNativeSchema && SupportsNativeJsonSchemaPayload;
 
+            RimLLMRequest translated = TranslateRequest(request);
+
             using (IChatClient client = CreateChatClient(model))
             {
-                return await RimLLMChatClientExecutor.GenerateAsync(
+                var result = await RimLLMChatClientExecutor.GenerateAsync(
                     client,
-                    request,
+                    translated,
                     model,
                     effectiveNativeSchema,
                     ProviderId,
                     Settings?.ApiTimeout ?? 30f,
                     options => BuildChatOptions(request, model, options)).ConfigureAwait(false);
+                return result.Text;
             }
         }
 
         private async Task StreamWithChatClientAsync(LLMRequest request, string model, Action<string> onChunkReceived)
         {
+            RimLLMRequest translated = TranslateRequest(request);
+
             using (IChatClient client = CreateChatClient(model))
             {
                 await RimLLMChatClientExecutor.StreamAsync(
                     client,
-                    request,
+                    translated,
                     model,
                     request.ResponseType != null && Settings.EnableNativeSchema,
                     ProviderId,
@@ -175,6 +180,30 @@ namespace RimLLM_Framework.Providers
                     Settings?.ApiTimeout ?? 30f,
                     options => BuildChatOptions(request, model, options)).ConfigureAwait(false);
             }
+        }
+
+        /// <summary>
+        /// 暫時的 LLMRequest → RimLLMRequest 轉譯（公開契約遷移至 MEAI 慣例後移除）。
+        /// </summary>
+        private static RimLLMRequest TranslateRequest(LLMRequest request)
+        {
+            var translated = new RimLLMRequest
+            {
+                ModId = request.ModId,
+                Messages = new List<Microsoft.Extensions.AI.ChatMessage>
+                {
+                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, request.Prompt ?? string.Empty)
+                },
+                Temperature = request.Temperature,
+                MaxOutputTokens = request.MaxTokens,
+                ResponseType = request.ResponseType,
+                CancellationToken = request.CancellationToken
+            };
+            if (!string.IsNullOrEmpty(request.GetEffectiveSystemPrompt()))
+            {
+                translated.Messages.Insert(0, new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, request.GetEffectiveSystemPrompt()));
+            }
+            return translated;
         }
 
         protected bool IsOpenAiReasoningModel(string modelName)
