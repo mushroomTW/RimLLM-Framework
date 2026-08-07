@@ -1,7 +1,10 @@
 using System;
-using System.Diagnostics;
+using System.Collections.Generic;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using Microsoft.Extensions.AI;
+using OpenAI.Chat;
 using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
@@ -23,44 +26,58 @@ namespace RimLLM_Framework.Providers
         {
         }
 
-        protected override JObject BuildPayload(LLMRequest request, string model, bool stream = false)
+        /// <summary>
+        /// OpenRouter 專屬 options 客製化：
+        /// 1) 內置 Model Fallback —— model 含逗號時轉為 models 陣列（走 RawRepresentationFactory Patch）；
+        /// 2) deepseek R1 思考強度 —— 設定 max_thinking_tokens。
+        /// </summary>
+        protected override void BuildChatOptions(LLMRequest request, string model, ChatOptions options)
         {
-            var payload = base.BuildPayload(request, model, stream);
+            base.BuildChatOptions(request, model, options);
 
-            // 支援 OpenRouter 內置 Model Fallback
-            // 如果 model 參數中包含逗號 (例如 "model-a,model-b")，則轉為 models 陣列傳遞給 OpenRouter
-            if (model != null && model.Contains(","))
+            bool splitModels = model != null && model.Contains(",");
+            bool isR1 = model != null &&
+                ((model.Contains("deepseek") && model.Contains("r1")) || model.Contains("reasoning"));
+            bool needThinking = request.ReasoningEffort != LLMReasoningEffort.Auto && isR1;
+            if (!splitModels && !needThinking) return;
+
+            // 以 null 清除 ModelId，讓 MEAI 的 PatchModelIfNotSet 跳過補寫 $.model，
+            // 再由 Patch 完整掌控 model 相關欄位。
+            if (splitModels)
             {
-                payload.Remove("model");
-                var modelsArray = new JArray();
-                foreach (var m in model.Split(new char[] { ',' }))
+                options.ModelId = null;
+            }
+
+            options.RawRepresentationFactory = _ =>
+            {
+                var chatCompletionOptions = new ChatCompletionOptions();
+                if (splitModels)
                 {
-                    string trimmed = m.Trim();
-                    if (!string.IsNullOrEmpty(trimmed))
+                    chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.model"));
+                    var modelsArray = new List<string>();
+                    foreach (string m in model.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                     {
-                        modelsArray.Add(trimmed);
+                        string trimmed = m.Trim();
+                        if (!string.IsNullOrEmpty(trimmed))
+                        {
+                            modelsArray.Add(trimmed);
+                        }
                     }
+                    chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.models"), JsonSerializer.SerializeToUtf8Bytes(modelsArray));
                 }
-                payload["models"] = modelsArray;
-            }
-
-            // 支援 OpenRouter 的 deepseek R1 思考強度設定 (max_thinking_tokens)
-            if (request.ReasoningEffort != LLMReasoningEffort.Auto)
-            {
-                bool isR1 = (model != null && ((model.Contains("deepseek") && model.Contains("r1")) || model.Contains("reasoning")));
-                if (isR1)
+                if (needThinking)
                 {
-                    int budget = 0;
-                    if (request.ReasoningEffort == LLMReasoningEffort.Low) budget = 1024;
-                    else if (request.ReasoningEffort == LLMReasoningEffort.Medium) budget = 2048;
-                    else if (request.ReasoningEffort == LLMReasoningEffort.High) budget = 4096;
-                    // None remains 0
-                    
-                    payload["max_thinking_tokens"] = budget;
+                    int budget = request.ReasoningEffort switch
+                    {
+                        LLMReasoningEffort.Low => 1024,
+                        LLMReasoningEffort.Medium => 2048,
+                        LLMReasoningEffort.High => 4096,
+                        _ => 0
+                    };
+                    chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_thinking_tokens"), budget);
                 }
-            }
-
-            return payload;
+                return chatCompletionOptions;
+            };
         }
 
         protected override string DefaultTestModel => "openrouter/free";

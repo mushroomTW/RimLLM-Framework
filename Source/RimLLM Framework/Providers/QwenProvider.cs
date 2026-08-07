@@ -7,6 +7,11 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class QwenProvider : OpenAIProvider
     {
+        /// <summary>
+        /// Qwen API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。
+        /// </summary>
+        protected override bool SupportsNativeJsonSchemaPayload => false;
+
         public QwenProvider(IRimLLMSettings settings)
             : base(settings, ProviderIds.Qwen, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "qwen-plus")
         {

@@ -168,7 +168,7 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void BuiltInSdkProvidersExposeNativeCapabilitiesAndLegacyProvidersRemainRawHttp()
+        public void BuiltInSdkProvidersExposeNativeCapabilities()
         {
             var settings = new MockSettings();
             var manager = new RimLLMManager(settings);
@@ -187,13 +187,15 @@ namespace RimLLM_Framework.Tests
             Assert.IsFalse(unknown.SupportsNativeStructuredOutput);
             Assert.IsFalse(unknown.SupportsStreaming);
 
-            var legacyOpenAi = new TestOpenAIProvider(settings);
-            Assert.IsFalse(legacyOpenAi.UsesIChatClient);
-            Assert.IsFalse(legacyOpenAi.Capabilities.SupportsNativeStructuredOutput);
+            // 任務 6 之後所有內建 provider 一律走官方 SDK（OpenAI / Google.GenAI）+ MEAI，
+            // 不再保留 raw HTTP 對話路徑。
+            var sdkOpenAi = new TestOpenAIProvider(settings);
+            Assert.IsTrue(sdkOpenAi.UsesIChatClient);
+            Assert.IsTrue(sdkOpenAi.Capabilities.SupportsNativeStructuredOutput);
 
-            var legacyGemini = new TestGeminiProvider(settings);
-            Assert.IsFalse(legacyGemini.UsesIChatClient);
-            Assert.IsFalse(legacyGemini.Capabilities.SupportsNativeStructuredOutput);
+            var sdkGemini = new TestGeminiProvider(settings);
+            Assert.IsTrue(sdkGemini.UsesIChatClient);
+            Assert.IsTrue(sdkGemini.Capabilities.SupportsNativeStructuredOutput);
         }
 
         private sealed class StructuredResponse

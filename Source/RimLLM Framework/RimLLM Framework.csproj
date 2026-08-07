@@ -17,6 +17,9 @@
     <!-- 啟用 C# 8.0 語言版本，以支援非同步資料流 (IAsyncEnumerable) -->
     <LangVersion>8.0</LangVersion>
     <BaseOutputPath>~\Assemblies\</BaseOutputPath>
+    <!-- ChatCompletionOptions.Patch 為實驗性 API (SCME0001)，本專案刻意使用它以補救 wire 差異。 -->
+    <NoWarn>$(NoWarn);SCME0001</NoWarn>
+    <Authors>mushroomTW</Authors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,15 +33,17 @@
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
     <PackageReference Include="OpenAI" Version="2.12.0" />
     <PackageReference Include="Google.GenAI" Version="1.16.0" />
+    <!--
+      以 alias 隔離 Microsoft.Bcl.AsyncInterfaces 的 IAsyncEnumerable<T>，避免與
+      mscorlib (net472) 提供的同名介面衝突 (CS0433)。測試專案亦採相同做法。
+    -->
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.10" Aliases="bclasync" />
   </ItemGroup>
 
   <Target Name="CopyRimWorldMonoRuntimeDependencies" AfterTargets="Build">
     <ItemGroup>
       <RimWorldMonoRuntimeDependency Include="$(NuGetPackageRoot)\system.valuetuple\4.6.2\lib\net47\System.ValueTuple.dll" />
     </ItemGroup>
-    <Copy
-      SourceFiles="@(RimWorldMonoRuntimeDependency)"
-      DestinationFolder="$(OutputPath)"
-      SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(RimWorldMonoRuntimeDependency)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
   </Target>
 </Project>

@@ -7,6 +7,11 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class KimiProvider : OpenAIProvider
     {
+        /// <summary>
+        /// Kimi API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。
+        /// </summary>
+        protected override bool SupportsNativeJsonSchemaPayload => false;
+
         public KimiProvider(IRimLLMSettings settings)
             : base(settings, ProviderIds.Kimi, "https://api.moonshot.ai/v1", "moonshot-v1-8k")
         {

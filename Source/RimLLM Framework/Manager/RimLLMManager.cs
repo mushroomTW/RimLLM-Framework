@@ -587,7 +587,8 @@ namespace RimLLM_Framework.Manager
                                 model,
                                 useNativeSchema: true,
                                 provider.ProviderId,
-                                _settings.ApiTimeout).ConfigureAwait(false);
+                                _settings.ApiTimeout,
+                                ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
                         }
                     }
                     catch (Exception ex) when (IsNativeSchemaRejected(ex))
@@ -607,7 +608,8 @@ namespace RimLLM_Framework.Manager
                         model,
                         useNativeSchema: false,
                         provider.ProviderId,
-                        _settings.ApiTimeout).ConfigureAwait(false);
+                        _settings.ApiTimeout,
+                        ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
                 }
             }
 
@@ -637,7 +639,8 @@ namespace RimLLM_Framework.Manager
                         chatProvider.Capabilities.SupportsNativeStructuredOutput,
                         provider.ProviderId,
                         onChunkReceived,
-                        _settings.ApiTimeout).ConfigureAwait(false);
+                        _settings.ApiTimeout,
+                        ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
                 }
                 return;
             }
@@ -668,11 +671,25 @@ namespace RimLLM_Framework.Manager
                         model,
                         useNativeSchema: false,
                         provider.ProviderId,
-                        _settings.ApiTimeout).ConfigureAwait(false);
+                        _settings.ApiTimeout,
+                        ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
                 }
             }
 
             return await provider.GenerateAsync(fallbackRequest, model).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 將供應商實作的 IChatOptionsCustomizer 轉為 executor 用的 delegate；
+        /// 未實作時回傳 null，executor 便只套用基礎選項。
+        /// </summary>
+        private static Action<ChatOptions> ResolveChatOptionsCustomizer(ILLMProvider provider, LLMRequest request, string model)
+        {
+            if (provider is IChatOptionsCustomizer customizer)
+            {
+                return customizer.CreateChatOptionsCustomizer(request, model);
+            }
+            return null;
         }
 
         private static bool IsNativeSchemaRejected(Exception exception)

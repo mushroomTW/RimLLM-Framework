@@ -1,8 +1,16 @@
-﻿using NUnit.Framework;
+﻿extern alias bclasync;
+using NUnit.Framework;
 using System;
 using System.Reflection;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
+using Google.GenAI;
+using Google.GenAI.Types;
+using System.ClientModel;
+using System.ClientModel.Primitives;
+using OpenAI;
+using OpenAI.Chat;
+using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
@@ -388,26 +396,25 @@ namespace RimLLM_Framework.Tests
         {
             var mockSettings = new MockSettings();
             mockSettings.ApiKeys["OpenRouter"] = "mock-key";
-            
-            var provider = new OpenRouterProvider(mockSettings);
-            
-            var method = provider.GetType().GetMethod("BuildPayload", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            Assert.IsNotNull(method);
-            
-            var request = new LLMRequest { Prompt = "hello" };
-            
+
+            var provider = new TestOpenRouterProvider(mockSettings);
+
+            const string modId = "test.openrouter.fallback";
+            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+
             // 1. 測試單一模型
-            var payloadSingle = method.Invoke(provider, new object[] { request, "model-a", false }) as Newtonsoft.Json.Linq.JObject;
-            Assert.IsNotNull(payloadSingle);
+            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+            provider.GenerateAsync(request, "model-a").GetAwaiter().GetResult();
+            var payloadSingle = JObject.Parse(provider.InterceptedPayload);
             Assert.AreEqual("model-a", payloadSingle["model"]?.ToString());
             Assert.IsNull(payloadSingle["models"]);
-            
+
             // 2. 測試多個模型 (逗號分隔)
-            var payloadMultiple = method.Invoke(provider, new object[] { request, "model-a, model-b , model-c", false }) as Newtonsoft.Json.Linq.JObject;
-            Assert.IsNotNull(payloadMultiple);
+            provider.GenerateAsync(request, "model-a, model-b , model-c").GetAwaiter().GetResult();
+            var payloadMultiple = JObject.Parse(provider.InterceptedPayload);
             Assert.IsNull(payloadMultiple["model"]);
             Assert.IsNotNull(payloadMultiple["models"]);
-            
+
             var modelsArray = payloadMultiple["models"] as Newtonsoft.Json.Linq.JArray;
             Assert.IsNotNull(modelsArray);
             Assert.AreEqual(3, modelsArray.Count);
@@ -875,7 +882,7 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual(600, stats.CachedPromptTokens);
             Assert.AreEqual(0.6f, stats.ContextCacheHitRate, 0.0001f);
 
-            // 測試 2：有些相容格式的外層 cached_tokens
+            // 測試 2：OpenAI 標準格式的 cached_tokens 位於 prompt_tokens_details
             mockSettings.TotalPromptTokens = 0;
             mockSettings.TotalCompletionTokens = 0;
             stats.TotalPromptTokens = 0;
@@ -886,7 +893,9 @@ namespace RimLLM_Framework.Tests
                 "\"usage\": {" +
                 "  \"prompt_tokens\": 2000," +
                 "  \"completion_tokens\": 300," +
-                "  \"cached_tokens\": 800" +
+                "  \"prompt_tokens_details\": {" +
+                "    \"cached_tokens\": 800" +
+                "  }" +
                 "}" +
                 "}";
 
@@ -941,33 +950,26 @@ namespace RimLLM_Framework.Tests
             // 1. 第一次呼叫：應觸發快取建立與快取引用
             string response1 = provider.GenerateAsync(request, "gemini-1.5-pro").GetAwaiter().GetResult();
             Assert.AreEqual("gemini-response", response1);
-            Assert.AreEqual(2, provider.SendCalls.Count);
+            Assert.AreEqual(1, provider.SendCalls.Count);
 
-            // 驗證第一個呼叫是建立快取
+            // 驗證唯一的 raw 呼叫是建立快取
             var firstCall = provider.SendCalls[0];
             Assert.IsTrue(firstCall.url.Contains("cachedContents"));
             var firstPayload = Newtonsoft.Json.Linq.JObject.Parse(firstCall.payload);
             Assert.AreEqual("models/gemini-1.5-pro", firstPayload["model"]?.ToString());
             Assert.AreEqual(expectedSystemText, firstPayload["systemInstruction"]?["parts"]?[0]?["text"]?.ToString());
 
-            // 驗證第二個呼叫是生成內容，且使用了 cachedContent 屬性並不包含 systemInstruction
-            var secondCall = provider.SendCalls[1];
-            Assert.IsTrue(secondCall.url.Contains("generateContent"));
-            var secondPayload = Newtonsoft.Json.Linq.JObject.Parse(secondCall.payload);
-            Assert.AreEqual("cachedContents/mock-cache-id", secondPayload["cachedContent"]?.ToString());
-            Assert.IsNull(secondPayload["systemInstruction"]);
+            // 驗證 SDK seam 收到 cachedContent 且未附帶 systemInstruction
+            Assert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
+            Assert.IsNull(provider.LastConfig.SystemInstruction);
 
             // 2. 第二次呼叫：快取已存在，應直接引用而不重複建立快取
             provider.SendCalls.Clear();
             string response2 = provider.GenerateAsync(request, "gemini-1.5-pro").GetAwaiter().GetResult();
             Assert.AreEqual("gemini-response", response2);
-            Assert.AreEqual(1, provider.SendCalls.Count);
-
-            var thirdCall = provider.SendCalls[0];
-            Assert.IsTrue(thirdCall.url.Contains("generateContent"));
-            var thirdPayload = Newtonsoft.Json.Linq.JObject.Parse(thirdCall.payload);
-            Assert.AreEqual("cachedContents/mock-cache-id", thirdPayload["cachedContent"]?.ToString());
-            Assert.IsNull(thirdPayload["systemInstruction"]);
+            Assert.AreEqual(0, provider.SendCalls.Count);
+            Assert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
+            Assert.IsNull(provider.LastConfig.SystemInstruction);
         }
 
         [Test]
@@ -990,14 +992,15 @@ namespace RimLLM_Framework.Tests
             string response = provider.GenerateAsync(request, "gemini-2.5-flash").GetAwaiter().GetResult();
             Assert.AreEqual("gemini-response", response);
 
-            // 不應有建立快取的呼叫，僅一次 generateContent
-            Assert.AreEqual(1, provider.SendCalls.Count);
-            var call = provider.SendCalls[0];
-            Assert.IsTrue(call.url.Contains("generateContent"));
+            // 不應有任何建立快取的呼叫
+            Assert.AreEqual(0, provider.SendCalls.Count);
 
-            var payload = Newtonsoft.Json.Linq.JObject.Parse(call.payload);
-            Assert.IsNull(payload["cachedContent"]);
-            Assert.AreEqual("small-system\n\ntiny-context", payload["systemInstruction"]?["parts"]?[0]?["text"]?.ToString());
+            // SDK seam 未附 cachedContent，改以 systemInstruction 承載
+            Assert.IsNull(provider.LastConfig.CachedContent);
+            Assert.IsNotNull(provider.LastConfig.SystemInstruction);
+            Assert.AreEqual(
+                "small-system\n\ntiny-context",
+                provider.LastConfig.SystemInstruction.Parts?[0]?.Text);
         }
 
         [Test]
@@ -1011,8 +1014,8 @@ namespace RimLLM_Framework.Tests
 
             Assert.IsTrue(result.Success);
             Assert.AreEqual("gemini-3.5-flash", result.Model);
-            Assert.AreEqual(1, provider.SendCalls.Count);
-            Assert.IsTrue(provider.SendCalls[0].url.Contains("/models/gemini-3.5-flash:generateContent"));
+            Assert.AreEqual("gemini-3.5-flash", provider.LastModel);
+            Assert.AreEqual(0, provider.SendCalls.Count);
         }
 
         [Test]
@@ -1114,10 +1117,8 @@ namespace RimLLM_Framework.Tests
                     MaxTokens = 2000
                 };
                 string response = provider.GenerateAsync(request, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                Assert.AreEqual(1, provider.SendCalls.Count);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
-                Assert.IsNotNull(payload["generationConfig"]["thinkingConfig"]);
-                Assert.AreEqual(1024, (int)payload["generationConfig"]["thinkingConfig"]["thinkingBudget"]);
+                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                Assert.AreEqual(1024, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
 
             // 4b. Gemini: Gemini 1.5 Pro (non-thinking model) with ReasoningEffort.Low (should NOT include thinkingConfig)
@@ -1130,9 +1131,7 @@ namespace RimLLM_Framework.Tests
                     MaxTokens = 2000
                 };
                 string response = provider.GenerateAsync(request, "gemini-1.5-pro").GetAwaiter().GetResult();
-                Assert.AreEqual(1, provider.SendCalls.Count);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
-                Assert.IsNull(payload["generationConfig"]["thinkingConfig"]);
+                Assert.IsNull(provider.LastConfig.ThinkingConfig);
             }
 
             // 4c. Gemini: Gemma 4 (thinking-level model) with ReasoningEffort.Medium (should include thinkingLevel)
@@ -1145,11 +1144,9 @@ namespace RimLLM_Framework.Tests
                     MaxTokens = 2000
                 };
                 string response = provider.GenerateAsync(request, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                Assert.AreEqual(1, provider.SendCalls.Count);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
-                Assert.IsNotNull(payload["generationConfig"]["thinkingConfig"]);
-                Assert.AreEqual("medium", payload["generationConfig"]["thinkingConfig"]["thinkingLevel"]?.ToString());
-                Assert.IsNull(payload["generationConfig"]["thinkingConfig"]["thinkingBudget"]);
+                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                Assert.AreEqual(Google.GenAI.Types.ThinkingLevel.Medium, provider.LastConfig.ThinkingConfig.ThinkingLevel);
+                Assert.IsNull(provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
 
             // 5. OpenRouter: DeepSeek R1 with ReasoningEffort.Medium
@@ -1191,9 +1188,8 @@ namespace RimLLM_Framework.Tests
                     ReasoningEffort = LLMReasoningEffort.Auto
                 };
                 string response = provider.GenerateAsync(request, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
-                Assert.IsNotNull(payload["generationConfig"]["thinkingConfig"]);
-                Assert.AreEqual(-1, (int)payload["generationConfig"]["thinkingConfig"]["thinkingBudget"]);
+                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                Assert.AreEqual(-1, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
 
             // 6c. Gemini 2.0 None -> thinkingBudget = 0
@@ -1205,9 +1201,8 @@ namespace RimLLM_Framework.Tests
                     ReasoningEffort = LLMReasoningEffort.None
                 };
                 string response = provider.GenerateAsync(request, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
-                Assert.IsNotNull(payload["generationConfig"]["thinkingConfig"]);
-                Assert.AreEqual(0, (int)payload["generationConfig"]["thinkingConfig"]["thinkingBudget"]);
+                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                Assert.AreEqual(0, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
 
             // 6d. Gemma 4 Auto -> Omit thinkingLevel
@@ -1219,8 +1214,7 @@ namespace RimLLM_Framework.Tests
                     ReasoningEffort = LLMReasoningEffort.Auto
                 };
                 string response = provider.GenerateAsync(request, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
-                Assert.IsNull(payload["generationConfig"]["thinkingConfig"]);
+                Assert.IsNull(provider.LastConfig.ThinkingConfig);
             }
 
             // 6e. Gemma 4 None -> thinkingLevel = "minimal"
@@ -1232,9 +1226,8 @@ namespace RimLLM_Framework.Tests
                     ReasoningEffort = LLMReasoningEffort.None
                 };
                 string response = provider.GenerateAsync(request, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.SendCalls[0].payload);
-                Assert.IsNotNull(payload["generationConfig"]["thinkingConfig"]);
-                Assert.AreEqual("minimal", payload["generationConfig"]["thinkingConfig"]["thinkingLevel"]?.ToString());
+                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                Assert.AreEqual(Google.GenAI.Types.ThinkingLevel.Minimal, provider.LastConfig.ThinkingConfig.ThinkingLevel);
             }
 
 
@@ -1330,6 +1323,9 @@ namespace RimLLM_Framework.Tests
             // 1. 測試 OpenAIProvider (DeepSeek-R1 格式 reasoning_content)
             {
                 var provider = new TestOpenAIProviderWithReasoning(mockSettings);
+                provider.WireHandler.ResponseBody = "{" +
+                    "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"Hello, user!\", " +
+                    "\"reasoning_content\": \"Assessing the situation...\"}}]}";
                 var request = new LLMRequest { Prompt = "hello" };
                 string result = provider.GenerateAsync(request, "deepseek-reasoning").GetAwaiter().GetResult();
                 Assert.IsTrue(result.Contains("<think>"));
@@ -2540,7 +2536,7 @@ namespace RimLLM_Framework.Tests
 
         private static string FindRepositoryRoot()
         {
-            string envRoot = Environment.GetEnvironmentVariable("RIMLLM_REPO_ROOT");
+            string envRoot = System.Environment.GetEnvironmentVariable("RIMLLM_REPO_ROOT");
             if (!string.IsNullOrEmpty(envRoot) && System.IO.Directory.Exists(envRoot))
             {
                 return envRoot;
@@ -2675,7 +2671,50 @@ namespace RimLLM_Framework.Tests
     {
         public List<(string url, string payload)> SendCalls { get; } = new List<(string, string)>();
 
-        public TestGeminiProvider(IRimLLMSettings settings) : base(settings) {}
+        /// <summary>非串流 seam 最後收到的組態，供斷言 cachedContent / systemInstruction。</summary>
+        public GenerateContentConfig LastConfig { get; private set; }
+
+        public string LastModel { get; private set; }
+
+        /// <summary>可注入的模擬回應；預設回傳含 text 的 response。</summary>
+        public GenerateContentResponse MockResponse { get; set; }
+
+        public TestGeminiProvider(IRimLLMSettings settings) : base(settings)
+        {
+            // 刻意不帶 UsageMetadata：usage 記錄依賴 RimLLMProvider.Instance（需先初始化），
+            // 且 usage 數值已由任務 7 的 wire 整合測試驗證。
+            MockResponse = new GenerateContentResponse
+            {
+                Candidates = new List<Candidate>
+                {
+                    new Candidate
+                    {
+                        Content = new Content
+                        {
+                            Parts = new List<Part> { new Part { Text = "gemini-response" } }
+                        }
+                    }
+                }
+            };
+        }
+
+        // 對話一律走 SDK seam；以 null 用戶端即可，using 不會對 null 呼叫 Dispose。
+        protected override Client CreateGenAiClient(string apiKey)
+        {
+            return null;
+        }
+
+        protected override System.Threading.Tasks.Task<GenerateContentResponse> GenerateContentNativeAsync(
+            Client client,
+            string model,
+            List<Content> contents,
+            GenerateContentConfig config,
+            System.Threading.CancellationToken ct)
+        {
+            LastConfig = config;
+            LastModel = model;
+            return System.Threading.Tasks.Task.FromResult(MockResponse);
+        }
 
         protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
         {
@@ -2689,44 +2728,145 @@ namespace RimLLM_Framework.Tests
         }
     }
 
+    public class TestGeminiProviderWithReasoning : TestGeminiProvider
+    {
+        public TestGeminiProviderWithReasoning(IRimLLMSettings settings) : base(settings)
+        {
+            MockResponse = new GenerateContentResponse
+            {
+                Candidates = new List<Candidate>
+                {
+                    new Candidate
+                    {
+                        Content = new Content
+                        {
+                            Parts = new List<Part>
+                            {
+                                new Part { Text = "Thinking deeply...", Thought = true },
+                                new Part { Text = "Response from Gemini" }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+    }
+
+    /// <summary>
+    /// 攔截 OpenAI SDK 實際送出的 wire payload（HttpRequestMessage），
+    /// 供任務 7 的 wire 整合測試驗證 BuildChatOptions / RawRepresentationFactory 效果。
+    /// </summary>
+    public class CapturingHttpMessageHandler : System.Net.Http.HttpMessageHandler
+    {
+        public System.Collections.Generic.List<string> RequestBodies { get; } = new System.Collections.Generic.List<string>();
+
+        public System.Collections.Generic.List<string> RequestUrls { get; } = new System.Collections.Generic.List<string>();
+
+        public string ResponseBody { get; set; } = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}";
+
+        public string ResponseContentType { get; set; } = "application/json";
+
+        public string LastRequestBody => RequestBodies.Count == 0 ? null : RequestBodies[RequestBodies.Count - 1];
+
+        public string FirstRequestBody => RequestBodies.Count == 0 ? null : RequestBodies[0];
+
+        public string LastRequestUrl => RequestUrls.Count == 0 ? null : RequestUrls[RequestUrls.Count - 1];
+
+        protected override System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            string body = request.Content != null
+                ? request.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                : null;
+            RequestBodies.Add(body ?? string.Empty);
+            RequestUrls.Add(request.RequestUri != null ? request.RequestUri.ToString() : null);
+            var response = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK);
+            response.Content = new System.Net.Http.StringContent(
+                ResponseBody ?? string.Empty,
+                System.Text.Encoding.UTF8,
+                ResponseContentType);
+            return System.Threading.Tasks.Task.FromResult(response);
+        }
+    }
+
+    /// <summary>以 capturing transport 建立 OpenAI ChatClient 的共用測試縫。</summary>
+    public static class WireChatClientFactory
+    {
+        public static IChatClient Create(
+            IRimLLMSettings settings,
+            string providerId,
+            string endpoint,
+            string model,
+            CapturingHttpMessageHandler handler)
+        {
+            var options = new OpenAIClientOptions();
+            if (!string.IsNullOrEmpty(endpoint))
+            {
+                options.Endpoint = new Uri(endpoint, UriKind.Absolute);
+            }
+            options.Transport = new HttpClientPipelineTransport(new System.Net.Http.HttpClient(handler));
+            var client = new ChatClient(model, new ApiKeyCredential(settings.GetActiveApiKey(providerId)), options);
+            return client.AsIChatClient();
+        }
+    }
+
     public class TestOpenAIProvider : OpenAIProvider
     {
-        public string InterceptedPayload { get; private set; }
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
+
+        public string InterceptedPayload => WireHandler.LastRequestBody;
 
         public TestOpenAIProvider(IRimLLMSettings settings) : base(settings) {}
 
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        public override IChatClient CreateChatClient(string model)
         {
-            InterceptedPayload = payload;
-            return System.Threading.Tasks.Task.FromResult("{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"mocked-openai-response\"}}]}");
+            return WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
         }
     }
 
     public class TestOpenRouterProvider : OpenRouterProvider
     {
-        public string InterceptedPayload { get; private set; }
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
+
+        public string InterceptedPayload => WireHandler.LastRequestBody;
 
         public TestOpenRouterProvider(IRimLLMSettings settings) : base(settings) {}
 
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        public override IChatClient CreateChatClient(string model)
         {
-            InterceptedPayload = payload;
-            return System.Threading.Tasks.Task.FromResult("{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"mocked-openrouter-response\"}}]}");
+            return WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
         }
     }
 
     public class TestZaiProvider : ZaiProvider
     {
-        public string InterceptedUrl { get; private set; }
-        public string InterceptedPayload { get; private set; }
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
+
+        public string InterceptedPayload => WireHandler.LastRequestBody;
+
+        public string InterceptedUrl => WireHandler.LastRequestUrl;
 
         public TestZaiProvider(IRimLLMSettings settings) : base(settings) {}
 
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        public override IChatClient CreateChatClient(string model)
         {
-            InterceptedUrl = url;
-            InterceptedPayload = payload;
-            return System.Threading.Tasks.Task.FromResult("{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"mocked-zai-response\"}}]}");
+            return WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
         }
     }
 
@@ -2786,37 +2926,41 @@ namespace RimLLM_Framework.Tests
 
     public class TestOpenAIProviderWithReasoning : OpenAIProvider
     {
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
+
         public TestOpenAIProviderWithReasoning(IRimLLMSettings settings) : base(settings) {}
 
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        public override IChatClient CreateChatClient(string model)
         {
-            return System.Threading.Tasks.Task.FromResult(
-                "{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"Hello, user!\", \"reasoning_content\": \"Assessing the situation...\"}}]}"
-            );
-        }
-    }
-
-    public class TestGeminiProviderWithReasoning : GeminiProvider
-    {
-        public TestGeminiProviderWithReasoning(IRimLLMSettings settings) : base(settings) {}
-
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
-        {
-            return System.Threading.Tasks.Task.FromResult(
-                "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Thinking deeply...\", \"thought\": true}, {\"text\": \"Response from Gemini\"}]}}]}"
-            );
+            return WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
         }
     }
 
     public class TestOpenAIProviderWithUsage : OpenAIProvider
     {
-        public string MockResponse { get; set; }
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
+
+        public string MockResponse
+        {
+            get { return WireHandler.ResponseBody; }
+            set { WireHandler.ResponseBody = value; }
+        }
 
         public TestOpenAIProviderWithUsage(IRimLLMSettings settings) : base(settings) {}
 
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        public override IChatClient CreateChatClient(string model)
         {
-            return System.Threading.Tasks.Task.FromResult(MockResponse);
+            return WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
         }
     }
 
@@ -2841,15 +2985,20 @@ namespace RimLLM_Framework.Tests
     /// </summary>
     public class TestKimiPayloadProvider : KimiProvider
     {
-        public string CapturedPayload { get; private set; }
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
+
+        public string CapturedPayload => WireHandler.FirstRequestBody;
 
         public TestKimiPayloadProvider(IRimLLMSettings settings) : base(settings) {}
 
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        public override IChatClient CreateChatClient(string model)
         {
-            CapturedPayload = payload;
-            return System.Threading.Tasks.Task.FromResult(
-                "{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"{\\\"Value\\\":1,\\\"Message\\\":\\\"ok\\\"}\"}}]}");
+            return WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
         }
     }
 
@@ -2858,15 +3007,20 @@ namespace RimLLM_Framework.Tests
     /// </summary>
     public class TestDeepSeekPayloadProvider : DeepSeekProvider
     {
-        public string CapturedPayload { get; private set; }
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
+
+        public string CapturedPayload => WireHandler.FirstRequestBody;
 
         public TestDeepSeekPayloadProvider(IRimLLMSettings settings) : base(settings) {}
 
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        public override IChatClient CreateChatClient(string model)
         {
-            CapturedPayload = payload;
-            return System.Threading.Tasks.Task.FromResult(
-                "{\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"{\\\"Value\\\":1,\\\"Message\\\":\\\"ok\\\"}\"}}]}");
+            return WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
         }
     }
 }

@@ -42,5 +42,10 @@
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
     <PackageReference Include="OpenAI" Version="2.12.0" />
     <PackageReference Include="Google.GenAI" Version="1.16.0" />
+    <PackageReference Include="System.ClientModel" Version="1.14.0" />
+    <!-- 明確引用並以 alias 隔離 Microsoft.Bcl.AsyncInterfaces 的 IAsyncEnumerable<T>，
+         避免與 .NET Framework 4.8 mscorlib 內建型別產生 CS0433 歧義。 -->
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.10" Aliases="bclasync" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" Aliases="ste" />
   </ItemGroup>
 </Project>

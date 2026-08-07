@@ -1,4 +1,5 @@
-﻿using System;
+﻿extern alias bclasync;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -45,15 +46,13 @@ namespace RimLLM_Framework.Providers
         public IList<SafetySetting> SafetySettings { get; } = new List<SafetySetting>();
 
         /// <summary>
-        /// 只有內建 Gemini provider 使用官方 Google.GenAI；衍生 provider 保留既有 HTTP mock/格式。
+        /// Gemini 一律走官方 Google.GenAI SDK，不保留 raw HTTP 對話路徑。
         /// </summary>
-        protected virtual bool UseGoogleGenAiSdk => GetType() == typeof(GeminiProvider);
-
-        public bool UsesIChatClient => UseGoogleGenAiSdk;
+        public bool UsesIChatClient => true;
 
         public LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
         {
-            SupportsNativeStructuredOutput = UseGoogleGenAiSdk,
+            SupportsNativeStructuredOutput = true,
             SupportsStreaming = true,
             SupportsUsageMetadata = true
         };
@@ -77,277 +76,42 @@ namespace RimLLM_Framework.Providers
             return GenerateWithGoogleGenAiAsync(request, model);
         }
 
-        private async Task StreamWithChatClientAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        public override Task<string> GenerateAsync(LLMRequest request, string model)
         {
-            using (IChatClient client = CreateChatClient(model))
-            {
-                await RimLLMChatClientExecutor.StreamAsync(
-                    client,
-                    request,
-                    model,
-                    request.ResponseType != null && Settings.EnableNativeSchema,
-                    ProviderId,
-                    onChunkReceived,
-                    Settings?.ApiTimeout ?? 30f).ConfigureAwait(false);
-            }
+            return GenerateWithGoogleGenAiAsync(request, model);
         }
 
-        public override async Task<string> GenerateAsync(LLMRequest request, string model)
+        public override Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
         {
-            if (UseGoogleGenAiSdk)
-            {
-                return await GenerateWithGoogleGenAiAsync(request, model).ConfigureAwait(false);
-            }
-
-            string apiKey = Settings.GetActiveApiKey(ProviderId);
-            string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
-            // API Key 以 x-goog-api-key Header 傳遞（由 ApplyAuthHeaders 套用），避免金鑰出現在 URL / 日誌中
-            string url = $"{baseEndpoint}/models/{model}:generateContent";
-
-            JObject payload = await BuildRequestPayloadAsync(request, model, apiKey, baseEndpoint).ConfigureAwait(false);
-
-            string responseJson = await SendPostAsync(url, payload.ToString(), apiKey, AuthSchemes.Gemini, cancellationToken: request.CancellationToken).ConfigureAwait(false);
-
-            try
-            {
-                var responseObj = JObject.Parse(responseJson);
-                var parts = responseObj["candidates"]?[0]?["content"]?["parts"] as JArray;
-                if (parts == null || parts.Count == 0)
-                {
-                    throw new RimLLMException(LLMError.InvalidResponse, "Gemini response JSON is missing content parts");
-                }
-
-                var sb = new StringBuilder();
-                bool hasThoughts = false;
-                bool hasFinishedReasoning = false;
-                foreach (var part in parts)
-                {
-                    string partText = part["text"]?.ToString();
-                    if (string.IsNullOrEmpty(partText)) continue;
-
-                    bool isThought = part["thought"]?.Type == JTokenType.Boolean && (bool)part["thought"];
-                    if (isThought)
-                    {
-                        if (!hasFinishedReasoning)
-                        {
-                            if (!hasThoughts)
-                            {
-                                sb.Append("<think>\n");
-                                hasThoughts = true;
-                            }
-                            sb.Append(partText);
-                        }
-                        else
-                        {
-                            sb.Append(partText);
-                        }
-                    }
-                    else
-                    {
-                        if (hasThoughts)
-                        {
-                            sb.Append("\n</think>\n");
-                            hasThoughts = false;
-                            hasFinishedReasoning = true;
-                        }
-                        sb.Append(partText);
-                    }
-                }
-                if (hasThoughts)
-                {
-                    sb.Append("\n</think>");
-                }
-
-                // 記錄 Token 使用量
-                var metadata = responseObj["usageMetadata"];
-                if (metadata != null)
-                {
-                    int prompt = metadata["promptTokenCount"]?.Value<int>() ?? 0;
-                    int completion = metadata["candidatesTokenCount"]?.Value<int>() ?? 0;
-                    // promptTokenCount 已包含快取命中部分，cachedContentTokenCount 為其中以折扣計價的子集
-                    int cached = metadata["cachedContentTokenCount"]?.Value<int>() ?? 0;
-                    if (RimLLMProvider.Instance is RimLLMManager manager)
-                    {
-                        manager.RecordUsage(ProviderId, model, prompt, completion, cached);
-                    }
-                }
-
-                return sb.ToString();
-            }
-            catch (Exception ex) when (!(ex is RimLLMException))
-            {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to parse Gemini response: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
-            }
+            return StreamWithGoogleGenAiAsync(request, model, onChunkReceived);
         }
 
-        public override async Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        /// <summary>建立 Google.GenAI 用戶端（測試縫）。</summary>
+        protected virtual Client CreateGenAiClient(string apiKey)
         {
-            if (UseGoogleGenAiSdk)
-            {
-                await StreamWithGoogleGenAiAsync(request, model, onChunkReceived).ConfigureAwait(false);
-                return;
-            }
+            return new Client(apiKey: apiKey);
+        }
 
-            string apiKey = Settings.GetActiveApiKey(ProviderId);
-            string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
-            string url = $"{baseEndpoint}/models/{model}:streamGenerateContent";
+        /// <summary>呼叫非串流 generateContent（測試縫）。</summary>
+        protected virtual Task<GenerateContentResponse> GenerateContentNativeAsync(
+            Client client,
+            string model,
+            List<Content> contents,
+            GenerateContentConfig config,
+            System.Threading.CancellationToken ct)
+        {
+            return client.Models.GenerateContentAsync(model, contents, config, ct);
+        }
 
-            JObject payload = await BuildRequestPayloadAsync(request, model, apiKey, baseEndpoint).ConfigureAwait(false);
-
-            float timeoutSeconds = Settings?.ApiTimeout ?? 30f;
-            float streamTimeout = Math.Max(timeoutSeconds * 2f, 120f); // 串流給予寬鬆的超時保護
-
-            using (var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(streamTimeout)))
-            using (var cts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, request.CancellationToken))
-            using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, url))
-            {
-                httpRequest.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
-                // 串流路徑自行組裝 HttpRequestMessage，需手動補上 Gemini 認證 Header
-                if (!string.IsNullOrEmpty(apiKey))
-                {
-                    httpRequest.Headers.Add("x-goog-api-key", apiKey);
-                }
-
-                HttpResponseMessage response = null;
-                try
-                {
-                    response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        string responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        ThrowHttpError(response, responseBody);
-                    }
-                }
-                catch (RimLLMException)
-                {
-                    response?.Dispose();
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    response?.Dispose();
-                    throw ConvertStreamTransportException("Gemini", ex, request.CancellationToken);
-                }
-
-                using (response)
-                using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
-                using (var reader = new StreamReader(stream))
-                using (var jsonReader = new JsonTextReader(reader))
-                {
-                    jsonReader.SupportMultipleContent = true;
-                    bool inReasoning = false;
-                    bool hasFinishedReasoning = false;
-                    int totalCompletionChars = 0;
-                    int finalPromptTokens = 0;
-                    int finalCompletionTokens = 0;
-                    int finalCachedTokens = 0;
-                    bool hasUsage = false;
-                    bool producedText = false;
-
-                    try
-                    {
-                        while (await jsonReader.ReadAsync(cts.Token).ConfigureAwait(false))
-                        {
-                            if (jsonReader.TokenType == JsonToken.StartObject)
-                            {
-                                try
-                                {
-                                    JObject token = await JObject.LoadAsync(jsonReader, cts.Token).ConfigureAwait(false);
-                                    var metadata = token["usageMetadata"];
-                                    if (metadata != null)
-                                    {
-                                        finalPromptTokens = metadata["promptTokenCount"]?.Value<int>() ?? 0;
-                                        finalCompletionTokens = metadata["candidatesTokenCount"]?.Value<int>() ?? 0;
-                                        finalCachedTokens = metadata["cachedContentTokenCount"]?.Value<int>() ?? 0;
-                                        hasUsage = true;
-                                    }
-                                    var parts = token["candidates"]?[0]?["content"]?["parts"] as JArray;
-                                    if (parts != null)
-                                    {
-                                        foreach (var part in parts)
-                                        {
-                                            string partText = part["text"]?.ToString();
-                                            if (string.IsNullOrEmpty(partText)) continue;
-                                            producedText = true;
-                                            totalCompletionChars += partText.Length;
-
-                                            bool isThought = part["thought"]?.Type == JTokenType.Boolean && (bool)part["thought"];
-                                            if (isThought)
-                                            {
-                                                if (!hasFinishedReasoning)
-                                                {
-                                                    if (!inReasoning)
-                                                    {
-                                                        inReasoning = true;
-                                                        onChunkReceived?.Invoke("<think>");
-                                                    }
-                                                    onChunkReceived?.Invoke(partText);
-                                                }
-                                                else
-                                                {
-                                                    onChunkReceived?.Invoke(partText);
-                                                }
-                                            }
-                                            else
-                                            {
-                                                if (inReasoning)
-                                                {
-                                                    inReasoning = false;
-                                                    hasFinishedReasoning = true;
-                                                    onChunkReceived?.Invoke("</think>");
-                                                }
-                                                onChunkReceived?.Invoke(partText);
-                                            }
-                                        }
-                                    }
-                                }
-                                catch (Exception ex) when (ex is OperationCanceledException || ex is IOException || ex is HttpRequestException)
-                                {
-                                    throw;
-                                }
-                                catch (Exception ex)
-                                {
-                                    if (Settings.DetailedLogging)
-                                    {
-                                        RimLLMLog.Warning($"[RimLLM] Gemini stream JSON parse failed: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex) when (ex is OperationCanceledException || ex is IOException || ex is HttpRequestException)
-                    {
-                        throw ConvertStreamTransportException("Gemini", ex, request.CancellationToken);
-                    }
-
-                    if (inReasoning)
-                    {
-                        onChunkReceived?.Invoke("</think>");
-                    }
-
-                    // 零輸出的串流不得視為成功，否則會阻擋 fallback 並讓呼叫端收到空字串。
-                    if (!producedText)
-                    {
-                        throw new RimLLMException(LLMError.NetworkError, $"{ProviderId} 串流未回傳任何內容。");
-                    }
-
-                    if (RimLLMProvider.Instance is RimLLMManager manager)
-                    {
-                        if (hasUsage)
-                        {
-                            manager.RecordUsage(ProviderId, model, finalPromptTokens, finalCompletionTokens, finalCachedTokens);
-                        }
-                        else
-                        {
-                            int systemLen = request.GetEffectiveSystemPrompt()?.Length ?? 0;
-                            int promptLen = request.Prompt?.Length ?? 0;
-                            int estPrompt = (int)((systemLen + promptLen) * 0.8f);
-                            int estCompletion = (int)(totalCompletionChars * 0.8f);
-                            manager.RecordUsage(ProviderId, model, Math.Max(1, estPrompt), Math.Max(1, estCompletion));
-                        }
-                    }
-                }
-            }
+        /// <summary>呼叫串流 generateContent（測試縫）。</summary>
+        protected virtual bclasync::System.Collections.Generic.IAsyncEnumerable<GenerateContentResponse> GenerateContentStreamNativeAsync(
+            Client client,
+            string model,
+            List<Content> contents,
+            GenerateContentConfig config,
+            System.Threading.CancellationToken ct)
+        {
+            return client.Models.GenerateContentStreamAsync(model, contents, config, ct);
         }
 
         private async Task<string> GenerateWithGoogleGenAiAsync(LLMRequest request, string model)
@@ -355,11 +119,12 @@ namespace RimLLM_Framework.Providers
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             try
             {
-                using (var client = new Client(apiKey: apiKey))
+                using (Client client = CreateGenAiClient(apiKey))
                 {
-                    Content contents = BuildTextContent(request.Prompt);
+                    List<Content> contents = new List<Content> { BuildTextContent(request.Prompt) };
                     GenerateContentConfig config = await BuildNativeConfigAsync(request, model, apiKey).ConfigureAwait(false);
-                    GenerateContentResponse response = await client.Models.GenerateContentAsync(
+                    GenerateContentResponse response = await GenerateContentNativeAsync(
+                        client,
                         model,
                         contents,
                         config,
@@ -385,9 +150,9 @@ namespace RimLLM_Framework.Providers
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             try
             {
-                using (var client = new Client(apiKey: apiKey))
+                using (Client client = CreateGenAiClient(apiKey))
                 {
-                    Content contents = BuildTextContent(request.Prompt);
+                    List<Content> contents = new List<Content> { BuildTextContent(request.Prompt) };
                     GenerateContentConfig config = await BuildNativeConfigAsync(request, model, apiKey).ConfigureAwait(false);
                     bool inReasoning = false;
                     bool hasFinishedReasoning = false;
@@ -397,7 +162,8 @@ namespace RimLLM_Framework.Providers
                     int cachedTokens = 0;
                     bool hasUsage = false;
 
-                    await foreach (GenerateContentResponse response in client.Models.GenerateContentStreamAsync(
+                    await foreach (GenerateContentResponse response in GenerateContentStreamNativeAsync(
+                        client,
                         model,
                         contents,
                         config,
@@ -545,6 +311,12 @@ namespace RimLLM_Framework.Providers
 
             if (isThinkingLevelModel)
             {
+                // Auto 時省略 thinkingConfig，與 raw 路徑行為一致。
+                if (effort == LLMReasoningEffort.Auto)
+                {
+                    return null;
+                }
+
                 ThinkingLevel level = ThinkingLevel.ThinkingLevelUnspecified;
                 if (effort == LLMReasoningEffort.Low) level = ThinkingLevel.Low;
                 else if (effort == LLMReasoningEffort.Medium) level = ThinkingLevel.Medium;
@@ -694,130 +466,35 @@ namespace RimLLM_Framework.Providers
 
         public override async Task<List<string>> FetchAvailableModelsAsync()
         {
-            if (UseGoogleGenAiSdk)
-            {
-                string sdkApiKey = Settings.GetActiveApiKey(ProviderId);
-                try
-                {
-                    using (var client = new Client(apiKey: sdkApiKey))
-                    {
-                        var pager = await client.Models.ListAsync().ConfigureAwait(false);
-                        var models = new List<string>();
-                        await foreach (Model item in pager)
-                        {
-                            string name = item?.Name;
-                            if (string.IsNullOrEmpty(name))
-                            {
-                                continue;
-                            }
-                            models.Add(name.StartsWith("models/", StringComparison.OrdinalIgnoreCase)
-                                ? name.Substring("models/".Length)
-                                : name);
-                        }
-                        return models;
-                    }
-                }
-                catch (RimLLMException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw TranslateGoogleException(ex, "list models");
-                }
-            }
-
-            string apiKey = Settings.GetActiveApiKey(ProviderId);
-            string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
-            string url = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/models";
-
-            string responseJson = await SendGetAsync(url, apiKey, AuthSchemes.Gemini).ConfigureAwait(false);
-            var list = new List<string>();
+            string sdkApiKey = Settings.GetActiveApiKey(ProviderId);
             try
             {
-                var obj = JObject.Parse(responseJson);
-                var modelsArray = obj["models"] as JArray;
-                if (modelsArray != null)
+                using (var client = CreateGenAiClient(sdkApiKey))
                 {
-                    foreach (var item in modelsArray)
+                    var pager = await client.Models.ListAsync().ConfigureAwait(false);
+                    var models = new List<string>();
+                    await foreach (Model item in pager)
                     {
-                        string name = item["name"]?.ToString();
-                        if (!string.IsNullOrEmpty(name))
+                        string name = item?.Name;
+                        if (string.IsNullOrEmpty(name))
                         {
-                            // 剝離 models/ 前綴
-                            string cleanName = name.Replace("models/", "");
-                            list.Add(cleanName);
+                            continue;
                         }
+                        models.Add(name.StartsWith("models/", StringComparison.OrdinalIgnoreCase)
+                            ? name.Substring("models/".Length)
+                            : name);
                     }
+                    return models;
                 }
+            }
+            catch (RimLLMException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch Gemini models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
+                throw TranslateGoogleException(ex, "list models");
             }
-            return list;
-        }
-
-        /// <summary>
-        /// 組裝 generateContent / streamGenerateContent 共用的請求 payload，
-        /// 包含 contents、generationConfig（含 thinking 設定）與 Context Cache / systemInstruction 的解析。
-        /// </summary>
-        private async Task<JObject> BuildRequestPayloadAsync(LLMRequest request, string model, string apiKey, string baseEndpoint)
-        {
-            var contents = new JArray
-            {
-                new JObject
-                {
-                    ["parts"] = new JArray
-                    {
-                        new JObject { ["text"] = request.Prompt }
-                    }
-                }
-            };
-
-            var generationConfig = new JObject
-            {
-                ["temperature"] = request.Temperature,
-                ["maxOutputTokens"] = request.MaxTokens
-            };
-
-            ApplyGeminiThinkingConfig(generationConfig, model, request.ReasoningEffort);
-
-            if (request.ResponseType != null && Settings.EnableNativeSchema)
-            {
-                generationConfig["responseMimeType"] = "application/json";
-                generationConfig["responseSchema"] = RimLLMJsonHelper.GenerateJsonSchema(request.ResponseType, uppercaseTypes: true);
-            }
-
-            var payload = new JObject
-            {
-                ["contents"] = contents,
-                ["generationConfig"] = generationConfig
-            };
-
-            string systemContext = request.GetEffectiveSystemPrompt();
-            string cacheId = null;
-            if (request.EnableContextCaching && !string.IsNullOrEmpty(systemContext))
-            {
-                cacheId = await GetOrCreateCachedContentAsync(apiKey, baseEndpoint, model, systemContext, request.CancellationToken).ConfigureAwait(false);
-            }
-
-            if (!string.IsNullOrEmpty(cacheId))
-            {
-                payload["cachedContent"] = cacheId;
-            }
-            else if (!string.IsNullOrEmpty(systemContext))
-            {
-                payload["systemInstruction"] = new JObject
-                {
-                    ["parts"] = new JArray
-                    {
-                        new JObject { ["text"] = systemContext }
-                    }
-                };
-            }
-
-            return payload;
         }
 
         private void DetermineGeminiThinkingConfig(string model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel)
@@ -833,43 +510,6 @@ namespace RimLLM_Framework.Providers
             isThinkingLevelModel = model.IndexOf("gemma-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
                                    model.IndexOf("gemini-3", StringComparison.OrdinalIgnoreCase) >= 0 || 
                                    model.IndexOf("gemini-4", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private void ApplyGeminiThinkingConfig(JObject generationConfig, string model, LLMReasoningEffort effort)
-        {
-            if (model == null) return;
-            DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
-
-            if (isThinkingBudgetModel)
-            {
-                int budget = -1; // Default for Auto
-                if (effort == LLMReasoningEffort.Low) budget = 1024;
-                else if (effort == LLMReasoningEffort.Medium) budget = 2048;
-                else if (effort == LLMReasoningEffort.High) budget = 4096;
-                else if (effort == LLMReasoningEffort.None) budget = 0;
-
-                generationConfig["thinkingConfig"] = new JObject
-                {
-                    ["thinkingBudget"] = budget
-                };
-            }
-            else if (isThinkingLevelModel)
-            {
-                if (effort == LLMReasoningEffort.None)
-                {
-                    generationConfig["thinkingConfig"] = new JObject
-                    {
-                        ["thinkingLevel"] = "minimal"
-                    };
-                }
-                else if (effort != LLMReasoningEffort.Auto)
-                {
-                    generationConfig["thinkingConfig"] = new JObject
-                    {
-                        ["thinkingLevel"] = effort.ToString().ToLower()
-                    };
-                }
-            }
         }
 
         private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string cacheableContext, System.Threading.CancellationToken cancellationToken)

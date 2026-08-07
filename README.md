@@ -266,7 +266,8 @@ public async void CallWithCaching()
 
 * 主專案與測試專案維持 `net472`，不要求 RimWorld Mod 升級到 .NET 8；官方 SDK 的相依 DLL 會隨 Mod 輸出，並在啟動相容性閘門中確認可載入。`System.ValueTuple` 雖會被 .NET Framework 視為 framework assembly，建置時仍會明確部署其 `4.0.5.0` DLL，避免 RimWorld Mono 反射掃描 MEAI 時發生 `ReflectionTypeLoadException`。
 * **OpenAI** 使用 `OpenAI` SDK `2.12.0` 與 `Microsoft.Extensions.AI`／`Microsoft.Extensions.AI.OpenAI` `10.8.3`。內建 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用管理器；LM Studio、Ollama、vLLM 等真正符合 OpenAI Chat Completions 協定的 endpoint 才適合使用 OpenAI-compatible adapter。
-* **Gemini** 使用官方 `Google.GenAI` `1.16.0`，以 API key 建立 Gemini Developer API client。文字與一般串流可使用其內建 `IChatClient` adapter；Gemini 原生 Schema、thinking、context cache、Safety 與 models API 則由 `Google.GenAI` 原生路徑處理，不使用 `OpenAI.Chat.ChatClient` 模擬 Gemini。
+* **Gemini** 使用官方 `Google.GenAI` `1.16.0`，以 API key 建立 Gemini Developer API client。文字、串流、原生 Schema、thinking、context cache 與 Safety 一律走 `Google.GenAI` 原生 generateContent 路徑（程式碼以 `CreateGenAiClient`／`GenerateContentNativeAsync`／`GenerateContentStreamNativeAsync` 三個測試縫隔離），不使用 `OpenAI.Chat.ChatClient` 模擬 Gemini，也不保留 raw HTTP 對話路徑。
+* 任務 6 之後，**所有內建 provider 一律走官方 SDK**：OpenAI 系列（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）透過 `OpenAI` SDK `2.12.0` + MEAI `IChatClient`；Gemini 透過 `Google.GenAI` 原生路徑。raw HTTP 僅保留在 `FetchAvailableModelsAsync`、Gemini `cachedContents` 快取與共用 `SendPostAsync` 工具，不再作為對話路徑。
 * provider-specific SDK 不會出現在 `RimLLMManager` 或既有 SDK façade；共用層只依賴 `IChatClient`、`LLMProviderCapabilities` 與既有 `ILLMProvider` API。API key 一律由目前加密設定提供，不寫入程式碼或一般日誌。
 
 ---
