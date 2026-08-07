@@ -20,7 +20,7 @@ namespace RimLLM_Framework.Manager
     /// <summary>
     /// IRimLLM 介面的核心管理器實作。
     /// 統一調度 API 供應商、執行雙重 Fallback 容錯、校驗調用者來源。
-    /// 內部邏輯委託給排隊佇列 (RequestQueue)、熔斷器 (CircuitBreaker)、JSON 輔助 (JsonHelper) 與使用統計器 (UsageTracker)。
+    /// 內部邏輯委託給排隊佇列 (RequestQueue)、熔斷器 (CircuitBreaker)、JSON 輔助 (JsonHelper)、使用統計器 (UsageTracker) 與備用管道 (FallbackPipeline)。
     /// </summary>
     public class RimLLMManager
     {
@@ -34,6 +34,7 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMCircuitBreaker _circuitBreaker;
         private readonly RimLLMUsageTracker _usageTracker;
         private readonly RimLLMEmbeddingService _embeddingService;
+        private readonly RimLLMFallbackPipeline _fallbackPipeline;
 
         public RimLLMEmbeddingService EmbeddingService => _embeddingService;
         public RimLLMUsageTracker UsageTracker => _usageTracker;
@@ -54,20 +55,6 @@ namespace RimLLM_Framework.Manager
         /// 預算詢問對話框的最長等待時間。逾時視為拒絕，避免請求無限期佔用資源。
         /// </summary>
         private const int BudgetPromptTimeoutSeconds = 120;
-
-        // Smart Routing state
-        private struct ResolvedCandidate
-        {
-            public string Entry;
-            public string ProviderId;
-            public ILLMProvider Provider;
-            public string ModelName;
-        }
-
-        private readonly ConcurrentDictionary<string, List<long>> ProviderLatencies = 
-            new ConcurrentDictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, DateTime> ProviderFailCooldowns = 
-            new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// 使用量統計日誌實體，保持結構以相容 Scribe 序列化。
@@ -97,6 +84,13 @@ namespace RimLLM_Framework.Manager
             _requestQueue = new RimLLMRequestQueue(settings);
             _circuitBreaker = new RimLLMCircuitBreaker();
             _usageTracker = new RimLLMUsageTracker(settings);
+
+            _fallbackPipeline = new RimLLMFallbackPipeline(
+                settings,
+                _circuitBreaker,
+                _usageTracker,
+                providerId => TryGetProvider(providerId, out var provider) ? provider : null,
+                IsProviderEnabled);
 
             // 初始化並註冊內建供應商
             RegisterBuiltInProvider(new OpenAIProvider(settings));
@@ -220,8 +214,6 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-
-
         /// <summary>
         /// 包裝排隊佇列的 GenerateInternalAsync。
         /// </summary>
@@ -319,15 +311,13 @@ namespace RimLLM_Framework.Manager
                     chunk => DispatchChunk(request.OnChunkReceived, chunk));
             }
 
-            // 交由共用的 Fallback Chain 執行核心處理
-            return ExecuteWithFallbackAsync(
+            // 交由專屬 Fallback Pipeline 執行核心處理
+            return _fallbackPipeline.ExecuteWithFallbackAsync(
                 request,
                 (provider, modelName) => GenerateProviderAsync(provider, request, modelName),
                 LLMError.Unknown,
                 "All fallback attempts failed.");
         }
-
-
 
         /// <summary>
         /// 結構化輸出的核心流程：直接解析 → JSON repair 回退 → LLM-assisted double-repair。
@@ -462,11 +452,6 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-
-
-
-
-        /// <summary>
         /// SDK facade 的非串流唯一入口（回傳包含實際 provider/model 與用量的結果）。
         /// </summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
@@ -517,7 +502,7 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>
         /// 真正的非同步串流生成邏輯。呼叫前必須已通過 RunAdmissionChecksAsync。
-        /// 與非串流路徑共用相同的 Fallback Chain 執行核心，因此重試與熔斷行為一致。
+        /// 與非串流路徑共用相同的 Fallback Pipeline 執行核心，因此重試與熔斷行為一致。
         /// 回傳成功那次嘗試所累積的完整文字。
         /// </summary>
         private async Task<RimLLMGenerationResult> StreamInternalDirectAsync(RimLLMRequest request, Action<string> onChunkReceived)
@@ -526,7 +511,7 @@ namespace RimLLM_Framework.Manager
             // 「先吐出部分內容再失敗」的 provider 會讓殘留文字混進下一次嘗試的結果。
             var sink = new StreamAttemptSink(onChunkReceived, request.OnStreamRestart, DispatchRestart);
 
-            await ExecuteWithFallbackAsync(
+            await _fallbackPipeline.ExecuteWithFallbackAsync(
                 request,
                 (provider, modelName) => StreamProviderAsync(provider, request, modelName, sink.Append),
                 LLMError.ProviderOffline,
@@ -726,8 +711,6 @@ namespace RimLLM_Framework.Manager
             return null;
         }
 
-
-
         private static bool IsNativeSchemaRejected(Exception exception)
         {
             if (exception == null || exception is OperationCanceledException)
@@ -735,9 +718,6 @@ namespace RimLLM_Framework.Manager
                 return false;
             }
 
-            // 只有 provider 明確標記為 schema 拒絕的錯誤才觸發降級重打。
-            // 先前的實作把「任何巢狀 InvalidResponse」都視為 schema 拒絕，
-            // 會讓空回應等真正的失敗被誤判並靜默重打，掩蓋真實錯誤。
             for (Exception current = exception; current != null; current = current.InnerException)
             {
                 if (current is RimLLMException rimException && rimException.IsSchemaRejection)
@@ -770,7 +750,6 @@ namespace RimLLM_Framework.Manager
                 return request;
             }
 
-            // 非原生 schema 供應商，或原生 schema 被拒絕時，使用既有提示式 JSON fallback。
             RimLLMRequest clone = request.Clone();
             string originalSystemPrompt = clone.SystemPrompt ?? string.Empty;
             string schemaInstructions =
@@ -800,260 +779,6 @@ namespace RimLLM_Framework.Manager
                    chatProvider.UsesIChatClient &&
                    chatProvider.Capabilities.SupportsNativeStructuredOutput &&
                    _settings.EnableNativeSchema;
-        }
-
-        /// <summary>
-        /// 共用的 Fallback Chain 執行核心。
-        /// 依序遍歷符合資格的供應商條目，對每個條目套用相同的重試策略，
-        /// 並統一處理取消檢查、熔斷記錄與用量統計。
-        /// </summary>
-        private async Task<RimLLMGenerationResult> ExecuteWithFallbackAsync(
-            RimLLMRequest request,
-            Func<ILLMProvider, string, Task<RimLLMGenerationResult>> attemptAsync,
-            LLMError exhaustedError,
-            string exhaustedMessage,
-            Action onAttemptStarting = null)
-        {
-            var totalStopwatch = Stopwatch.StartNew();
-            DateTime startTime = DateTime.Now;
-
-            var fallbackChain = GetFallbackChainSnapshot();
-            if (fallbackChain == null || fallbackChain.Count == 0)
-            {
-                throw new RimLLMException(LLMError.ProviderOffline, "No valid API provider fallback chain configured.");
-            }
-
-            // PreferredModelId（格式 "ProviderId:ModelName"）指定的話，於 fallback chain 前優先嘗試
-            var effectiveChain = new List<string>(fallbackChain);
-            if (!string.IsNullOrEmpty(request.PreferredModelId))
-            {
-                string preferredEntry = request.PreferredModelId;
-                if (!ResolveFallbackEntry(preferredEntry, out string prefProvider, out string prefModel)
-                    || string.IsNullOrEmpty(prefModel))
-                {
-                    // 無 provider 前綴的純 model 名視為「不指定 provider」，忽略（交給 fallback chain）
-                    prefProvider = null;
-                }
-                if (prefProvider != null && TryGetProvider(prefProvider, out ILLMProvider prefProviderInstance)
-                    && IsProviderUsable(prefProvider, prefProviderInstance)
-                    && !effectiveChain.Exists(e => string.Equals(e, preferredEntry, StringComparison.OrdinalIgnoreCase)))
-                {
-                    effectiveChain.Insert(0, preferredEntry);
-                }
-            }
-
-            // 1. 解析所有符合資格的供應商候選
-            var candidates = new List<ResolvedCandidate>();
-            foreach (string entry in effectiveChain)
-            {
-                if (TryGetEligibleCandidate(entry, effectiveChain, request, out string pId, out ILLMProvider p, out string mName))
-                {
-                    candidates.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
-                }
-            }
-
-            if (candidates.Count == 0)
-            {
-                throw new RimLLMException(LLMError.ProviderOffline, "No eligible API providers found in the fallback chain.");
-            }
-
-            // 2. 過濾處於故障冷卻期的供應商（若全部都在冷卻中，則破例放行）
-            var activeCandidates = candidates.FindAll(c => !IsInCooldown(c.ProviderId));
-            if (activeCandidates.Count == 0)
-            {
-                activeCandidates = candidates;
-            }
-
-            // 3. 套用路由與負載均衡策略
-            int strategy = _settings.RoutingStrategy;
-            if (strategy == 1) // MinLatency (最小延遲優先)
-            {
-                activeCandidates.Sort((a, b) =>
-                {
-                    float latA = GetAverageLatency(a.ProviderId);
-                    float latB = GetAverageLatency(b.ProviderId);
-                    if (latA == 0f && latB != 0f) return -1;
-                    if (latA != 0f && latB == 0f) return 1;
-                    return latA.CompareTo(latB);
-                });
-            }
-            else if (strategy == 2) // RoundRobin / Random (隨機輪詢負載均衡)
-            {
-                var rnd = new Random();
-                for (int i = activeCandidates.Count - 1; i > 0; i--)
-                {
-                    int j = rnd.Next(i + 1);
-                    var temp = activeCandidates[i];
-                    activeCandidates[i] = activeCandidates[j];
-                    activeCandidates[j] = temp;
-                }
-            }
-            // strategy == 0 (PriorityFailover) 保留原始 fallbackChain 順序
-
-            Exception lastException = null;
-            int maxRetries = _settings.MaxRetries;
-            float retryDelay = _settings.RetryDelay;
-
-            foreach (var candidate in activeCandidates)
-            {
-                string providerId = candidate.ProviderId;
-                ILLMProvider provider = candidate.Provider;
-                string modelName = candidate.ModelName;
-                bool candidateSuccess = false;
-                bool isRetryableFailure = false;
-
-                for (int attempt = 0; attempt <= maxRetries; attempt++)
-                {
-                    // 檢查中途是否被取消
-                    if (request.CancellationToken.IsCancellationRequested)
-                    {
-                        throw new OperationCanceledException(request.CancellationToken);
-                    }
-
-                    try
-                    {
-                        RimLLMLog.Message(attempt > 0
-                            ? $"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName}), retrying attempt {attempt + 1}..."
-                            : $"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName})");
-
-                        var requestStopwatch = Stopwatch.StartNew();
-                        // 通知串流累積器：本次嘗試即將開始，需捨棄前一次嘗試的殘留內容。
-                        onAttemptStarting?.Invoke();
-
-                        var attemptResult = await attemptAsync(provider, modelName).ConfigureAwait(false);
-                        requestStopwatch.Stop();
-
-                        // 成功後重設健康狀態與記錄延遲
-                        _circuitBreaker.RecordSuccess(providerId);
-                        RecordLatency(providerId, requestStopwatch.ElapsedMilliseconds);
-
-                        _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
-                        candidateSuccess = true;
-                        return attemptResult;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastException = ex;
-                        bool retryable = IsRetryableException(ex);
-
-                        // 可重試類錯誤（網路、超時、限流等）同時視為健康度失敗，納入熔斷統計
-                        if (retryable)
-                        {
-                            _circuitBreaker.RecordFailure(providerId);
-                            isRetryableFailure = true;
-                        }
-
-                        if (retryable && attempt < maxRetries)
-                        {
-                            // 若伺服器透過 Retry-After 建議等待時間，取其與使用者設定延遲的較大者
-                            float effectiveDelay = retryDelay;
-                            if (ex is RimLLMException rimEx && rimEx.RetryAfter.HasValue)
-                            {
-                                effectiveDelay = Math.Min(Math.Max(effectiveDelay, (float)rimEx.RetryAfter.Value.TotalSeconds), 60f);
-                            }
-
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) call failed: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Retrying in {effectiveDelay:F1} seconds...");
-                            if (effectiveDelay > 0f)
-                            {
-                                await Task.Delay(TimeSpan.FromSeconds(effectiveDelay), request.CancellationToken).ConfigureAwait(false);
-                            }
-                        }
-                        else if (!retryable)
-                        {
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) returned a non-retryable error: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Fallbacking to the next entry.");
-                            break;
-                        }
-                        else
-                        {
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
-                        }
-                    }
-                }
-
-                if (!candidateSuccess && isRetryableFailure)
-                {
-                    // 只有在因為網路或暫時性錯誤（可重試錯誤）導致失敗時，才置入冷卻阻斷期
-                    ProviderFailCooldowns[providerId] = DateTime.UtcNow.AddSeconds(60);
-                }
-            }
-
-            totalStopwatch.Stop();
-            _usageTracker.RecordLog(startTime, request.ModId, "FallbackChain", "None", false, lastException?.Message ?? "All fallbacks failed", totalStopwatch.ElapsedMilliseconds);
-            throw new RimLLMException(exhaustedError, $"{exhaustedMessage} Last error: {lastException?.Message}", lastException);
-        }
-
-        /// <summary>
-        /// 檢查供應商是否可用：已啟用且（若需要）API Key 存在。
-        /// </summary>
-        private bool IsProviderUsable(string providerId, ILLMProvider provider)
-        {
-            if (!IsProviderEnabled(providerId))
-                return false;
-
-            if (provider.RequiresApiKey && string.IsNullOrEmpty(_settings.GetApiKey(providerId)))
-                return false;
-
-            return true;
-        }
-
-        /// <summary>
-        /// 檢查單一 Fallback 條目是否具備執行資格：
-        /// 供應商已註冊且可用（啟用 + 金鑰）、模型分級達標、且未處於熔斷冷卻。
-        /// 若所有可用供應商都在冷卻中，則破例放行以避免完全斷線。
-        /// </summary>
-        private bool TryGetEligibleCandidate(string entry, List<string> fallbackChain, RimLLMRequest request, out string providerId, out ILLMProvider provider, out string modelName)
-        {
-            provider = null;
-
-            if (!ResolveFallbackEntry(entry, out providerId, out modelName))
-                return false;
-
-            if (!TryGetProvider(providerId, out provider))
-                return false;
-
-            if (!IsProviderUsable(providerId, provider))
-                return false;
-
-            // Budget fallback to free
-            if (_settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit)
-            {
-                if (_settings.BudgetPolicy == 2) // FallbackToFree (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)
-                {
-                    bool isFree = providerId == ProviderIds.OpenAICompatible || modelName.ToLower().Contains("free");
-                    if (!isFree)
-                    {
-                        return false;
-                    }
-                }
-            }
-
-            // 評估 MinFallbackLevel 模型分級
-            int minLevel = ParseMinFallbackLevel(request.MinFallbackLevel);
-            if (minLevel > 0)
-            {
-                int currentModelLevel = GetModelLevel(modelName);
-                if (currentModelLevel < minLevel)
-                {
-                    RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
-                    return false;
-                }
-            }
-
-            // Circuit Breaker 健康狀態檢查
-            if (_circuitBreaker.IsCooldown(providerId, out DateTime cdTime, out int failures))
-            {
-                if (!_circuitBreaker.AreAllEligibleProvidersInCooldown(fallbackChain, id => TryGetProvider(id, out ILLMProvider p) && IsProviderUsable(id, p)))
-                {
-                    RimLLMLog.Message($"[RimLLM] Skipping provider {providerId} because it is in cooldown until {cdTime.ToLocalTime()} due to {failures} continuous failures.");
-                    return false;
-                }
-            }
-
-            return true;
         }
 
         /// <summary>
@@ -1096,15 +821,7 @@ namespace RimLLM_Framework.Manager
             return await provider.FetchAvailableModelsAsync().ConfigureAwait(false);
         }
 
-
-
         #region Helper Methods
-
-        private List<string> GetFallbackChainSnapshot()
-        {
-            var chain = _settings.FallbackChain;
-            return chain != null ? new List<string>(chain) : null;
-        }
 
         private static RimLLMRequest NormalizeRequest(RimLLMRequest request, IRimLLMSettings settings)
         {
@@ -1123,46 +840,6 @@ namespace RimLLM_Framework.Manager
             return clone;
         }
 
-        /// <summary>
-        /// 判斷例外是否屬於暫時性錯誤（網路、超時、限流等）。
-        /// 暫時性錯誤可以重試，同時也會被記入熔斷器的健康度統計；
-        /// 非暫時性錯誤（如金鑰無效）直接 fallback 到下一個條目且不觸發熔斷。
-        /// </summary>
-        private bool IsRetryableException(Exception ex)
-        {
-            if (ex is OperationCanceledException)
-            {
-                return false;
-            }
-
-            if (ex is RimLLMException rimEx)
-            {
-                switch (rimEx.Error)
-                {
-                    case LLMError.Timeout:
-                    case LLMError.RateLimit:
-                    case LLMError.ProviderOffline:
-                    case LLMError.NetworkError:
-                    case LLMError.QuotaExceeded:
-                    case LLMError.Unknown:
-                        return true;
-                    default:
-                        return false;
-                }
-            }
-
-            // 參數、狀態與解析類例外代表呼叫本身有問題，以相同輸入重試必然再次失敗。
-            if (ex is ArgumentException ||
-                ex is NotSupportedException ||
-                ex is InvalidOperationException ||
-                ex is Newtonsoft.Json.JsonException)
-            {
-                return false;
-            }
-
-            return true;
-        }
-
         private void DispatchChunk(Action<string> callback, string chunk)
         {
             if (callback == null) return;
@@ -1175,11 +852,6 @@ namespace RimLLM_Framework.Manager
             RimLLMDispatcher.EnqueueOnMainThread(callback);
         }
 
-        /// <summary>
-        /// 串流的單次嘗試累積器。
-        /// 每次 fallback 或重試開始前會清空緩衝，確保回傳結果只包含成功那次嘗試的內容；
-        /// 若前一次嘗試已經吐出過 chunk，會通知呼叫端重設自己的顯示緩衝。
-        /// </summary>
         private sealed class StreamAttemptSink
         {
             private readonly StringBuilder _buffer = new StringBuilder();
@@ -1201,7 +873,6 @@ namespace RimLLM_Framework.Manager
             {
                 if (_emittedAnything)
                 {
-                    // 上一次嘗試已經送出過內容，通知呼叫端捨棄那段殘留。
                     _dispatchRestart?.Invoke(_onRestart);
                 }
                 _buffer.Length = 0;
@@ -1229,100 +900,22 @@ namespace RimLLM_Framework.Manager
 
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
         {
-            providerId = entry;
-            modelName = "";
-
-            if (string.IsNullOrEmpty(entry))
-            {
-                return false;
-            }
-
-            int colonIndex = entry.IndexOf(':');
-            if (colonIndex > 0)
-            {
-                providerId = entry.Substring(0, colonIndex);
-                modelName = entry.Substring(colonIndex + 1);
-            }
-            else
-            {
-                // 純供應商
-                if (string.IsNullOrEmpty(modelName))
-                {
-                    modelName = _settings.GetDefaultModel(providerId, "default");
-                }
-            }
-
-            return true;
+            return _fallbackPipeline.ResolveFallbackEntry(entry, out providerId, out modelName);
         }
 
         #endregion
 
         #region Concurrency Queue & Double-Repair Methods
 
-        private int GetModelLevel(string modelName)
-        {
-            if (string.IsNullOrEmpty(modelName)) return 1;
-
-            // 使用者明確設定的分級覆寫優先於關鍵字啟發式判斷
-            int overrideLevel = _settings.GetModelLevelOverride(modelName);
-            if (overrideLevel >= 1 && overrideLevel <= 3)
-            {
-                return overrideLevel;
-            }
-
-            string lower = modelName.ToLower();
-
-            // 如果含有 High 關鍵字，則優先判定為 Tier 3
-            foreach (var kw in HighLevelKeywords)
-            {
-                if (lower.Contains(kw))
-                {
-                    return 3;
-                }
-            }
-
-            // 如果不含 High 關鍵字但含有 Medium 關鍵字，則為 Tier 2
-            foreach (var kw in MediumLevelKeywords)
-            {
-                if (lower.Contains(kw))
-                {
-                    return 2;
-                }
-            }
-
-            // 其餘為 Tier 1
-            return 1;
-        }
-
-        private static readonly List<string> HighLevelKeywords = new List<string>
-        {
-            "pro", "opus"
-        };
-
-        private static readonly List<string> MediumLevelKeywords = new List<string>
-        {
-            "mini", "flash", "sonnet", "deepseek",  "kimi", "minimax", "qwen"
-        };
-
-        private int ParseMinFallbackLevel(string levelStr)
-        {
-            if (string.IsNullOrEmpty(levelStr)) return 0;
-            string lower = levelStr.ToLower();
-            if (lower == "high" || lower == "3") return 3;
-            if (lower == "medium" || lower == "2") return 2;
-            if (lower == "low" || lower == "1") return 1;
-            return 0;
-        }
-
         internal async Task<T> PerformDoubleRepairAsync<T>(RimLLMRequest originalRequest, string failedResponse, string errorMessage)
         {
             var repairRequest = new RimLLMRequest
             {
                 ModId = originalRequest.ModId,
-                Temperature = 0.1f, // 低隨機性有利於修復格式
+                Temperature = 0.1f,
                 MaxOutputTokens = originalRequest.MaxOutputTokens,
                 CancellationToken = originalRequest.CancellationToken,
-                DisableReasoning = true, // 對應舊 LLMReasoningEffort.None
+                DisableReasoning = true,
                 Messages = new List<ChatMessage>
                 {
                     new ChatMessage(ChatRole.System, "You are a JSON repair assistant. The user will provide a JSON string that failed to parse, along with the parser error message. Your task is to output ONLY the corrected JSON string that is syntactically valid and contains all fields. Do NOT include markdown code blocks (like ```json), explanations, or any other text."),
@@ -1330,8 +923,6 @@ namespace RimLLM_Framework.Manager
                 }
             };
 
-            // 修復重打屬於同一次邏輯請求，不再重跑呼叫端校驗、防濫用與預算檢查，
-            // 避免同一次使用者操作被扣兩次額度。
             string repairResponse = (await GenerateInternalDirectAsync(repairRequest).ConfigureAwait(false)).Text;
             string repairedJson = RimLLMJsonHelper.RepairJson(repairResponse);
             
@@ -1345,8 +936,7 @@ namespace RimLLM_Framework.Manager
 
         public void ClearCooldowns()
         {
-            ProviderFailCooldowns.Clear();
-            ProviderLatencies.Clear();
+            _fallbackPipeline.ClearCooldowns();
             RequestTimestamps.Clear();
             CoolDownUntil.Clear();
         }
@@ -1394,38 +984,36 @@ namespace RimLLM_Framework.Manager
             
             if (_settings.DailyBudgetLimit <= 0f || _settings.DailyAccumulatedCost < _settings.DailyBudgetLimit)
             {
-                return true; // Budget is fine
+                return true;
             }
 
             string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
 
-            // 1. Check if already approved/declined today
             if (_budgetApprovalDate == todayStr)
             {
-                return true; // Bypassed
+                return true;
             }
             if (_budgetDeclineDate == todayStr)
-            {
-                return false; // Blocked
-            }
-
-            // 2. Check if we should fall back to free (handled inside TryGetEligibleCandidate)
-            if (_settings.BudgetPolicy == 2) // FallbackToFree
-            {
-                return true; 
-            }
-
-            if (_settings.BudgetPolicy == 0) // HardBlock
             {
                 return false;
             }
 
-            if (_settings.BudgetPolicy == 1) // SilentMocking
+            if (_settings.BudgetPolicy == 2)
             {
-                return true; // Handled separately via IsBudgetMocked
+                return true; 
             }
 
-            if (_settings.BudgetPolicy == 3) // DialogPrompt
+            if (_settings.BudgetPolicy == 0)
+            {
+                return false;
+            }
+
+            if (_settings.BudgetPolicy == 1)
+            {
+                return true;
+            }
+
+            if (_settings.BudgetPolicy == 3)
             {
                 if (Find.WindowStack == null)
                 {
@@ -1441,12 +1029,9 @@ namespace RimLLM_Framework.Manager
                     }
                     else
                     {
-                        // RunContinuationsAsynchronously：避免按鈕 callback 在 Unity 主執行緒上
-                        // 同步跑完整條後續請求鏈而卡住畫面。
                         tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                         _activePromptTcs = tcs;
 
-                        // Show the dialog on main thread
                         RimLLMDispatcher.EnqueueOnMainThread(() =>
                         {
                             var dialog = new Dialog_BudgetPrompt(
@@ -1458,7 +1043,6 @@ namespace RimLLM_Framework.Manager
                                         _budgetApprovalDate = todayStr;
                                         _activePromptTcs = null;
                                     }
-                                    // TrySetResult：按鈕可能與逾時、視窗關閉競爭，SetResult 會拋例外到主執行緒。
                                     tcs.TrySetResult(true);
                                 },
                                 "RimLLM_BudgetExceededPrompt_Decline".Translate(), () =>
@@ -1470,9 +1054,6 @@ namespace RimLLM_Framework.Manager
                                     }
                                     tcs.TrySetResult(false);
                                 },
-                                // 視窗被 ESC 或其他方式關閉時的收尾：若沒有這條，TCS 永遠不會完成，
-                                // 且 _activePromptTcs 會永久卡住，之後所有請求都會掛在同一個死 TCS 上。
-                                // 此處刻意不寫入 _budgetDeclineDate，讓下次請求能重新詢問。
                                 () =>
                                 {
                                     lock (BudgetPromptLock)
@@ -1499,12 +1080,6 @@ namespace RimLLM_Framework.Manager
             return false;
         }
 
-        /// <summary>
-        /// 等待預算對話框的結果，同時尊重個別請求的取消 Token 與逾時。
-        /// 關鍵在於「不能取消共用的 TCS」：多個請求可能同時等待同一個對話框，
-        /// 若直接取消共用 TCS，其中一個請求取消會連帶讓其他請求全部失敗。
-        /// 因此每個等待者持有自己的競賽 TCS，只影響自己。
-        /// </summary>
         internal static async Task<bool> AwaitBudgetApprovalAsync(
             Task<bool> sharedPromptTask,
             CancellationToken requestToken,
@@ -1529,7 +1104,6 @@ namespace RimLLM_Framework.Manager
                         throw new OperationCanceledException(requestToken);
                     }
 
-                    // 逾時視為拒絕，但不寫入 _budgetDeclineDate，讓使用者稍後仍能重新被詢問。
                     return false;
                 }
             }
@@ -1540,7 +1114,7 @@ namespace RimLLM_Framework.Manager
             mockResult = null;
             if (_settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit)
             {
-                if (_settings.BudgetPolicy == 1) // SilentMocking
+                if (_settings.BudgetPolicy == 1)
                 {
                     if (request.ResponseType != null)
                     {
@@ -1563,38 +1137,6 @@ namespace RimLLM_Framework.Manager
                 }
             }
             return false;
-        }
-
-        private bool IsInCooldown(string providerId)
-        {
-            return ProviderFailCooldowns.TryGetValue(providerId, out DateTime cdUntil) && DateTime.UtcNow < cdUntil;
-        }
-
-        private float GetAverageLatency(string providerId)
-        {
-            if (ProviderLatencies.TryGetValue(providerId, out var list) && list.Count > 0)
-            {
-                lock (list)
-                {
-                    long sum = 0;
-                    foreach (var val in list) sum += val;
-                    return (float)sum / list.Count;
-                }
-            }
-            return 0f;
-        }
-
-        private void RecordLatency(string providerId, long ms)
-        {
-            var list = ProviderLatencies.GetOrAdd(providerId, _ => new List<long>());
-            lock (list)
-            {
-                list.Add(ms);
-                if (list.Count > 5)
-                {
-                    list.RemoveAt(0);
-                }
-            }
         }
 
         #endregion
