@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
@@ -22,20 +22,8 @@ namespace RimLLM_Framework.Mod
         private static readonly List<string> chatHistory = new List<string>();
         private static Vector2 chatScrollPosition = Vector2.zero;
         private static bool chatLoading = false;
-        private static LLMReasoningEffort chatReasoningEffort = LLMReasoningEffort.Auto;
+        private static ReasoningEffort? chatReasoningEffort = null;
         private static bool chatReasoningInitialized = false;
-
-        /// <summary>舊 LLMReasoningEffort → MEAI ReasoningEffort 對映（None 以 DisableReasoning 處理，Auto 不設）。</summary>
-        private static ReasoningEffort? MapReasoningEffort(LLMReasoningEffort effort)
-        {
-            switch (effort)
-            {
-                case LLMReasoningEffort.Low: return ReasoningEffort.Low;
-                case LLMReasoningEffort.Medium: return ReasoningEffort.Medium;
-                case LLMReasoningEffort.High: return ReasoningEffort.High;
-                default: return null;
-            }
-        }
 
         /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
         private const string ChatInputControlName = "RimLLM_ChatInput";
@@ -135,16 +123,15 @@ namespace RimLLM_Framework.Mod
             Text.Anchor = TextAnchor.MiddleLeft;
             Widgets.Label(effortLabelRect, "RimLLM_ReasoningEffortLabel".Translate());
             Text.Anchor = TextAnchor.UpperLeft;
-            string chatEffortLabel = $"RimLLM_ReasoningEffort_{chatReasoningEffort}".Translate();
+            string chatEffortLabel = chatReasoningEffort == null ? "RimLLM_ReasoningEffort_Auto".Translate() : $"RimLLM_ReasoningEffort_{chatReasoningEffort}".Translate();
             if (Widgets.ButtonText(effortBtnRect, chatEffortLabel))
             {
                 List<FloatMenuOption> options = new List<FloatMenuOption>
                 {
-                    new FloatMenuOption("RimLLM_ReasoningEffort_Auto".Translate(), () => { chatReasoningEffort = LLMReasoningEffort.Auto; }),
-                    new FloatMenuOption("RimLLM_ReasoningEffort_None".Translate(), () => { chatReasoningEffort = LLMReasoningEffort.None; }),
-                    new FloatMenuOption("RimLLM_ReasoningEffort_Low".Translate(), () => { chatReasoningEffort = LLMReasoningEffort.Low; }),
-                    new FloatMenuOption("RimLLM_ReasoningEffort_Medium".Translate(), () => { chatReasoningEffort = LLMReasoningEffort.Medium; }),
-                    new FloatMenuOption("RimLLM_ReasoningEffort_High".Translate(), () => { chatReasoningEffort = LLMReasoningEffort.High; })
+                    new FloatMenuOption("RimLLM_ReasoningEffort_Auto".Translate(), () => { chatReasoningEffort = null; }),
+                    new FloatMenuOption("RimLLM_ReasoningEffort_Low".Translate(), () => { chatReasoningEffort = ReasoningEffort.Low; }),
+                    new FloatMenuOption("RimLLM_ReasoningEffort_Medium".Translate(), () => { chatReasoningEffort = ReasoningEffort.Medium; }),
+                    new FloatMenuOption("RimLLM_ReasoningEffort_High".Translate(), () => { chatReasoningEffort = ReasoningEffort.High; })
                 };
                 Find.WindowStack.Add(new FloatMenu(options));
             }
@@ -222,8 +209,8 @@ namespace RimLLM_Framework.Mod
                                 {
                                     MaxOutputTokens = 4096,
                                     Temperature = 0.7f,
-                                    DisableReasoning = chatReasoningEffort == LLMReasoningEffort.None,
-                                    Reasoning = new ReasoningOptions { Effort = MapReasoningEffort(chatReasoningEffort) },
+                                    DisableReasoning = false,
+                                    Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null,
                                     // 供應商中途失敗、框架改由下一家重新串流時，捨棄已顯示的殘段，
                                     // 避免畫面出現前後兩段混接的內容。
                                     OnStreamRestart = () =>

@@ -224,7 +224,7 @@ namespace RimLLM_Framework.Tests
                 FallbackChain = new List<string> { "MockSuccess:model-z" },
                 MaxRetries = 0,
                 RetryDelay = 0f,
-                DefaultReasoningEffort = LLMReasoningEffort.High
+                DefaultReasoningEffort = ReasoningEffort.High
             };
             mockSettings.EnabledProviders["MockSuccess"] = true;
             mockSettings.ApiKeys["MockSuccess"] = "mock-key-z";
@@ -2585,7 +2585,7 @@ namespace RimLLM_Framework.Tests
         public List<string> FallbackChain { get; set; } = new List<string>();
         public float ApiTimeout { get; set; } = 30f;
         public bool DetailedLogging { get; set; } = true;
-        public LLMReasoningEffort DefaultReasoningEffort { get; set; } = LLMReasoningEffort.Auto;
+        public ReasoningEffort? DefaultReasoningEffort { get; set; } = null;
         public int MaxRetries { get; set; } = 3;
         public float RetryDelay { get; set; } = 3f;
         public int MaxConcurrentRequests { get; set; } = 2;

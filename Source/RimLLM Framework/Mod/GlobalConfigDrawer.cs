@@ -81,16 +81,15 @@ namespace RimLLM_Framework.Mod
             Widgets.Label(labelRect, "RimLLM_ReasoningEffortLabel".Translate());
             Text.Anchor = TextAnchor.UpperLeft;
 
-            string currentEffortLabel = $"RimLLM_ReasoningEffort_{Settings.DefaultReasoningEffort}".Translate();
+            string currentEffortLabel = Settings.DefaultReasoningEffort == null ? "RimLLM_ReasoningEffort_Auto".Translate() : $"RimLLM_ReasoningEffort_{Settings.DefaultReasoningEffort}".Translate();
             if (Widgets.ButtonText(btnRect, currentEffortLabel))
             {
                 List<FloatMenuOption> options = new List<FloatMenuOption>
                 {
-                    new FloatMenuOption("RimLLM_ReasoningEffort_Auto".Translate(), () => { Settings.DefaultReasoningEffort = LLMReasoningEffort.Auto; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_ReasoningEffort_None".Translate(), () => { Settings.DefaultReasoningEffort = LLMReasoningEffort.None; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_ReasoningEffort_Low".Translate(), () => { Settings.DefaultReasoningEffort = LLMReasoningEffort.Low; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_ReasoningEffort_Medium".Translate(), () => { Settings.DefaultReasoningEffort = LLMReasoningEffort.Medium; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_ReasoningEffort_High".Translate(), () => { Settings.DefaultReasoningEffort = LLMReasoningEffort.High; Settings.Write(); })
+                    new FloatMenuOption("RimLLM_ReasoningEffort_Auto".Translate(), () => { Settings.DefaultReasoningEffort = null; Settings.Write(); }),
+                    new FloatMenuOption("RimLLM_ReasoningEffort_Low".Translate(), () => { Settings.DefaultReasoningEffort = Microsoft.Extensions.AI.ReasoningEffort.Low; Settings.Write(); }),
+                    new FloatMenuOption("RimLLM_ReasoningEffort_Medium".Translate(), () => { Settings.DefaultReasoningEffort = Microsoft.Extensions.AI.ReasoningEffort.Medium; Settings.Write(); }),
+                    new FloatMenuOption("RimLLM_ReasoningEffort_High".Translate(), () => { Settings.DefaultReasoningEffort = Microsoft.Extensions.AI.ReasoningEffort.High; Settings.Write(); })
                 };
                 Find.WindowStack.Add(new FloatMenu(options));
             }

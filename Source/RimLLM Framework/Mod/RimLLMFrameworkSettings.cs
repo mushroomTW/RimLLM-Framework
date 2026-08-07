@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Microsoft.Extensions.AI;
 using Newtonsoft.Json;
 using Verse;
 using RimLLM_Framework.Core;
@@ -43,7 +44,7 @@ namespace RimLLM_Framework.Mod
         public float RetryDelay { get; set; } = 3f;        // 重試間隔 (秒)
         public bool DetailedLogging { get; set; } = true;  // 是否啟用詳細日誌
         public int MaxConcurrentRequests { get; set; } = 2; // 最大並行限制
-        public LLMReasoningEffort DefaultReasoningEffort { get; set; } = LLMReasoningEffort.Auto;
+        public ReasoningEffort? DefaultReasoningEffort { get; set; } = null;
 
         // 遙測資料（對話歷史、請求日誌、用量統計）獨立存放於 JSON 檔案，不寫入設定 XML
         private readonly RimLLMTelemetryStore _telemetry = new RimLLMTelemetryStore();
@@ -204,7 +205,7 @@ namespace RimLLM_Framework.Mod
             public int MaxConcurrentRequests;
             public List<string> ChatHistory;
             public List<RimLLMManager.RequestLogEntry> RequestLogs;
-            public LLMReasoningEffort DefaultReasoningEffort;
+            public int DefaultReasoningEffort;
             public long TotalPromptTokens;
             public long TotalCompletionTokens;
             public float TotalEstimatedCost;
@@ -264,7 +265,7 @@ namespace RimLLM_Framework.Mod
                         ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
                         DetailedLogging = this.DetailedLogging,
                         MaxConcurrentRequests = this.MaxConcurrentRequests,
-                        DefaultReasoningEffort = this.DefaultReasoningEffort,
+                        DefaultReasoningEffort = this.DefaultReasoningEffort == null ? 0 : (int)this.DefaultReasoningEffort.Value + 1,
                         DailyBudgetLimit = this.DailyBudgetLimit,
                         BudgetPolicy = this.BudgetPolicy,
                         EnableAntiAbuse = this.EnableAntiAbuse,
@@ -350,7 +351,7 @@ namespace RimLLM_Framework.Mod
                                     foreach (var kvp in dto.ModelLevelOverrides) _modelLevelOverrides[kvp.Key] = kvp.Value;
                                 }
 
-                                this.DefaultReasoningEffort = dto.DefaultReasoningEffort;
+                                this.DefaultReasoningEffort = dto.DefaultReasoningEffort <= 0 || dto.DefaultReasoningEffort > 3 ? (ReasoningEffort?)null : (ReasoningEffort?)(dto.DefaultReasoningEffort - 1);
 
                                 // 舊版設定 XML 內嵌的遙測資料：若獨立遙測檔尚不存在，執行一次性遷移
                                 if (!_telemetry.LoadedFromDisk &&

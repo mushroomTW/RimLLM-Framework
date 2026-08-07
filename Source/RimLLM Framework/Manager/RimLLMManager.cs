@@ -1351,15 +1351,13 @@ namespace RimLLM_Framework.Manager
                 throw new ArgumentNullException(nameof(request));
             }
 
-            // 暫存版（Task 10a 改正式版）：settings.DefaultReasoningEffort 仍為 LLMReasoningEffort，
-            // 以 MapLegacyReasoningEffort 轉譯後套用。
-            if (request.ReasoningEffort.HasValue || settings.DefaultReasoningEffort == LLMReasoningEffort.Auto)
+            if (request.ReasoningEffort.HasValue || settings.DefaultReasoningEffort == null)
             {
                 return request;
             }
 
             var clone = request.Clone();
-            clone.ReasoningEffort = MapLegacyReasoningEffort(settings.DefaultReasoningEffort);
+            clone.ReasoningEffort = settings.DefaultReasoningEffort;
             return clone;
         }
 
