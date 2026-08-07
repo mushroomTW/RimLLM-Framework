@@ -172,9 +172,9 @@ public async void CallWithCaching()
 ```
 
 > [!NOTE]
-> * 當 `CachedContext` 不為空時，`EnableContextCaching` 會自動設為 `true`。
-> * **Gemini** 會將 `SystemPrompt + CachedContext` 快取（TTL 300s）。當內容過小時（Pro < 2048 字元、其餘 < 1024 字元），框架會自動降級為一般 `systemInstruction` 避免額外收費。
-> * **OpenAI** 服務端會自動對重複前綴套用 Prompt Caching。
+> 當 `CachedContext` 不為空時，`EnableContextCaching` 會自動設為 `true`。
+> **Gemini** 會將 `SystemPrompt + CachedContext` 快取（TTL 300s）。當內容過小時（Pro < 2048 字元、其餘 < 1024 字元），框架會自動降級為一般 `systemInstruction` 避免額外收費。
+> **OpenAI** 服務端會自動對重複前綴套用 Prompt Caching。
 
 ### 7. 向量 Embedding 生成 (Embeddings)
 
