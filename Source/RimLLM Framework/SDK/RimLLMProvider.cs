@@ -1,71 +1,95 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Threading.Tasks;
+using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.SDK
 {
     /// <summary>
-    /// RimLLM SDK 全域靜態入口。
-    /// 其他 Mod 可以透過此類別註冊客戶端與取得 IRimLLM 服務執行個體。
+    /// RimLLM SDK 全域靜態入口。第三方 Mod 以 RegisterClient + CreateChatClient /
+    /// CreateEmbeddingGenerator 取得標準 MEAI client 使用框架。
     /// </summary>
     public static class RimLLMProvider
     {
-        private static IRimLLM _instance;
+        private static RimLLMManager _manager;
 
-        /// <summary>
-        /// 取得 IRimLLM 服務執行個體。
-        /// </summary>
-        public static IRimLLM Instance
-        {
-            get
-            {
-                if (_instance == null)
-                {
-                    throw new InvalidOperationException("[RimLLM] SDK has not been initialized. Please make sure the RimLLM Framework mod is active.");
-                }
-                return _instance;
-            }
-        }
-
-        /// <summary>內部存取目前 manager 執行個體（同 assembly 使用，取代 Instance 依賴）。</summary>
+        /// <summary>內部存取目前 manager 執行個體（同 assembly 使用）。</summary>
         internal static RimLLMManager Manager
         {
             get
             {
-                if (_instance == null)
+                if (_manager == null)
                 {
                     throw new InvalidOperationException("[RimLLM] SDK has not been initialized. Please make sure the RimLLM Framework mod is active.");
                 }
-                return (RimLLMManager)_instance;
+                return _manager;
             }
         }
 
-        /// <summary>
-        /// 提供內部初始化 IRimLLM 實作實例的方法。
-        /// </summary>
-        internal static void Initialize(IRimLLM manager)
+        /// <summary>暫時保留（Task 10 移除）：回傳 IRimLLM 服務執行個體。</summary>
+        public static IRimLLM Instance
         {
-            _instance = manager;
+            get
+            {
+                if (_manager == null)
+                {
+                    throw new InvalidOperationException("[RimLLM] SDK has not been initialized. Please make sure the RimLLM Framework mod is active.");
+                }
+                return _manager;
+            }
         }
 
-        /// <summary>
-        /// 註冊呼叫端 Mod。內部使用 Assembly.GetCallingAssembly() 獲取呼叫端組件並進行安全綁定。
-        /// </summary>
-        /// <param name="modId">呼叫端 Mod 的唯一識別碼</param>
+        internal static void Initialize(RimLLMManager manager)
+        {
+            _manager = manager;
+        }
+
+        /// <summary>註冊呼叫端 Mod。內部使用 Assembly.GetCallingAssembly() 獲取呼叫端組件並進行安全綁定。</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public static void RegisterClient(string modId)
         {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            ClientRegistry.RegisterClient(modId, callingAssembly);
+            ClientRegistry.RegisterClient(modId, Assembly.GetCallingAssembly());
         }
 
-        /// <summary>
-        /// 註冊外部 LLM 供應商的靜態便捷入口。詳見 IRimLLM.RegisterProvider。
-        /// </summary>
+        /// <summary>建立綁定此 Mod 的 IChatClient facade（需先 RegisterClient）。</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static IChatClient CreateChatClient(string modId)
+        {
+            return Manager.CreateChatClient(modId, Assembly.GetCallingAssembly());
+        }
+
+        /// <summary>建立綁定此 Mod 的 IEmbeddingGenerator facade（需先 RegisterClient）。</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static IEmbeddingGenerator<string, Embedding<float>> CreateEmbeddingGenerator(string modId)
+        {
+            return Manager.CreateEmbeddingGenerator(modId, Assembly.GetCallingAssembly());
+        }
+
+        /// <summary>註冊外部 LLM 供應商的靜態便捷入口。</summary>
         public static void RegisterProvider(Providers.ILLMProvider provider)
         {
-            Instance.RegisterProvider(provider);
+            Manager.RegisterProvider(provider);
+        }
+
+        /// <summary>測試指定供應商的連線狀態。</summary>
+        public static Task<TestResult> TestProviderAsync(string providerId)
+        {
+            return Manager.TestProviderAsync(providerId);
+        }
+
+        /// <summary>從指定供應商拉取可用模型清單。</summary>
+        public static Task<List<string>> FetchProviderModelsAsync(string providerId)
+        {
+            return Manager.FetchProviderModelsAsync(providerId);
+        }
+
+        /// <summary>取得所有已註冊供應商的識別碼（依註冊順序）。</summary>
+        public static List<string> GetRegisteredProviderIds()
+        {
+            return Manager.GetRegisteredProviderIds();
         }
     }
 }
