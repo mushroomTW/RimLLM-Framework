@@ -266,5 +266,84 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual(5, result.Value);
             Assert.AreEqual("ok", result.Message);
         }
+
+        [Test]
+        public void TestGetResponseObjectAsync_FacadeFullPath_DoubleRepair()
+        {
+            var settings = new MockSettings { FallbackChain = new List<string> { "DoubleRepairMock:model-dr" } };
+            settings.EnabledProviders["DoubleRepairMock"] = true;
+            settings.ApiKeys["DoubleRepairMock"] = "key";
+
+            var manager = new RimLLMManager(settings);
+            int callCount = 0;
+            manager.RegisterProvider(new MockTestProvider
+            {
+                ProviderId = "DoubleRepairMock",
+                GenerateHandler = (messages, options, model) =>
+                {
+                    callCount++;
+                    if (callCount == 1)
+                    {
+                        return System.Threading.Tasks.Task.FromResult("{{ Value: 100");
+                    }
+                    return System.Threading.Tasks.Task.FromResult("{\"Value\":99,\"Message\":\"repaired\"}");
+                }
+            });
+
+            var client = CreateClient(manager, "test.doublerepair.mod");
+            var result = client.GetResponseObjectAsync<TestDataStructure>(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "get repaired data") }).GetAwaiter().GetResult();
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(99, result.Value);
+            Assert.AreEqual("repaired", result.Message);
+            Assert.AreEqual(2, callCount);
+        }
+
+        [Test]
+        public void TestGetResponseObjectAsync_SchemaCached()
+        {
+            var manager = CreateManager();
+            var client = CreateClient(manager, "test.schemacache.mod");
+            
+            var res1 = client.GetResponseObjectAsync<TestDataStructure>(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "req 1") }).GetAwaiter().GetResult();
+            var res2 = client.GetResponseObjectAsync<TestDataStructure>(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "req 2") }).GetAwaiter().GetResult();
+
+            Assert.IsNotNull(res1);
+            Assert.IsNotNull(res2);
+            Assert.AreEqual(42, res1.Value);
+            Assert.AreEqual(42, res2.Value);
+        }
+
+        [Test]
+        public void TestGetResponseAsync_PureChatOptionsDefaults()
+        {
+            var manager = CreateManager();
+            var client = CreateClient(manager, "test.pureoptions.mod");
+            var options = new ChatOptions(); // Pure MEAI ChatOptions without RimLLMChatOptions
+            var response = client.GetResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }, options).GetAwaiter().GetResult();
+
+            Assert.IsNotNull(response);
+            Assert.IsNotEmpty(response.Text);
+        }
+
+        [Test]
+        public void TestGetResponseAsync_AdditionalPropertiesMerged()
+        {
+            var manager = CreateManager();
+            var client = CreateClient(manager, "test.addprops.mod");
+            var options = new RimLLMChatOptions
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary { ["custom_key"] = "custom_val" }
+            };
+            var response = client.GetResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }, options).GetAwaiter().GetResult();
+
+            Assert.IsNotNull(response.AdditionalProperties);
+            Assert.AreEqual("custom_val", response.AdditionalProperties["custom_key"]);
+        }
     }
 }
