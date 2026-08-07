@@ -313,4 +313,33 @@ namespace RimLLM_Framework.Tests
         {
         }
     }
+
+    [TestFixture]
+    public class RimLLMRequestTests
+    {
+        [Test]
+        public void TestEffectiveSystemPrompt_PrefersCombined()
+        {
+            var r = new RimLLMRequest { SystemPrompt = "sys", CachedContext = "cache" };
+            Assert.AreEqual("sys\n\ncache", r.GetEffectiveSystemPrompt());
+        }
+
+        [Test]
+        public void TestEffectiveSystemPrompt_FallsBackToCachedContext()
+        {
+            var r = new RimLLMRequest { CachedContext = "cache" };
+            Assert.AreEqual("cache", r.GetEffectiveSystemPrompt());
+        }
+
+        [Test]
+        public void TestClone_IsDeepIndependent()
+        {
+            var r = new RimLLMRequest { ModId = "m", Temperature = 0.3f, ReasoningEffort = ReasoningEffort.High };
+            var c = r.Clone();
+            c.Temperature = 0.9f;
+            Assert.AreEqual(0.3f, r.Temperature);
+            Assert.AreEqual(ReasoningEffort.High, r.ReasoningEffort);
+            Assert.AreEqual("m", c.ModId);
+        }
+    }
 }
