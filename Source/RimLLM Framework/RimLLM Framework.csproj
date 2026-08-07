@@ -34,6 +34,11 @@
     <PackageReference Include="OpenAI" Version="2.12.0" />
     <PackageReference Include="Google.GenAI" Version="1.16.0" />
     <!--
+      升級 System.Threading.Tasks.Extensions 至 4.6.3，並以 alias 隔離其 ValueTask，
+      避免與 Krafs.Rimworld.Ref 附帶的 RimWorld Mono mscorlib（同樣定義 ValueTask）衝突（CS0433）。
+    -->
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" Aliases="ste" />
+    <!--
       以 alias 隔離 Microsoft.Bcl.AsyncInterfaces 的 IAsyncEnumerable<T>，避免與
       mscorlib (net472) 提供的同名介面衝突 (CS0433)。測試專案亦採相同做法。
     -->
