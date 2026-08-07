@@ -410,6 +410,29 @@ namespace RimLLM_Framework.Manager
             return new RimLLMChatClient(this, modId);
         }
 
+        /// <summary>建立綁定指定 Mod 的 embedding generator。呼叫端 assembly 須已註冊該 Mod。</summary>
+        internal RimLLMEmbeddingClient CreateEmbeddingGenerator(string modId, Assembly callingAssembly)
+        {
+            if (string.IsNullOrEmpty(modId))
+            {
+                throw new ArgumentException("ModId cannot be empty or null", nameof(modId));
+            }
+            if (!ClientRegistry.Verify(modId, callingAssembly))
+            {
+                throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{modId}' did not pass.");
+            }
+            return new RimLLMEmbeddingClient(this, modId);
+        }
+
+        /// <summary>執行指定 Mod 的防濫用檢查（供 embedding facade 於每次呼叫時使用）。</summary>
+        internal void CheckAntiAbuseForMod(string modId)
+        {
+            if (_settings.EnableAntiAbuse)
+            {
+                CheckAntiAbuse(modId);
+            }
+        }
+
         /// <summary>
         /// 真正的非同步生成文字邏輯。呼叫前必須已通過 RunAdmissionChecksAsync。
         /// </summary>
