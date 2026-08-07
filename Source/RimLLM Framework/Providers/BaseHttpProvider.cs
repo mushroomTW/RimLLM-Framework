@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using System.Diagnostics;
+using Microsoft.Extensions.AI;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
 
@@ -43,9 +44,71 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         public virtual bool RequiresApiKey => true;
 
-        public abstract Task<string> GenerateAsync(LLMRequest request, string model);
+        public abstract Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model);
 
-        public abstract Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived);
+        public abstract Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived);
+
+        public Task<string> GenerateAsync(LLMRequest request, string model)
+        {
+            var messages = new List<ChatMessage>();
+            if (!string.IsNullOrEmpty(request.SystemPrompt))
+            {
+                messages.Add(new ChatMessage(ChatRole.System, request.SystemPrompt));
+            }
+            messages.Add(new ChatMessage(ChatRole.User, request.Prompt ?? string.Empty));
+            var options = new RimLLMChatOptions
+            {
+                Temperature = request.Temperature,
+                MaxOutputTokens = request.MaxTokens,
+                DisableReasoning = request.ReasoningEffort == LLMReasoningEffort.None,
+                Reasoning = request.ReasoningEffort == LLMReasoningEffort.Low ? new ReasoningOptions { Effort = ReasoningEffort.Low } :
+                            request.ReasoningEffort == LLMReasoningEffort.Medium ? new ReasoningOptions { Effort = ReasoningEffort.Medium } :
+                            request.ReasoningEffort == LLMReasoningEffort.High ? new ReasoningOptions { Effort = ReasoningEffort.High } : null
+            };
+            if (request.ReasoningEffort == LLMReasoningEffort.None)
+            {
+                options.AdditionalProperties = options.AdditionalProperties ?? new AdditionalPropertiesDictionary();
+                options.AdditionalProperties["rimllm_disable_reasoning"] = true;
+            }
+            if (!string.IsNullOrEmpty(request.CachedContext))
+            {
+                options.AdditionalProperties = options.AdditionalProperties ?? new AdditionalPropertiesDictionary();
+                options.AdditionalProperties["rimllm_cached_context"] = request.CachedContext;
+                options.AdditionalProperties["rimllm_enable_context_caching"] = request.EnableContextCaching;
+            }
+            return GenerateAsync(messages, options, model);
+        }
+
+        public Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        {
+            var messages = new List<ChatMessage>();
+            if (!string.IsNullOrEmpty(request.SystemPrompt))
+            {
+                messages.Add(new ChatMessage(ChatRole.System, request.SystemPrompt));
+            }
+            messages.Add(new ChatMessage(ChatRole.User, request.Prompt ?? string.Empty));
+            var options = new RimLLMChatOptions
+            {
+                Temperature = request.Temperature,
+                MaxOutputTokens = request.MaxTokens,
+                DisableReasoning = request.ReasoningEffort == LLMReasoningEffort.None,
+                Reasoning = request.ReasoningEffort == LLMReasoningEffort.Low ? new ReasoningOptions { Effort = ReasoningEffort.Low } :
+                            request.ReasoningEffort == LLMReasoningEffort.Medium ? new ReasoningOptions { Effort = ReasoningEffort.Medium } :
+                            request.ReasoningEffort == LLMReasoningEffort.High ? new ReasoningOptions { Effort = ReasoningEffort.High } : null
+            };
+            if (request.ReasoningEffort == LLMReasoningEffort.None)
+            {
+                options.AdditionalProperties = options.AdditionalProperties ?? new AdditionalPropertiesDictionary();
+                options.AdditionalProperties["rimllm_disable_reasoning"] = true;
+            }
+            if (!string.IsNullOrEmpty(request.CachedContext))
+            {
+                options.AdditionalProperties = options.AdditionalProperties ?? new AdditionalPropertiesDictionary();
+                options.AdditionalProperties["rimllm_cached_context"] = request.CachedContext;
+                options.AdditionalProperties["rimllm_enable_context_caching"] = request.EnableContextCaching;
+            }
+            return StreamAsync(messages, options, model, onChunkReceived);
+        }
 
         public virtual async Task<TestResult> TestConnectionAsync()
         {
@@ -60,7 +123,8 @@ namespace RimLLM_Framework.Providers
 
             try
             {
-                var request = new LLMRequest { Prompt = "ping", MaxTokens = 5 };
+                var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "ping") };
+                var options = new ChatOptions { MaxOutputTokens = 5 };
                 // 優先使用 DefaultTestModel 作為連線測試模型，因為這是最便宜且穩定的內建對話模型。
                 // 只有在 DefaultTestModel 為 "default" (如 OpenAICompatible 本地相容介面) 時，才去讀取快取清單的第一個模型。
                 string testModel = DefaultTestModel;
@@ -69,7 +133,7 @@ namespace RimLLM_Framework.Providers
                     testModel = Settings.GetDefaultModel(ProviderId, DefaultTestModel);
                 }
 
-                string content = await GenerateAsync(request, testModel).ConfigureAwait(false);
+                string content = await GenerateAsync(messages, options, testModel).ConfigureAwait(false);
                 stopwatch.Stop();
 
                 result.Success = true;

@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Extensions.AI;
 using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
 {
     /// <summary>
-    /// LLM 供應商對接介面。
+    /// LLM 供應商對接介面（MEAI 慣例：messages + options）。
     /// </summary>
     public interface ILLMProvider
     {
@@ -24,18 +25,20 @@ namespace RimLLM_Framework.Providers
         /// <summary>
         /// 向該供應商發送非同步生成請求。
         /// </summary>
-        /// <param name="request">請求參數</param>
+        /// <param name="messages">對話訊息清單</param>
+        /// <param name="options">生成選項</param>
         /// <param name="model">要使用的模型名稱</param>
         /// <returns>生成結果文字</returns>
-        Task<string> GenerateAsync(LLMRequest request, string model);
+        Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model);
 
         /// <summary>
         /// 向該供應商發送非同步串流請求。
         /// </summary>
-        /// <param name="request">請求參數</param>
+        /// <param name="messages">對話訊息清單</param>
+        /// <param name="options">生成選項</param>
         /// <param name="model">要使用的模型名稱</param>
         /// <param name="onChunkReceived">收到字串片段時的回呼函式</param>
-        Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived);
+        Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived);
 
         /// <summary>
         /// 測試此供應商的 API 金鑰與連線狀態。

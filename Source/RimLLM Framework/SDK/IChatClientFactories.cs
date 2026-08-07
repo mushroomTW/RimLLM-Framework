@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 
@@ -28,11 +29,11 @@ namespace RimLLM_Framework.SDK
     /// </summary>
     public interface IChatOptionsCustomizer
     {
-        Action<ChatOptions> CreateChatOptionsCustomizer(LLMRequest request, string model);
+        Action<ChatOptions> CreateChatOptionsCustomizer(ChatOptions options, string model);
     }
 
     public interface INativeStructuredOutputProvider
     {
-        Task<string> GenerateStructuredAsync(LLMRequest request, string model);
+        Task<string> GenerateStructuredAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model);
     }
 }

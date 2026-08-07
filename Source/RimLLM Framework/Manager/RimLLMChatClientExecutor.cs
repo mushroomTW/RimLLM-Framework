@@ -15,6 +15,39 @@ namespace RimLLM_Framework.Manager
     /// <summary>將內部 RimLLMRequest 轉換為 MEAI IChatClient 呼叫。</summary>
     internal static class RimLLMChatClientExecutor
     {
+        internal static RimLLMRequest CreateFromChatOptions(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions options,
+            string model,
+            CancellationToken cancellationToken = default)
+        {
+            var list = new List<ChatMessage>(messages ?? new List<ChatMessage>());
+            string systemPrompt = null;
+            if (list.Count > 0 && list[0]?.Role == ChatRole.System)
+            {
+                systemPrompt = list[0].Text;
+            }
+            var request = new RimLLMRequest
+            {
+                Messages = list,
+                SystemPrompt = systemPrompt,
+                Temperature = options?.Temperature,
+                MaxOutputTokens = options?.MaxOutputTokens,
+                ReasoningEffort = options?.Reasoning?.Effort,
+                CancellationToken = cancellationToken,
+                PreferredModelId = model
+            };
+            if (options?.AdditionalProperties != null)
+            {
+                if (options.AdditionalProperties.TryGetValue("rimllm_cached_context", out object cc) && cc is string ccStr)
+                    request.CachedContext = ccStr;
+                if (options.AdditionalProperties.TryGetValue("rimllm_enable_context_caching", out object ec) && ec is bool ecBool)
+                    request.EnableContextCaching = ecBool;
+                if (options.AdditionalProperties.TryGetValue("rimllm_disable_reasoning", out object dr) && dr is bool drBool)
+                    request.DisableReasoning = drBool;
+            }
+            return request;
+        }
         /// <summary>
         /// 非串流請求：以 <paramref name="timeoutSeconds"/> 建立整體逾時，並與呼叫端的取消 Token 連動。
         /// 官方 SDK 的 client 本身沒有套用使用者設定的 ApiTimeout，因此在此統一補上，
@@ -271,6 +304,10 @@ namespace RimLLM_Framework.Manager
                 options.AdditionalProperties = new AdditionalPropertiesDictionary();
             }
             options.AdditionalProperties["rimllm_disable_reasoning"] = request.DisableReasoning;
+            if (request.ReasoningEffort.HasValue)
+            {
+                options.Reasoning = new ReasoningOptions { Effort = request.ReasoningEffort.Value };
+            }
 
             // 與 raw 路徑一致：含 Dictionary 的開放式 map 型別仍送出 response_format，
             // 但 strict 改為 false，否則服務端會拒絕（AdditionalProperties["strict"] 控制

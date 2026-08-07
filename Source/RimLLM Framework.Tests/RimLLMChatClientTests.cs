@@ -1,4 +1,4 @@
-﻿using NUnit.Framework;
+using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -22,9 +22,9 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockTestProvider
             {
                 ProviderId = "TestMock",
-                GenerateHandler = (request, model) =>
+                GenerateHandler = (messages, options, model) =>
                     System.Threading.Tasks.Task.FromResult(
-                        request.ResponseType != null
+                        (options != null && (options.ResponseFormat != null || (options.AdditionalProperties != null && options.AdditionalProperties.ContainsKey("rimllm_response_schema"))))
                             ? "{\"Value\":42,\"Message\":\"mock\"}"
                             : "mock-reply for " + model)
             });
@@ -139,7 +139,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "TestMockStream",
-                StreamHandler = (request, model, onChunk) =>
+                StreamHandler = (messages, options, model, onChunk) =>
                 {
                     onChunk("mock-");
                     onChunk("stream");
@@ -188,7 +188,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockPartial",
-                StreamHandler = (request, model, onChunk) =>
+                StreamHandler = (messages, options, model, onChunk) =>
                 {
                     onChunk("partial");
                     throw new RimLLMException(LLMError.ProviderOffline, "dropped mid-stream");
@@ -197,7 +197,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockGood",
-                StreamHandler = (request, model, onChunk) =>
+                StreamHandler = (messages, options, model, onChunk) =>
                 {
                     onChunk("final");
                     return System.Threading.Tasks.Task.CompletedTask;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -11,6 +11,7 @@ using OpenAI.Chat;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Core;
+using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace RimLLM_Framework.Providers
 {
@@ -80,75 +81,116 @@ namespace RimLLM_Framework.Providers
         /// <summary>
         /// 供應商專屬 options 客製化鉤子：交由 <see cref="BuildChatOptions"/> 實作。
         /// </summary>
-        public Action<ChatOptions> CreateChatOptionsCustomizer(LLMRequest request, string model)
+        public Action<ChatOptions> CreateChatOptionsCustomizer(ChatOptions options, string model)
         {
-            return options => BuildChatOptions(request, model, options);
+            return o => BuildChatOptions(options, model, o);
         }
 
         /// <summary>
         /// 依模型類型調整 MEAI ChatOptions：推理模型清空 temperature 並對應 reasoning effort，
         /// 其餘維持 executor 已設定的基礎選項。
         /// </summary>
-        protected virtual void BuildChatOptions(LLMRequest request, string model, ChatOptions options)
+        protected virtual void BuildChatOptions(ChatOptions requestOptions, string model, ChatOptions options)
         {
+            if (requestOptions?.ResponseFormat != null)
+            {
+                options.ResponseFormat = requestOptions.ResponseFormat;
+            }
+            if (requestOptions?.AdditionalProperties != null)
+            {
+                if (requestOptions.AdditionalProperties.TryGetValue("strict", out object strictVal) && strictVal is bool strictBool)
+                {
+                    options.AdditionalProperties["strict"] = strictBool;
+                }
+                if (requestOptions.AdditionalProperties.TryGetValue("rimllm_response_schema", out object schemaVal) && schemaVal is string schemaJsonStr)
+                {
+                    using (System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(schemaJsonStr))
+                    {
+                        bool strict = !schemaJsonStr.Contains("additionalProperties\": true") && !schemaJsonStr.Contains("additionalProperties\":true");
+                        if (requestOptions.AdditionalProperties.TryGetValue("strict", out object sObj) && sObj is bool sBool)
+                        {
+                            strict = sBool;
+                        }
+                        options.ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(
+                            document.RootElement.Clone(),
+                            "custom_type",
+                            "RimLLM structured response");
+                        options.AdditionalProperties["strict"] = strict;
+                    }
+                }
+            }
+
+            bool disableReasoning = false;
+            if (requestOptions?.AdditionalProperties != null &&
+                requestOptions.AdditionalProperties.TryGetValue("rimllm_disable_reasoning", out object val) &&
+                val is bool b)
+            {
+                disableReasoning = b;
+            }
+
             if (IsOpenAiReasoningModel(model))
             {
                 options.Temperature = null;
-                if (request.ReasoningEffort != LLMReasoningEffort.None &&
-                    request.ReasoningEffort != LLMReasoningEffort.Auto)
+                if (!disableReasoning && requestOptions?.Reasoning?.Effort != null)
                 {
                     options.Reasoning = new ReasoningOptions
                     {
-                        Effort = MapReasoningEffort(request.ReasoningEffort)
+                        Effort = requestOptions.Reasoning.Effort
                     };
                 }
             }
-            else if (request.MaxTokens > 0)
+            else
             {
-                // 對齊 raw 路徑：非 reasoning 模型走 max_tokens（OpenAI SDK 預設一律
-                // 序列化為 max_completion_tokens），以 Patch 移除後改寫。
-                options.RawRepresentationFactory = _ =>
+                options.Reasoning = null;
+                if ((requestOptions?.MaxOutputTokens ?? 0) > 0)
                 {
-                    var chatCompletionOptions = new ChatCompletionOptions();
-                    chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.max_completion_tokens"));
-                    chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_tokens"), request.MaxTokens);
-                    return chatCompletionOptions;
-                };
+                    // 對齊 raw 路徑：非 reasoning 模型走 max_tokens（OpenAI SDK 預設一律
+                    // 序列化為 max_completion_tokens），以 Patch 移除後改寫。
+                    int maxTokens = requestOptions.MaxOutputTokens.Value;
+                    options.RawRepresentationFactory = _ =>
+                    {
+                        var chatCompletionOptions = new ChatCompletionOptions();
+                        chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.reasoning_effort"));
+                        chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.max_completion_tokens"));
+                        chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_tokens"), maxTokens);
+                        return chatCompletionOptions;
+                    };
+                }
+                else
+                {
+                    options.RawRepresentationFactory = _ =>
+                    {
+                        var chatCompletionOptions = new ChatCompletionOptions();
+                        chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.reasoning_effort"));
+                        return chatCompletionOptions;
+                    };
+                }
             }
         }
 
-        /// <summary>
-        /// 將框架的思考強度對應至 MEAI ReasoningEffort；僅 Low/Medium/High 有明確對照，
-        /// None 不在此被使用（呼叫端已過濾）。
-        /// </summary>
-        private static ReasoningEffort? MapReasoningEffort(LLMReasoningEffort effort)
+        public Task<string> GenerateStructuredAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
-            switch (effort)
-            {
-                case LLMReasoningEffort.Low:
-                    return ReasoningEffort.Low;
-                case LLMReasoningEffort.Medium:
-                    return ReasoningEffort.Medium;
-                case LLMReasoningEffort.High:
-                    return ReasoningEffort.High;
-                default:
-                    return null;
-            }
+            return GenerateWithChatClientAsync(messages, options, model, true);
         }
 
-        public Task<string> GenerateStructuredAsync(LLMRequest request, string model)
+        public override Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
-            return GenerateWithChatClientAsync(request, model, true);
+            return GenerateWithChatClientAsync(messages, options, model, options?.ResponseFormat != null && Settings.EnableNativeSchema);
         }
 
-        private async Task<string> GenerateWithChatClientAsync(LLMRequest request, string model, bool useNativeSchema)
+        public override Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
+        {
+            return StreamWithChatClientAsync(messages, options, model, onChunkReceived);
+        }
+
+        private async Task<string> GenerateWithChatClientAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, bool useNativeSchema)
         {
             // 供應商不支援原生 JSON Schema（如 Kimi/Grok）時，
             // 即使呼叫端要求 structured output 也改走提示式 JSON fallback，
             // 與 raw 路徑 BuildRequestPayloadAsync 的判斷一致。
             bool effectiveNativeSchema = useNativeSchema && SupportsNativeJsonSchemaPayload;
 
-            RimLLMRequest translated = TranslateRequest(request);
+            RimLLMRequest translated = RimLLMChatClientExecutor.CreateFromChatOptions(messages, options, model);
 
             using (IChatClient client = CreateChatClient(model))
             {
@@ -159,14 +201,14 @@ namespace RimLLM_Framework.Providers
                     effectiveNativeSchema,
                     ProviderId,
                     Settings?.ApiTimeout ?? 30f,
-                    options => BuildChatOptions(request, model, options)).ConfigureAwait(false);
+                    o => BuildChatOptions(options, model, o)).ConfigureAwait(false);
                 return result.Text;
             }
         }
 
-        private async Task StreamWithChatClientAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        private async Task StreamWithChatClientAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
         {
-            RimLLMRequest translated = TranslateRequest(request);
+            RimLLMRequest translated = RimLLMChatClientExecutor.CreateFromChatOptions(messages, options, model);
 
             using (IChatClient client = CreateChatClient(model))
             {
@@ -174,36 +216,12 @@ namespace RimLLM_Framework.Providers
                     client,
                     translated,
                     model,
-                    request.ResponseType != null && Settings.EnableNativeSchema,
+                    options?.ResponseFormat != null && Settings.EnableNativeSchema,
                     ProviderId,
                     onChunkReceived,
                     Settings?.ApiTimeout ?? 30f,
-                    options => BuildChatOptions(request, model, options)).ConfigureAwait(false);
+                    o => BuildChatOptions(options, model, o)).ConfigureAwait(false);
             }
-        }
-
-        /// <summary>
-        /// 暫時的 LLMRequest → RimLLMRequest 轉譯（公開契約遷移至 MEAI 慣例後移除）。
-        /// </summary>
-        private static RimLLMRequest TranslateRequest(LLMRequest request)
-        {
-            var translated = new RimLLMRequest
-            {
-                ModId = request.ModId,
-                Messages = new List<Microsoft.Extensions.AI.ChatMessage>
-                {
-                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, request.Prompt ?? string.Empty)
-                },
-                Temperature = request.Temperature,
-                MaxOutputTokens = request.MaxTokens,
-                ResponseType = request.ResponseType,
-                CancellationToken = request.CancellationToken
-            };
-            if (!string.IsNullOrEmpty(request.GetEffectiveSystemPrompt()))
-            {
-                translated.Messages.Insert(0, new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, request.GetEffectiveSystemPrompt()));
-            }
-            return translated;
         }
 
         protected bool IsOpenAiReasoningModel(string modelName)
@@ -212,19 +230,6 @@ namespace RimLLM_Framework.Providers
             string name = modelName.Contains("/") ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
             name = name.ToLowerInvariant();
             return name.StartsWith("o1") || name.StartsWith("o3");
-        }
-
-        public override async Task<string> GenerateAsync(LLMRequest request, string model)
-        {
-            return await GenerateWithChatClientAsync(
-                request,
-                model,
-                request.ResponseType != null && Settings.EnableNativeSchema).ConfigureAwait(false);
-        }
-
-        public override async Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
-        {
-            await StreamWithChatClientAsync(request, model, onChunkReceived).ConfigureAwait(false);
         }
 
         protected override string DefaultTestModel => _defaultTestModel;

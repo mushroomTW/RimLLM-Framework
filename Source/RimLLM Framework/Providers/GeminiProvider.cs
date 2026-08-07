@@ -1,4 +1,4 @@
-﻿extern alias bclasync;
+extern alias bclasync;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -71,19 +71,19 @@ namespace RimLLM_Framework.Providers
             return _chatClientFactory.Create(Settings.GetActiveApiKey(ProviderId), model);
         }
 
-        public Task<string> GenerateStructuredAsync(LLMRequest request, string model)
+        public Task<string> GenerateStructuredAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
-            return GenerateWithGoogleGenAiAsync(request, model);
+            return GenerateWithGoogleGenAiAsync(messages, options, model);
         }
 
-        public override Task<string> GenerateAsync(LLMRequest request, string model)
+        public override Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
-            return GenerateWithGoogleGenAiAsync(request, model);
+            return GenerateWithGoogleGenAiAsync(messages, options, model);
         }
 
-        public override Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        public override Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
         {
-            return StreamWithGoogleGenAiAsync(request, model, onChunkReceived);
+            return StreamWithGoogleGenAiAsync(messages, options, model, onChunkReceived);
         }
 
         /// <summary>建立 Google.GenAI 用戶端（測試縫）。</summary>
@@ -114,22 +114,53 @@ namespace RimLLM_Framework.Providers
             return client.Models.GenerateContentStreamAsync(model, contents, config, ct);
         }
 
-        private async Task<string> GenerateWithGoogleGenAiAsync(LLMRequest request, string model)
+        private static Content BuildTextContent(string text)
+        {
+            return new Content
+            {
+                Parts = new List<Part>
+                {
+                    new Part { Text = text ?? string.Empty }
+                }
+            };
+        }
+
+        private static List<Content> BuildContents(IEnumerable<ChatMessage> messages)
+        {
+            var contents = new List<Content>();
+            if (messages != null)
+            {
+                foreach (var m in messages)
+                {
+                    if (m != null && m.Role != ChatRole.System && !string.IsNullOrEmpty(m.Text))
+                    {
+                        contents.Add(BuildTextContent(m.Text));
+                    }
+                }
+            }
+            if (contents.Count == 0)
+            {
+                contents.Add(BuildTextContent(string.Empty));
+            }
+            return contents;
+        }
+
+        private async Task<string> GenerateWithGoogleGenAiAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             try
             {
                 using (Client client = CreateGenAiClient(apiKey))
                 {
-                    List<Content> contents = new List<Content> { BuildTextContent(request.Prompt) };
-                    GenerateContentConfig config = await BuildNativeConfigAsync(request, model, apiKey).ConfigureAwait(false);
+                    List<Content> contents = BuildContents(messages);
+                    GenerateContentConfig config = await BuildNativeConfigAsync(messages, options, model, apiKey).ConfigureAwait(false);
                     GenerateContentResponse response = await GenerateContentNativeAsync(
                         client,
                         model,
                         contents,
                         config,
-                        request.CancellationToken).ConfigureAwait(false);
-                    return ReadGeminiResponse(response, model, request);
+                        default).ConfigureAwait(false);
+                    return ReadGeminiResponse(response, model);
                 }
             }
             catch (RimLLMException)
@@ -143,7 +174,8 @@ namespace RimLLM_Framework.Providers
         }
 
         private async Task StreamWithGoogleGenAiAsync(
-            LLMRequest request,
+            IEnumerable<ChatMessage> messages,
+            ChatOptions options,
             string model,
             Action<string> onChunkReceived)
         {
@@ -152,8 +184,8 @@ namespace RimLLM_Framework.Providers
             {
                 using (Client client = CreateGenAiClient(apiKey))
                 {
-                    List<Content> contents = new List<Content> { BuildTextContent(request.Prompt) };
-                    GenerateContentConfig config = await BuildNativeConfigAsync(request, model, apiKey).ConfigureAwait(false);
+                    List<Content> contents = BuildContents(messages);
+                    GenerateContentConfig config = await BuildNativeConfigAsync(messages, options, model, apiKey).ConfigureAwait(false);
                     bool inReasoning = false;
                     bool hasFinishedReasoning = false;
                     int completionChars = 0;
@@ -167,7 +199,7 @@ namespace RimLLM_Framework.Providers
                         model,
                         contents,
                         config,
-                        request.CancellationToken))
+                        default))
                     {
                         if (response?.PromptFeedback != null && (response.Parts == null || response.Parts.Count == 0))
                         {
@@ -211,21 +243,25 @@ namespace RimLLM_Framework.Providers
                         throw new RimLLMException(LLMError.NetworkError, $"{ProviderId} 串流未回傳任何內容。");
                     }
 
-                    if (RimLLMProvider.Instance is RimLLMManager manager)
+                    if (hasUsage)
                     {
-                        if (hasUsage)
+                        RimLLMProvider.Manager.RecordUsage(ProviderId, model, promptTokens, completionTokens, cachedTokens);
+                    }
+                    else
+                    {
+                        int promptChars = 0;
+                        if (messages != null)
                         {
-                            manager.RecordUsage(ProviderId, model, promptTokens, completionTokens, cachedTokens);
+                            foreach (var m in messages)
+                            {
+                                if (m != null && !string.IsNullOrEmpty(m.Text)) promptChars += m.Text.Length;
+                            }
                         }
-                        else
-                        {
-                            int promptChars = (request.GetEffectiveSystemPrompt()?.Length ?? 0) + (request.Prompt?.Length ?? 0);
-                            manager.RecordUsage(
-                                ProviderId,
-                                model,
-                                Math.Max(1, (int)(promptChars * 0.8f)),
-                                Math.Max(1, (int)(completionChars * 0.8f)));
-                        }
+                        RimLLMProvider.Manager.RecordUsage(
+                            ProviderId,
+                            model,
+                            Math.Max(1, (int)(promptChars * 0.8f)),
+                            Math.Max(1, (int)(completionChars * 0.8f)));
                     }
                 }
             }
@@ -240,31 +276,80 @@ namespace RimLLM_Framework.Providers
         }
 
         private async Task<GenerateContentConfig> BuildNativeConfigAsync(
-            LLMRequest request,
+            IEnumerable<ChatMessage> messages,
+            ChatOptions options,
             string model,
             string apiKey)
         {
+            bool disableReasoning = false;
+            if (options?.AdditionalProperties != null &&
+                options.AdditionalProperties.TryGetValue("rimllm_disable_reasoning", out object dr) &&
+                dr is bool drBool)
+            {
+                disableReasoning = drBool;
+            }
+
             var config = new GenerateContentConfig
             {
-                Temperature = request.Temperature,
-                MaxOutputTokens = request.MaxTokens,
-                ThinkingConfig = BuildNativeThinkingConfig(model, request.ReasoningEffort),
+                Temperature = options?.Temperature,
+                MaxOutputTokens = options?.MaxOutputTokens,
+                ThinkingConfig = BuildNativeThinkingConfig(model, options?.Reasoning?.Effort, disableReasoning),
                 SafetySettings = this.SafetySettings.Count == 0
                     ? null
                     : new List<SafetySetting>(this.SafetySettings)
             };
 
-            string systemContext = request.GetEffectiveSystemPrompt();
+            string systemPromptMsg = null;
+            if (messages != null)
+            {
+                foreach (var m in messages)
+                {
+                    if (m != null && m.Role == ChatRole.System && !string.IsNullOrEmpty(m.Text))
+                    {
+                        systemPromptMsg = m.Text;
+                        break;
+                    }
+                }
+            }
+
+            string systemContext = null;
+            if (options?.AdditionalProperties != null &&
+                options.AdditionalProperties.TryGetValue("rimllm_cached_context", out object cc) &&
+                cc is string ccStr &&
+                !string.IsNullOrEmpty(ccStr))
+            {
+                if (!string.IsNullOrEmpty(systemPromptMsg) && systemPromptMsg != ccStr)
+                {
+                    systemContext = systemPromptMsg + "\n\n" + ccStr;
+                }
+                else
+                {
+                    systemContext = ccStr;
+                }
+            }
+            else
+            {
+                systemContext = systemPromptMsg;
+            }
+
+            bool enableContextCaching = false;
+            if (options?.AdditionalProperties != null &&
+                options.AdditionalProperties.TryGetValue("rimllm_enable_context_caching", out object ec) &&
+                ec is bool ecBool)
+            {
+                enableContextCaching = ecBool;
+            }
+
             string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             string cacheId = null;
-            if (request.EnableContextCaching && !string.IsNullOrEmpty(systemContext))
+            if (enableContextCaching && !string.IsNullOrEmpty(systemContext))
             {
                 cacheId = await GetOrCreateCachedContentAsync(
                     apiKey,
                     baseEndpoint,
                     model,
                     systemContext,
-                    request.CancellationToken).ConfigureAwait(false);
+                    default).ConfigureAwait(false);
             }
 
             if (!string.IsNullOrEmpty(cacheId))
@@ -276,17 +361,32 @@ namespace RimLLM_Framework.Providers
                 config.SystemInstruction = BuildTextContent(systemContext);
             }
 
-            if (request.ResponseType != null && Settings.EnableNativeSchema)
+            string schemaJson = null;
+            if (options?.AdditionalProperties != null &&
+                options.AdditionalProperties.TryGetValue("rimllm_response_schema", out object rs) &&
+                rs is string rsStr)
+            {
+                schemaJson = rsStr;
+            }
+            else if (options?.ResponseFormat is ChatResponseFormatJson jsonFormat)
+            {
+                schemaJson = jsonFormat.Schema?.GetRawText();
+            }
+
+            if (!string.IsNullOrEmpty(schemaJson))
             {
                 config.ResponseMimeType = "application/json";
-                string schemaJson = RimLLMJsonHelper.GenerateJsonSchema(request.ResponseType, uppercaseTypes: true).ToString();
                 config.ResponseSchema = Schema.FromJson(schemaJson);
+            }
+            else if (options?.ResponseFormat != null && Settings.EnableNativeSchema)
+            {
+                config.ResponseMimeType = "application/json";
             }
 
             return config;
         }
 
-        private ThinkingConfig BuildNativeThinkingConfig(string model, LLMReasoningEffort effort)
+        private ThinkingConfig BuildNativeThinkingConfig(string model, ReasoningEffort? effort, bool disableReasoning)
         {
             if (string.IsNullOrEmpty(model))
             {
@@ -296,55 +396,59 @@ namespace RimLLM_Framework.Providers
             DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
             if (isThinkingBudgetModel)
             {
+                if (disableReasoning)
+                {
+                    return new ThinkingConfig
+                    {
+                        ThinkingBudget = 0,
+                        IncludeThoughts = false
+                    };
+                }
+
                 int budget = -1;
-                if (effort == LLMReasoningEffort.Low) budget = 1024;
-                else if (effort == LLMReasoningEffort.Medium) budget = 2048;
-                else if (effort == LLMReasoningEffort.High) budget = 4096;
-                else if (effort == LLMReasoningEffort.None) budget = 0;
+                if (effort == ReasoningEffort.Low) budget = 1024;
+                else if (effort == ReasoningEffort.Medium) budget = 2048;
+                else if (effort == ReasoningEffort.High) budget = 4096;
 
                 return new ThinkingConfig
                 {
                     ThinkingBudget = budget,
-                    IncludeThoughts = effort != LLMReasoningEffort.None
+                    IncludeThoughts = true
                 };
             }
 
             if (isThinkingLevelModel)
             {
-                // Auto 時省略 thinkingConfig，與 raw 路徑行為一致。
-                if (effort == LLMReasoningEffort.Auto)
+                if (disableReasoning)
+                {
+                    return new ThinkingConfig
+                    {
+                        ThinkingLevel = ThinkingLevel.Minimal,
+                        IncludeThoughts = false
+                    };
+                }
+
+                if (!effort.HasValue)
                 {
                     return null;
                 }
 
                 ThinkingLevel level = ThinkingLevel.ThinkingLevelUnspecified;
-                if (effort == LLMReasoningEffort.Low) level = ThinkingLevel.Low;
-                else if (effort == LLMReasoningEffort.Medium) level = ThinkingLevel.Medium;
-                else if (effort == LLMReasoningEffort.High) level = ThinkingLevel.High;
-                else if (effort == LLMReasoningEffort.None) level = ThinkingLevel.Minimal;
+                if (effort == ReasoningEffort.Low) level = ThinkingLevel.Low;
+                else if (effort == ReasoningEffort.Medium) level = ThinkingLevel.Medium;
+                else if (effort == ReasoningEffort.High) level = ThinkingLevel.High;
 
                 return new ThinkingConfig
                 {
                     ThinkingLevel = level,
-                    IncludeThoughts = effort != LLMReasoningEffort.None
+                    IncludeThoughts = true
                 };
             }
 
             return null;
         }
 
-        private static Content BuildTextContent(string text)
-        {
-            return new Content
-            {
-                Parts = new List<Part>
-                {
-                    new Part { Text = text ?? string.Empty }
-                }
-            };
-        }
-
-        private string ReadGeminiResponse(GenerateContentResponse response, string model, LLMRequest request)
+        private string ReadGeminiResponse(GenerateContentResponse response, string model)
         {
             if (response == null)
             {
@@ -383,9 +487,9 @@ namespace RimLLM_Framework.Providers
                 throw new RimLLMException(LLMError.InvalidResponse, "Gemini response text is empty.");
             }
 
-            if (response.UsageMetadata != null && RimLLMProvider.Instance is RimLLMManager manager)
+            if (response.UsageMetadata != null)
             {
-                manager.RecordUsage(
+                RimLLMProvider.Manager.RecordUsage(
                     ProviderId,
                     model,
                     response.UsageMetadata.PromptTokenCount ?? 0,

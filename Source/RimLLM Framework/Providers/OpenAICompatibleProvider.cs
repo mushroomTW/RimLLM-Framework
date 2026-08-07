@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
 using RimLLM_Framework.SDK;
+using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace RimLLM_Framework.Providers
 {
@@ -35,16 +37,17 @@ namespace RimLLM_Framework.Providers
         /// 本地相容伺服器的 wire 差異補救：
         /// 移除 SDK 自動附加的 stream_options，並還原舊版 max_tokens 欄位。
         /// </summary>
-        protected override void BuildChatOptions(LLMRequest request, string model, ChatOptions options)
+        protected override void BuildChatOptions(ChatOptions requestOptions, string model, ChatOptions options)
         {
-            base.BuildChatOptions(request, model, options);
+            base.BuildChatOptions(requestOptions, model, options);
 
+            int maxTokens = requestOptions?.MaxOutputTokens ?? 1024;
             options.RawRepresentationFactory = _ =>
             {
                 var chatCompletionOptions = new ChatCompletionOptions();
                 chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.stream_options"));
                 chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.max_completion_tokens"));
-                chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_tokens"), request.MaxTokens);
+                chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_tokens"), maxTokens);
                 return chatCompletionOptions;
             };
         }
@@ -57,11 +60,12 @@ namespace RimLLM_Framework.Providers
 
             try
             {
-                var request = new LLMRequest { Prompt = "ping", MaxTokens = 5 };
+                var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "ping") };
+                var options = new ChatOptions { MaxOutputTokens = 5 };
                 // 預設測試模型使用 "default"
                 string testModel = Settings.GetDefaultModel(ProviderId, "default");
 
-                string content = await GenerateAsync(request, testModel).ConfigureAwait(false);
+                string content = await GenerateAsync(messages, options, testModel).ConfigureAwait(false);
                 stopwatch.Stop();
 
                 result.Success = true;

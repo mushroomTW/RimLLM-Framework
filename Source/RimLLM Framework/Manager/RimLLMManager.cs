@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -735,8 +735,16 @@ namespace RimLLM_Framework.Manager
                     {
                         if (provider is INativeStructuredOutputProvider nativeProvider)
                         {
+                            var nativeMessages = RimLLMChatClientExecutor.BuildMessages(request);
+                            var nativeOptions = RimLLMChatClientExecutor.BuildOptions(request, model, useNativeSchema: true, ResolveChatOptionsCustomizer(provider, request, model));
+                            if (request.ResponseType != null)
+                            {
+                                nativeOptions.AdditionalProperties["rimllm_response_schema"] =
+                                    RimLLMJsonHelper.GenerateJsonSchema(request.ResponseType, uppercaseTypes: false).ToString();
+                            }
                             string nativeText = await nativeProvider.GenerateStructuredAsync(
-                                CreateLegacyRequest(request),
+                                nativeMessages,
+                                nativeOptions,
                                 model).ConfigureAwait(false);
                             return new RimLLMGenerationResult
                             {
@@ -780,8 +788,17 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
+            RimLLMRequest prepReq = PrepareRequestForProvider(provider, request);
+            var nonChatMessages = RimLLMChatClientExecutor.BuildMessages(prepReq);
+            var nonChatOptions = RimLLMChatClientExecutor.BuildOptions(prepReq, model, useNativeSchema: false, ResolveChatOptionsCustomizer(provider, request, model));
+            if (prepReq.ResponseType != null)
+            {
+                nonChatOptions.AdditionalProperties["rimllm_response_schema"] =
+                    RimLLMJsonHelper.GenerateJsonSchema(prepReq.ResponseType, uppercaseTypes: false).ToString();
+            }
             string text = await provider.GenerateAsync(
-                CreateLegacyRequest(PrepareRequestForProvider(provider, request)),
+                nonChatMessages,
+                nonChatOptions,
                 model).ConfigureAwait(false);
             return new RimLLMGenerationResult
             {
@@ -817,8 +834,17 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
+            RimLLMRequest prepStreamReq = PrepareRequestForProvider(provider, request);
+            var streamMessages = RimLLMChatClientExecutor.BuildMessages(prepStreamReq);
+            var streamOptions = RimLLMChatClientExecutor.BuildOptions(prepStreamReq, model, useNativeSchema: false, ResolveChatOptionsCustomizer(provider, request, model));
+            if (prepStreamReq.ResponseType != null)
+            {
+                streamOptions.AdditionalProperties["rimllm_response_schema"] =
+                    RimLLMJsonHelper.GenerateJsonSchema(prepStreamReq.ResponseType, uppercaseTypes: false).ToString();
+            }
             await provider.StreamAsync(
-                CreateLegacyRequest(PrepareRequestForProvider(provider, request)),
+                streamMessages,
+                streamOptions,
                 model,
                 onChunkReceived).ConfigureAwait(false);
             return new RimLLMGenerationResult
@@ -853,8 +879,16 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
+            var fallbackMessages = RimLLMChatClientExecutor.BuildMessages(fallbackRequest);
+            var fallbackOptions = RimLLMChatClientExecutor.BuildOptions(fallbackRequest, model, useNativeSchema: false, ResolveChatOptionsCustomizer(provider, request, model));
+            if (fallbackRequest.ResponseType != null)
+            {
+                fallbackOptions.AdditionalProperties["rimllm_response_schema"] =
+                    RimLLMJsonHelper.GenerateJsonSchema(fallbackRequest.ResponseType, uppercaseTypes: false).ToString();
+            }
             string text = await provider.GenerateAsync(
-                CreateLegacyRequest(fallbackRequest),
+                fallbackMessages,
+                fallbackOptions,
                 model).ConfigureAwait(false);
             return new RimLLMGenerationResult
             {
@@ -872,13 +906,8 @@ namespace RimLLM_Framework.Manager
         {
             if (provider is IChatOptionsCustomizer customizer)
             {
-                // 公開契約遷移前（Task 9）先以暫時轉譯把 RimLLMRequest 換回 LLMRequest。
-                var legacy = new LLMRequest
-                {
-                    MaxTokens = request.MaxOutputTokens ?? 1024,
-                    ReasoningEffort = ToLegacyReasoningEffort(request)
-                };
-                return customizer.CreateChatOptionsCustomizer(legacy, model);
+                var options = RimLLMChatClientExecutor.BuildOptions(request, model, useNativeSchema: false, customizeOptions: null);
+                return customizer.CreateChatOptionsCustomizer(options, model);
             }
             return null;
         }
@@ -944,6 +973,20 @@ namespace RimLLM_Framework.Manager
                 "\n\n[結構化輸出要求：只能回傳符合下列結構的原始 JSON，不要加入 Markdown code fence 或其他說明。範例：\n" +
                 RimLLMJsonHelper.GetSampleJson(request.ResponseType) + "]";
             clone.SystemPrompt = originalSystemPrompt + schemaInstructions;
+            if (clone.Messages != null && clone.Messages.Count > 0)
+            {
+                var messagesCopy = new List<ChatMessage>(clone.Messages);
+                int sysIdx = messagesCopy.FindIndex(m => m.Role == ChatRole.System);
+                if (sysIdx >= 0)
+                {
+                    messagesCopy[sysIdx] = new ChatMessage(ChatRole.System, clone.SystemPrompt);
+                }
+                else
+                {
+                    messagesCopy.Insert(0, new ChatMessage(ChatRole.System, clone.SystemPrompt));
+                }
+                clone.Messages = messagesCopy;
+            }
             return clone;
         }
 

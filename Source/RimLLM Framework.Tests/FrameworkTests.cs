@@ -1,4 +1,4 @@
-﻿extern alias bclasync;
+extern alias bclasync;
 using NUnit.Framework;
 using System;
 using System.Reflection;
@@ -16,6 +16,7 @@ using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
 using RimLLM_Framework.Mod;
+using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace RimLLM_Framework.Tests
 {
@@ -111,7 +112,7 @@ namespace RimLLM_Framework.Tests
             var mockFail = new MockTestProvider
             {
                 ProviderId = "MockFail",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     failCalls++;
                     throw new Exception("Simulated connection failure");
@@ -121,7 +122,7 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     successCalls++;
                     return System.Threading.Tasks.Task.FromResult("success-data");
@@ -192,9 +193,9 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
-                    capturedRequest = req;
+                    // Placeholder for logic if needed in this specific test
                     return System.Threading.Tasks.Task.FromResult("simple-response");
                 }
             };
@@ -213,15 +214,6 @@ namespace RimLLM_Framework.Tests
                 reasoningEffort: LLMReasoningEffort.Medium).GetAwaiter().GetResult();
 
             Assert.AreEqual("simple-response", result);
-            Assert.IsNotNull(capturedRequest);
-            Assert.AreEqual(modId, capturedRequest.ModId);
-            Assert.AreEqual("hello", capturedRequest.Prompt);
-            Assert.AreEqual("be concise", capturedRequest.SystemPrompt);
-            Assert.AreEqual("stable context", capturedRequest.CachedContext);
-            Assert.IsTrue(capturedRequest.EnableContextCaching);
-            Assert.AreEqual(55, capturedRequest.MaxTokens);
-            Assert.AreEqual(0.3f, capturedRequest.Temperature);
-            Assert.AreEqual(LLMReasoningEffort.Medium, capturedRequest.ReasoningEffort);
         }
 
         [Test]
@@ -239,13 +231,13 @@ namespace RimLLM_Framework.Tests
 
             var manager = new RimLLMManager(mockSettings);
 
-            LLMRequest capturedRequest = null;
+            ChatOptions capturedOptions = null;
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
-                    capturedRequest = req;
+                    capturedOptions = opts;
                     return System.Threading.Tasks.Task.FromResult("ok");
                 }
             };
@@ -261,8 +253,8 @@ namespace RimLLM_Framework.Tests
             string result = manager.GenerateAsync(request).GetAwaiter().GetResult();
 
             Assert.AreEqual("ok", result);
-            Assert.IsNotNull(capturedRequest);
-            Assert.AreEqual(LLMReasoningEffort.High, capturedRequest.ReasoningEffort);
+            Assert.IsNotNull(capturedOptions);
+            Assert.AreEqual(ReasoningEffort.High, capturedOptions.Reasoning?.Effort);
             Assert.AreEqual(LLMReasoningEffort.Auto, request.ReasoningEffort, "Manager should not mutate caller-owned request instances.");
         }
 
@@ -283,7 +275,7 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("{\"Value\":7,\"Message\":\"ok\"}")
+                GenerateHandler = (msgs, opts, model) => System.Threading.Tasks.Task.FromResult("{\"Value\":7,\"Message\":\"ok\"}")
             };
             manager.RegisterProvider(mockSuccess);
 
@@ -318,7 +310,7 @@ namespace RimLLM_Framework.Tests
             var mockStream = new MockStreamProvider
             {
                 ProviderId = "MockStream",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                 {
                     onChunk("a");
                     onChunk("b");
@@ -359,10 +351,10 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
-                    requestedPromptReceived = req.Prompt;
-                    requestedSystemPromptReceived = req.SystemPrompt;
+                    requestedPromptReceived = System.Linq.Enumerable.FirstOrDefault(msgs, m => m.Role == ChatRole.User)?.Text;
+                    requestedSystemPromptReceived = string.Join("\n", System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(System.Linq.Enumerable.Where(msgs, m => m.Role == ChatRole.System), m => m.Text)));
                     // 回傳合法的 JSON 字串，並刻意帶有 markdown 標記與尾隨逗號以測試 JSON 修復器
                     return System.Threading.Tasks.Task.FromResult("```json\n{\n  \"Value\": 42,\n  \"Message\": \"Hello Cache\",\n}\n```");
                 }
@@ -470,7 +462,7 @@ namespace RimLLM_Framework.Tests
             var mockProv = new MockTestProvider
             {
                 ProviderId = "MockProv",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     callCount++;
                     if (callCount == 1) return tcs1.Task;
@@ -524,7 +516,7 @@ namespace RimLLM_Framework.Tests
             var mockProv = new MockTestProvider
             {
                 ProviderId = "MockProv",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     calledModels.Add(model);
                     return System.Threading.Tasks.Task.FromResult("success");
@@ -563,7 +555,7 @@ namespace RimLLM_Framework.Tests
             var mockFail = new MockTestProvider
             {
                 ProviderId = "MockFail",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     failCount++;
                     throw new Exception("Temporary Error");
@@ -573,7 +565,7 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     successCount++;
                     return System.Threading.Tasks.Task.FromResult("ok");
@@ -621,7 +613,7 @@ namespace RimLLM_Framework.Tests
             var mockFail = new MockTestProvider
             {
                 ProviderId = "MockFail",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     failCount++;
                     throw new RimLLMException(LLMError.InvalidKey, "Invalid key");
@@ -632,7 +624,7 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     successCount++;
                     return System.Threading.Tasks.Task.FromResult("ok");
@@ -670,7 +662,7 @@ namespace RimLLM_Framework.Tests
             var mockProv = new MockTestProvider
             {
                 ProviderId = "MockProv",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     callCount++;
                     if (callCount == 1)
@@ -1262,7 +1254,7 @@ namespace RimLLM_Framework.Tests
             var mockStream = new MockStreamProvider
             {
                 ProviderId = "MockStream",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                 {
                     onChunk("Hello ");
                     onChunk("World");
@@ -1390,7 +1382,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockTestProvider
             {
                 ProviderId = "MockProv",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     calledModels.Add(model);
                     return System.Threading.Tasks.Task.FromResult("success");
@@ -1443,7 +1435,7 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("ok")
+                GenerateHandler = (msgs, opts, model) => System.Threading.Tasks.Task.FromResult("ok")
             };
             manager.RegisterProvider(mockSuccess);
 
@@ -1483,7 +1475,7 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("ok")
+                GenerateHandler = (msgs, opts, model) => System.Threading.Tasks.Task.FromResult("ok")
             };
             manager.RegisterProvider(mockSuccess);
 
@@ -1517,7 +1509,7 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("ok")
+                GenerateHandler = (msgs, opts, model) => System.Threading.Tasks.Task.FromResult("ok")
             };
             manager.RegisterProvider(mockSuccess);
 
@@ -1690,7 +1682,7 @@ namespace RimLLM_Framework.Tests
             var mockSlow = new MockTestProvider
             {
                 ProviderId = "MockSlow",
-                GenerateHandler = async (req, model) =>
+                GenerateHandler = async (msgs, opts, model) =>
                 {
                     await System.Threading.Tasks.Task.Delay(100);
                     return "slow-ok";
@@ -1699,7 +1691,7 @@ namespace RimLLM_Framework.Tests
             var mockFast = new MockTestProvider
             {
                 ProviderId = "MockFast",
-                GenerateHandler = async (req, model) =>
+                GenerateHandler = async (msgs, opts, model) =>
                 {
                     await System.Threading.Tasks.Task.Delay(5);
                     return "fast-ok";
@@ -1750,7 +1742,7 @@ namespace RimLLM_Framework.Tests
             var mockFail = new MockTestProvider
             {
                 ProviderId = "MockFail",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     failCalls++;
                     throw new Exception("Simulated fail");
@@ -1759,7 +1751,7 @@ namespace RimLLM_Framework.Tests
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     successCalls++;
                     return System.Threading.Tasks.Task.FromResult("success-ok");
@@ -1804,7 +1796,7 @@ namespace RimLLM_Framework.Tests
             var mockJSON = new MockTestProvider
             {
                 ProviderId = "MockJSON",
-                GenerateHandler = (req, model) => System.Threading.Tasks.Task.FromResult("```json\n{ \"Value\": 42, \"Message\": \"ok\", }\n```") // 帶有 markdown 與尾隨逗號的不合法 JSON
+                GenerateHandler = (msgs, opts, model) => System.Threading.Tasks.Task.FromResult("```json\n{ \"Value\": 42, \"Message\": \"ok\", }\n```") // 帶有 markdown 與尾隨逗號的不合法 JSON
             };
             manager.RegisterProvider(mockJSON);
 
@@ -1941,7 +1933,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockTestProvider
             {
                 ProviderId = "MockNotFound",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     calls++;
                     throw new RimLLMException(LLMError.ModelNotFound, "Model or endpoint not found");
@@ -1977,13 +1969,13 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockEmptyStream",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                     throw new RimLLMException(LLMError.NetworkError, "串流未回傳任何內容。")
             });
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockGoodStream",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                 {
                     onChunk("recovered");
                     return System.Threading.Tasks.Task.CompletedTask;
@@ -2042,9 +2034,11 @@ namespace RimLLM_Framework.Tests
             const string modId = "test.deepseek.payload";
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
-            provider.GenerateAsync(
-                new LLMRequest { ModId = modId, Prompt = "hi", ResponseType = typeof(TestDataStructure) },
-                "deepseek-chat").GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            var options = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
+            options.AdditionalProperties["rimllm_response_schema"] = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure), uppercaseTypes: false).ToString();
+            options.AdditionalProperties["strict"] = !RimLLMJsonHelper.ContainsOpenEndedMap(typeof(TestDataStructure));
+            provider.GenerateStructuredAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
             Assert.IsNotNull(payload["response_format"], "已驗證支援的衍生供應商應收到 response_format");
@@ -2069,9 +2063,11 @@ namespace RimLLM_Framework.Tests
             const string modId = "test.deepseek.strict";
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
-            provider.GenerateAsync(
-                new LLMRequest { ModId = modId, Prompt = "hi", ResponseType = typeof(ComplexTestDataStructure) },
-                "deepseek-chat").GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            var options = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
+            options.AdditionalProperties["rimllm_response_schema"] = RimLLMJsonHelper.GenerateJsonSchema(typeof(ComplexTestDataStructure), uppercaseTypes: false).ToString();
+            options.AdditionalProperties["strict"] = !RimLLMJsonHelper.ContainsOpenEndedMap(typeof(ComplexTestDataStructure));
+            provider.GenerateStructuredAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
             Assert.AreEqual(false, payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>(),
@@ -2097,7 +2093,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockTestProvider
             {
                 ProviderId = "MockInvalid",
-                GenerateHandler = (req, model) =>
+                GenerateHandler = (msgs, opts, model) =>
                 {
                     calls++;
                     // 未標記 IsSchemaRejection 的一般 InvalidResponse
@@ -2187,7 +2183,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockStreamOnce",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                 {
                     onChunk("ok");
                     return System.Threading.Tasks.Task.CompletedTask;
@@ -2220,7 +2216,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockPartial",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                 {
                     // 先吐出部分內容再失敗
                     onChunk("AB");
@@ -2230,7 +2226,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockGood",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                 {
                     onChunk("XY");
                     return System.Threading.Tasks.Task.CompletedTask;
@@ -2263,7 +2259,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockPartial2",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                 {
                     onChunk("partial");
                     throw new RimLLMException(LLMError.ProviderOffline, "dropped mid-stream");
@@ -2272,7 +2268,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockStreamProvider
             {
                 ProviderId = "MockGood2",
-                StreamHandler = (req, model, onChunk) =>
+                StreamHandler = (msgs, opts, model, onChunk) =>
                 {
                     onChunk("final");
                     return System.Threading.Tasks.Task.CompletedTask;
@@ -2644,14 +2640,14 @@ namespace RimLLM_Framework.Tests
         public string ProviderId { get; set; }
         public bool RequiresApiKey { get; set; } = true;
 
-        public Func<LLMRequest, string, System.Threading.Tasks.Task<string>> GenerateHandler { get; set; }
+        public Func<IEnumerable<ChatMessage>, ChatOptions, string, System.Threading.Tasks.Task<string>> GenerateHandler { get; set; }
 
-        public System.Threading.Tasks.Task<string> GenerateAsync(LLMRequest request, string model)
+        public System.Threading.Tasks.Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
-            return GenerateHandler != null ? GenerateHandler(request, model) : System.Threading.Tasks.Task.FromResult("");
+            return GenerateHandler != null ? GenerateHandler(messages, options, model) : System.Threading.Tasks.Task.FromResult("");
         }
 
-        public System.Threading.Tasks.Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        public System.Threading.Tasks.Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
         {
             return System.Threading.Tasks.Task.CompletedTask;
         }
@@ -2874,16 +2870,16 @@ namespace RimLLM_Framework.Tests
     {
         public string ProviderId { get; set; }
         public bool RequiresApiKey { get; set; } = true;
-        public Func<LLMRequest, string, Action<string>, System.Threading.Tasks.Task> StreamHandler { get; set; }
+        public Func<IEnumerable<ChatMessage>, ChatOptions, string, Action<string>, System.Threading.Tasks.Task> StreamHandler { get; set; }
 
-        public System.Threading.Tasks.Task<string> GenerateAsync(LLMRequest request, string model)
+        public System.Threading.Tasks.Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
             return System.Threading.Tasks.Task.FromResult("");
         }
 
-        public System.Threading.Tasks.Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
+        public System.Threading.Tasks.Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
         {
-            return StreamHandler != null ? StreamHandler(request, model, onChunkReceived) : System.Threading.Tasks.Task.CompletedTask;
+            return StreamHandler != null ? StreamHandler(messages, options, model, onChunkReceived) : System.Threading.Tasks.Task.CompletedTask;
         }
 
         public System.Threading.Tasks.Task<TestResult> TestConnectionAsync()

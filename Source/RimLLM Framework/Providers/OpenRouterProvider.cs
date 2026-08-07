@@ -31,14 +31,14 @@ namespace RimLLM_Framework.Providers
         /// 1) 內置 Model Fallback —— model 含逗號時轉為 models 陣列（走 RawRepresentationFactory Patch）；
         /// 2) deepseek R1 思考強度 —— 設定 max_thinking_tokens。
         /// </summary>
-        protected override void BuildChatOptions(LLMRequest request, string model, ChatOptions options)
+        protected override void BuildChatOptions(ChatOptions requestOptions, string model, ChatOptions options)
         {
-            base.BuildChatOptions(request, model, options);
+            base.BuildChatOptions(requestOptions, model, options);
 
             bool splitModels = model != null && model.Contains(",");
             bool isR1 = model != null &&
                 ((model.Contains("deepseek") && model.Contains("r1")) || model.Contains("reasoning"));
-            bool needThinking = request.ReasoningEffort != LLMReasoningEffort.Auto && isR1;
+            bool needThinking = requestOptions?.Reasoning?.Effort != null && isR1;
             if (!splitModels && !needThinking) return;
 
             // 以 null 清除 ModelId，讓 MEAI 的 PatchModelIfNotSet 跳過補寫 $.model，
@@ -67,11 +67,11 @@ namespace RimLLM_Framework.Providers
                 }
                 if (needThinking)
                 {
-                    int budget = request.ReasoningEffort switch
+                    int budget = requestOptions.Reasoning.Effort switch
                     {
-                        LLMReasoningEffort.Low => 1024,
-                        LLMReasoningEffort.Medium => 2048,
-                        LLMReasoningEffort.High => 4096,
+                        ReasoningEffort.Low => 1024,
+                        ReasoningEffort.Medium => 2048,
+                        ReasoningEffort.High => 4096,
                         _ => 0
                     };
                     chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_thinking_tokens"), budget);
