@@ -48,67 +48,7 @@ namespace RimLLM_Framework.Providers
 
         public abstract Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived);
 
-        public Task<string> GenerateAsync(LLMRequest request, string model)
-        {
-            var messages = new List<ChatMessage>();
-            if (!string.IsNullOrEmpty(request.SystemPrompt))
-            {
-                messages.Add(new ChatMessage(ChatRole.System, request.SystemPrompt));
-            }
-            messages.Add(new ChatMessage(ChatRole.User, request.Prompt ?? string.Empty));
-            var options = new RimLLMChatOptions
-            {
-                Temperature = request.Temperature,
-                MaxOutputTokens = request.MaxTokens,
-                DisableReasoning = request.ReasoningEffort == LLMReasoningEffort.None,
-                Reasoning = request.ReasoningEffort == LLMReasoningEffort.Low ? new ReasoningOptions { Effort = ReasoningEffort.Low } :
-                            request.ReasoningEffort == LLMReasoningEffort.Medium ? new ReasoningOptions { Effort = ReasoningEffort.Medium } :
-                            request.ReasoningEffort == LLMReasoningEffort.High ? new ReasoningOptions { Effort = ReasoningEffort.High } : null
-            };
-            if (request.ReasoningEffort == LLMReasoningEffort.None)
-            {
-                options.AdditionalProperties = options.AdditionalProperties ?? new AdditionalPropertiesDictionary();
-                options.AdditionalProperties["rimllm_disable_reasoning"] = true;
-            }
-            if (!string.IsNullOrEmpty(request.CachedContext))
-            {
-                options.AdditionalProperties = options.AdditionalProperties ?? new AdditionalPropertiesDictionary();
-                options.AdditionalProperties["rimllm_cached_context"] = request.CachedContext;
-                options.AdditionalProperties["rimllm_enable_context_caching"] = request.EnableContextCaching;
-            }
-            return GenerateAsync(messages, options, model);
-        }
 
-        public Task StreamAsync(LLMRequest request, string model, Action<string> onChunkReceived)
-        {
-            var messages = new List<ChatMessage>();
-            if (!string.IsNullOrEmpty(request.SystemPrompt))
-            {
-                messages.Add(new ChatMessage(ChatRole.System, request.SystemPrompt));
-            }
-            messages.Add(new ChatMessage(ChatRole.User, request.Prompt ?? string.Empty));
-            var options = new RimLLMChatOptions
-            {
-                Temperature = request.Temperature,
-                MaxOutputTokens = request.MaxTokens,
-                DisableReasoning = request.ReasoningEffort == LLMReasoningEffort.None,
-                Reasoning = request.ReasoningEffort == LLMReasoningEffort.Low ? new ReasoningOptions { Effort = ReasoningEffort.Low } :
-                            request.ReasoningEffort == LLMReasoningEffort.Medium ? new ReasoningOptions { Effort = ReasoningEffort.Medium } :
-                            request.ReasoningEffort == LLMReasoningEffort.High ? new ReasoningOptions { Effort = ReasoningEffort.High } : null
-            };
-            if (request.ReasoningEffort == LLMReasoningEffort.None)
-            {
-                options.AdditionalProperties = options.AdditionalProperties ?? new AdditionalPropertiesDictionary();
-                options.AdditionalProperties["rimllm_disable_reasoning"] = true;
-            }
-            if (!string.IsNullOrEmpty(request.CachedContext))
-            {
-                options.AdditionalProperties = options.AdditionalProperties ?? new AdditionalPropertiesDictionary();
-                options.AdditionalProperties["rimllm_cached_context"] = request.CachedContext;
-                options.AdditionalProperties["rimllm_enable_context_caching"] = request.EnableContextCaching;
-            }
-            return StreamAsync(messages, options, model, onChunkReceived);
-        }
 
         public virtual async Task<TestResult> TestConnectionAsync()
         {

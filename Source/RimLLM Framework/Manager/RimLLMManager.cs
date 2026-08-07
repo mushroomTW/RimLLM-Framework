@@ -22,14 +22,13 @@ namespace RimLLM_Framework.Manager
     /// 統一調度 API 供應商、執行雙重 Fallback 容錯、校驗調用者來源。
     /// 內部邏輯委託給排隊佇列 (RequestQueue)、熔斷器 (CircuitBreaker)、JSON 輔助 (JsonHelper) 與使用統計器 (UsageTracker)。
     /// </summary>
-    public class RimLLMManager : IRimLLM
+    public class RimLLMManager
     {
         private readonly IRimLLMSettings _settings;
         private readonly Dictionary<string, ILLMProvider> _providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _providerOrder = new List<string>();
         private readonly HashSet<string> _builtInProviderIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly object _providerLock = new object();
-        private readonly HashSet<Type> _registeredTypes = new HashSet<Type>();
 
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMCircuitBreaker _circuitBreaker;
@@ -221,136 +220,7 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private static LLMRequest CreateSimpleRequest(
-            string modId,
-            string prompt,
-            string systemPrompt,
-            string cachedContext,
-            int maxTokens,
-            float temperature,
-            LLMReasoningEffort reasoningEffort,
-            CancellationToken cancellationToken)
-        {
-            var request = LLMRequest.Create(modId, prompt)
-                .WithSystemPrompt(systemPrompt)
-                .WithSampling(maxTokens, temperature)
-                .WithReasoning(reasoningEffort)
-                .WithCancellation(cancellationToken);
 
-            if (!string.IsNullOrEmpty(cachedContext))
-            {
-                request.WithCachedContext(cachedContext);
-            }
-
-            return request;
-        }
-
-        /// <summary>暫時的 LLMRequest → RimLLMRequest 轉譯（公開契約遷移完成後移除）。</summary>
-        private static RimLLMRequest CreateProviderRequest(LLMRequest legacy)
-        {
-            var messages = new List<ChatMessage>();
-            if (!string.IsNullOrEmpty(legacy.GetEffectiveSystemPrompt()))
-            {
-                messages.Add(new ChatMessage(ChatRole.System, legacy.GetEffectiveSystemPrompt()));
-            }
-            messages.Add(new ChatMessage(ChatRole.User, legacy.Prompt ?? string.Empty));
-            return new RimLLMRequest
-            {
-                ModId = legacy.ModId,
-                Messages = messages,
-                SystemPrompt = legacy.SystemPrompt,
-                CachedContext = legacy.CachedContext,
-                EnableContextCaching = legacy.EnableContextCaching,
-                Temperature = legacy.Temperature,
-                MaxOutputTokens = legacy.MaxTokens,
-                ReasoningEffort = MapLegacyReasoningEffort(legacy.ReasoningEffort),
-                DisableReasoning = legacy.ReasoningEffort == LLMReasoningEffort.None,
-                Priority = legacy.Priority,
-                MinFallbackLevel = legacy.MinFallbackLevel,
-                OnStreamRestart = legacy.OnStreamRestart,
-                EnableStreaming = legacy.EnableStreaming,
-                OnChunkReceived = legacy.OnChunkReceived,
-                CancellationToken = legacy.CancellationToken,
-                ResponseType = legacy.ResponseType
-            };
-        }
-
-        private static ReasoningEffort? MapLegacyReasoningEffort(LLMReasoningEffort effort)
-        {
-            switch (effort)
-            {
-                case LLMReasoningEffort.Low: return ReasoningEffort.Low;
-                case LLMReasoningEffort.Medium: return ReasoningEffort.Medium;
-                case LLMReasoningEffort.High: return ReasoningEffort.High;
-                default: return null;
-            }
-        }
-
-        /// <summary>暫時的 RimLLMRequest → LLMRequest 轉譯（供公開契約未遷移的非 IChatClient provider 呼叫）。</summary>
-        private static LLMRequest CreateLegacyRequest(RimLLMRequest request)
-        {
-            string systemPrompt = request.SystemPrompt;
-            string prompt = null;
-            foreach (var m in request.Messages ?? new List<ChatMessage>())
-            {
-                if (m == null) continue;
-                if (m.Role == ChatRole.System && systemPrompt == null)
-                {
-                    systemPrompt = m.Text;
-                }
-                else if (m.Role == ChatRole.User && prompt == null)
-                {
-                    prompt = m.Text;
-                }
-            }
-            return new LLMRequest
-            {
-                ModId = request.ModId,
-                Prompt = prompt,
-                SystemPrompt = systemPrompt,
-                CachedContext = request.CachedContext,
-                EnableContextCaching = request.EnableContextCaching,
-                Temperature = request.Temperature ?? 0.7f,
-                MaxTokens = request.MaxOutputTokens ?? 1024,
-                ResponseType = request.ResponseType,
-                Priority = request.Priority,
-                MinFallbackLevel = request.MinFallbackLevel,
-                ReasoningEffort = ToLegacyReasoningEffort(request),
-                OnStreamRestart = request.OnStreamRestart,
-                EnableStreaming = request.EnableStreaming,
-                OnChunkReceived = request.OnChunkReceived,
-                CancellationToken = request.CancellationToken
-            };
-        }
-
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public Task<string> GenerateAsync(LLMRequest request)
-        {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            return UnwrapResultAsync(GenerateInternalAsync(CreateProviderRequest(request), callingAssembly, verifyCaller: true));
-        }
-
-        /// <summary>把 result 解開成純文字，同時維持原本的例外展開語意（async/await 會還原最內層例外，而非包成 AggregateException）。</summary>
-        private static async Task<string> UnwrapResultAsync(Task<RimLLMGenerationResult> task)
-        {
-            return (await task.ConfigureAwait(false)).Text;
-        }
-
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public Task<string> GenerateAsync(
-            string modId,
-            string prompt,
-            string systemPrompt = null,
-            string cachedContext = null,
-            int maxTokens = 1024,
-            float temperature = 0.7f,
-            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
-            CancellationToken cancellationToken = default)
-        {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            var request = CreateSimpleRequest(modId, prompt, systemPrompt, cachedContext, maxTokens, temperature, reasoningEffort, cancellationToken);
-            return UnwrapResultAsync(GenerateInternalAsync(CreateProviderRequest(request), callingAssembly, verifyCaller: true));
-        }
 
         /// <summary>
         /// 包裝排隊佇列的 GenerateInternalAsync。
@@ -457,40 +327,7 @@ namespace RimLLM_Framework.Manager
                 "All fallback attempts failed.");
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public Task<T> GenerateObjectAsync<T>(LLMRequest request)
-        {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            return GenerateObjectInternalAsync<T>(request, callingAssembly);
-        }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public Task<T> GenerateObjectAsync<T>(
-            string modId,
-            string prompt,
-            string systemPrompt = null,
-            string cachedContext = null,
-            int maxTokens = 1024,
-            float temperature = 0.7f,
-            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
-            CancellationToken cancellationToken = default)
-        {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            var request = CreateSimpleRequest(modId, prompt, systemPrompt, cachedContext, maxTokens, temperature, reasoningEffort, cancellationToken);
-            return GenerateObjectInternalAsync<T>(request, callingAssembly);
-        }
-
-        private async Task<T> GenerateObjectInternalAsync<T>(LLMRequest request, Assembly callingAssembly)
-        {
-            var requestClone = request.Clone();
-            requestClone.ResponseType = typeof(T);
-            RimLLMRequest translated = CreateProviderRequest(requestClone);
-
-            // 驗證呼叫者身份
-            string rawResponse = (await GenerateInternalAsync(translated, callingAssembly, verifyCaller: true).ConfigureAwait(false)).Text;
-
-            return DeserializeStructured<T>(rawResponse, _settings, translated);
-        }
 
         /// <summary>
         /// 結構化輸出的核心流程：直接解析 → JSON repair 回退 → LLM-assisted double-repair。
@@ -625,32 +462,9 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 外部 API 進入點：同步包裝方法以確保 Assembly.GetCallingAssembly() 能在 async 狀態機破壞調用堆疊前正確取得呼叫端組件。
-        /// </summary>
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public Task StreamAsync(LLMRequest request, Action<string> onChunkReceived)
-        {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            return StreamInternalAsync(CreateProviderRequest(request), onChunkReceived, callingAssembly, verifyCaller: true);
-        }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public Task<string> GenerateStreamingAsync(
-            string modId,
-            string prompt,
-            Action<string> onChunkReceived,
-            string systemPrompt = null,
-            string cachedContext = null,
-            int maxTokens = 1024,
-            float temperature = 0.7f,
-            LLMReasoningEffort reasoningEffort = LLMReasoningEffort.Auto,
-            CancellationToken cancellationToken = default)
-        {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            var request = CreateSimpleRequest(modId, prompt, systemPrompt, cachedContext, maxTokens, temperature, reasoningEffort, cancellationToken)
-                .WithStreaming(onChunkReceived);
-            return UnwrapResultAsync(StreamInternalAsync(CreateProviderRequest(request), onChunkReceived, callingAssembly, verifyCaller: true));
-        }
+
+
 
         /// <summary>
         /// SDK facade 的非串流唯一入口（回傳包含實際 provider/model 與用量的結果）。
@@ -912,17 +726,7 @@ namespace RimLLM_Framework.Manager
             return null;
         }
 
-        private static LLMReasoningEffort ToLegacyReasoningEffort(RimLLMRequest request)
-        {
-            if (request.DisableReasoning) return LLMReasoningEffort.None;
-            switch (request.ReasoningEffort)
-            {
-                case ReasoningEffort.Low: return LLMReasoningEffort.Low;
-                case ReasoningEffort.Medium: return LLMReasoningEffort.Medium;
-                case ReasoningEffort.High: return LLMReasoningEffort.High;
-                default: return LLMReasoningEffort.Auto;
-            }
-        }
+
 
         private static bool IsNativeSchemaRejected(Exception exception)
         {
@@ -1292,49 +1096,7 @@ namespace RimLLM_Framework.Manager
             return await provider.FetchAvailableModelsAsync().ConfigureAwait(false);
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public Task<float[]> GetEmbeddingAsync(string modId, string text, CancellationToken cancellationToken = default)
-        {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            VerifyEmbeddingCallerOrThrow(modId, callingAssembly);
-            return _embeddingService.ComputeEmbeddingAsync(text, cancellationToken);
-        }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public Task<IReadOnlyList<float[]>> GetEmbeddingsAsync(string modId, IEnumerable<string> texts, CancellationToken cancellationToken = default)
-        {
-            Assembly callingAssembly = Assembly.GetCallingAssembly();
-            VerifyEmbeddingCallerOrThrow(modId, callingAssembly);
-            return _embeddingService.ComputeEmbeddingsAsync(texts, cancellationToken);
-        }
-
-        /// <summary>
-        /// Embedding 為計費 API，因此與一般生成請求共用相同的呼叫端校驗與防濫用檢查。
-        /// </summary>
-        private void VerifyEmbeddingCallerOrThrow(string modId, Assembly callingAssembly)
-        {
-            if (callingAssembly != null && !ClientRegistry.Verify(modId, callingAssembly))
-            {
-                throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{modId}' did not pass.");
-            }
-
-            if (_settings.EnableAntiAbuse)
-            {
-                CheckAntiAbuse(modId);
-            }
-        }
-
-        public void RegisterResponseType<T>()
-        {
-            Type type = typeof(T);
-            lock (_registeredTypes)
-            {
-                _registeredTypes.Add(type);
-            }
-            // 預先產生 Schema 並快取，實現預熱 (Warmup)
-            RimLLMJsonHelper.GetSampleJson<T>();
-            RimLLMLog.Message($"[RimLLM] Registered structured response type and finished cache pre-warmup: {type.FullName}");
-        }
 
         #region Helper Methods
 

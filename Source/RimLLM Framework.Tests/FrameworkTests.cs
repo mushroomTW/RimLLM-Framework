@@ -1308,7 +1308,7 @@ namespace RimLLM_Framework.Tests
             var manager = new RimLLMManager(mockSettings);
             
             // 預熱無空建構子、帶有循環引用的型別，驗證不會 StackOverflow 且產生合理 JSON
-            manager.RegisterResponseType<ComplexTestDataStructure>();
+            RimLLMJsonHelper.GetSampleJson<ComplexTestDataStructure>();
 
             string json = manager.GetSampleJson(typeof(ComplexTestDataStructure));
             
@@ -1733,18 +1733,22 @@ namespace RimLLM_Framework.Tests
             const string modId = "test.routing.latency";
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
-            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+            var request = new RimLLMRequest
+            {
+                ModId = modId,
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }
+            };
 
             // 第一次呼叫：兩個都沒有延遲歷史，依據 FallbackChain 順序（先 MockSlow）
-            string res1 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            string res1 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
             Assert.AreEqual("slow-ok", res1);
 
             // 第二次呼叫：因為 MockSlow 已有延遲（100ms），MockFast 尚未有歷史（視為 0 延遲），優先呼叫 MockFast
-            string res2 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            string res2 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
             Assert.AreEqual("fast-ok", res2);
 
             // 第三次呼叫：此時 MockSlow 平均 100ms，MockFast 平均 5ms，智慧路由應該優先選擇 MockFast
-            string res3 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            string res3 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
             Assert.AreEqual("fast-ok", res3);
         }
 
@@ -1793,16 +1797,20 @@ namespace RimLLM_Framework.Tests
             const string modId = "test.routing.failover";
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
-            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+            var request = new RimLLMRequest
+            {
+                ModId = modId,
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }
+            };
 
             // 第一次呼叫：MockFail 失敗，然後 Fallback 到 MockSuccess 成功
-            string res1 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            string res1 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
             Assert.AreEqual("success-ok", res1);
             Assert.AreEqual(1, failCalls);
             Assert.AreEqual(1, successCalls);
 
             // 第二次呼叫：MockFail 此時正處於 60 秒的故障冷卻期，智慧路由應直接跳過它，不進行呼叫，直接執行 MockSuccess
-            string res2 = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            string res2 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
             Assert.AreEqual("success-ok", res2);
             Assert.AreEqual(1, failCalls); // 呼叫次數仍為 1，說明已被跳過！
             Assert.AreEqual(2, successCalls);
@@ -1832,17 +1840,24 @@ namespace RimLLM_Framework.Tests
             const string modId = "test.json.repair.settings";
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
-            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+            var request = new RimLLMRequest
+            {
+                ModId = modId,
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") },
+                ResponseType = typeof(TestDataStructure)
+            };
 
             // 1. 當 EnableJsonRepair 為 false 時，預期拋出例外
             Assert.Throws<RimLLMException>(() =>
             {
-                manager.GenerateObjectAsync<TestDataStructure>(request).GetAwaiter().GetResult();
+                string raw = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+                manager.DeserializeStructured<TestDataStructure>(raw, mockSettings, request);
             });
 
             // 2. 當 EnableJsonRepair 為 true 時，預期成功修復並解析
             mockSettings.EnableJsonRepair = true;
-            var res = manager.GenerateObjectAsync<TestDataStructure>(request).GetAwaiter().GetResult();
+            string rawRepaired = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+            var res = manager.DeserializeStructured<TestDataStructure>(rawRepaired, mockSettings, request);
             Assert.IsNotNull(res);
             Assert.AreEqual(42, res.Value);
             Assert.AreEqual(okStr(res.Message), "ok");
@@ -2062,7 +2077,8 @@ namespace RimLLM_Framework.Tests
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             provider.GenerateAsync(
-                new LLMRequest { ModId = modId, Prompt = "hi", ResponseType = typeof(TestDataStructure) },
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
+                new RimLLMChatOptions(),
                 "moonshot-v1-8k").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);

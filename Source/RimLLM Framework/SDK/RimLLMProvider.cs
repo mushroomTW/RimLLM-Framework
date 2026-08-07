@@ -29,18 +29,6 @@ namespace RimLLM_Framework.SDK
             }
         }
 
-        /// <summary>暫時保留（Task 10 移除）：回傳 IRimLLM 服務執行個體。</summary>
-        public static IRimLLM Instance
-        {
-            get
-            {
-                if (_manager == null)
-                {
-                    throw new InvalidOperationException("[RimLLM] SDK has not been initialized. Please make sure the RimLLM Framework mod is active.");
-                }
-                return _manager;
-            }
-        }
 
         internal static void Initialize(RimLLMManager manager)
         {
