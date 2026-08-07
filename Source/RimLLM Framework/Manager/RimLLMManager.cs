@@ -397,6 +397,9 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>建立綁定指定 Mod 的 IChatClient facade。呼叫端 assembly 須已註冊該 Mod。</summary>
+        /// <summary>內部存取目前設定（供 facade 的結構化輸出流程使用）。</summary>
+        internal IRimLLMSettings Settings => _settings;
+
         internal RimLLMChatClient CreateChatClient(string modId, Assembly callingAssembly)
         {
             if (string.IsNullOrEmpty(modId))
@@ -486,6 +489,15 @@ namespace RimLLM_Framework.Manager
             // 驗證呼叫者身份
             string rawResponse = (await GenerateInternalAsync(translated, callingAssembly, verifyCaller: true).ConfigureAwait(false)).Text;
 
+            return DeserializeStructured<T>(rawResponse, _settings, translated);
+        }
+
+        /// <summary>
+        /// 結構化輸出的核心流程：直接解析 → JSON repair 回退 → LLM-assisted double-repair。
+        /// 供 facade（RimLLMChatClient.GenerateObjectAsync）與既有 GenerateObjectAsync 共用。
+        /// </summary>
+        internal T DeserializeStructured<T>(string rawResponse, IRimLLMSettings settings, RimLLMRequest request)
+        {
             try
             {
                 // 原生 schema provider 的回應先直接解析；只有解析失敗才進入 repair fallback。
@@ -493,7 +505,7 @@ namespace RimLLM_Framework.Manager
             }
             catch (Exception ex)
             {
-                if (!_settings.EnableJsonRepair)
+                if (!settings.EnableJsonRepair)
                 {
                     throw new RimLLMException(
                         LLMError.InvalidResponse, 
@@ -514,7 +526,7 @@ namespace RimLLM_Framework.Manager
                     RimLLMLog.Message($"[RimLLM] Static JSON repair failed. Initiating Double-Repair (LLM-assisted repair)...");
                     try
                     {
-                        T repairedObj = await PerformDoubleRepairAsync<T>(translated, rawResponse, ex.Message).ConfigureAwait(false);
+                        T repairedObj = PerformDoubleRepairAsync<T>(request, rawResponse, ex.Message).GetAwaiter().GetResult();
                         ValidateStructuredObject(repairedObj);
                         return repairedObj;
                     }
@@ -529,7 +541,7 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private static T DeserializeAndValidate<T>(string json)
+        internal static T DeserializeAndValidate<T>(string json)
         {
             T result = JsonConvert.DeserializeObject<T>(json);
             ValidateStructuredObject(result);
@@ -1499,7 +1511,7 @@ namespace RimLLM_Framework.Manager
             return 0;
         }
 
-        private async Task<T> PerformDoubleRepairAsync<T>(RimLLMRequest originalRequest, string failedResponse, string errorMessage)
+        internal async Task<T> PerformDoubleRepairAsync<T>(RimLLMRequest originalRequest, string failedResponse, string errorMessage)
         {
             var repairRequest = new RimLLMRequest
             {

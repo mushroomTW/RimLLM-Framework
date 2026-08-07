@@ -211,6 +211,23 @@ namespace RimLLM_Framework.SDK
             }
         }
 
+        /// <summary>
+        /// 結構化輸出完整路徑（供 RimLLMClientExtensions 使用）：走 manager 核心流程
+        /// （schema、JSON repair、LLM-assisted double-repair），框架功能不繞過。
+        /// </summary>
+        internal async Task<T> GenerateObjectAsync<T>(
+            IEnumerable<ChatMessage> messages,
+            RimLLMChatOptions options,
+            CancellationToken cancellationToken)
+        {
+            RimLLMRequest request = Translate(messages, options, cancellationToken);
+            request.ResponseType = typeof(T);
+            RimLLMGenerationResult result = await _manager
+                .GenerateResultAsync(request, verifyCaller: false)
+                .ConfigureAwait(false);
+            return _manager.DeserializeStructured<T>(result.Text, _manager.Settings, request);
+        }
+
         internal RimLLMRequest Translate(
             IEnumerable<ChatMessage> messages,
             ChatOptions options,

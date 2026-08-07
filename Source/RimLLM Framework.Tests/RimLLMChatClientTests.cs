@@ -23,7 +23,10 @@ namespace RimLLM_Framework.Tests
             {
                 ProviderId = "TestMock",
                 GenerateHandler = (request, model) =>
-                    System.Threading.Tasks.Task.FromResult("mock-reply for " + model)
+                    System.Threading.Tasks.Task.FromResult(
+                        request.ResponseType != null
+                            ? "{\"Value\":42,\"Message\":\"mock\"}"
+                            : "mock-reply for " + model)
             });
             return manager;
         }
@@ -230,6 +233,38 @@ namespace RimLLM_Framework.Tests
             var manager = CreateManager();
             var client = CreateClient(manager, "test.metadata.mod");
             Assert.AreEqual("RimLLM", client.Metadata.ProviderName);
+        }
+
+        [Test]
+        public void TestGetResponseObjectAsync_DeserializesViaFacade()
+        {
+            var manager = CreateManager();
+            var client = CreateClient(manager, "test.obj.mod");
+            var result = client.GetResponseObjectAsync<TestDataStructure>(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "give data") },
+                new RimLLMChatOptions
+                {
+                    ResponseFormat = ChatResponseFormat.ForJsonSchema(
+                        System.Text.Json.JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone(),
+                        "custom_type",
+                        "RimLLM structured response")
+                }).GetAwaiter().GetResult();
+            Assert.IsNotNull(result);
+            Assert.AreEqual(42, result.Value);
+            Assert.AreEqual("mock", result.Message);
+        }
+
+        [Test]
+        public void TestGetResponseObjectAsync_NonFacadeUsesSimplifiedPath()
+        {
+            var plainClient = new CapturingChatClient
+            {
+                ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "{\"Value\":5,\"Message\":\"ok\"}"))
+            };
+            var result = plainClient.GetResponseObjectAsync<TestDataStructure>(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }).GetAwaiter().GetResult();
+            Assert.AreEqual(5, result.Value);
+            Assert.AreEqual("ok", result.Message);
         }
     }
 }
