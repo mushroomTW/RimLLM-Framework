@@ -6,7 +6,7 @@ namespace RimLLM_Framework.Mod
 {
     /// <summary>
     /// 負責「Embedding 向量」設定分頁的 UI 渲染。
-    /// Embedding 供第三方 Mod 透過 RimLLMProvider.Instance.GetEmbeddingAsync 取用。
+    /// Embedding 供第三方 Mod 透過 RimLLMProvider.CreateEmbeddingGenerator(modId) 取用。
     /// </summary>
     public static class EmbeddingSettingsDrawer
     {

@@ -35,7 +35,7 @@ namespace RimLLM_Framework.Mod
         {
             try
             {
-                return RimLLMProvider.Instance.GetRegisteredProviderIds();
+                return RimLLMProvider.GetRegisteredProviderIds();
             }
             catch (InvalidOperationException)
             {
@@ -54,7 +54,7 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static bool IsProviderSelectable(string providerId)
         {
-            if (RimLLMProvider.Instance is RimLLMManager manager)
+            if (RimLLMProvider.Manager is RimLLMManager manager)
             {
                 return manager.IsProviderEnabled(providerId);
             }

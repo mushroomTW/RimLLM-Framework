@@ -61,7 +61,7 @@ namespace RimLLM_Framework.Mod
             }
 
             float statsHeight = 120f;
-            if (RimLLMProvider.Instance is RimLLMManager mgr)
+            if (RimLLMProvider.Manager is RimLLMManager mgr)
             {
                 if (mgr.UsageTracker.ProviderStatistics.TryGetValue(ActiveProviderSubTab, out var stats) && stats.TotalPromptTokens > 0)
                 {
@@ -419,7 +419,7 @@ namespace RimLLM_Framework.Mod
                 int failureCount = 0;
                 long apiTotalTokens = 0;
                 long apiCachedTokens = 0;
-                if (RimLLMProvider.Instance is RimLLMManager managerInstance)
+                if (RimLLMProvider.Manager is RimLLMManager managerInstance)
                 {
                     if (managerInstance.UsageTracker.ProviderStatistics.TryGetValue(providerId, out var stats))
                     {
@@ -527,7 +527,7 @@ namespace RimLLM_Framework.Mod
             {
                 try
                 {
-                    var models = await RimLLMProvider.Instance.FetchProviderModelsAsync(providerId).ConfigureAwait(false);
+                    var models = await RimLLMProvider.FetchProviderModelsAsync(providerId).ConfigureAwait(false);
 
                     RimLLMDispatcher.EnqueueOnMainThread(() =>
                     {
@@ -574,7 +574,7 @@ namespace RimLLM_Framework.Mod
             {
                 try
                 {
-                    TestResult result = await RimLLMProvider.Instance.TestProviderAsync(providerId).ConfigureAwait(false);
+                    TestResult result = await RimLLMProvider.TestProviderAsync(providerId).ConfigureAwait(false);
 
                     RimLLMDispatcher.EnqueueOnMainThread(() =>
                     {

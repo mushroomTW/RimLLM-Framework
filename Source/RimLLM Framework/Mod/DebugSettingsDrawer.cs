@@ -56,7 +56,7 @@ namespace RimLLM_Framework.Mod
 
             if (Widgets.ButtonText(resetUsageBtnRect, "RimLLM_ResetUsageBtn".Translate()))
             {
-                if (RimLLMProvider.Instance is RimLLMManager managerInstance)
+                if (RimLLMProvider.Manager is RimLLMManager managerInstance)
                 {
                     managerInstance.ResetUsage();
                     Messages.Message("RimLLM_MsgUsageReset".Translate(), MessageTypeDefOf.PositiveEvent, false);
@@ -95,7 +95,7 @@ namespace RimLLM_Framework.Mod
 
             if (Widgets.ButtonText(clearBtnRect, "RimLLM_ClearRequestsBtn".Translate()))
             {
-                if (RimLLMProvider.Instance is RimLLMManager managerInstance)
+                if (RimLLMProvider.Manager is RimLLMManager managerInstance)
                 {
                     managerInstance.ClearLogs();
                     Messages.Message("RimLLM_MsgLogsCleared".Translate(), MessageTypeDefOf.PositiveEvent, false);
@@ -103,7 +103,7 @@ namespace RimLLM_Framework.Mod
             }
             listing.Gap(4f);
 
-            if (RimLLMProvider.Instance is RimLLMManager manager)
+            if (RimLLMProvider.Manager is RimLLMManager manager)
             {
                 var logs = new List<RimLLMManager.RequestLogEntry>(manager.RequestLogs);
                 logs.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
@@ -189,7 +189,7 @@ namespace RimLLM_Framework.Mod
                 List<string> providers;
                 try
                 {
-                    providers = RimLLMProvider.Instance.GetRegisteredProviderIds();
+                    providers = RimLLMProvider.GetRegisteredProviderIds();
                 }
                 catch (InvalidOperationException)
                 {
@@ -214,7 +214,7 @@ namespace RimLLM_Framework.Mod
                 }
                 sb.AppendLine();
                 sb.AppendLine("=== Recent Request Logs ===");
-                if (RimLLMProvider.Instance is RimLLMManager manager)
+                if (RimLLMProvider.Manager is RimLLMManager manager)
                 {
                     var logs = manager.RequestLogs.ToArray();
                     if (logs.Length == 0)

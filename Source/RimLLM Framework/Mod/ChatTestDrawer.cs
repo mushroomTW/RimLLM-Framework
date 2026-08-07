@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.AI;
 using UnityEngine;
 using Verse;
 using RimLLM_Framework.SDK;
@@ -23,6 +24,18 @@ namespace RimLLM_Framework.Mod
         private static bool chatLoading = false;
         private static LLMReasoningEffort chatReasoningEffort = LLMReasoningEffort.Auto;
         private static bool chatReasoningInitialized = false;
+
+        /// <summary>舊 LLMReasoningEffort → MEAI ReasoningEffort 對映（None 以 DisableReasoning 處理，Auto 不設）。</summary>
+        private static ReasoningEffort? MapReasoningEffort(LLMReasoningEffort effort)
+        {
+            switch (effort)
+            {
+                case LLMReasoningEffort.Low: return ReasoningEffort.Low;
+                case LLMReasoningEffort.Medium: return ReasoningEffort.Medium;
+                case LLMReasoningEffort.High: return ReasoningEffort.High;
+                default: return null;
+            }
+        }
 
         /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
         private const string ChatInputControlName = "RimLLM_ChatInput";
@@ -203,32 +216,14 @@ namespace RimLLM_Framework.Mod
                         {
                             try
                             {
-                                var request = new LLMRequest
+                                var client = RimLLMProvider.CreateChatClient("RimLLM.DebugChat");
+                                var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, userPrompt) };
+                                var options = new RimLLMChatOptions
                                 {
-                                    ModId = "RimLLM.DebugChat",
-                                    Prompt = userPrompt,
-                                    MaxTokens = 4096,
+                                    MaxOutputTokens = 4096,
                                     Temperature = 0.7f,
-                                    ReasoningEffort = chatReasoningEffort,
-                                    CancellationToken = requestCts.Token,
-                                    EnableStreaming = true,
-                                    OnChunkReceived = chunk =>
-                                    {
-                                        string localReply;
-                                        lock (replyLock)
-                                        {
-                                            accumulatedReply += chunk;
-                                            localReply = FormatThinkProcess(accumulatedReply);
-                                        }
-                                        RimLLMDispatcher.EnqueueOnMainThread(() =>
-                                        {
-                                            if (aiHistoryIndex < chatHistory.Count)
-                                            {
-                                                chatHistory[aiHistoryIndex] = "RimLLM_ChatAi".Translate() + " " + localReply;
-                                                chatScrollPosition.y = 999999f;
-                                            }
-                                        });
-                                    },
+                                    DisableReasoning = chatReasoningEffort == LLMReasoningEffort.None,
+                                    Reasoning = new ReasoningOptions { Effort = MapReasoningEffort(chatReasoningEffort) },
                                     // 供應商中途失敗、框架改由下一家重新串流時，捨棄已顯示的殘段，
                                     // 避免畫面出現前後兩段混接的內容。
                                     OnStreamRestart = () =>
@@ -246,8 +241,45 @@ namespace RimLLM_Framework.Mod
                                         });
                                     }
                                 };
-                                string finalReply = await RimLLMProvider.Instance.GenerateAsync(request).ConfigureAwait(false);
-                                string formattedFinal = FormatThinkProcess(finalReply);
+                                var enumerator = client.GetStreamingResponseAsync(messages, options, requestCts.Token).GetAsyncEnumerator();
+                                try
+                                {
+                                    while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+                                    {
+                                        ChatResponseUpdate update = enumerator.Current;
+                                        if (update.AdditionalProperties != null &&
+                                            update.AdditionalProperties.ContainsKey("rimllm_stream_restart"))
+                                        {
+                                            // 重啟 marker：殘段捨棄已由 OnStreamRestart 處理，此 update 無文字內容。
+                                            continue;
+                                        }
+                                        foreach (AIContent content in update.Contents)
+                                        {
+                                            if (content is TextContent textContent)
+                                            {
+                                                string localReply;
+                                                lock (replyLock)
+                                                {
+                                                    accumulatedReply += textContent.Text;
+                                                    localReply = FormatThinkProcess(accumulatedReply);
+                                                }
+                                                RimLLMDispatcher.EnqueueOnMainThread(() =>
+                                                {
+                                                    if (aiHistoryIndex < chatHistory.Count)
+                                                    {
+                                                        chatHistory[aiHistoryIndex] = "RimLLM_ChatAi".Translate() + " " + localReply;
+                                                        chatScrollPosition.y = 999999f;
+                                                    }
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                                finally
+                                {
+                                    await enumerator.DisposeAsync().ConfigureAwait(false);
+                                }
+                                string formattedFinal = FormatThinkProcess(accumulatedReply);
                                 RimLLMDispatcher.EnqueueOnMainThread(() =>
                                 {
                                     if (aiHistoryIndex < chatHistory.Count)
