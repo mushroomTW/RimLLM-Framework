@@ -48,97 +48,166 @@ namespace RimLLM_Framework.SDK
             ChatOptions options = null,
             CancellationToken cancellationToken = default)
         {
-            return new StreamingEnumerable(BuildStreamingUpdatesAsync(messages, options, cancellationToken));
+            return new StreamUpdateEnumerable(this, messages, options, cancellationToken);
         }
 
-        private async Task<List<ChatResponseUpdate>> BuildStreamingUpdatesAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions options,
-            CancellationToken cancellationToken)
+        /// <summary>把串流 chunk / restart 事件 / 完成訊號橋接成 IAsyncEnumerable（C# 8 不支援 aliased IAsyncEnumerable 的 async iterator）。</summary>
+        private sealed class StreamUpdateEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
         {
-            RimLLMRequest request = Translate(messages, options, cancellationToken);
-            var chunks = new List<string>();
-            RimLLMGenerationResult result = await _manager
-                .StreamResultAsync(request, chunk => chunks.Add(chunk), verifyCaller: false)
-                .ConfigureAwait(false);
+            private readonly RimLLMChatClient _client;
+            private readonly IEnumerable<ChatMessage> _messages;
+            private readonly ChatOptions _options;
+            private readonly CancellationToken _cancellationToken;
 
-            var updates = new List<ChatResponseUpdate>();
-            foreach (string chunk in chunks)
+            public StreamUpdateEnumerable(
+                RimLLMChatClient client,
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options,
+                CancellationToken cancellationToken)
             {
-                updates.Add(CreateTextUpdate(chunk));
-            }
-
-            // 供應商若完全沒吐出 chunk（例如直接給整段結果），把完整文字作為單一更新送出。
-            if (chunks.Count == 0 && !string.IsNullOrEmpty(result.Text))
-            {
-                updates.Add(CreateTextUpdate(result.Text));
-            }
-
-            var finalUpdate = new ChatResponseUpdate
-            {
-                Role = ChatRole.Assistant,
-                ModelId = ComposeModelId(result)
-            };
-            finalUpdate.Contents.Add(new UsageContent(new UsageDetails
-            {
-                InputTokenCount = result.PromptTokens,
-                OutputTokenCount = result.CompletionTokens,
-                CachedInputTokenCount = result.CachedPromptTokens
-            }));
-            updates.Add(finalUpdate);
-            return updates;
-        }
-
-        private static ChatResponseUpdate CreateTextUpdate(string text)
-        {
-            var update = new ChatResponseUpdate();
-            update.Contents.Add(new TextContent(text));
-            return update;
-        }
-
-        /// <summary>把預先收集好的更新清單包成 IAsyncEnumerable（C# 8 不支援 aliased IAsyncEnumerable 的 async iterator）。</summary>
-        private sealed class StreamingEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
-        {
-            private readonly Task<List<ChatResponseUpdate>> _updatesTask;
-
-            public StreamingEnumerable(Task<List<ChatResponseUpdate>> updatesTask)
-            {
-                _updatesTask = updatesTask;
+                _client = client;
+                _messages = messages;
+                _options = options;
+                _cancellationToken = cancellationToken;
             }
 
             public bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
                 CancellationToken cancellationToken = default)
             {
-                return new StreamingEnumerator(_updatesTask);
+                return new StreamUpdateEnumerator(_client, _messages, _options, cancellationToken);
+            }
+        }
+
+        private sealed class StreamUpdateBridge
+        {
+            private readonly System.Collections.Concurrent.ConcurrentQueue<object> _queue =
+                new System.Collections.Concurrent.ConcurrentQueue<object>();
+            private readonly TaskCompletionSource<bool> _completed =
+                new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public void Push(ChatResponseUpdate update) => _queue.Enqueue(update);
+            public void Complete() => _completed.TrySetResult(true);
+            public void Fail(Exception ex) => _completed.TrySetException(ex);
+
+            public async Task<ChatResponseUpdate> WaitNextAsync(CancellationToken cancellationToken)
+            {
+                while (true)
+                {
+                    if (_queue.TryDequeue(out object item))
+                    {
+                        if (item is Exception ex)
+                        {
+                            throw ex;
+                        }
+                        return (ChatResponseUpdate)item;
+                    }
+                    if (_completed.Task.IsCompleted)
+                    {
+                        // 佇列已清空且流程已結束：串流終止。
+                        return null;
+                    }
+                    Task winner = await Task.WhenAny(_completed.Task, Task.Delay(10, cancellationToken)).ConfigureAwait(false);
+                    if (ReferenceEquals(winner, _completed.Task))
+                    {
+                        continue;
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+            }
+        }
+
+        private sealed class StreamUpdateEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
+        {
+            private readonly RimLLMChatClient _client;
+            private readonly IEnumerable<ChatMessage> _messages;
+            private readonly ChatOptions _options;
+            private readonly CancellationToken _cancellationToken;
+            private readonly StreamUpdateBridge _bridge = new StreamUpdateBridge();
+            private bool _started;
+
+            public StreamUpdateEnumerator(
+                RimLLMChatClient client,
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options,
+                CancellationToken cancellationToken)
+            {
+                _client = client;
+                _messages = messages;
+                _options = options;
+                _cancellationToken = cancellationToken;
             }
 
-            private sealed class StreamingEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
+            public ChatResponseUpdate Current { get; private set; }
+
+            public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
             {
-                private readonly Task<List<ChatResponseUpdate>> _updatesTask;
-                private List<ChatResponseUpdate> _updates;
-                private int _index = -1;
-
-                public StreamingEnumerator(Task<List<ChatResponseUpdate>> updatesTask)
+                if (!_started)
                 {
-                    _updatesTask = updatesTask;
+                    _started = true;
+                    StartProducer();
                 }
-
-                public ChatResponseUpdate Current => _updates[_index];
-
-                public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
+                ChatResponseUpdate next = await _bridge.WaitNextAsync(_cancellationToken).ConfigureAwait(false);
+                if (next == null)
                 {
-                    if (_updates == null)
+                    return false;
+                }
+                Current = next;
+                return true;
+            }
+
+            private void StartProducer()
+            {
+                var rimOptions = _options as RimLLMChatOptions;
+                RimLLMRequest request = _client.Translate(_messages, _options, _cancellationToken);
+                Action userRestart = rimOptions?.OnStreamRestart;
+                request.OnStreamRestart = () =>
+                {
+                    // 供應商接手（restart）時先推送 marker update，再通知使用者清空顯示內容。
+                    _bridge.Push(new ChatResponseUpdate
                     {
-                        _updates = await _updatesTask.ConfigureAwait(false);
-                    }
-                    _index++;
-                    return _index < _updates.Count;
-                }
-
-                public ste::System.Threading.Tasks.ValueTask DisposeAsync()
+                        AdditionalProperties = new AdditionalPropertiesDictionary { ["rimllm_stream_restart"] = true }
+                    });
+                    userRestart?.Invoke();
+                };
+                Task.Run(async () =>
                 {
-                    return default;
-                }
+                    try
+                    {
+                        RimLLMGenerationResult result = await _client.Manager.StreamResultAsync(
+                            request,
+                            chunk =>
+                            {
+                                if (!string.IsNullOrEmpty(chunk))
+                                {
+                                    _bridge.Push(new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { new TextContent(chunk) }));
+                                }
+                            },
+                            verifyCaller: false).ConfigureAwait(false);
+
+                        var finalUpdate = new ChatResponseUpdate
+                        {
+                            Role = ChatRole.Assistant,
+                            ModelId = ComposeModelId(result)
+                        };
+                        finalUpdate.Contents.Add(new UsageContent(new UsageDetails
+                        {
+                            InputTokenCount = result.PromptTokens,
+                            OutputTokenCount = result.CompletionTokens,
+                            CachedInputTokenCount = result.CachedPromptTokens
+                        }));
+                        _bridge.Push(finalUpdate);
+                        _bridge.Complete();
+                    }
+                    catch (Exception ex)
+                    {
+                        _bridge.Fail(ex);
+                    }
+                }, _cancellationToken);
+            }
+
+            public ste::System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                return default;
             }
         }
 

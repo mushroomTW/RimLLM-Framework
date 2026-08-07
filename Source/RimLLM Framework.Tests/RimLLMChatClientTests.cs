@@ -127,6 +127,104 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestGetStreamingResponseAsync_YieldsChunks()
+        {
+            var mockSettings = new MockSettings { FallbackChain = new List<string> { "TestMockStream:model-s" } };
+            mockSettings.EnabledProviders["TestMockStream"] = true;
+            mockSettings.ApiKeys["TestMockStream"] = "key";
+            var manager = new RimLLMManager(mockSettings);
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "TestMockStream",
+                StreamHandler = (request, model, onChunk) =>
+                {
+                    onChunk("mock-");
+                    onChunk("stream");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            });
+
+            var client = CreateClient(manager, "test.stream.mod");
+            var chunks = new List<string>();
+            var enumerator = client.GetStreamingResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
+                new RimLLMChatOptions()).GetAsyncEnumerator();
+            try
+            {
+                while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                {
+                    var update = enumerator.Current;
+                    if (!string.IsNullOrEmpty(update.Text))
+                    {
+                        chunks.Add(update.Text);
+                    }
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().GetAwaiter().GetResult();
+            }
+            Assert.AreEqual("mock-stream", string.Concat(chunks));
+        }
+
+        [Test]
+        public void TestGetStreamingResponseAsync_RestartMarkerPushed()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockPartial:model-a", "MockGood:model-b" },
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockPartial"] = true;
+            mockSettings.EnabledProviders["MockGood"] = true;
+            mockSettings.ApiKeys["MockPartial"] = "key";
+            mockSettings.ApiKeys["MockGood"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockPartial",
+                StreamHandler = (request, model, onChunk) =>
+                {
+                    onChunk("partial");
+                    throw new RimLLMException(LLMError.ProviderOffline, "dropped mid-stream");
+                }
+            });
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockGood",
+                StreamHandler = (request, model, onChunk) =>
+                {
+                    onChunk("final");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            });
+
+            int restartCount = 0;
+            var updates = new List<ChatResponseUpdate>();
+            var client = CreateClient(manager, "test.stream.restart.mod");
+            var enumerator = client.GetStreamingResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
+                new RimLLMChatOptions { OnStreamRestart = () => restartCount++ }).GetAsyncEnumerator();
+            try
+            {
+                while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                {
+                    updates.Add(enumerator.Current);
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().GetAwaiter().GetResult();
+            }
+            Assert.AreEqual(1, restartCount, "供應商中途失敗後應恰好通知呼叫端重設一次");
+            Assert.IsTrue(updates.Exists(u => u.AdditionalProperties != null
+                && u.AdditionalProperties.ContainsKey("rimllm_stream_restart")),
+                "應推送 rimllm_stream_restart marker update");
+        }
+
+        [Test]
         public void TestMetadata_ProviderNameIsRimLLM()
         {
             var manager = CreateManager();
