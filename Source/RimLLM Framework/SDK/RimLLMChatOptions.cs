@@ -18,8 +18,14 @@ namespace RimLLM_Framework.SDK
         /// <summary>可重複使用的大型穩定上下文（如世界觀規則、輸出 Schema）。啟用 Context Caching 時 provider 優先快取此內容。</summary>
         public string CachedContext { get; set; }
 
-        /// <summary>是否啟用長上下文快取（Context Caching）。</summary>
-        public bool EnableContextCaching { get; set; }
+        private bool? _enableContextCaching;
+
+        /// <summary>是否啟用長上下文快取（Context Caching）。當 CachedContext 不為空時預設為 true。</summary>
+        public bool EnableContextCaching
+        {
+            get => _enableContextCaching ?? !string.IsNullOrEmpty(CachedContext);
+            set => _enableContextCaching = value;
+        }
 
         /// <summary>串流中途被下一個供應商接手時的通知（呼叫端應於此清空已顯示內容）。</summary>
         public Action OnStreamRestart { get; set; }

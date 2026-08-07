@@ -132,14 +132,13 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockFail);
             manager.RegisterProvider(mockSuccess);
 
-            var request = new LLMRequest 
-            { 
-                ModId = "test.fallback.unit.id",
-                Prompt = "test" 
-            };
+            const string modId = "test.fallback.unit.id";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            ClientRegistry.RegisterClient(request.ModId, Assembly.GetExecutingAssembly());
-            string result = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "test") };
+            string result = client.GetResponseAsync(messages).GetAwaiter().GetResult().Text;
 
             Assert.AreEqual("success-data", result);
             Assert.AreEqual(1, failCalls);
@@ -149,30 +148,24 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestSimpleRequestBuilderApi()
         {
-            var chunks = new List<string>();
+            var options = new RimLLMChatOptions
+            {
+                Temperature = 0.2f,
+                MaxOutputTokens = 64,
+                Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Low },
+                Priority = 3,
+                MinFallbackLevel = "High",
+                CachedContext = "stable context",
+                EnableContextCaching = true
+            };
 
-            var request = LLMRequest.Create("simple.builder.mod", "hello")
-                .WithSystemPrompt("be concise")
-                .WithSampling(maxTokens: 64, temperature: 0.2f)
-                .WithReasoning(LLMReasoningEffort.Low)
-                .WithPriority(3)
-                .WithMinFallbackLevel("High")
-                .WithCachedContext("stable context")
-                .WithStreaming(chunk => chunks.Add(chunk));
-
-            Assert.AreEqual("simple.builder.mod", request.ModId);
-            Assert.AreEqual("hello", request.Prompt);
-            Assert.AreEqual("be concise", request.SystemPrompt);
-            Assert.AreEqual("stable context", request.CachedContext);
-            Assert.AreEqual(64, request.MaxTokens);
-            Assert.AreEqual(0.2f, request.Temperature);
-            Assert.AreEqual(LLMReasoningEffort.Low, request.ReasoningEffort);
-            Assert.AreEqual(3, request.Priority);
-            Assert.AreEqual("High", request.MinFallbackLevel);
-            Assert.IsTrue(request.EnableContextCaching);
-            Assert.IsTrue(request.EnableStreaming);
-            request.OnChunkReceived("chunk");
-            Assert.AreEqual("chunk", chunks[0]);
+            Assert.AreEqual("stable context", options.CachedContext);
+            Assert.AreEqual(64, options.MaxOutputTokens);
+            Assert.AreEqual(0.2f, options.Temperature);
+            Assert.AreEqual(ReasoningEffort.Low, options.Reasoning.Effort);
+            Assert.AreEqual(3, options.Priority);
+            Assert.AreEqual("High", options.MinFallbackLevel);
+            Assert.IsTrue(options.EnableContextCaching);
         }
 
         [Test]
@@ -189,29 +182,35 @@ namespace RimLLM_Framework.Tests
 
             var manager = new RimLLMManager(mockSettings);
 
-            LLMRequest capturedRequest = null;
             var mockSuccess = new MockTestProvider
             {
                 ProviderId = "MockSuccess",
                 GenerateHandler = (msgs, opts, model) =>
                 {
-                    // Placeholder for logic if needed in this specific test
                     return System.Threading.Tasks.Task.FromResult("simple-response");
                 }
             };
             manager.RegisterProvider(mockSuccess);
 
             const string modId = "test.simple.generate";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            string result = manager.GenerateAsync(
-                modId,
-                "hello",
-                systemPrompt: "be concise",
-                cachedContext: "stable context",
-                maxTokens: 55,
-                temperature: 0.3f,
-                reasoningEffort: LLMReasoningEffort.Medium).GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> 
+            { 
+                new ChatMessage(ChatRole.System, "be concise"),
+                new ChatMessage(ChatRole.User, "hello") 
+            };
+            var options = new RimLLMChatOptions
+            {
+                CachedContext = "stable context",
+                MaxOutputTokens = 55,
+                Temperature = 0.3f,
+                Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium }
+            };
+
+            string result = client.GetResponseAsync(messages, options).GetAwaiter().GetResult().Text;
 
             Assert.AreEqual("simple-response", result);
         }
@@ -243,19 +242,17 @@ namespace RimLLM_Framework.Tests
             };
             manager.RegisterProvider(mockSuccess);
 
-            var request = new LLMRequest
-            {
-                ModId = "test.global.reasoning.default",
-                Prompt = "hello"
-            };
-            ClientRegistry.RegisterClient(request.ModId, Assembly.GetExecutingAssembly());
+            const string modId = "test.global.reasoning.default";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            string result = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
+            string result = client.GetResponseAsync(messages).GetAwaiter().GetResult().Text;
 
             Assert.AreEqual("ok", result);
             Assert.IsNotNull(capturedOptions);
             Assert.AreEqual(ReasoningEffort.High, capturedOptions.Reasoning?.Effort);
-            Assert.AreEqual(LLMReasoningEffort.Auto, request.ReasoningEffort, "Manager should not mutate caller-owned request instances.");
         }
 
         [Test]
@@ -280,13 +277,17 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockSuccess);
 
             const string modId = "test.simple.object";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            var result = manager.GenerateObjectAsync<TestDataStructure>(
-                modId,
-                "make object",
-                systemPrompt: "json only",
-                cachedContext: "stable schema notes").GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> 
+            { 
+                new ChatMessage(ChatRole.System, "json only"),
+                new ChatMessage(ChatRole.User, "make object") 
+            };
+            var options = new RimLLMChatOptions { CachedContext = "stable schema notes" };
+            var result = client.GetResponseObjectAsync<TestDataStructure>(messages, options).GetAwaiter().GetResult();
 
             Assert.IsNotNull(result);
             Assert.AreEqual(7, result.Value);
@@ -320,10 +321,30 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockStream);
 
             const string modId = "test.simple.streaming";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var chunks = new List<string>();
-            string result = manager.GenerateStreamingAsync(modId, "stream please", chunk => chunks.Add(chunk)).GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "stream please") };
+            var enumerator = client.GetStreamingResponseAsync(messages).GetAsyncEnumerator();
+            string result = "";
+            try
+            {
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                {
+                    ChatResponseUpdate update = enumerator.Current;
+                    if (!string.IsNullOrEmpty(update.Text))
+                    {
+                        result += update.Text;
+                        chunks.Add(update.Text);
+                    }
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
 
             Assert.AreEqual("ab", result);
             Assert.AreEqual(2, chunks.Count);
@@ -361,20 +382,18 @@ namespace RimLLM_Framework.Tests
             };
             manager.RegisterProvider(mockSuccess);
 
-            // 1. 預熱測試
-            manager.RegisterResponseType<TestDataStructure>();
+            const string modId = "test.object.unit.id";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            var request = new LLMRequest
+            var messages = new List<ChatMessage>
             {
-                ModId = "test.object.unit.id",
-                Prompt = "Give me 42",
-                SystemPrompt = "Base System Prompt"
+                new ChatMessage(ChatRole.System, "Base System Prompt"),
+                new ChatMessage(ChatRole.User, "Give me 42")
             };
 
-            ClientRegistry.RegisterClient(request.ModId, Assembly.GetExecutingAssembly());
-
-            // 2. 測試物件生成與修復 (這也會測試 CallingAssembly 白名單放行是否正常，不拋出 Security Exception)
-            var resultObject = manager.GenerateObjectAsync<TestDataStructure>(request).GetAwaiter().GetResult();
+            var resultObject = client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult();
 
             Assert.IsNotNull(resultObject);
             Assert.AreEqual(42, resultObject.Value);
@@ -395,14 +414,14 @@ namespace RimLLM_Framework.Tests
             ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             // 1. 測試單一模型
-            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
-            provider.GenerateAsync(request, "model-a").GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
+            provider.GenerateAsync(messages, null, "model-a").GetAwaiter().GetResult();
             var payloadSingle = JObject.Parse(provider.InterceptedPayload);
             Assert.AreEqual("model-a", payloadSingle["model"]?.ToString());
             Assert.IsNull(payloadSingle["models"]);
 
             // 2. 測試多個模型 (逗號分隔)
-            provider.GenerateAsync(request, "model-a, model-b , model-c").GetAwaiter().GetResult();
+            provider.GenerateAsync(messages, null, "model-a, model-b , model-c").GetAwaiter().GetResult();
             var payloadMultiple = JObject.Parse(provider.InterceptedPayload);
             Assert.IsNull(payloadMultiple["model"]);
             Assert.IsNotNull(payloadMultiple["models"]);
@@ -471,16 +490,18 @@ namespace RimLLM_Framework.Tests
             };
             manager.RegisterProvider(mockProv);
 
-            // 1. 執行第 1 個
-            var req1 = new LLMRequest { ModId = "mod1", Prompt = "p1" };
-            ClientRegistry.RegisterClient("mod1", Assembly.GetExecutingAssembly());
-            var task1 = manager.GenerateAsync(req1);
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient("mod1");
+            RimLLMProvider.RegisterClient("mod2");
+            IChatClient client1 = RimLLMProvider.CreateChatClient("mod1");
+            IChatClient client2 = RimLLMProvider.CreateChatClient("mod2");
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p1") };
+            var task1 = client1.GetResponseAsync(messages);
 
             // 2. 執行第 2 個，但先設定 CancellationToken
             var cts = new System.Threading.CancellationTokenSource();
-            var req2 = new LLMRequest { ModId = "mod2", Prompt = "p2", CancellationToken = cts.Token };
-            ClientRegistry.RegisterClient("mod2", Assembly.GetExecutingAssembly());
-            var task2 = manager.GenerateAsync(req2);
+            var task2 = client2.GetResponseAsync(messages, cancellationToken: cts.Token);
 
             // 驗證只有 1 個請求實際被調用
             Assert.AreEqual(1, callCount);
@@ -494,7 +515,7 @@ namespace RimLLM_Framework.Tests
 
             // 釋放第 1 個
             tcs1.SetResult("r1");
-            Assert.AreEqual("r1", task1.GetAwaiter().GetResult());
+            Assert.AreEqual("r1", task1.GetAwaiter().GetResult().Text);
 
             // 驗證第 2 個請求因為在佇列中被取消，根本沒有被 provider 呼叫過
             Assert.AreEqual(1, callCount);
@@ -505,8 +526,11 @@ namespace RimLLM_Framework.Tests
         {
             var mockSettings = new MockSettings
             {
-                FallbackChain = new List<string> { "MockProv:model-mini", "MockProv:model-pro" }
+                FallbackChain = new List<string> { "MockProv:model-mini", "MockProv:model-pro" },
+                RoutingStrategy = 0
             };
+            mockSettings.ModelLevelOverrides["MockProv:model-mini"] = 2; // Medium
+            mockSettings.ModelLevelOverrides["MockProv:model-pro"] = 3;  // High
             mockSettings.EnabledProviders["MockProv"] = true;
             mockSettings.ApiKeys["MockProv"] = "mock-key";
 
@@ -524,10 +548,14 @@ namespace RimLLM_Framework.Tests
             };
             manager.RegisterProvider(mockProv);
 
-            // MinFallbackLevel = High (應跳過 model-mini(Medium)，只使用 model-pro(High))
-            var req = new LLMRequest { ModId = "mod", Prompt = "p", MinFallbackLevel = "High" };
-            ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
-            string res = manager.GenerateAsync(req).GetAwaiter().GetResult();
+            const string modId = "mod.minfallback";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
+            var options = new RimLLMChatOptions { MinFallbackLevel = "High" };
+            string res = client.GetResponseAsync(messages, options).GetAwaiter().GetResult().Text;
 
             Assert.AreEqual("success", res);
             Assert.AreEqual(1, calledModels.Count);
@@ -574,20 +602,25 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockFail);
             manager.RegisterProvider(mockSuccess);
 
-            var req = new LLMRequest { ModId = "mod", Prompt = "p", MaxTokens = 5 };
-            ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
+            const string modId = "mod.circuitbreaker";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
+            var options = new ChatOptions { MaxOutputTokens = 5 };
 
             // 連續呼叫 3 次失敗以進入冷卻
             for (int i = 0; i < 3; i++)
             {
-                try { manager.GenerateAsync(req).GetAwaiter().GetResult(); } catch {}
+                try { client.GetResponseAsync(messages, options).GetAwaiter().GetResult(); } catch {}
                 manager.ClearCooldowns();
             }
             Assert.AreEqual(3, failCount);
             Assert.AreEqual(3, successCount);
 
             // 第 4 次呼叫，因進入冷卻，MockFail 應被跳過，只呼叫 MockSuccess
-            string res = manager.GenerateAsync(req).GetAwaiter().GetResult();
+            string res = client.GetResponseAsync(messages, options).GetAwaiter().GetResult().Text;
             Assert.AreEqual("ok", res);
             Assert.AreEqual(3, failCount); // 還是 3，被跳過了
             Assert.AreEqual(4, successCount);
@@ -634,12 +667,16 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockFail);
             manager.RegisterProvider(mockSuccess);
 
-            var req = new LLMRequest { ModId = "test.invalidkey.retry", Prompt = "p" };
-            ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
+            const string modId = "test.invalidkey.retry";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
 
             for (int i = 0; i < 4; i++)
             {
-                Assert.AreEqual("ok", manager.GenerateAsync(req).GetAwaiter().GetResult());
+                Assert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
             }
 
             Assert.AreEqual(4, failCount, "InvalidKey should be tried once per request, not retried or cooled down.");
@@ -677,9 +714,13 @@ namespace RimLLM_Framework.Tests
             };
             manager.RegisterProvider(mockProv);
 
-            var req = new LLMRequest { ModId = "mod", Prompt = "p" };
-            ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
-            var res = manager.GenerateObjectAsync<TestDataStructure>(req).GetAwaiter().GetResult();
+            const string modId = "mod.doublerepair";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
+            var res = client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult();
 
             Assert.IsNotNull(res);
             Assert.AreEqual(99, res.Value);
@@ -861,8 +902,8 @@ namespace RimLLM_Framework.Tests
                 "}" +
                 "}";
 
-            var request = new LLMRequest { Prompt = "ping" };
-            string res = provider.GenerateAsync(request, "gpt-4o").GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "ping") };
+            string res = provider.GenerateAsync(messages, null, "gpt-4o").GetAwaiter().GetResult();
             
             Assert.AreEqual("hello", res);
             Assert.AreEqual(1000, mockSettings.TotalPromptTokens);
@@ -891,7 +932,7 @@ namespace RimLLM_Framework.Tests
                 "}" +
                 "}";
 
-            string res2 = provider.GenerateAsync(request, "gpt-4o").GetAwaiter().GetResult();
+            string res2 = provider.GenerateAsync(messages, null, "gpt-4o").GetAwaiter().GetResult();
             Assert.AreEqual("hello 2", res2);
             Assert.AreEqual(2000, mockSettings.TotalPromptTokens);
             Assert.AreEqual(300, mockSettings.TotalCompletionTokens);
@@ -904,19 +945,13 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestCachedContextRequestApi()
         {
-            var request = new LLMRequest
+            var options = new RimLLMChatOptions
             {
-                Prompt = "dynamic question",
-                SystemPrompt = "base behavior"
-            }.WithCachedContext("stable colony state");
+                CachedContext = "stable colony state"
+            };
 
-            Assert.IsTrue(request.EnableContextCaching);
-            Assert.AreEqual("stable colony state", request.CachedContext);
-            Assert.AreEqual("base behavior\n\nstable colony state", request.GetEffectiveSystemPrompt());
-
-            var clone = request.Clone();
-            Assert.AreEqual(request.CachedContext, clone.CachedContext);
-            Assert.AreEqual(request.GetEffectiveSystemPrompt(), clone.GetEffectiveSystemPrompt());
+            Assert.IsTrue(options.EnableContextCaching);
+            Assert.AreEqual("stable colony state", options.CachedContext);
         }
 
         [Test]
@@ -930,17 +965,19 @@ namespace RimLLM_Framework.Tests
             const string systemPrompt = "base-system-instructions";
             string cachedContext = "stable-colony-context-for-gemini-caching " + new string('x', 2100);
             string expectedSystemText = systemPrompt + "\n\n" + cachedContext;
-            var request = new LLMRequest
+
+            var messages = new List<ChatMessage>
             {
-                ModId = "test",
-                Prompt = "hello",
-                SystemPrompt = systemPrompt,
-                CachedContext = cachedContext,
-                EnableContextCaching = true
+                new ChatMessage(ChatRole.System, systemPrompt),
+                new ChatMessage(ChatRole.User, "hello")
+            };
+            var options = new RimLLMChatOptions
+            {
+                CachedContext = cachedContext
             };
 
             // 1. 第一次呼叫：應觸發快取建立與快取引用
-            string response1 = provider.GenerateAsync(request, "gemini-1.5-pro").GetAwaiter().GetResult();
+            string response1 = provider.GenerateAsync(messages, options, "gemini-1.5-pro").GetAwaiter().GetResult();
             Assert.AreEqual("gemini-response", response1);
             Assert.AreEqual(1, provider.SendCalls.Count);
 
@@ -957,7 +994,7 @@ namespace RimLLM_Framework.Tests
 
             // 2. 第二次呼叫：快取已存在，應直接引用而不重複建立快取
             provider.SendCalls.Clear();
-            string response2 = provider.GenerateAsync(request, "gemini-1.5-pro").GetAwaiter().GetResult();
+            string response2 = provider.GenerateAsync(messages, options, "gemini-1.5-pro").GetAwaiter().GetResult();
             Assert.AreEqual("gemini-response", response2);
             Assert.AreEqual(0, provider.SendCalls.Count);
             Assert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
@@ -972,16 +1009,17 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["Gemini"] = "mock-key";
 
             var provider = new TestGeminiProvider(mockSettings);
-            var request = new LLMRequest
+            var messages = new List<ChatMessage>
             {
-                ModId = "test",
-                Prompt = "hello",
-                SystemPrompt = "small-system",
-                CachedContext = "tiny-context",
-                EnableContextCaching = true
+                new ChatMessage(ChatRole.System, "small-system"),
+                new ChatMessage(ChatRole.User, "hello")
+            };
+            var options = new RimLLMChatOptions
+            {
+                CachedContext = "tiny-context"
             };
 
-            string response = provider.GenerateAsync(request, "gemini-2.5-flash").GetAwaiter().GetResult();
+            string response = provider.GenerateAsync(messages, options, "gemini-2.5-flash").GetAwaiter().GetResult();
             Assert.AreEqual("gemini-response", response);
 
             // 不應有任何建立快取的呼叫
@@ -1060,16 +1098,17 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["Gemini"] = "mock-key";
             mockSettings.ApiKeys["OpenRouter"] = "mock-key";
 
+            var userMsgs = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
+
             // 1. OpenAI: o1 Model with ReasoningEffort.Medium
             {
                 var provider = new TestOpenAIProvider(mockSettings);
-                var request = new LLMRequest
+                var options = new ChatOptions
                 {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Medium,
-                    MaxTokens = 1500
+                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium },
+                    MaxOutputTokens = 1500
                 };
-                string response = provider.GenerateAsync(request, "o1-mini").GetAwaiter().GetResult();
+                string response = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
                 Assert.AreEqual("medium", payload["reasoning_effort"]?.ToString());
@@ -1081,14 +1120,13 @@ namespace RimLLM_Framework.Tests
             // 2. OpenAI: gpt-4o Model with ReasoningEffort.Medium (should NOT include reasoning_effort)
             {
                 var provider = new TestOpenAIProvider(mockSettings);
-                var request = new LLMRequest
+                var options = new ChatOptions
                 {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Medium,
+                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium },
                     Temperature = 0.7f,
-                    MaxTokens = 1000
+                    MaxOutputTokens = 1000
                 };
-                string response = provider.GenerateAsync(request, "gpt-4o").GetAwaiter().GetResult();
+                string response = provider.GenerateAsync(userMsgs, options, "gpt-4o").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
                 Assert.IsNull(payload["reasoning_effort"]);
@@ -1097,18 +1135,15 @@ namespace RimLLM_Framework.Tests
                 Assert.IsNull(payload["max_completion_tokens"]);
             }
 
-
-
             // 4. Gemini: Gemini with ReasoningEffort.Low
             {
                 var provider = new TestGeminiProvider(mockSettings);
-                var request = new LLMRequest
+                var options = new ChatOptions
                 {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Low,
-                    MaxTokens = 2000
+                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Low },
+                    MaxOutputTokens = 2000
                 };
-                string response = provider.GenerateAsync(request, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
+                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
                 Assert.AreEqual(1024, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
@@ -1116,26 +1151,24 @@ namespace RimLLM_Framework.Tests
             // 4b. Gemini: Gemini 1.5 Pro (non-thinking model) with ReasoningEffort.Low (should NOT include thinkingConfig)
             {
                 var provider = new TestGeminiProvider(mockSettings);
-                var request = new LLMRequest
+                var options = new ChatOptions
                 {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Low,
-                    MaxTokens = 2000
+                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Low },
+                    MaxOutputTokens = 2000
                 };
-                string response = provider.GenerateAsync(request, "gemini-1.5-pro").GetAwaiter().GetResult();
+                string response = provider.GenerateAsync(userMsgs, options, "gemini-1.5-pro").GetAwaiter().GetResult();
                 Assert.IsNull(provider.LastConfig.ThinkingConfig);
             }
 
             // 4c. Gemini: Gemma 4 (thinking-level model) with ReasoningEffort.Medium (should include thinkingLevel)
             {
                 var provider = new TestGeminiProvider(mockSettings);
-                var request = new LLMRequest
+                var options = new ChatOptions
                 {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Medium,
-                    MaxTokens = 2000
+                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium },
+                    MaxOutputTokens = 2000
                 };
-                string response = provider.GenerateAsync(request, "gemma-4-it-b-t").GetAwaiter().GetResult();
+                string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
                 Assert.AreEqual(Google.GenAI.Types.ThinkingLevel.Medium, provider.LastConfig.ThinkingConfig.ThinkingLevel);
                 Assert.IsNull(provider.LastConfig.ThinkingConfig.ThinkingBudget);
@@ -1144,28 +1177,23 @@ namespace RimLLM_Framework.Tests
             // 5. OpenRouter: DeepSeek R1 with ReasoningEffort.Medium
             {
                 var provider = new TestOpenRouterProvider(mockSettings);
-                var request = new LLMRequest
+                var options = new ChatOptions
                 {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Medium
+                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium }
                 };
-                string response = provider.GenerateAsync(request, "deepseek/deepseek-r1").GetAwaiter().GetResult();
+                string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
                 Assert.AreEqual(2048, (int)payload["max_thinking_tokens"]);
             }
 
-            // 6. Test LLMReasoningEffort.Auto and LLMReasoningEffort.None payloads
+            // 6. Test ReasoningEffort? = null (Auto) and DisableReasoning = true (None) payloads
 
             // 6a. OpenAI Auto
             {
                 var provider = new TestOpenAIProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Auto
-                };
-                string response = provider.GenerateAsync(request, "o1-mini").GetAwaiter().GetResult();
+                var options = new ChatOptions(); // Reasoning null
+                string response = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
                 Assert.IsNull(payload["reasoning_effort"]);
@@ -1174,12 +1202,8 @@ namespace RimLLM_Framework.Tests
             // 6b. Gemini 2.0 Auto -> thinkingBudget = -1
             {
                 var provider = new TestGeminiProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Auto
-                };
-                string response = provider.GenerateAsync(request, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
+                var options = new ChatOptions(); // Reasoning null
+                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
                 Assert.AreEqual(-1, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
@@ -1187,12 +1211,8 @@ namespace RimLLM_Framework.Tests
             // 6c. Gemini 2.0 None -> thinkingBudget = 0
             {
                 var provider = new TestGeminiProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.None
-                };
-                string response = provider.GenerateAsync(request, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
+                var options = new RimLLMChatOptions { DisableReasoning = true };
+                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
                 Assert.AreEqual(0, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
@@ -1200,39 +1220,25 @@ namespace RimLLM_Framework.Tests
             // 6d. Gemma 4 Auto -> Omit thinkingLevel
             {
                 var provider = new TestGeminiProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Auto
-                };
-                string response = provider.GenerateAsync(request, "gemma-4-it-b-t").GetAwaiter().GetResult();
+                var options = new ChatOptions();
+                string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
                 Assert.IsNull(provider.LastConfig.ThinkingConfig);
             }
 
             // 6e. Gemma 4 None -> thinkingLevel = "minimal"
             {
                 var provider = new TestGeminiProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.None
-                };
-                string response = provider.GenerateAsync(request, "gemma-4-it-b-t").GetAwaiter().GetResult();
+                var options = new RimLLMChatOptions { DisableReasoning = true };
+                string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
                 Assert.AreEqual(Google.GenAI.Types.ThinkingLevel.Minimal, provider.LastConfig.ThinkingConfig.ThinkingLevel);
             }
 
-
-
             // 6i. OpenRouter Auto -> Omit max_thinking_tokens
             {
                 var provider = new TestOpenRouterProvider(mockSettings);
-                var request = new LLMRequest
-                {
-                    Prompt = "hello",
-                    ReasoningEffort = LLMReasoningEffort.Auto
-                };
-                string response = provider.GenerateAsync(request, "deepseek/deepseek-r1").GetAwaiter().GetResult();
+                var options = new ChatOptions();
+                string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
                 Assert.IsNull(payload["max_thinking_tokens"]);
             }
@@ -1264,17 +1270,29 @@ namespace RimLLM_Framework.Tests
             };
             manager.RegisterProvider(mockStream);
 
-            var request = new LLMRequest
+            const string modId = "test.stream.unified.id";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "test prompt") };
+            var enumerator = client.GetStreamingResponseAsync(messages).GetAsyncEnumerator();
+            string result = "";
+            try
             {
-                ModId = "test.stream.unified.id",
-                Prompt = "test prompt",
-                EnableStreaming = true,
-                OnChunkReceived = chunk => chunksReceived.Add(chunk)
-            };
-
-            ClientRegistry.RegisterClient(request.ModId, Assembly.GetExecutingAssembly());
-
-            string result = manager.GenerateAsync(request).GetAwaiter().GetResult();
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                {
+                    if (!string.IsNullOrEmpty(enumerator.Current.Text))
+                    {
+                        result += enumerator.Current.Text;
+                        chunksReceived.Add(enumerator.Current.Text);
+                    }
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
 
             Assert.AreEqual("Hello World!", result);
             Assert.AreEqual(3, chunksReceived.Count);
@@ -1312,14 +1330,15 @@ namespace RimLLM_Framework.Tests
             mockSettings.ApiKeys["OpenAI"] = "mock-key";
             mockSettings.ApiKeys["Gemini"] = "mock-key";
 
+            var userMsgs = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
+
             // 1. 測試 OpenAIProvider (DeepSeek-R1 格式 reasoning_content)
             {
                 var provider = new TestOpenAIProviderWithReasoning(mockSettings);
                 provider.WireHandler.ResponseBody = "{" +
                     "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"Hello, user!\", " +
                     "\"reasoning_content\": \"Assessing the situation...\"}}]}";
-                var request = new LLMRequest { Prompt = "hello" };
-                string result = provider.GenerateAsync(request, "deepseek-reasoning").GetAwaiter().GetResult();
+                string result = provider.GenerateAsync(userMsgs, null, "deepseek-reasoning").GetAwaiter().GetResult();
                 Assert.IsTrue(result.Contains("<think>"));
                 Assert.IsTrue(result.Contains("</think>"));
                 Assert.IsTrue(result.Contains("Assessing the situation..."));
@@ -1329,8 +1348,7 @@ namespace RimLLM_Framework.Tests
             // 2. 測試 GeminiProvider (thought: true 欄位)
             {
                 var provider = new TestGeminiProviderWithReasoning(mockSettings);
-                var request = new LLMRequest { Prompt = "hello" };
-                string result = provider.GenerateAsync(request, "gemini-thinking").GetAwaiter().GetResult();
+                string result = provider.GenerateAsync(userMsgs, null, "gemini-thinking").GetAwaiter().GetResult();
                 Assert.IsTrue(result.Contains("<think>"));
                 Assert.IsTrue(result.Contains("</think>"));
                 Assert.IsTrue(result.Contains("Thinking deeply..."));
@@ -1389,9 +1407,14 @@ namespace RimLLM_Framework.Tests
                 }
             });
 
-            var req = new LLMRequest { ModId = "mod.level.override", Prompt = "p", MinFallbackLevel = "High" };
-            ClientRegistry.RegisterClient(req.ModId, Assembly.GetExecutingAssembly());
-            string res = manager.GenerateAsync(req).GetAwaiter().GetResult();
+            const string modId = "mod.level.override";
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
+
+            var userMsgs = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
+            var options = new RimLLMChatOptions { MinFallbackLevel = "High" };
+            string res = client.GetResponseAsync(userMsgs, options).GetAwaiter().GetResult().Text;
 
             // 覆寫生效：model-mini 被視為 High，不再被 MinFallbackLevel 過濾
             Assert.AreEqual("success", res);
@@ -1440,19 +1463,21 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockSuccess);
 
             const string modId = "test.abuse.mod";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
 
             // 呼叫 3 次應該都成功
-            Assert.AreEqual("ok", manager.GenerateAsync(request).GetAwaiter().GetResult());
-            Assert.AreEqual("ok", manager.GenerateAsync(request).GetAwaiter().GetResult());
-            Assert.AreEqual("ok", manager.GenerateAsync(request).GetAwaiter().GetResult());
+            Assert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
+            Assert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
+            Assert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
 
             // 第 4 次呼叫超出頻率限制，預期觸發 RateLimit 錯誤
             var ex = Assert.Throws<RimLLMException>(() =>
             {
-                manager.GenerateAsync(request).GetAwaiter().GetResult();
+                client.GetResponseAsync(messages).GetAwaiter().GetResult();
             });
             Assert.AreEqual(LLMError.RateLimit, ex.Error);
         }
@@ -1480,13 +1505,15 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockSuccess);
 
             const string modId = "test.budget.block.mod";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
 
             var ex = Assert.Throws<RimLLMException>(() =>
             {
-                manager.GenerateAsync(request).GetAwaiter().GetResult();
+                client.GetResponseAsync(messages).GetAwaiter().GetResult();
             });
             Assert.AreEqual(LLMError.QuotaExceeded, ex.Error);
         }
@@ -1514,15 +1541,17 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockSuccess);
 
             const string modId = "test.budget.mock.mod";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             // 1. 一般文字請求
-            var request = new LLMRequest { ModId = modId, Prompt = "hello" };
-            string resText = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
+            string resText = client.GetResponseAsync(messages).GetAwaiter().GetResult().Text;
             Assert.IsTrue(resText.Contains("沉思") || resText.Contains("resting") || resText.Contains("thinking") || resText.Contains("REST"));
 
             // 2. 結構化輸出請求，預期回傳空 JSON "{}"
-            var resObj = manager.GenerateObjectAsync<TestDataStructure>(request).GetAwaiter().GetResult();
+            var resObj = client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult();
             Assert.IsNotNull(resObj);
             Assert.AreEqual(100, resObj.Value);
             Assert.AreEqual("default", resObj.Message);
@@ -1862,10 +1891,11 @@ namespace RimLLM_Framework.Tests
         {
             var mockSettings = new MockSettings { EmbeddingProvider = "Google" };
             var manager = new RimLLMManager(mockSettings);
+            RimLLMProvider.Initialize(manager);
 
             // 未透過 ClientRegistry 註冊的 ModId 不得取用計費的 Embedding API。
             Assert.Throws<RimLLMException>(() =>
-                manager.GetEmbeddingAsync("unregistered.mod.id", "hello").GetAwaiter().GetResult(),
+                RimLLMProvider.CreateEmbeddingGenerator("unregistered.mod.id"),
                 "Embedding 為計費 API，必須通過呼叫端身分校驗");
         }
 
@@ -1941,10 +1971,13 @@ namespace RimLLM_Framework.Tests
             });
 
             const string modId = "test.modelnotfound";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             Assert.Throws<RimLLMException>(() =>
-                manager.GenerateAsync(new LLMRequest { ModId = modId, Prompt = "hi" }).GetAwaiter().GetResult());
+                client.GetResponseAsync(messages).GetAwaiter().GetResult());
             Assert.AreEqual(1, calls, "404 屬於不可重試錯誤，不應消耗重試次數");
         }
 
@@ -1983,10 +2016,29 @@ namespace RimLLM_Framework.Tests
             });
 
             const string modId = "test.emptystream.fallback";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var received = new List<string>();
-            string result = manager.GenerateStreamingAsync(modId, "hi", c => received.Add(c)).GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            var enumerator = client.GetStreamingResponseAsync(messages).GetAsyncEnumerator();
+            string result = "";
+            try
+            {
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                {
+                    if (!string.IsNullOrEmpty(enumerator.Current.Text))
+                    {
+                        result += enumerator.Current.Text;
+                        received.Add(enumerator.Current.Text);
+                    }
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
 
             Assert.AreEqual("recovered", result, "零輸出串流應視為可重試失敗並由下一個供應商接手");
             CollectionAssert.Contains(received, "recovered");
@@ -2102,11 +2154,13 @@ namespace RimLLM_Framework.Tests
             });
 
             const string modId = "test.schema.marker";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             Assert.Throws<RimLLMException>(() =>
-                manager.GenerateObjectAsync<TestDataStructure>(
-                    new LLMRequest { ModId = modId, Prompt = "hi" }).GetAwaiter().GetResult());
+                client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult());
 
             Assert.AreEqual(1, calls, "僅標記為 schema 拒絕的錯誤才可觸發降級重打");
         }
@@ -2191,10 +2245,25 @@ namespace RimLLM_Framework.Tests
             });
 
             const string modId = "test.stream.antiabuse";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            // 單一串流請求先前會在 Generate 與 Stream 兩層各計一次，導致額度上限 1 時直接被擋。
-            string result = manager.GenerateStreamingAsync(modId, "hi", _ => { }).GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            var enumerator = client.GetStreamingResponseAsync(messages).GetAsyncEnumerator();
+            string result = "";
+            try
+            {
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                {
+                    result += enumerator.Current.Text;
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+
             Assert.AreEqual("ok", result, "單一請求不得重複計入防濫用額度");
         }
 
@@ -2234,9 +2303,37 @@ namespace RimLLM_Framework.Tests
             });
 
             const string modId = "test.stream.partial";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            string result = manager.GenerateStreamingAsync(modId, "hi", _ => { }).GetAwaiter().GetResult();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            string result = "";
+            var options = new RimLLMChatOptions
+            {
+                OnStreamRestart = () => result = ""
+            };
+            var enumerator = client.GetStreamingResponseAsync(messages, options).GetAsyncEnumerator();
+            try
+            {
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                {
+                    if (enumerator.Current.AdditionalProperties != null &&
+                        enumerator.Current.AdditionalProperties.ContainsKey("rimllm_stream_restart"))
+                    {
+                        result = "";
+                        continue;
+                    }
+                    if (!string.IsNullOrEmpty(enumerator.Current.Text))
+                    {
+                        result += enumerator.Current.Text;
+                    }
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
 
             Assert.AreEqual("XY", result, "失敗 attempt 的部分串流內容不得混入最終結果");
         }
@@ -2276,17 +2373,43 @@ namespace RimLLM_Framework.Tests
             });
 
             const string modId = "test.stream.restart";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
+            RimLLMProvider.Initialize(manager);
+            RimLLMProvider.RegisterClient(modId);
+            IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             int restartCount = 0;
             var displayed = new System.Text.StringBuilder();
 
-            var request = LLMRequest.Create(modId, "hi")
-                .WithStreaming(
-                    chunk => displayed.Append(chunk),
-                    () => { restartCount++; displayed.Length = 0; });
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            string result = "";
+            var options = new RimLLMChatOptions
+            {
+                OnStreamRestart = () => { restartCount++; displayed.Length = 0; result = ""; }
+            };
 
-            string result = manager.GenerateAsync(request).GetAwaiter().GetResult();
+            var enumerator = client.GetStreamingResponseAsync(messages, options).GetAsyncEnumerator();
+            try
+            {
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                {
+                    if (enumerator.Current.AdditionalProperties != null &&
+                        enumerator.Current.AdditionalProperties.ContainsKey("rimllm_stream_restart"))
+                    {
+                        result = "";
+                        displayed.Length = 0;
+                        continue;
+                    }
+                    if (!string.IsNullOrEmpty(enumerator.Current.Text))
+                    {
+                        result += enumerator.Current.Text;
+                        displayed.Append(enumerator.Current.Text);
+                    }
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
 
             Assert.AreEqual(1, restartCount, "供應商中途失敗後應恰好通知呼叫端重設一次");
             Assert.AreEqual("final", result);

@@ -282,7 +282,11 @@ namespace RimLLM_Framework.Providers
             string apiKey)
         {
             bool disableReasoning = false;
-            if (options?.AdditionalProperties != null &&
+            if (options is RimLLMChatOptions rimOptsDR)
+            {
+                disableReasoning = rimOptsDR.DisableReasoning;
+            }
+            else if (options?.AdditionalProperties != null &&
                 options.AdditionalProperties.TryGetValue("rimllm_disable_reasoning", out object dr) &&
                 dr is bool drBool)
             {
@@ -313,10 +317,16 @@ namespace RimLLM_Framework.Providers
             }
 
             string systemContext = null;
-            if (options?.AdditionalProperties != null &&
+            string ccStr = (options as RimLLMChatOptions)?.CachedContext;
+            if (string.IsNullOrEmpty(ccStr) &&
+                options?.AdditionalProperties != null &&
                 options.AdditionalProperties.TryGetValue("rimllm_cached_context", out object cc) &&
-                cc is string ccStr &&
-                !string.IsNullOrEmpty(ccStr))
+                cc is string ccVal)
+            {
+                ccStr = ccVal;
+            }
+
+            if (!string.IsNullOrEmpty(ccStr))
             {
                 if (!string.IsNullOrEmpty(systemPromptMsg) && systemPromptMsg != ccStr)
                 {
@@ -332,8 +342,9 @@ namespace RimLLM_Framework.Providers
                 systemContext = systemPromptMsg;
             }
 
-            bool enableContextCaching = false;
-            if (options?.AdditionalProperties != null &&
+            bool enableContextCaching = (options as RimLLMChatOptions)?.EnableContextCaching ?? false;
+            if (!enableContextCaching &&
+                options?.AdditionalProperties != null &&
                 options.AdditionalProperties.TryGetValue("rimllm_enable_context_caching", out object ec) &&
                 ec is bool ecBool)
             {
