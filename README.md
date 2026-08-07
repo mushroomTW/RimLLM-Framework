@@ -11,9 +11,10 @@
 
 ### 1. 引用命名空間
 
-請在您的 RimWorld 模組 C# 專案中引用以下命名空間即可：
+請在您的 RimWorld 模組 C# 專案中引用 Microsoft Extensions AI 與 RimLLM SDK 命名空間：
 
 ```csharp
+using Microsoft.Extensions.AI;
 using RimLLM_Framework.SDK;
 ```
 
@@ -34,29 +35,25 @@ public class MyAIMod : Verse.Mod
 
 ### 3. 文字生成 (Text Generation)
 
-最簡單的情況可以直接傳入 `ModId` 與提示詞：
-
-```csharp
-string response = await RimLLMProvider.Instance.GenerateAsync(
-    "myai.mod",
-    "請以 RimWorld 中的說書人口吻，跟玩家打聲招呼。",
-    systemPrompt: "你是一位冷酷、隨機且不可預測的說書人。");
-```
-
-若需要更精細的控制，也可以使用 `LLMRequest`：
+使用 `RimLLMProvider.CreateChatClient` 取得標準 MEAI `IChatClient` 實體，框架的 Fallback 鏈、佇列、防濫用與用量統計全部自動內建：
 
 ```csharp
 public async void AskSomething()
 {
     try
     {
-        var request = LLMRequest.Create("myai.mod", "請以 RimWorld 中的說書人蘭迪的口吻，跟玩家打聲招呼。")
-            .WithSystemPrompt("你是一位冷酷、隨機且不可預測的說書人。")
-            .WithSampling(maxTokens: 150, temperature: 0.7f);
+        // 取得綁定目前 Mod 的 IChatClient
+        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
 
-        // 呼叫 GenerateAsync 獲取文字回應 (底層會自動執行故障轉移)
-        string response = await RimLLMProvider.Instance.GenerateAsync(request);
-        Log.Message($"[RandySays] {response}");
+        var messages = new List<ChatMessage>
+        {
+            new ChatMessage(ChatRole.System, "你是一位冷酷、隨機且不可預測的說書人。"),
+            new ChatMessage(ChatRole.User, "請以 RimWorld 中的說書人蘭迪的口吻，跟玩家打聲招呼。")
+        };
+
+        // 未指定 ModelId 時預設走玩家設定的 Fallback Chain 輪詢
+        ChatResponse response = await chat.GetResponseAsync(messages);
+        Log.Message($"[RandySays] {response.Text}");
     }
     catch (RimLLMException ex)
     {
@@ -65,9 +62,22 @@ public async void AskSomething()
 }
 ```
 
+若需微調優先級或傳遞進階組態，可搭配 `RimLLMChatOptions`：
+
+```csharp
+ChatResponse response = await chat.GetResponseAsync(
+    messages,
+    new RimLLMChatOptions
+    {
+        Priority = 5,
+        Temperature = 0.7f,
+        MaxOutputTokens = 150
+    });
+```
+
 ### 4. 結構化輸出 (Structured Output)
 
-定義您的 C# 資料格式類別，並調用 `GenerateObjectAsync<T>`：
+定義您的 C# 資料格式類別，並使用 `GetResponseObjectAsync<T>` 擴充方法：
 
 ```csharp
 // 1. 定義預期輸出的資料結構
@@ -83,11 +93,15 @@ public async void MakeIncidentDecision()
 {
     try
     {
-        // 呼叫後底層會自動注入 Schema、發送、容錯修復並反序列化成您的物件
-        PawnIncidentDecision decision = await RimLLMProvider.Instance.GenerateObjectAsync<PawnIncidentDecision>(
-            "myai.mod",
-            "分析當前殖民地的狀況，決定下一個發生的事件類型與 DefName。",
-            systemPrompt: "你是一位專注於製造戲劇性衝突的決策大腦。");
+        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
+
+        // 呼叫後底層會自動產生 JSON Schema、發送、容錯修復並反序列化成目標物件
+        PawnIncidentDecision decision = await chat.GetResponseObjectAsync<PawnIncidentDecision>(
+            new List<ChatMessage>
+            {
+                new ChatMessage(ChatRole.System, "你是一位專注於製造戲劇性衝突的決策大腦。"),
+                new ChatMessage(ChatRole.User, "分析當前殖民地的狀況，決定下一個發生的事件類型與 DefName。")
+            });
         
         Log.Message($" Randy 決定事件: {decision.IncidentDefName} ({decision.RandyReasoning})");
     }
@@ -100,26 +114,29 @@ public async void MakeIncidentDecision()
 
 ### 5. 串流生成 (Streaming)
 
-若需要像是打字機一般即時渲染模型回傳的文字片段，本框架提供兩種使用方式：
-
-#### 📌 方式 A：使用 `GenerateStreamingAsync`（推薦：即時 chunk + 完整回覆）
-
-可以用單一的 `await GenerateStreamingAsync` 同時獲得**即時 UI 渲染**與**最終完整字串**：
+使用 MEAI 標準的 `GetStreamingResponseAsync` 迭代 `ChatResponseUpdate` 串流：
 
 ```csharp
-public async void StreamResponseUnified()
+public async void StreamResponse()
 {
     try
     {
-        string fullResponse = await RimLLMProvider.Instance.GenerateStreamingAsync(
-            "myai.mod",
-            "寫一段殖民地廣播稿。",
-            chunk =>
+        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
+
+        var updates = chat.GetStreamingResponseAsync(
+            new List<ChatMessage>
             {
-                // 此處程式碼保證在 Unity 主線程中執行，可安全更新遊戲 UI
-                MyGameUI.AppendText(chunk);
+                new ChatMessage(ChatRole.User, "寫一段殖民地廣播稿。")
             });
-        Log.Message($"[Completed] {fullResponse}");
+
+        await foreach (ChatResponseUpdate update in updates)
+        {
+            if (!string.IsNullOrEmpty(update.Text))
+            {
+                // 可安全更新 UI（更新保證在 Unity 主線程調度）
+                MyGameUI.AppendText(update.Text);
+            }
+        }
     }
     catch (RimLLMException ex)
     {
@@ -128,73 +145,49 @@ public async void StreamResponseUnified()
 }
 ```
 
-#### 📌 方式 B：使用 `StreamAsync` 專用方法（傳統做法）
-
-```csharp
-public void StreamResponse()
-{
-    var request = new LLMRequest
-    {
-        ModId = "myai.mod",
-        Prompt = "寫一首關於環世界中被松鼠襲擊的悲壯詩歌。"
-    };
-
-    // 呼叫 StreamAsync，傳入收到 chunk 時的回呼函式
-    RimLLMProvider.Instance.StreamAsync(request, (chunk) => 
-    {
-        // 此處程式碼保證在 Unity 主線程中執行，可安全更新遊戲 UI
-        MyGameUI.AppendText(chunk);
-    }).ContinueWith(task => 
-    {
-        if (task.IsFaulted)
-        {
-            Log.Error("串流傳輸中發生異常。");
-        }
-    });
-}
-```
-
 ### 6. 上下文快取節省 Token (Context Caching)
 
-若您的 Mod 擁有非常龐大、且**短時間內會重複使用**的穩定上下文（例如世界觀規則、固定的角色背景設定、輸出用的 XML/JSON Schema 等），且需要高頻率呼叫 API，您可以啟用 **上下文快取 (Context Caching)**。
-
-這會自動利用 API 供應商（如 Google Gemini 或 OpenAI）的快取機制，避免每次呼叫都重新計算穩定上下文的 Token，進而大幅降低 Token 費用與響應延遲：
-
-> [!IMPORTANT]
-> **請只快取「穩定且會重複使用」的內容。** `CachedContext` 不適合放每回合都變動的即時資料（如當前殖民地快照、隨機事件、即時心情值）。對 Gemini 而言，顯式快取需付「建立費 + 儲存費」，若內容每次都不同便無法重用，反而會墊高成本——此類易變內容請改放 `Prompt`。
+若您的 Mod 擁有非常龐大、且**短時間內會重複使用**的穩定上下文（例如世界觀規則、固定的角色背景設定、輸出 Schema 等），且需要高頻率呼叫 API，您可以透過 `RimLLMChatOptions.CachedContext` 啟用 **Context Caching**：
 
 ```csharp
 public async void CallWithCaching()
 {
-    var request = new LLMRequest
+    IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
+
+    var options = new RimLLMChatOptions
     {
-        ModId = "myai.mod",
-
-        // 易變的即時資料放 Prompt，每次都會重新送出
-        Prompt = "依據以下殖民地當前狀態，分析成員的心理健康：" + BuildColonySnapshot(),
-
-        // SystemPrompt 放角色規則；CachedContext 放大型、穩定、會重複使用的資料（規則書 / Schema / 固定設定）
-        SystemPrompt = "你是一個 RimWorld 心理分析大師。",
-        CachedContext = BuildAnalysisRulesAndOutputSchema(),
-
-        // 啟用快取節省 Token 功能
-        EnableContextCaching = true 
+        // 大型、穩定、會重複使用的資料（規則書 / Schema / 固定設定）
+        CachedContext = BuildAnalysisRulesAndOutputSchema()
     };
 
-    string response = await RimLLMProvider.Instance.GenerateAsync(request);
-    Log.Message(response);
+    var messages = new List<ChatMessage>
+    {
+        new ChatMessage(ChatRole.System, "你是一個 RimWorld 心理分析大師。"),
+        new ChatMessage(ChatRole.User, "依據以下殖民地當前狀態，分析成員的心理健康：" + BuildColonySnapshot())
+    };
+
+    ChatResponse response = await chat.GetResponseAsync(messages, options);
+    Log.Message(response.Text);
 }
 ```
 
 > [!NOTE]
->
-> * 若想更簡潔，也可以使用 `LLMRequest.Create(...).WithCachedContext(longContext)`，它會自動設定 `EnableContextCaching = true`。
-> * 簡化 overload 也支援 `cachedContext: longContext`，並會自動啟用 Context Caching。
-> * **Gemini** 預設會將 `SystemPrompt + CachedContext` 以 `cachedContents` 方式快取 5 分鐘（TTL 300s），後續相同上下文與模型的請求會自動對齊該快取。
->   * **最小門檻保護**：當上下文過小（Pro 模型約 < 2048、其餘模型約 < 1024）時，建立顯式快取並不划算，框架會自動略過快取、改走一般 `systemInstruction`，避免付了建立費卻無法回收。
->   * 同一上下文的快取建立流程具備並發鎖保護，避免多執行緒同時送出而重複建立快取資源。
-> * **OpenAI** 則由服務端自動對重複的 prompt 前綴套用 Prompt Caching，無需額外設定。
-> * **成本面板反映節省**：Debug 分頁的費用估算會自動讀取 API 回傳的快取命中量（OpenAI 的 `cached_tokens`、Gemini 的 `cachedContentTokenCount`），並以折扣費率計入，因此面板數字會真實反映 Context Caching 省下的金額。
+> * 當 `CachedContext` 不為空時，`EnableContextCaching` 會自動設為 `true`。
+> * **Gemini** 會將 `SystemPrompt + CachedContext` 快取（TTL 300s）。當內容過小時（Pro < 2048 字元、其餘 < 1024 字元），框架會自動降級為一般 `systemInstruction` 避免額外收費。
+> * **OpenAI** 服務端會自動對重複前綴套用 Prompt Caching。
+
+### 7. 向量 Embedding 生成 (Embeddings)
+
+使用 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator<string, Embedding<float>>`：
+
+```csharp
+public async void GenerateVector()
+{
+    var generator = RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
+    GeneratedEmbeddings<Embedding<float>> result = await generator.GenerateAsync(new[] { "colonist mental break" });
+    ReadOnlyMemory<float> vector = result[0].Vector;
+}
+```
 
 ---
 
@@ -227,20 +220,20 @@ public async void CallWithCaching()
    * GUI 聊天測試頁面會自動解析該標記，將其渲染為精緻的灰色斜體思考過程；呼叫端 Mod 亦能極易使用正則表達式剝離或保留思維鏈，確保高相容性。
    * **智慧思考強度控制 (Reasoning Effort)**：預設思考強度為「自動 / 預設 (Auto)」。在此模式下，各大供應商能運行其原生的適應性或動態思考配置（如 Gemini 的 `thinkingBudget = -1`、OpenAI 的動態 `reasoning_effort` 控制等），並支援在選單中一鍵「關閉 (Disabled)」或手動調整思考強度（低/中/高）。
 9. **智慧上下文快取與 Prompt Caching (Context Caching)**
-   * 原生支援 **Gemini Context Caching** 與 **OpenAI Prompt Caching**。開發者只需在 `LLMRequest` 中設定 `CachedContext` 並啟用 `EnableContextCaching = true`，底層即會自動將 `SystemPrompt + CachedContext` 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
+   * 原生支援 **Gemini Context Caching** 與 **OpenAI Prompt Caching**。開發者只需在 `RimLLMChatOptions` 中設定 `CachedContext`，底層即會自動將 `SystemPrompt + CachedContext` 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
    * **成本防呆**：Gemini 顯式快取設有最小門檻，內容過小時自動略過快取改走 `systemInstruction`，避免「付建立費卻無法回收」的反效果；同一上下文的快取建立亦具併發鎖保護以防重複建立。
    * **節省可量化**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`）並套用折扣費率計入成本估算，讓費用面板真實反映快取帶來的節省。
 10. **Embedding 向量 SDK (Embeddings)**
-    * 框架提供公開的 Embedding 運算能力，支援 Google、Ollama 與 OpenAI 相容三種來源，並附帶餘弦相似度與離線 Trigram 相似度工具。其他 Mod 可透過 `RimLLMProvider.Instance.GetEmbeddingAsync` 直接取用，用於語意檢索、聚類或相似度比對。
+    * 框架提供公開的 Embedding 運算能力，支援 Google、Ollama 與 OpenAI 相容三種來源，並附帶餘弦相似度與離線 Trigram 相似度工具。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索、聚類或相似度比對。
     * Embedding 屬於計費 API，因此與一般生成請求共用同一套呼叫端校驗與防濫用檢查；金鑰亦與 provider 金鑰採同一套 AES 加密儲存。
 
 ---
 
 ## 🛠️ 技術架構與細節
 
-### 1. 統一介面與調度核心 (`IRimLLM` 與 `RimLLMManager`)
+### 1. 統一介面與調度核心 (`IChatClient` / `IEmbeddingGenerator` 與 `RimLLMProvider`)
 
-* 提供開發者面向介面的設計，呼叫端僅需對接 `IRimLLM` 介面，完全不需關心底層是由哪個供應商、哪個模型進行生成，全部交由 `RimLLMManager` 進行動態調度與備用輪詢。
+* 提供 Microsoft.Extensions.AI 標準介面設計，呼叫端僅需對接 `IChatClient` 或 `IEmbeddingGenerator` 介面，完全不需關心底層是由哪個供應商、哪個模型進行生成，全部交由 `RimLLMManager` 進行動態調度與備用輪詢。
 
 ### 2. 呼叫端來源註冊 (`ClientRegistry`)
 
