@@ -21,6 +21,8 @@ namespace RimLLM_Framework.Manager
         public string MinFallbackLevel { get; set; }
         public string PreferredModelId { get; set; }
         public Action OnStreamRestart { get; set; }
+        public bool EnableStreaming { get; set; }
+        public Action<string> OnChunkReceived { get; set; }
         public CancellationToken CancellationToken { get; set; }
         public Type ResponseType { get; set; }
 
@@ -48,6 +50,8 @@ namespace RimLLM_Framework.Manager
                 MinFallbackLevel = MinFallbackLevel,
                 PreferredModelId = PreferredModelId,
                 OnStreamRestart = OnStreamRestart,
+                EnableStreaming = EnableStreaming,
+                OnChunkReceived = OnChunkReceived,
                 CancellationToken = CancellationToken,
                 ResponseType = ResponseType
             };

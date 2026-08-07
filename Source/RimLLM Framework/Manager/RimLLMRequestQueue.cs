@@ -9,9 +9,9 @@ namespace RimLLM_Framework.Manager
 {
     /// <summary>
     /// 管理 API 請求的優先權佇列與並行限流。
-    /// 依據 LLMRequest 的優先級（Priority）與先進先出（FIFO）規則調度執行。
+    /// 依據 RimLLMRequest 的優先級（Priority）與先進先出（FIFO）規則調度執行。
     /// </summary>
-    public class RimLLMRequestQueue
+    internal class RimLLMRequestQueue
     {
         private readonly IRimLLMSettings _settings;
         private readonly object _queueLock = new object();
@@ -23,9 +23,9 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private class QueueEntry : IComparable<QueueEntry>
         {
-            public LLMRequest Request { get; set; }
-            public TaskCompletionSource<string> Tcs { get; set; }
-            public Func<Task<string>> Action { get; set; }
+            public RimLLMRequest Request { get; set; }
+            public TaskCompletionSource<RimLLMGenerationResult> Tcs { get; set; }
+            public Func<Task<RimLLMGenerationResult>> Action { get; set; }
             public DateTime EnqueueTime { get; set; } = DateTime.UtcNow;
 
             public int CompareTo(QueueEntry other)
@@ -49,9 +49,9 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 將非同步請求包裝入優先權佇列排隊。
         /// </summary>
-        public async Task<string> EnqueueRequestAsync(LLMRequest request, Func<Task<string>> action)
+        public async Task<RimLLMGenerationResult> EnqueueRequestAsync(RimLLMRequest request, Func<Task<RimLLMGenerationResult>> action)
         {
-            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var tcs = new TaskCompletionSource<RimLLMGenerationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
             var entry = new QueueEntry
             {
                 Request = request,
@@ -126,7 +126,7 @@ namespace RimLLM_Framework.Manager
                     return;
                 }
 
-                string result = await entry.Action().ConfigureAwait(false);
+                RimLLMGenerationResult result = await entry.Action().ConfigureAwait(false);
                 entry.Tcs.TrySetResult(result);
             }
             catch (OperationCanceledException ex)

@@ -268,6 +268,8 @@ namespace RimLLM_Framework.Manager
                 Priority = legacy.Priority,
                 MinFallbackLevel = legacy.MinFallbackLevel,
                 OnStreamRestart = legacy.OnStreamRestart,
+                EnableStreaming = legacy.EnableStreaming,
+                OnChunkReceived = legacy.OnChunkReceived,
                 CancellationToken = legacy.CancellationToken,
                 ResponseType = legacy.ResponseType
             };
@@ -284,11 +286,54 @@ namespace RimLLM_Framework.Manager
             }
         }
 
+        /// <summary>暫時的 RimLLMRequest → LLMRequest 轉譯（供公開契約未遷移的非 IChatClient provider 呼叫）。</summary>
+        private static LLMRequest CreateLegacyRequest(RimLLMRequest request)
+        {
+            string systemPrompt = request.SystemPrompt;
+            string prompt = null;
+            foreach (var m in request.Messages ?? new List<ChatMessage>())
+            {
+                if (m == null) continue;
+                if (m.Role == ChatRole.System && systemPrompt == null)
+                {
+                    systemPrompt = m.Text;
+                }
+                else if (m.Role == ChatRole.User && prompt == null)
+                {
+                    prompt = m.Text;
+                }
+            }
+            return new LLMRequest
+            {
+                ModId = request.ModId,
+                Prompt = prompt,
+                SystemPrompt = systemPrompt,
+                CachedContext = request.CachedContext,
+                EnableContextCaching = request.EnableContextCaching,
+                Temperature = request.Temperature ?? 0.7f,
+                MaxTokens = request.MaxOutputTokens ?? 1024,
+                ResponseType = request.ResponseType,
+                Priority = request.Priority,
+                MinFallbackLevel = request.MinFallbackLevel,
+                ReasoningEffort = ToLegacyReasoningEffort(request),
+                OnStreamRestart = request.OnStreamRestart,
+                EnableStreaming = request.EnableStreaming,
+                OnChunkReceived = request.OnChunkReceived,
+                CancellationToken = request.CancellationToken
+            };
+        }
+
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public Task<string> GenerateAsync(LLMRequest request)
         {
             Assembly callingAssembly = Assembly.GetCallingAssembly();
-            return GenerateInternalAsync(request, callingAssembly, verifyCaller: true);
+            return UnwrapResultAsync(GenerateInternalAsync(CreateProviderRequest(request), callingAssembly, verifyCaller: true));
+        }
+
+        /// <summary>把 result 解開成純文字，同時維持原本的例外展開語意（async/await 會還原最內層例外，而非包成 AggregateException）。</summary>
+        private static async Task<string> UnwrapResultAsync(Task<RimLLMGenerationResult> task)
+        {
+            return (await task.ConfigureAwait(false)).Text;
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
@@ -304,22 +349,22 @@ namespace RimLLM_Framework.Manager
         {
             Assembly callingAssembly = Assembly.GetCallingAssembly();
             var request = CreateSimpleRequest(modId, prompt, systemPrompt, cachedContext, maxTokens, temperature, reasoningEffort, cancellationToken);
-            return GenerateInternalAsync(request, callingAssembly, verifyCaller: true);
+            return UnwrapResultAsync(GenerateInternalAsync(CreateProviderRequest(request), callingAssembly, verifyCaller: true));
         }
 
         /// <summary>
         /// 包裝排隊佇列的 GenerateInternalAsync。
         /// </summary>
-        private async Task<string> GenerateInternalAsync(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
+        private async Task<RimLLMGenerationResult> GenerateInternalAsync(RimLLMRequest request, Assembly callingAssembly, bool verifyCaller)
         {
-            LLMRequest normalizedRequest = NormalizeRequest(request);
+            RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
 
             // 准入檢查一律在進入佇列之前執行，且整條請求路徑只執行一次。
             // 特別是預算對話框：若在佇列委派內等待，會持續佔用一個並行名額。
             if (await RunAdmissionChecksAsync(normalizedRequest, callingAssembly, verifyCaller).ConfigureAwait(false)
                 is string mockResult)
             {
-                return mockResult;
+                return new RimLLMGenerationResult { Text = mockResult };
             }
 
             return await _requestQueue.EnqueueRequestAsync(normalizedRequest, () => GenerateInternalDirectAsync(normalizedRequest)).ConfigureAwait(false);
@@ -329,7 +374,7 @@ namespace RimLLM_Framework.Manager
         /// 執行呼叫端校驗、防濫用與預算檢查。
         /// 若預算政策指示以模擬回應取代真實請求，回傳該模擬字串；否則回傳 null 代表可繼續。
         /// </summary>
-        private async Task<string> RunAdmissionChecksAsync(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
+        private async Task<string> RunAdmissionChecksAsync(RimLLMRequest request, Assembly callingAssembly, bool verifyCaller)
         {
             // 1. 來源身分安全校驗 (Caller Verification)
             VerifyCallerOrThrow(request, callingAssembly, verifyCaller);
@@ -354,22 +399,22 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 真正的非同步生成文字邏輯。呼叫前必須已通過 RunAdmissionChecksAsync。
         /// </summary>
-        private async Task<string> GenerateInternalDirectAsync(LLMRequest request)
+        private Task<RimLLMGenerationResult> GenerateInternalDirectAsync(RimLLMRequest request)
         {
-            // 1.5 檢查是否啟用串流輸出，若有則呼叫串流通道進行文字累加
+            // 1.5 檢查是否啟用串流輸出，若是則改走串流路徑（沿用舊版行為）。
             if (request.EnableStreaming)
             {
-                return await StreamInternalDirectAsync(
+                return StreamInternalDirectAsync(
                     request,
-                    chunk => DispatchChunk(request.OnChunkReceived, chunk)).ConfigureAwait(false);
+                    chunk => DispatchChunk(request.OnChunkReceived, chunk));
             }
 
-            // 2. 交由共用的 Fallback Chain 執行核心處理
-            return await ExecuteWithFallbackAsync(
+            // 交由共用的 Fallback Chain 執行核心處理
+            return ExecuteWithFallbackAsync(
                 request,
                 (provider, modelName) => GenerateProviderAsync(provider, request, modelName),
                 LLMError.Unknown,
-                "All fallback attempts failed.").ConfigureAwait(false);
+                "All fallback attempts failed.");
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
@@ -399,9 +444,10 @@ namespace RimLLM_Framework.Manager
         {
             var requestClone = request.Clone();
             requestClone.ResponseType = typeof(T);
+            RimLLMRequest translated = CreateProviderRequest(requestClone);
 
             // 驗證呼叫者身份
-            string rawResponse = await GenerateInternalAsync(requestClone, callingAssembly, verifyCaller: true).ConfigureAwait(false);
+            string rawResponse = (await GenerateInternalAsync(translated, callingAssembly, verifyCaller: true).ConfigureAwait(false)).Text;
 
             try
             {
@@ -431,7 +477,7 @@ namespace RimLLM_Framework.Manager
                     RimLLMLog.Message($"[RimLLM] Static JSON repair failed. Initiating Double-Repair (LLM-assisted repair)...");
                     try
                     {
-                        T repairedObj = await PerformDoubleRepairAsync<T>(request, rawResponse, ex.Message).ConfigureAwait(false);
+                        T repairedObj = await PerformDoubleRepairAsync<T>(translated, rawResponse, ex.Message).ConfigureAwait(false);
                         ValidateStructuredObject(repairedObj);
                         return repairedObj;
                     }
@@ -536,7 +582,7 @@ namespace RimLLM_Framework.Manager
         public Task StreamAsync(LLMRequest request, Action<string> onChunkReceived)
         {
             Assembly callingAssembly = Assembly.GetCallingAssembly();
-            return StreamInternalAsync(request, onChunkReceived, callingAssembly, verifyCaller: true);
+            return StreamInternalAsync(CreateProviderRequest(request), onChunkReceived, callingAssembly, verifyCaller: true);
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
@@ -554,26 +600,55 @@ namespace RimLLM_Framework.Manager
             Assembly callingAssembly = Assembly.GetCallingAssembly();
             var request = CreateSimpleRequest(modId, prompt, systemPrompt, cachedContext, maxTokens, temperature, reasoningEffort, cancellationToken)
                 .WithStreaming(onChunkReceived);
-            return GenerateInternalAsync(request, callingAssembly, verifyCaller: true);
+            return UnwrapResultAsync(StreamInternalAsync(CreateProviderRequest(request), onChunkReceived, callingAssembly, verifyCaller: true));
+        }
+
+        /// <summary>
+        /// SDK facade 的非串流唯一入口（回傳包含實際 provider/model 與用量的結果）。
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        internal Task<RimLLMGenerationResult> GenerateResultAsync(
+            RimLLMRequest request,
+            Assembly callingAssembly = null,
+            bool verifyCaller = true)
+        {
+            return GenerateInternalAsync(request, callingAssembly, verifyCaller);
+        }
+
+        /// <summary>
+        /// SDK facade 的串流唯一入口。串流 chunk 經 <paramref name="onChunkReceived"/> 送出。
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        internal Task<RimLLMGenerationResult> StreamResultAsync(
+            RimLLMRequest request,
+            Action<string> onChunkReceived,
+            Assembly callingAssembly = null,
+            bool verifyCaller = true)
+        {
+            return StreamInternalAsync(request, onChunkReceived, callingAssembly, verifyCaller);
         }
 
         /// <summary>
         /// 包裝排隊佇列的 StreamInternalAsync。
         /// </summary>
-        private async Task StreamInternalAsync(LLMRequest request, Action<string> onChunkReceived, Assembly callingAssembly, bool verifyCaller)
+        private async Task<RimLLMGenerationResult> StreamInternalAsync(
+            RimLLMRequest request,
+            Action<string> onChunkReceived,
+            Assembly callingAssembly,
+            bool verifyCaller)
         {
-            LLMRequest normalizedRequest = NormalizeRequest(request);
+            RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
 
             // 與 GenerateInternalAsync 一致：准入檢查在佇列之前執行且只執行一次。
             if (await RunAdmissionChecksAsync(normalizedRequest, callingAssembly, verifyCaller).ConfigureAwait(false)
                 is string mockResult)
             {
                 DispatchChunk(onChunkReceived, mockResult);
-                return;
+                return new RimLLMGenerationResult { Text = mockResult };
             }
 
             Action<string> mainThreadCallback = chunk => DispatchChunk(onChunkReceived, chunk);
-            await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
+            return await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
                 StreamInternalDirectAsync(normalizedRequest, mainThreadCallback)).ConfigureAwait(false);
         }
 
@@ -582,7 +657,7 @@ namespace RimLLM_Framework.Manager
         /// 與非串流路徑共用相同的 Fallback Chain 執行核心，因此重試與熔斷行為一致。
         /// 回傳成功那次嘗試所累積的完整文字。
         /// </summary>
-        private async Task<string> StreamInternalDirectAsync(LLMRequest request, Action<string> onChunkReceived)
+        private async Task<RimLLMGenerationResult> StreamInternalDirectAsync(RimLLMRequest request, Action<string> onChunkReceived)
         {
             // 累積器由每次 attempt 各自擁有：若沿用同一個緩衝，
             // 「先吐出部分內容再失敗」的 provider 會讓殘留文字混進下一次嘗試的結果。
@@ -590,19 +665,15 @@ namespace RimLLM_Framework.Manager
 
             await ExecuteWithFallbackAsync(
                 request,
-                async (provider, modelName) =>
-                {
-                    await StreamProviderAsync(provider, request, modelName, sink.Append).ConfigureAwait(false);
-                    return "";
-                },
+                (provider, modelName) => StreamProviderAsync(provider, request, modelName, sink.Append),
                 LLMError.ProviderOffline,
                 "All fallback attempts failed, unable to establish stream connection.",
                 onAttemptStarting: sink.BeginAttempt).ConfigureAwait(false);
 
-            return sink.Result;
+            return new RimLLMGenerationResult { Text = sink.Result };
         }
 
-        private async Task<string> GenerateProviderAsync(ILLMProvider provider, LLMRequest request, string model)
+        private async Task<RimLLMGenerationResult> GenerateProviderAsync(ILLMProvider provider, RimLLMRequest request, string model)
         {
             if (provider is IChatClientProvider chatProvider && chatProvider.UsesIChatClient)
             {
@@ -615,20 +686,27 @@ namespace RimLLM_Framework.Manager
                     {
                         if (provider is INativeStructuredOutputProvider nativeProvider)
                         {
-                            return await nativeProvider.GenerateStructuredAsync(request, model).ConfigureAwait(false);
+                            string nativeText = await nativeProvider.GenerateStructuredAsync(
+                                CreateLegacyRequest(request),
+                                model).ConfigureAwait(false);
+                            return new RimLLMGenerationResult
+                            {
+                                Text = nativeText,
+                                ProviderId = provider.ProviderId,
+                                ModelName = model
+                            };
                         }
 
                         using (IChatClient nativeClient = chatProvider.CreateChatClient(model))
                         {
-                            var result = await RimLLMChatClientExecutor.GenerateAsync(
+                            return await RimLLMChatClientExecutor.GenerateAsync(
                                 nativeClient,
-                                CreateProviderRequest(request),
+                                request,
                                 model,
                                 useNativeSchema: true,
                                 provider.ProviderId,
                                 _settings.ApiTimeout,
                                 ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
-                            return result.Text;
                         }
                     }
                     catch (Exception ex) when (IsNativeSchemaRejected(ex))
@@ -641,27 +719,32 @@ namespace RimLLM_Framework.Manager
                 using (IChatClient client = chatProvider.CreateChatClient(model))
                 {
                     // IChatClient 供應商若不支援原生 schema，仍要沿用既有的提示式 JSON fallback。
-                    LLMRequest providerRequest = PrepareRequestForProvider(provider, request);
-                    var result = await RimLLMChatClientExecutor.GenerateAsync(
+                    RimLLMRequest providerRequest = PrepareRequestForProvider(provider, request);
+                    return await RimLLMChatClientExecutor.GenerateAsync(
                         client,
-                        CreateProviderRequest(providerRequest),
+                        providerRequest,
                         model,
                         useNativeSchema: false,
                         provider.ProviderId,
                         _settings.ApiTimeout,
                         ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
-                    return result.Text;
                 }
             }
 
-            return await provider.GenerateAsync(
-                PrepareRequestForProvider(provider, request),
+            string text = await provider.GenerateAsync(
+                CreateLegacyRequest(PrepareRequestForProvider(provider, request)),
                 model).ConfigureAwait(false);
+            return new RimLLMGenerationResult
+            {
+                Text = text,
+                ProviderId = provider.ProviderId,
+                ModelName = model
+            };
         }
 
-        private async Task StreamProviderAsync(
+        private async Task<RimLLMGenerationResult> StreamProviderAsync(
             ILLMProvider provider,
-            LLMRequest request,
+            RimLLMRequest request,
             string model,
             Action<string> onChunkReceived)
         {
@@ -670,10 +753,10 @@ namespace RimLLM_Framework.Manager
                 using (IChatClient client = chatProvider.CreateChatClient(model))
                 {
                     // IChatClient 供應商若不支援原生 schema，仍要沿用既有的提示式 JSON fallback。
-                    LLMRequest providerRequest = PrepareRequestForProvider(provider, request);
-                    await RimLLMChatClientExecutor.StreamAsync(
+                    RimLLMRequest providerRequest = PrepareRequestForProvider(provider, request);
+                    return await RimLLMChatClientExecutor.StreamAsync(
                         client,
-                        CreateProviderRequest(providerRequest),
+                        providerRequest,
                         model,
                         request.ResponseType != null &&
                         _settings.EnableNativeSchema &&
@@ -683,21 +766,25 @@ namespace RimLLM_Framework.Manager
                         _settings.ApiTimeout,
                         ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
                 }
-                return;
             }
 
             await provider.StreamAsync(
-                PrepareRequestForProvider(provider, request),
+                CreateLegacyRequest(PrepareRequestForProvider(provider, request)),
                 model,
                 onChunkReceived).ConfigureAwait(false);
+            return new RimLLMGenerationResult
+            {
+                ProviderId = provider.ProviderId,
+                ModelName = model
+            };
         }
 
-        private async Task<string> GenerateWithoutNativeSchemaAsync(
+        private async Task<RimLLMGenerationResult> GenerateWithoutNativeSchemaAsync(
             ILLMProvider provider,
-            LLMRequest request,
+            RimLLMRequest request,
             string model)
         {
-            LLMRequest fallbackRequest = PrepareRequestForProvider(
+            RimLLMRequest fallbackRequest = PrepareRequestForProvider(
                 provider,
                 request,
                 forceJsonFallback: true);
@@ -706,32 +793,57 @@ namespace RimLLM_Framework.Manager
             {
                 using (IChatClient client = chatProvider.CreateChatClient(model))
                 {
-                    var result = await RimLLMChatClientExecutor.GenerateAsync(
+                    return await RimLLMChatClientExecutor.GenerateAsync(
                         client,
-                        CreateProviderRequest(fallbackRequest),
+                        fallbackRequest,
                         model,
                         useNativeSchema: false,
                         provider.ProviderId,
                         _settings.ApiTimeout,
                         ResolveChatOptionsCustomizer(provider, request, model)).ConfigureAwait(false);
-                    return result.Text;
                 }
             }
 
-            return await provider.GenerateAsync(fallbackRequest, model).ConfigureAwait(false);
+            string text = await provider.GenerateAsync(
+                CreateLegacyRequest(fallbackRequest),
+                model).ConfigureAwait(false);
+            return new RimLLMGenerationResult
+            {
+                Text = text,
+                ProviderId = provider.ProviderId,
+                ModelName = model
+            };
         }
 
         /// <summary>
         /// 將供應商實作的 IChatOptionsCustomizer 轉為 executor 用的 delegate；
         /// 未實作時回傳 null，executor 便只套用基礎選項。
         /// </summary>
-        private static Action<ChatOptions> ResolveChatOptionsCustomizer(ILLMProvider provider, LLMRequest request, string model)
+        private static Action<ChatOptions> ResolveChatOptionsCustomizer(ILLMProvider provider, RimLLMRequest request, string model)
         {
             if (provider is IChatOptionsCustomizer customizer)
             {
-                return customizer.CreateChatOptionsCustomizer(request, model);
+                // 公開契約遷移前（Task 9）先以暫時轉譯把 RimLLMRequest 換回 LLMRequest。
+                var legacy = new LLMRequest
+                {
+                    MaxTokens = request.MaxOutputTokens ?? 1024,
+                    ReasoningEffort = ToLegacyReasoningEffort(request)
+                };
+                return customizer.CreateChatOptionsCustomizer(legacy, model);
             }
             return null;
+        }
+
+        private static LLMReasoningEffort ToLegacyReasoningEffort(RimLLMRequest request)
+        {
+            if (request.DisableReasoning) return LLMReasoningEffort.None;
+            switch (request.ReasoningEffort)
+            {
+                case ReasoningEffort.Low: return LLMReasoningEffort.Low;
+                case ReasoningEffort.Medium: return LLMReasoningEffort.Medium;
+                case ReasoningEffort.High: return LLMReasoningEffort.High;
+                default: return LLMReasoningEffort.Auto;
+            }
         }
 
         private static bool IsNativeSchemaRejected(Exception exception)
@@ -765,9 +877,9 @@ namespace RimLLM_Framework.Manager
             return mentionsSchema && looksLikeRejection;
         }
 
-        private LLMRequest PrepareRequestForProvider(
+        private RimLLMRequest PrepareRequestForProvider(
             ILLMProvider provider,
-            LLMRequest request,
+            RimLLMRequest request,
             bool forceJsonFallback = false)
         {
             if (request.ResponseType == null ||
@@ -777,7 +889,7 @@ namespace RimLLM_Framework.Manager
             }
 
             // 非原生 schema 供應商，或原生 schema 被拒絕時，使用既有提示式 JSON fallback。
-            LLMRequest clone = request.Clone();
+            RimLLMRequest clone = request.Clone();
             string originalSystemPrompt = clone.SystemPrompt ?? string.Empty;
             string schemaInstructions =
                 "\n\n[結構化輸出要求：只能回傳符合下列結構的原始 JSON，不要加入 Markdown code fence 或其他說明。範例：\n" +
@@ -799,9 +911,9 @@ namespace RimLLM_Framework.Manager
         /// 依序遍歷符合資格的供應商條目，對每個條目套用相同的重試策略，
         /// 並統一處理取消檢查、熔斷記錄與用量統計。
         /// </summary>
-        private async Task<string> ExecuteWithFallbackAsync(
-            LLMRequest request,
-            Func<ILLMProvider, string, Task<string>> attemptAsync,
+        private async Task<RimLLMGenerationResult> ExecuteWithFallbackAsync(
+            RimLLMRequest request,
+            Func<ILLMProvider, string, Task<RimLLMGenerationResult>> attemptAsync,
             LLMError exhaustedError,
             string exhaustedMessage,
             Action onAttemptStarting = null)
@@ -815,11 +927,30 @@ namespace RimLLM_Framework.Manager
                 throw new RimLLMException(LLMError.ProviderOffline, "No valid API provider fallback chain configured.");
             }
 
+            // PreferredModelId（格式 "ProviderId:ModelName"）指定的話，於 fallback chain 前優先嘗試
+            var effectiveChain = new List<string>(fallbackChain);
+            if (!string.IsNullOrEmpty(request.PreferredModelId))
+            {
+                string preferredEntry = request.PreferredModelId;
+                if (!ResolveFallbackEntry(preferredEntry, out string prefProvider, out string prefModel)
+                    || string.IsNullOrEmpty(prefModel))
+                {
+                    // 無 provider 前綴的純 model 名視為「不指定 provider」，忽略（交給 fallback chain）
+                    prefProvider = null;
+                }
+                if (prefProvider != null && TryGetProvider(prefProvider, out ILLMProvider prefProviderInstance)
+                    && IsProviderUsable(prefProvider, prefProviderInstance)
+                    && !effectiveChain.Exists(e => string.Equals(e, preferredEntry, StringComparison.OrdinalIgnoreCase)))
+                {
+                    effectiveChain.Insert(0, preferredEntry);
+                }
+            }
+
             // 1. 解析所有符合資格的供應商候選
             var candidates = new List<ResolvedCandidate>();
-            foreach (string entry in fallbackChain)
+            foreach (string entry in effectiveChain)
             {
-                if (TryGetEligibleCandidate(entry, fallbackChain, request, out string pId, out ILLMProvider p, out string mName))
+                if (TryGetEligibleCandidate(entry, effectiveChain, request, out string pId, out ILLMProvider p, out string mName))
                 {
                     candidates.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
                 }
@@ -893,7 +1024,7 @@ namespace RimLLM_Framework.Manager
                         // 通知串流累積器：本次嘗試即將開始，需捨棄前一次嘗試的殘留內容。
                         onAttemptStarting?.Invoke();
 
-                        string result = await attemptAsync(provider, modelName).ConfigureAwait(false);
+                        var attemptResult = await attemptAsync(provider, modelName).ConfigureAwait(false);
                         requestStopwatch.Stop();
 
                         // 成功後重設健康狀態與記錄延遲
@@ -902,7 +1033,7 @@ namespace RimLLM_Framework.Manager
 
                         _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
                         candidateSuccess = true;
-                        return result;
+                        return attemptResult;
                     }
                     catch (OperationCanceledException)
                     {
@@ -978,7 +1109,7 @@ namespace RimLLM_Framework.Manager
         /// 供應商已註冊且可用（啟用 + 金鑰）、模型分級達標、且未處於熔斷冷卻。
         /// 若所有可用供應商都在冷卻中，則破例放行以避免完全斷線。
         /// </summary>
-        private bool TryGetEligibleCandidate(string entry, List<string> fallbackChain, LLMRequest request, out string providerId, out ILLMProvider provider, out string modelName)
+        private bool TryGetEligibleCandidate(string entry, List<string> fallbackChain, RimLLMRequest request, out string providerId, out ILLMProvider provider, out string modelName)
         {
             provider = null;
 
@@ -1032,7 +1163,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 來源身分安全校驗 (Caller Verification)。
         /// </summary>
-        private static void VerifyCallerOrThrow(LLMRequest request, Assembly callingAssembly, bool verifyCaller)
+        private static void VerifyCallerOrThrow(RimLLMRequest request, Assembly callingAssembly, bool verifyCaller)
         {
             if (!verifyCaller || callingAssembly == null)
                 return;
@@ -1121,20 +1252,22 @@ namespace RimLLM_Framework.Manager
             return chain != null ? new List<string>(chain) : null;
         }
 
-        private LLMRequest NormalizeRequest(LLMRequest request)
+        private static RimLLMRequest NormalizeRequest(RimLLMRequest request, IRimLLMSettings settings)
         {
             if (request == null)
             {
                 throw new ArgumentNullException(nameof(request));
             }
 
-            if (request.ReasoningEffort != LLMReasoningEffort.Auto || _settings.DefaultReasoningEffort == LLMReasoningEffort.Auto)
+            // 暫存版（Task 10a 改正式版）：settings.DefaultReasoningEffort 仍為 LLMReasoningEffort，
+            // 以 MapLegacyReasoningEffort 轉譯後套用。
+            if (request.ReasoningEffort.HasValue || settings.DefaultReasoningEffort == LLMReasoningEffort.Auto)
             {
                 return request;
             }
 
             var clone = request.Clone();
-            clone.ReasoningEffort = _settings.DefaultReasoningEffort;
+            clone.ReasoningEffort = MapLegacyReasoningEffort(settings.DefaultReasoningEffort);
             return clone;
         }
 
@@ -1329,22 +1462,25 @@ namespace RimLLM_Framework.Manager
             return 0;
         }
 
-        private async Task<T> PerformDoubleRepairAsync<T>(LLMRequest originalRequest, string failedResponse, string errorMessage)
+        private async Task<T> PerformDoubleRepairAsync<T>(RimLLMRequest originalRequest, string failedResponse, string errorMessage)
         {
-            var repairRequest = new LLMRequest
+            var repairRequest = new RimLLMRequest
             {
                 ModId = originalRequest.ModId,
                 Temperature = 0.1f, // 低隨機性有利於修復格式
-                MaxTokens = originalRequest.MaxTokens,
+                MaxOutputTokens = originalRequest.MaxOutputTokens,
                 CancellationToken = originalRequest.CancellationToken,
-                ReasoningEffort = LLMReasoningEffort.None,
-                SystemPrompt = "You are a JSON repair assistant. The user will provide a JSON string that failed to parse, along with the parser error message. Your task is to output ONLY the corrected JSON string that is syntactically valid and contains all fields. Do NOT include markdown code blocks (like ```json), explanations, or any other text.",
-                Prompt = $"Failed JSON:\n{failedResponse}\n\nParser Error:\n{errorMessage}\n\nTarget Structure Sample:\n{RimLLMJsonHelper.GetSampleJson<T>()}\n\nPlease output the repaired JSON string:"
+                DisableReasoning = true, // 對應舊 LLMReasoningEffort.None
+                Messages = new List<ChatMessage>
+                {
+                    new ChatMessage(ChatRole.System, "You are a JSON repair assistant. The user will provide a JSON string that failed to parse, along with the parser error message. Your task is to output ONLY the corrected JSON string that is syntactically valid and contains all fields. Do NOT include markdown code blocks (like ```json), explanations, or any other text."),
+                    new ChatMessage(ChatRole.User, $"Failed JSON:\n{failedResponse}\n\nParser Error:\n{errorMessage}\n\nTarget Structure Sample:\n{RimLLMJsonHelper.GetSampleJson<T>()}\n\nPlease output the repaired JSON string:")
+                }
             };
 
             // 修復重打屬於同一次邏輯請求，不再重跑呼叫端校驗、防濫用與預算檢查，
             // 避免同一次使用者操作被扣兩次額度。
-            string repairResponse = await GenerateInternalDirectAsync(repairRequest).ConfigureAwait(false);
+            string repairResponse = (await GenerateInternalDirectAsync(repairRequest).ConfigureAwait(false)).Text;
             string repairedJson = RimLLMJsonHelper.RepairJson(repairResponse);
             
             return JsonConvert.DeserializeObject<T>(repairedJson);
@@ -1400,7 +1536,7 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private async Task<bool> CheckBudgetLimitAsync(LLMRequest request)
+        private async Task<bool> CheckBudgetLimitAsync(RimLLMRequest request)
         {
             _usageTracker.CheckDailyReset();
             
@@ -1547,7 +1683,7 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private bool IsBudgetMocked(LLMRequest request, out string mockResult)
+        private bool IsBudgetMocked(RimLLMRequest request, out string mockResult)
         {
             mockResult = null;
             if (_settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit)
