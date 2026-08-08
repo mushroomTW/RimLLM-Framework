@@ -3,66 +3,68 @@
 [![RimWorld 1.6](https://img.shields.io/badge/RimWorld-1.6-brightgreen.svg)](http://rimworldgame.com/)
 ![Languages](https://img.shields.io/badge/languages-EN%20%7C%20繁中%20%7C%20简中-orange.svg)
 
-`RimLLM Framework` 是一個 RimWorld 模組大型語言模型 (LLM) 呼叫介面與底層核心的基礎框架。它為其他 RimWorld AI 模組提供穩健、便利、高效且開箱即用的 SDK 支援，免去模組開發者重複造輪子的煩惱。
+[繁體中文說明](README_zh.md)
+
+`RimLLM Framework` is a foundational framework providing a Large Language Model (LLM) calling interface and core infrastructure for RimWorld mods. It gives other RimWorld AI mods a robust, convenient, efficient and ready-to-use SDK, so mod developers don't have to reinvent the wheel.
 
 ---
 
-## 💻 開發者呼叫說明 (SDK Usage)
+## 💻 SDK Usage
 
-### 1. 引用命名空間
+### 1. Import the namespaces
 
-請在您的 RimWorld 模組 C# 專案中引用 Microsoft Extensions AI 與 RimLLM SDK 命名空間：
+Reference the Microsoft Extensions AI and RimLLM SDK namespaces in your RimWorld mod's C# project:
 
 ```csharp
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.SDK;
 ```
 
-### 2. 註冊您的客戶端 Mod
+### 2. Register your client mod
 
-在您的 Mod 進入點（建構子或 `StaticConstructorOnStartup`）中進行註冊：
+Register in your mod's entry point (its constructor or `StaticConstructorOnStartup`):
 
 ```csharp
 public class MyAIMod : Verse.Mod
 {
     public MyAIMod(ModContentPack content) : base(content)
     {
-        // 註冊您的 ModId，讓框架能辨識呼叫來源
+        // Register your ModId so the framework can identify the caller
         RimLLMProvider.RegisterClient("myai.mod");
     }
 }
 ```
 
-### 3. 文字生成 (Text Generation)
+### 3. Text generation
 
-使用 `RimLLMProvider.CreateChatClient` 取得標準 MEAI `IChatClient` 實體，框架的 Fallback 鏈、佇列、防濫用與用量統計全部自動內建：
+Use `RimLLMProvider.CreateChatClient` to obtain a standard MEAI `IChatClient`. The framework's fallback chain, request queue, anti-abuse checks and usage tracking are all applied automatically:
 
 ```csharp
 public async void AskSomething()
 {
     try
     {
-        // 取得綁定目前 Mod 的 IChatClient
+        // Get an IChatClient bound to the current mod
         IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
 
         var messages = new List<ChatMessage>
         {
-            new ChatMessage(ChatRole.System, "你是一位冷酷、隨機且不可預測的說書人。"),
-            new ChatMessage(ChatRole.User, "請以 RimWorld 中的說書人蘭迪的口吻，跟玩家打聲招呼。")
+            new ChatMessage(ChatRole.System, "You are a cold, random and unpredictable storyteller."),
+            new ChatMessage(ChatRole.User, "Greet the player in the voice of Randy Random from RimWorld.")
         };
 
-        // 未指定 ModelId 時預設走玩家設定的 Fallback Chain 輪詢
+        // When no ModelId is specified, the player-configured fallback chain is used
         ChatResponse response = await chat.GetResponseAsync(messages);
         Log.Message($"[RandySays] {response.Text}");
     }
     catch (RimLLMException ex)
     {
-        Log.Error($"[MyAIMod] 生成失敗，錯誤碼: {ex.Error}, 錯誤訊息: {ex.Message}");
+        Log.Error($"[MyAIMod] Generation failed, error code: {ex.Error}, message: {ex.Message}");
     }
 }
 ```
 
-若需微調優先級或傳遞進階組態，可搭配 `RimLLMChatOptions`：
+To adjust priority or pass advanced configuration, use `RimLLMChatOptions`:
 
 ```csharp
 ChatResponse response = await chat.GetResponseAsync(
@@ -75,18 +77,18 @@ ChatResponse response = await chat.GetResponseAsync(
     });
 ```
 
-### 4. 結構化輸出 (Structured Output)
+### 4. Structured output
 
-定義您的 C# 資料格式類別，並使用 `GetResponseObjectAsync<T>` 擴充方法：
+Define your C# data class and use the `GetResponseObjectAsync<T>` extension method:
 
 ```csharp
-// 1. 定義預期輸出的資料結構
+// 1. Define the expected output structure
 public class PawnIncidentDecision
 {
-    public string EventType; // "Good" 或 "Bad"
-    public string IncidentDefName; // 例如 "RaidEnemy"
+    public string EventType; // "Good" or "Bad"
+    public string IncidentDefName; // e.g. "RaidEnemy"
     public float Probability;
-    public string RandyReasoning; // 說書人的心路歷程
+    public string RandyReasoning; // The storyteller's train of thought
 }
 
 public async void MakeIncidentDecision()
@@ -95,26 +97,27 @@ public async void MakeIncidentDecision()
     {
         IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
 
-        // 呼叫後底層會自動產生 JSON Schema、發送、容錯修復並反序列化成目標物件
+        // The framework generates the JSON Schema, sends the request,
+        // repairs malformed responses and deserializes into the target object
         PawnIncidentDecision decision = await chat.GetResponseObjectAsync<PawnIncidentDecision>(
             new List<ChatMessage>
             {
-                new ChatMessage(ChatRole.System, "你是一位專注於製造戲劇性衝突的決策大腦。"),
-                new ChatMessage(ChatRole.User, "分析當前殖民地的狀況，決定下一個發生的事件類型與 DefName。")
+                new ChatMessage(ChatRole.System, "You are a decision engine focused on creating dramatic conflict."),
+                new ChatMessage(ChatRole.User, "Analyse the colony's current state and decide the next incident type and DefName.")
             });
-        
-        Log.Message($" Randy 決定事件: {decision.IncidentDefName} ({decision.RandyReasoning})");
+
+        Log.Message($"Randy chose incident: {decision.IncidentDefName} ({decision.RandyReasoning})");
     }
     catch (RimLLMException ex)
     {
-        Log.Error($"結構化決策生成失敗: {ex.Message}");
+        Log.Error($"Structured decision generation failed: {ex.Message}");
     }
 }
 ```
 
-### 5. 串流生成 (Streaming)
+### 5. Streaming
 
-使用 MEAI 標準的 `GetStreamingResponseAsync` 迭代 `ChatResponseUpdate` 串流：
+Use the standard MEAI `GetStreamingResponseAsync` to iterate over the `ChatResponseUpdate` stream:
 
 ```csharp
 public async void StreamResponse()
@@ -126,31 +129,32 @@ public async void StreamResponse()
         var updates = chat.GetStreamingResponseAsync(
             new List<ChatMessage>
             {
-                new ChatMessage(ChatRole.User, "寫一段殖民地廣播稿。")
+                new ChatMessage(ChatRole.User, "Write a colony radio broadcast.")
             });
 
         await foreach (ChatResponseUpdate update in updates)
         {
             if (!string.IsNullOrEmpty(update.Text))
             {
-                // 可安全更新 UI（更新保證在 Unity 主線程調度）
+                // Safe to update the UI (updates are dispatched on the Unity main thread)
                 MyGameUI.AppendText(update.Text);
             }
         }
     }
     catch (RimLLMException ex)
     {
-        Log.Error($"串流生成失敗: {ex.Message}");
+        Log.Error($"Streaming generation failed: {ex.Message}");
     }
 }
 ```
 
-> 整條 Fallback 鏈都失敗時，例外會由 `await foreach` 重新擲出，因此上例的 `catch` 一定會收到錯誤；
-> 串流不會在失敗時靜默結束。chunk 一產生即送出，中間沒有輪詢延遲。
+> When the entire fallback chain fails, the exception is rethrown from `await foreach`, so the `catch` above
+> is guaranteed to receive the error — a failing stream never ends silently. Chunks are emitted as soon as
+> they are produced, with no polling delay in between.
 
-### 6. 上下文快取節省 Token (Context Caching)
+### 6. Context caching to save tokens
 
-若您的 Mod 擁有非常龐大、且**短時間內會重複使用**的穩定上下文（例如世界觀規則、固定的角色背景設定、輸出 Schema 等），且需要高頻率呼叫 API，您可以透過 `RimLLMChatOptions.CachedContext` 啟用 **Context Caching**：
+If your mod has a very large, stable context that is **reused within a short time window** (world-building rules, fixed character backgrounds, output schemas, and so on) and you call the API frequently, you can enable **context caching** via `RimLLMChatOptions.CachedContext`:
 
 ```csharp
 public async void CallWithCaching()
@@ -159,14 +163,14 @@ public async void CallWithCaching()
 
     var options = new RimLLMChatOptions
     {
-        // 大型、穩定、會重複使用的資料（規則書 / Schema / 固定設定）
+        // Large, stable, reusable data (rulebook / schema / fixed configuration)
         CachedContext = BuildAnalysisRulesAndOutputSchema()
     };
 
     var messages = new List<ChatMessage>
     {
-        new ChatMessage(ChatRole.System, "你是一個 RimWorld 心理分析大師。"),
-        new ChatMessage(ChatRole.User, "依據以下殖民地當前狀態，分析成員的心理健康：" + BuildColonySnapshot())
+        new ChatMessage(ChatRole.System, "You are a RimWorld psychological analyst."),
+        new ChatMessage(ChatRole.User, "Given the colony state below, analyse each member's mental health: " + BuildColonySnapshot())
     };
 
     ChatResponse response = await chat.GetResponseAsync(messages, options);
@@ -175,13 +179,13 @@ public async void CallWithCaching()
 ```
 
 > [!NOTE]
-> 當 `CachedContext` 不為空時，`EnableContextCaching` 會自動設為 `true`。
-> **Gemini** 會將 `SystemPrompt + CachedContext` 快取（TTL 300s）。當內容過小時（Pro < 2048 字元、其餘 < 1024 字元），框架會自動降級為一般 `systemInstruction` 避免額外收費。
-> **OpenAI** 服務端會自動對重複前綴套用 Prompt Caching。
+> `EnableContextCaching` is set to `true` automatically whenever `CachedContext` is non-empty.
+> **Gemini** caches `SystemPrompt + CachedContext` (TTL 300s). When the content is too small (< 2048 characters for Pro, < 1024 for other models), the framework falls back to a normal `systemInstruction` to avoid paying the cache creation fee for no benefit.
+> **OpenAI** applies prompt caching to repeated prefixes automatically on the service side.
 
-### 7. 向量 Embedding 生成 (Embeddings)
+### 7. Embeddings
 
-使用 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator<string, Embedding<float>>`：
+Use `RimLLMProvider.CreateEmbeddingGenerator` to obtain a standard `IEmbeddingGenerator<string, Embedding<float>>`:
 
 ```csharp
 public async void GenerateVector()
@@ -194,117 +198,117 @@ public async void GenerateVector()
 
 ---
 
-## 📖 主要功能與特色
+## 📖 Features
 
-1. **多供應商支援 (Multi-Provider Support)**
-   * 原生支援 Google **Gemini**、**OpenAI**、**DeepSeek**、**Groq**、**Grok (xAI)**、**Z.ai**、**OpenRouter**、**Kimi**、**MiniMax**、**Qwen** 與 **NVIDIA**。
-   * 支援 **OpenAI Compatible API**，可自訂配置任何本地或第三方相容介面（如 LM Studio、Ollama、LocalAI、vLLM 等），預設 Endpoint 為 `http://localhost:1234/v1` 且支援 API 金鑰。
-   * 針對 **Kimi**、**MiniMax**、**Qwen** 提供「使用中國專用端點 (預設關閉)」一鍵切換，保證優質連線。
-2. **故障轉移與雙重備用機制 (Model Fallback)**
-   * **客戶端 Fallback 鏈**：支援配置由「主模型」與多個「精確備用模型」組成的輪詢鏈。當前模型遇到請求超時、限流 (Rate Limit 429) 或斷線時，底層自動無縫降級切換。UI 會優先產生「供應商:模型」格式；底層仍保留純供應商項目的相容解析，並會使用該供應商的預設模型。
-   * **OpenRouter 服務端自動回退 (openrouter/auto)**：支援在 Fallback 鏈中使用 OpenRouter 官方的 `openrouter/auto` 模型，由 OpenRouter 服務端在多個推薦模型間自動執行備用降級，提供更簡便的模型回退體驗。
-3. **AES-256 設定加密與呼叫端註冊**
-   * 使用 AES-256 對稱加密保存 API 金鑰 (API Keys)，降低設定檔直接保存純文字的風險（屬混淆等級保護，詳見下方「安全性說明」）。
-   * 所有供應商（含 Gemini）的 API 金鑰一律透過 HTTP Header 傳遞，不會出現在請求 URL 中，避免金鑰被寫入代理或伺服器存取日誌。
-   * **呼叫端來源校驗**：移除自動補註冊機制；對 async 調用層進行同步外殼與 `NoInlining` 封裝，讓框架能更穩定辨識已註冊呼叫端。
-   * RimWorld 模組運行於同一遊戲進程內；本框架不承諾能阻止惡意模組讀取記憶體、反射 public API，或繞過遊戲進程內權限。
-4. **精緻的可滾動分欄 GUI**
-   * 直覺的 Flow Grid 標籤展示可用模型清單，具備高亮選取與完整模型 Tooltip 提示。
-5. **獨立偵錯 (Debug) 分頁與詳細日誌控制**
-   * 新增獨立的 **Debug** 設定分頁。提供「詳細日誌 (Detailed Logging)」核取方塊，可自由開啟或關閉本模組的日誌輸出，便於 Mod 開發者與玩家進行排錯。
-6. **一鍵連線測試 (Connection Test)**
-   * 提供即時的一鍵連線檢測，量測 Latency 延遲並檢驗 API 與模型有效性。在基底類別中高度整合統一實作。
-7. **線程安全與主線程 Scribe 調度**
-   * 遊戲運行中所有設定字典皆具備同步鎖機制防範多線程並行讀寫衝突。
-   * 所有日誌寫入 `RecordLog` 中的 Scribe 存檔均以 `RimLLMDispatcher` 調度回 Unity 主線程執行，並加入 15 秒寫入節流 (Throttle)，避免背景存檔導致遊戲崩潰或 TPS 抖動。
-8. **推理性思考模型與思維鏈高亮 (Reasoning Models & think Tagging)**
-   * 原生支援 **DeepSeek-R1**、**Gemini 2.0/2.5 Thinking**、**OpenAI o1/o3** 等推理性思考模型。
-   * 底層自動擷取 API 返回的思維鏈（如 OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位），並統一以 XML 標記 `<think>...</think>` 封裝回傳。
-   * GUI 聊天測試頁面會自動解析該標記，將其渲染為精緻的灰色斜體思考過程；呼叫端 Mod 亦能極易使用正則表達式剝離或保留思維鏈，確保高相容性。
-   * **智慧思考強度控制 (Reasoning Effort)**：預設思考強度為「自動 / 預設 (Auto)」。在此模式下，各大供應商能運行其原生的適應性或動態思考配置（如 Gemini 的 `thinkingBudget = -1`、OpenAI 的動態 `reasoning_effort` 控制等），並支援在選單中一鍵「關閉 (Disabled)」或手動調整思考強度（低/中/高）。
-9. **智慧上下文快取與 Prompt Caching (Context Caching)**
-   * 原生支援 **Gemini Context Caching** 與 **OpenAI Prompt Caching**。開發者只需在 `RimLLMChatOptions` 中設定 `CachedContext`，底層即會自動將 `SystemPrompt + CachedContext` 提交給 API 服務商進行快取，顯著降低高頻重複請求的輸入 Token 費用與延遲。
-   * **成本防呆**：Gemini 顯式快取設有最小門檻，內容過小時自動略過快取改走 `systemInstruction`，避免「付建立費卻無法回收」的反效果；同一上下文的快取建立亦具併發鎖保護以防重複建立。
-   * **節省可量化**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`）並套用折扣費率計入成本估算，讓費用面板真實反映快取帶來的節省。
-10. **Embedding 向量 SDK (Embeddings)**
-    * 框架提供公開的 Embedding 運算能力，支援 Google、Ollama 與 OpenAI 相容三種來源，並附帶餘弦相似度與離線 Trigram 相似度工具。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索、聚類或相似度比對。
-    * 三種線上來源皆走官方 SDK：Google 使用 `Google.GenAI` 的 `EmbedContentAsync`，Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此 `Embedding 端點` 欄位填的是**服務根位址**（如 `http://localhost:11434/v1`），若貼上完整的 `/embeddings` 路徑會自動收斂。
-    * Embedding 屬於計費 API，因此與一般生成請求共用同一套呼叫端校驗與防濫用檢查；金鑰亦與 provider 金鑰採同一套 AES 加密儲存。
-
----
-
-## 🛠️ 技術架構與細節
-
-### 1. 統一介面與調度核心 (`IChatClient` / `IEmbeddingGenerator` 與 `RimLLMProvider`)
-
-* 提供 Microsoft.Extensions.AI 標準介面設計，呼叫端僅需對接 `IChatClient` 或 `IEmbeddingGenerator` 介面，完全不需關心底層是由哪個供應商、哪個模型進行生成，全部交由 `RimLLMManager` 進行動態調度與備用輪詢。
-
-### 2. 呼叫端來源註冊 (`ClientRegistry`)
-
-* 框架引入呼叫端組件校驗，讓 API 呼叫能被歸屬到已註冊的 ModId 與 Assembly，降低誤用、調試混淆與無意間冒用識別碼的情況。
-* **已移除自動補註冊機制**：所有呼叫端 Mod 必須手動呼叫 `RegisterClient`。在 API 調用時，底層會檢索當前呼叫端組件的 `Assembly` 並比對註冊資料；若該 `ModId` 未經註冊，或註冊的 Assembly 與實際呼叫者不符，將直接阻斷該次 SDK 呼叫。
-* **async 調用端堆疊保護**：為降低 C# 異步狀態機將調用端組件編譯為 `mscorlib` 造成來源辨識誤判，本框架對入口層（如 `GenerateObjectAsync` 與 `StreamAsync`）進行了同步外殼包裝，並加入 `[MethodImplOptions.NoInlining]` 屬性防範 JIT 內聯。
-* 此設計不是反惡意模組沙箱；若玩家安裝不受信任模組，該模組仍可能透過同進程能力造成資料外洩或破壞。
-
-### 3. Unity 主線程派遣器 (`RimLLMDispatcher`)
-
-* 網路請求通常是在背景線程（Thread Pool）中異步執行的。然而，Unity 的大部分 API 以及 RimWorld 的邏輯並非線程安全，在背景線程中直接呼叫這些 API 會導致遊戲崩潰或 TPS 抖動。
-* `RimLLMDispatcher` 作為一個 MonoBehaviour 單例，利用安全佇列（ConcurrentQueue）收集背景線程發送回來的 Callback，並在 Unity 每幀的 `Update` 週期中將這些 Callback 安全地分發回主線程執行。
-
-### 4. 統一的 HTTP 錯誤對照 (`LLMErrorMapper`)
-
-* HTTP 狀態碼轉換為 `LLMError` 的規則集中在 `LLMErrorMapper`，由三條路徑共用：官方 SDK（`ClientResultException`）、raw HTTP provider，以及 embedding 服務。
-* 因此「哪些狀態碼可重試」「哪些屬於 Schema 遭拒需降級」的判斷在所有路徑上完全一致；第三方自訂 provider 亦可直接引用此對照。
-
-### 5. 容錯結構化輸出 (Structured Output & JSON Repair)
-
-* 許多時候開發者需要模型回傳特定的 JSON 格式。
-* 內建 OpenAI 與 Gemini provider 會優先使用官方 SDK 的原生結構化輸出：OpenAI 透過 `IChatClient` 的 JSON Schema response format，Gemini 透過 `ResponseMimeType = "application/json"` 與 `ResponseSchema`。框架會在回應後驗證必要成員與 null 狀態，再反序列化為 C# 目標物件。
-* 只有 provider 不支援原生 Schema、服務拒絕 Schema，或模型回傳格式仍不完整時，才會進入 `RepairJson` fallback。此 fallback 能處理 Markdown 標記（如 ` ```json `）、括號未閉合、多餘逗號與 JSON 區塊提取。
+1. **Multi-provider support**
+   * Native support for Google **Gemini**, **OpenAI**, **DeepSeek**, **Groq**, **Grok (xAI)**, **Z.ai**, **OpenRouter**, **Kimi**, **MiniMax**, **Qwen** and **NVIDIA**.
+   * Supports **OpenAI-compatible APIs**, so you can configure any local or third-party compatible endpoint (LM Studio, Ollama, LocalAI, vLLM, and so on). The default endpoint is `http://localhost:1234/v1` and API keys are supported.
+   * **Kimi**, **MiniMax** and **Qwen** offer a one-click "use China-specific endpoint" toggle (off by default) for better connectivity.
+2. **Failover and model fallback**
+   * **Client-side fallback chain**: configure a chain made up of a primary model and multiple exact fallback models. When the current model hits a timeout, rate limit (HTTP 429) or connection error, the framework switches down the chain seamlessly. The UI produces entries in `Provider:Model` form; the framework still parses bare provider entries for compatibility and uses that provider's default model.
+   * **OpenRouter server-side auto fallback (`openrouter/auto`)**: you can put OpenRouter's official `openrouter/auto` model in the fallback chain and let OpenRouter pick among its recommended models server-side.
+3. **AES-256 settings encryption and caller registration**
+   * API keys are stored with AES-256 symmetric encryption, reducing the risk of plaintext keys sitting in the settings file. This is obfuscation-grade protection — see [Security notes](#-security-notes) below.
+   * Every provider (including Gemini) passes its API key via an HTTP header, never in the request URL, so keys don't end up in proxy or server access logs.
+   * **Caller verification**: automatic registration has been removed. Async call layers are wrapped in synchronous shells marked `NoInlining` so the framework can identify registered callers reliably.
+   * RimWorld mods all run inside the same game process. This framework makes no claim to stop a malicious mod from reading memory, reflecting over public APIs, or otherwise bypassing in-process boundaries.
+4. **Polished scrollable multi-column GUI**
+   * An intuitive flow-grid of model chips with highlighted selection and full model names in tooltips.
+5. **Dedicated debug tab with logging control**
+   * A separate **Debug** settings tab with a "Detailed Logging" checkbox, so mod developers and players can turn this mod's log output on or off while troubleshooting.
+6. **One-click connection test**
+   * Instant connectivity check that measures latency and validates the API key and model. Implemented once in the base class and shared by all providers.
+7. **Thread safety and main-thread Scribe dispatch**
+   * All settings dictionaries are guarded by locks against concurrent read/write from multiple threads.
+   * Scribe writes triggered by `RecordLog` are dispatched back to the Unity main thread through `RimLLMDispatcher` with a 15-second write throttle, preventing crashes and TPS spikes caused by background saves.
+8. **Reasoning models and chain-of-thought tagging**
+   * Native support for reasoning models such as **DeepSeek-R1**, **Gemini 2.0/2.5 Thinking** and **OpenAI o1/o3**.
+   * The framework extracts the chain of thought returned by the API (`reasoning_content` in the OpenAI protocol, the `thought` field in Gemini) and wraps it uniformly in `<think>...</think>` tags.
+   * The GUI chat test page parses these tags and renders the reasoning as grey italic text. Calling mods can easily strip or keep the chain of thought with a regular expression.
+   * **Reasoning effort control**: the default is "Auto", which lets each provider run its own adaptive or dynamic thinking configuration (Gemini's `thinkingBudget = -1`, OpenAI's dynamic `reasoning_effort`, and so on). You can also disable reasoning entirely or set it manually to low / medium / high.
+9. **Context caching and prompt caching**
+   * Native support for **Gemini context caching** and **OpenAI prompt caching**. Set `CachedContext` in `RimLLMChatOptions` and the framework submits `SystemPrompt + CachedContext` for caching, significantly reducing input token cost and latency for high-frequency repeated requests.
+   * **Cost guard**: Gemini explicit caching has a minimum size threshold. When the content is too small the framework skips the cache and uses `systemInstruction` instead, avoiding the case where the creation fee is never recouped. Cache creation for the same context is also serialized by a lock to prevent duplicate resources.
+   * **Quantified savings**: usage tracking parses the cache-hit tokens returned by the API (OpenAI `cached_tokens`, Gemini `cachedContentTokenCount`) and applies a discounted rate to the cost estimate, so the cost panel reflects the real saving.
+10. **Embedding SDK**
+    * The framework exposes public embedding functionality backed by Google, Ollama or an OpenAI-compatible endpoint, plus cosine similarity and offline trigram similarity helpers. Other mods obtain a standard `IEmbeddingGenerator` through `RimLLMProvider.CreateEmbeddingGenerator` for semantic search, clustering or similarity comparison.
+    * All three online sources go through official SDKs: Google uses `EmbedContentAsync` from `Google.GenAI`; Ollama and self-hosted services use the OpenAI SDK's `EmbeddingClient` (Ollama via its OpenAI-compatible `/v1` endpoint). The *Embedding endpoint* field therefore takes a **service root address** such as `http://localhost:11434/v1`; a full `/embeddings` path is normalized automatically.
+    * Embeddings are a billed API, so they share the same caller verification and anti-abuse checks as ordinary generation requests. Their keys use the same AES encryption as provider keys.
 
 ---
 
-### 6. 官方 SDK 與 provider 分工
+## 🛠️ Architecture
 
-* 主專案與測試專案維持 `net472`，不要求 RimWorld Mod 升級到 .NET 8；官方 SDK 的相依 DLL 會隨 Mod 輸出，並在啟動相容性閘門中確認可載入。`System.ValueTuple` 雖會被 .NET Framework 視為 framework assembly，建置時仍會明確部署其 `4.0.5.0` DLL，避免 RimWorld Mono 反射掃描 MEAI 時發生 `ReflectionTypeLoadException`。
-* **OpenAI** 使用 `OpenAI` SDK `2.12.0` 與 `Microsoft.Extensions.AI`／`Microsoft.Extensions.AI.OpenAI` `10.8.3`。內建 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用管理器；LM Studio、Ollama、vLLM 等真正符合 OpenAI Chat Completions 協定的 endpoint 才適合使用 OpenAI-compatible adapter。
-* **Gemini** 使用官方 `Google.GenAI` `1.16.0`，以 API key 建立 Gemini Developer API client。文字、串流、原生 Schema、thinking、context cache 與 Safety 一律走 `Google.GenAI` 原生 generateContent 路徑（程式碼以 `CreateGenAiClient`／`GenerateContentNativeAsync`／`GenerateContentStreamNativeAsync` 三個測試縫隔離），不使用 `OpenAI.Chat.ChatClient` 模擬 Gemini，也不保留 raw HTTP 對話路徑。
-* **所有內建 provider 一律走官方 SDK**：OpenAI 系列（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）透過 `OpenAI` SDK `2.12.0` + MEAI `IChatClient`；Gemini 透過 `Google.GenAI` 原生路徑。模型清單改用 `OpenAIModelClient.GetModelsAsync()`，不再手動改寫 `/models` URL 或剖析 JSON。
-* raw HTTP 目前**只剩 Gemini 的 `cachedContents` 顯式快取建立**一處（`Google.GenAI 1.16.0` 的 `Caches` 僅公開 `ListAsync`，沒有建立 API）。`BaseHttpProvider` 因此收斂為單一 `SendPostAsync` 路徑。
-* **JSON Schema 產生刻意不使用 `AIJsonUtilities.CreateJsonSchema`**：MEAI 產生的是完整 JSON Schema（可空欄位為 `"type": ["string","null"]` 聯合型別、循環型別以 `$ref` 表示），實測這三種測試型別的輸出全部被 `Google.GenAI` 的 `Schema.FromJson` 拒絕。`RimLLMJsonHelper` 產生的是「所有供應商都吃得下的受限子集」（單一 type、循環成員截斷），兩者解決的問題不同。
-* provider-specific SDK 不會出現在 `RimLLMManager` 或既有 SDK façade；共用層只依賴 `IChatClient`、`LLMProviderCapabilities` 與既有 `ILLMProvider` API。API key 一律由目前加密設定提供，不寫入程式碼或一般日誌。
+### 1. Unified interface and dispatch core (`IChatClient` / `IEmbeddingGenerator` and `RimLLMProvider`)
+
+* The framework exposes the standard Microsoft.Extensions.AI interfaces. Callers only work against `IChatClient` or `IEmbeddingGenerator` and never need to know which provider or model handled the request — `RimLLMManager` handles dispatch and fallback rotation.
+
+### 2. Caller registration (`ClientRegistry`)
+
+* The framework verifies the calling assembly so API calls can be attributed to a registered ModId and assembly, reducing misuse, debugging confusion and accidental identifier collisions.
+* **Automatic registration has been removed**: every calling mod must invoke `RegisterClient` explicitly. On each API call the framework inspects the caller's `Assembly` and compares it against the registration table. If the `ModId` is not registered, or the registered assembly does not match the actual caller, the SDK call is blocked.
+* **Async caller stack protection**: to prevent the C# async state machine from attributing the caller assembly to `mscorlib`, entry points such as `GenerateObjectAsync` and `StreamAsync` are wrapped in synchronous shells marked `[MethodImplOptions.NoInlining]` to prevent JIT inlining.
+* This is not an anti-malware sandbox. If a player installs an untrusted mod, that mod can still cause data leakage or damage using ordinary in-process capabilities.
+
+### 3. Unity main-thread dispatcher (`RimLLMDispatcher`)
+
+* Network requests run asynchronously on background thread-pool threads, but most Unity APIs and RimWorld logic are not thread safe — calling them from a background thread causes crashes or TPS spikes.
+* `RimLLMDispatcher` is a MonoBehaviour singleton that collects callbacks from background threads in a `ConcurrentQueue` and dispatches them back to the main thread during Unity's per-frame `Update`.
+
+### 4. Unified HTTP error mapping (`LLMErrorMapper`)
+
+* The rules that translate HTTP status codes into `LLMError` live in a single place, `LLMErrorMapper`, shared by three paths: the official SDK (`ClientResultException`), raw HTTP providers, and the embedding service.
+* As a result, "which status codes are retryable" and "which indicate a rejected schema that should be downgraded" behave identically everywhere. Third-party custom providers can reference the same mapper.
+
+### 5. Fault-tolerant structured output (structured output & JSON repair)
+
+* Developers frequently need the model to return a specific JSON shape.
+* The built-in OpenAI and Gemini providers prefer the official SDKs' native structured output: OpenAI through `IChatClient`'s JSON Schema response format, Gemini through `ResponseMimeType = "application/json"` plus `ResponseSchema`. The framework validates required members and null state before deserializing into the target C# object.
+* The `RepairJson` fallback is only used when the provider has no native schema support, the service rejects the schema, or the model still returns malformed output. It handles Markdown fences (such as ` ```json `), unclosed brackets, trailing commas and JSON block extraction.
 
 ---
 
-## 🔐 安全性說明 (Security Notes)
+### 6. Official SDKs and provider responsibilities
 
-為避免誤解，以下誠實說明本框架各項安全機制的實際保護等級：
-
-* **API 金鑰加密為「混淆等級」保護**：金鑰以 AES-256 加密後存入設定檔，加密金鑰由固定種子與裝置識別碼（`deviceUniqueIdentifier`）衍生。這能防止設定檔被直接複製到其他機器後讀出明文、避免雲端同步或分享設定時意外洩漏，但**無法**抵禦在本機執行的程式（包含其他 Mod）——加密邏輯與素材都在同一進程內，有心者可還原明文。請將其理解為「防呆與防意外洩漏」，而非保險箱。
-* **呼叫端註冊是防誤用機制，不是安全邊界**：`RegisterClient` 與 Assembly 比對能防止 ModId 誤用、冒名與調試混淆，但 RimWorld 所有 Mod 運行於同一進程，惡意模組仍可透過反射、記憶體讀取等同進程能力繞過校驗。本框架不承諾、也無法提供進程內沙箱隔離。
-* **金鑰不落地於 URL 與日誌**：所有供應商均以 HTTP Header 傳遞金鑰；日誌輸出一律經過 `SanitizeForLog` 處理並截斷長度，診斷匯出時裝置識別碼亦會遮罩。
+* The main project and the test project stay on `net472`; RimWorld mods are not required to move to .NET 8. The official SDKs' dependency DLLs ship with the mod and are verified loadable by a startup compatibility gate. Although .NET Framework treats `System.ValueTuple` as a framework assembly, the build explicitly deploys its `4.0.5.0` DLL to avoid a `ReflectionTypeLoadException` when RimWorld's Mono reflects over MEAI.
+* **OpenAI** uses the `OpenAI` SDK `2.12.0` together with `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.8.3`. The built-in `OpenAIProvider` enters the shared manager through `ChatClient.AsIChatClient()`. Only endpoints that genuinely implement the OpenAI Chat Completions protocol (LM Studio, Ollama, vLLM, …) are suitable for the OpenAI-compatible adapter.
+* **Gemini** uses the official `Google.GenAI` `1.16.0`, building a Gemini Developer API client from an API key. Text, streaming, native schema, thinking, context cache and safety settings all go through the native `Google.GenAI` generateContent path (isolated in code behind three test seams: `CreateGenAiClient`, `GenerateContentNativeAsync`, `GenerateContentStreamNativeAsync`). Gemini is never emulated with `OpenAI.Chat.ChatClient`, and no raw HTTP chat path is kept.
+* **Every built-in provider goes through an official SDK**: the OpenAI family (OpenAI, OpenRouter, DeepSeek, Groq, Grok, Z.ai, Kimi, MiniMax, Qwen, NVIDIA, OpenAICompatible) uses the `OpenAI` SDK `2.12.0` plus MEAI's `IChatClient`; Gemini uses the native `Google.GenAI` path. Model listings use `OpenAIModelClient.GetModelsAsync()` rather than hand-rewriting the `/models` URL and parsing JSON.
+* Raw HTTP now remains in **exactly one place — creating Gemini `cachedContents` explicit caches** (`Caches` in `Google.GenAI 1.16.0` only exposes `ListAsync`, with no creation API). `BaseHttpProvider` has therefore collapsed to a single `SendPostAsync` path.
+* **JSON Schema generation deliberately does not use `AIJsonUtilities.CreateJsonSchema`.** MEAI emits full JSON Schema — nullable members become `"type": ["string","null"]` union types and recursive types are expressed with `$ref`. Testing showed that output for all three test types is rejected by `Google.GenAI`'s `Schema.FromJson`. `RimLLMJsonHelper` instead emits a restricted subset every provider accepts (single `type`, recursive members truncated). The two solve different problems.
+* Provider-specific SDKs never appear in `RimLLMManager` or the public SDK façade; the shared layer depends only on `IChatClient`, `LLMProviderCapabilities` and the existing `ILLMProvider` API. API keys always come from the encrypted settings and are never written into source code or ordinary logs.
 
 ---
 
-## 🧪 單元測試與驗證
+## 🔐 Security notes
 
-本專案附帶完整的單元測試套件 `Source/RimLLM Framework.Tests`（與主專案平行的獨立專案），覆蓋 AES 加解密、來源註冊校驗、模型 Fallback 機制、JSON Schema 產生與修復、HTTP 錯誤對照、串流重試與預算控制等核心功能。
+To avoid misunderstanding, here is an honest description of what each security mechanism actually protects against:
 
-> **前置需求**：測試執行期需要 RimWorld 的 `Assembly-CSharp` 與 Unity DLL，這些檔案不可散布，因此必須有本機的 RimWorld 安裝。
-> 預設路徑為 `C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed`，
-> 可透過 MSBuild property `RimWorldManagedDir` 或環境變數 `RIMWORLD_MANAGED_DIR` 覆寫。
+* **API key encryption is obfuscation-grade protection.** Keys are AES-256 encrypted in the settings file, with the encryption key derived from a fixed seed and the device identifier (`deviceUniqueIdentifier`). This prevents plaintext from being read after the settings file is copied to another machine, and avoids accidental leaks when syncing or sharing settings — but it **cannot** defend against code running on the same machine (including other mods), because the encryption logic and material live in the same process and a determined attacker can recover the plaintext. Treat it as protection against mistakes and accidental disclosure, not as a safe.
+* **Caller registration is a misuse guard, not a security boundary.** `RegisterClient` plus assembly comparison prevents ModId misuse, impersonation and debugging confusion, but every RimWorld mod runs in the same process, so a malicious mod can still bypass the check through reflection, memory reads and other in-process capabilities. This framework does not, and cannot, provide in-process sandbox isolation.
+* **Keys never reach URLs or logs.** All providers pass keys via HTTP headers; log output always goes through `SanitizeForLog` and is length-truncated, and the device identifier is masked in diagnostic exports.
 
-您可以在專案根目錄下使用 `dotnet-cli` 執行建置與測試驗證：
+---
+
+## 🧪 Unit tests and verification
+
+The project ships with a full unit test suite in `Source/RimLLM Framework.Tests` (a standalone project alongside the main one) covering AES encryption/decryption, caller registration, model fallback, JSON Schema generation and repair, HTTP error mapping, streaming retries and budget control.
+
+> **Prerequisite**: the tests need RimWorld's `Assembly-CSharp` and Unity DLLs at run time. Those files are not redistributable, so a local RimWorld installation is required.
+> The default path is `C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed`,
+> and can be overridden with the MSBuild property `RimWorldManagedDir` or the environment variable `RIMWORLD_MANAGED_DIR`.
+
+Build and test from the project root with the `dotnet` CLI:
 
 ```bash
-# 還原並重新建置解決方案
+# Restore and rebuild the solution
 dotnet build "Source/RimLLM Framework.slnx"
 
-# 執行所有 NUnit 單元測試
+# Run all NUnit unit tests
 dotnet test "Source/RimLLM Framework.Tests/RimLLM Framework.Tests.csproj"
 ```
 
-> **注意**：撰寫程式碼時，`Krafs.Rimworld.Ref` 參考組件並不會限制 BCL 的 API 範圍，
-> 因此可能出現「編譯通過但在 RimWorld 的 Mono 執行環境失敗」的情況
-> （已知例子：`Stack<T>` 會擲出 `TypeLoadException`、無參數的 `String.TrimEnd()` 不存在）。
-> 請務必實際執行 `dotnet test` 驗證，不要只依賴建置成功。
+> **Note**: the `Krafs.Rimworld.Ref` reference assemblies do not restrict the BCL surface, so it is possible to
+> write code that compiles but fails inside RimWorld's Mono runtime. Known examples: `Stack<T>` throws
+> `TypeLoadException`, and the parameterless `String.TrimEnd()` overload does not exist.
+> Always verify with an actual `dotnet test` run rather than relying on a successful build.
