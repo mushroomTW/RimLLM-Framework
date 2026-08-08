@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -6,7 +6,6 @@ using Verse;
 using RimWorld;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
 {
@@ -23,7 +22,7 @@ namespace RimLLM_Framework.Mod
         public static readonly Dictionary<string, bool> Testing = new Dictionary<string, bool>();
         public static readonly Dictionary<string, Vector2> ModelScrollPositions = new Dictionary<string, Vector2>();
 
-        public static void DrawGenericProviderSettings(Listing_Standard listing, string providerId, string defaultEndpoint, string defaultModel)
+        public static void DrawGenericProviderSettings(Listing_Standard listing, string providerId)
         {
             // 1. 啟用 / 停用
             bool enabled = Settings.IsProviderEnabled(providerId);
@@ -124,7 +123,7 @@ namespace RimLLM_Framework.Mod
 
         public static void DrawChinaEndpointToggle(Listing_Standard listing, string providerId)
         {
-            if (providerId == "Kimi" || providerId == "MiniMax" || providerId == "Qwen")
+            if (ProviderIds.HasChinaEndpoint(providerId))
             {
                 bool isChina = Settings.IsChinaMode(providerId);
                 bool oldIsChina = isChina;
@@ -134,12 +133,8 @@ namespace RimLLM_Framework.Mod
                     Settings.SetChinaMode(providerId, isChina);
                     Settings.Write();
                 }
-                listing.Gap(8f);
             }
-            else
-            {
-                listing.Gap(8f);
-            }
+            listing.Gap(8f);
         }
 
         public static void DrawModelListSection(Listing_Standard listing, string providerId)
@@ -245,15 +240,13 @@ namespace RimLLM_Framework.Mod
             int failureCount = 0;
             long apiTotalTokens = 0;
             long apiCachedTokens = 0;
-            if (RimLLMProvider.Manager is RimLLMManager managerInstance)
+            if (RimLLMProvider.TryGetManager(out var managerInstance) &&
+                managerInstance.UsageTracker.ProviderStatistics.TryGetValue(providerId, out var stats))
             {
-                if (managerInstance.UsageTracker.ProviderStatistics.TryGetValue(providerId, out var stats))
-                {
-                    successCount = stats.SuccessCount;
-                    failureCount = stats.FailureCount;
-                    apiTotalTokens = stats.TotalPromptTokens;
-                    apiCachedTokens = stats.CachedPromptTokens;
-                }
+                successCount = stats.SuccessCount;
+                failureCount = stats.FailureCount;
+                apiTotalTokens = stats.TotalPromptTokens;
+                apiCachedTokens = stats.CachedPromptTokens;
             }
             int totalCalls = successCount + failureCount;
             float successRate = totalCalls > 0 ? (successCount * 100f) / totalCalls : 100f;
@@ -336,91 +329,88 @@ namespace RimLLM_Framework.Mod
 
         public static void StartFetchModels(string providerId)
         {
-            if (providerId != "OpenAICompatible")
-            {
-                string apiKey = Settings.GetApiKey(providerId);
-                if (string.IsNullOrEmpty(apiKey))
-                {
-                    FetchStatus[providerId] = "RimLLM_EnterApiKey".Translate();
-                    return;
-                }
-            }
-            Fetching[providerId] = true;
-            FetchStatus[providerId] = "RimLLM_Fetching".Translate();
-            Task.Run(async () =>
-            {
-                try
+            RunProviderOperation(
+                providerId,
+                Fetching,
+                FetchStatus,
+                "RimLLM_Fetching".Translate(),
+                async () =>
                 {
                     var models = await RimLLMProvider.FetchProviderModelsAsync(providerId).ConfigureAwait(false);
-
-                    RimLLMDispatcher.EnqueueOnMainThread(() =>
+                    // 寫入設定必須回到主線程，因此以延遲委派形式交還。
+                    return () =>
                     {
-                        Fetching[providerId] = false;
-                        if (models != null && models.Count > 0)
+                        if (models == null || models.Count == 0)
                         {
-                            Settings.SetModelList(providerId, models);
-                            Settings.Write();
-                            FetchStatus[providerId] = "RimLLM_FetchSuccessCount".Translate(models.Count);
+                            return "RimLLM_FetchSuccessEmpty".Translate();
                         }
-                        else
-                        {
-                            FetchStatus[providerId] = "RimLLM_FetchSuccessEmpty".Translate();
-                        }
-                    });
-                }
-                catch (Exception ex)
-                {
-                    RimLLMDispatcher.EnqueueOnMainThread(() =>
-                    {
-                        Fetching[providerId] = false;
-                        FetchStatus[providerId] = "RimLLM_FetchFailed".Translate() + " (" + RimLLMLog.SanitizeForLog(ex.Message, 220) + ")";
-                    });
-                }
-            });
+                        Settings.SetModelList(providerId, models);
+                        Settings.Write();
+                        return "RimLLM_FetchSuccessCount".Translate(models.Count);
+                    };
+                },
+                ex => "RimLLM_FetchFailed".Translate() + " (" + RimLLMLog.SanitizeForLog(ex.Message, 220) + ")");
         }
 
         public static void StartTest(string providerId)
         {
-            if (providerId != "OpenAICompatible")
-            {
-                string apiKey = Settings.GetApiKey(providerId);
-                if (string.IsNullOrEmpty(apiKey))
+            RunProviderOperation(
+                providerId,
+                Testing,
+                TestStatus,
+                "RimLLM_Testing".Translate(),
+                async () =>
                 {
-                    TestStatus[providerId] = "RimLLM_EnterApiKey".Translate();
-                    return;
-                }
+                    TestResult result = await RimLLMProvider.TestProviderAsync(providerId).ConfigureAwait(false);
+                    return () => result.Success
+                        ? "RimLLM_TestStatusSuccess".Translate(result.LatencyMs, result.Model).ToString()
+                        : "RimLLM_TestStatusFailed".Translate(result.ErrorMessage).ToString();
+                },
+                ex => "RimLLM_TestStatusError".Translate(RimLLMLog.SanitizeForLog(ex.Message, 220)));
+        }
+
+        /// <summary>
+        /// 「抓模型清單」與「連線測試」共用的背景操作外殼：
+        /// 金鑰前置檢查、忙碌旗標、狀態訊息與主線程回寫。
+        /// <paramref name="operation"/> 於背景執行緒執行，回傳一個在主線程執行並產生狀態字串的委派，
+        /// 讓需要寫入設定的收尾動作能安全地回到主線程。
+        /// </summary>
+        private static void RunProviderOperation(
+            string providerId,
+            Dictionary<string, bool> busyFlags,
+            Dictionary<string, string> statusMessages,
+            string busyLabel,
+            Func<Task<Func<string>>> operation,
+            Func<Exception, string> describeError)
+        {
+            // 本地相容介面不需要金鑰；其餘供應商未填金鑰時不必真的送出請求。
+            if (providerId != ProviderIds.OpenAICompatible && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
+            {
+                statusMessages[providerId] = "RimLLM_EnterApiKey".Translate();
+                return;
             }
 
-            Testing[providerId] = true;
-            TestStatus[providerId] = "RimLLM_Testing".Translate();
+            busyFlags[providerId] = true;
+            statusMessages[providerId] = busyLabel;
 
             Task.Run(async () =>
             {
+                Func<string> applyResult;
                 try
                 {
-                    TestResult result = await RimLLMProvider.TestProviderAsync(providerId).ConfigureAwait(false);
-
-                    RimLLMDispatcher.EnqueueOnMainThread(() =>
-                    {
-                        Testing[providerId] = false;
-                        if (result.Success)
-                        {
-                            TestStatus[providerId] = "RimLLM_TestStatusSuccess".Translate(result.LatencyMs, result.Model);
-                        }
-                        else
-                        {
-                            TestStatus[providerId] = "RimLLM_TestStatusFailed".Translate(result.ErrorMessage);
-                        }
-                    });
+                    applyResult = await operation().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    RimLLMDispatcher.EnqueueOnMainThread(() =>
-                    {
-                        Testing[providerId] = false;
-                        TestStatus[providerId] = "RimLLM_TestStatusError".Translate(RimLLMLog.SanitizeForLog(ex.Message, 220));
-                    });
+                    string message = describeError(ex);
+                    applyResult = () => message;
                 }
+
+                RimLLMDispatcher.EnqueueOnMainThread(() =>
+                {
+                    busyFlags[providerId] = false;
+                    statusMessages[providerId] = applyResult();
+                });
             });
         }
     }

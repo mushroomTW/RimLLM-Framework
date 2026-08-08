@@ -1,5 +1,4 @@
-using System;
-using System.Collections.Concurrent;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
@@ -12,9 +11,6 @@ namespace RimLLM_Framework.SDK
     /// <summary>RimLLM SDK 對 IChatClient 的擴充方法。</summary>
     public static class RimLLMClientExtensions
     {
-        /// <summary>結構化輸出 schema 的自動快取（取代舊 RegisterResponseType 預熱）。</summary>
-        private static readonly ConcurrentDictionary<Type, string> SchemaCache = new ConcurrentDictionary<Type, string>();
-
         /// <summary>
         /// 結構化輸出：以目標型別 T 產生 JSON Schema 送出，並回傳反序列化結果。
         /// client 為 RimLLMProvider.CreateChatClient 回傳的 facade 時走完整路徑
@@ -43,8 +39,8 @@ namespace RimLLM_Framework.SDK
             CancellationToken cancellationToken)
         {
             ChatOptions effective = options ?? new RimLLMChatOptions();
-            string schemaJson = SchemaCache.GetOrAdd(typeof(T), t =>
-                RimLLMJsonHelper.GenerateJsonSchema(t, uppercaseTypes: false).ToString());
+            // schema 字串的快取由 RimLLMJsonHelper 統一負責，此處不再另建一份。
+            string schemaJson = RimLLMJsonHelper.GenerateJsonSchemaString(typeof(T));
             using (JsonDocument document = JsonDocument.Parse(schemaJson))
             {
                 effective.ResponseFormat = ChatResponseFormat.ForJsonSchema(

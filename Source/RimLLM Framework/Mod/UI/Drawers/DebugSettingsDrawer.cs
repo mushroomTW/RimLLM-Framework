@@ -54,13 +54,11 @@ namespace RimLLM_Framework.Mod
             Widgets.Label(usageInfoRect, usageText);
             Text.Anchor = TextAnchor.UpperLeft;
 
-            if (Widgets.ButtonText(resetUsageBtnRect, "RimLLM_ResetUsageBtn".Translate()))
+            if (Widgets.ButtonText(resetUsageBtnRect, "RimLLM_ResetUsageBtn".Translate()) &&
+                RimLLMProvider.TryGetManager(out var usageManager))
             {
-                if (RimLLMProvider.Manager is RimLLMManager managerInstance)
-                {
-                    managerInstance.ResetUsage();
-                    Messages.Message("RimLLM_MsgUsageReset".Translate(), MessageTypeDefOf.PositiveEvent, false);
-                }
+                usageManager.ResetUsage();
+                Messages.Message("RimLLM_MsgUsageReset".Translate(), MessageTypeDefOf.PositiveEvent, false);
             }
             listing.Gap(10f);
 
@@ -93,17 +91,15 @@ namespace RimLLM_Framework.Mod
             Widgets.Label(labelRect, "<b>" + "RimLLM_RecentRequests".Translate(30) + "</b>");
             Text.Anchor = TextAnchor.UpperLeft;
 
-            if (Widgets.ButtonText(clearBtnRect, "RimLLM_ClearRequestsBtn".Translate()))
+            if (Widgets.ButtonText(clearBtnRect, "RimLLM_ClearRequestsBtn".Translate()) &&
+                RimLLMProvider.TryGetManager(out var logManager))
             {
-                if (RimLLMProvider.Manager is RimLLMManager managerInstance)
-                {
-                    managerInstance.ClearLogs();
-                    Messages.Message("RimLLM_MsgLogsCleared".Translate(), MessageTypeDefOf.PositiveEvent, false);
-                }
+                logManager.ClearLogs();
+                Messages.Message("RimLLM_MsgLogsCleared".Translate(), MessageTypeDefOf.PositiveEvent, false);
             }
             listing.Gap(4f);
 
-            if (RimLLMProvider.Manager is RimLLMManager manager)
+            if (RimLLMProvider.TryGetManager(out var manager))
             {
                 var logs = new List<RimLLMManager.RequestLogEntry>(manager.RequestLogs);
                 logs.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
@@ -153,7 +149,7 @@ namespace RimLLM_Framework.Mod
                 sb.AppendLine("=== RimLLM Framework Diagnostics ===");
                 sb.AppendLine($"Export Time: {DateTime.Now}");
                 sb.AppendLine($"OS: {SystemInfo.operatingSystem}");
-                string maskedDeviceId = "Masked_";
+                string maskedDeviceId;
                 try
                 {
                     string rawId = SystemInfo.deviceUniqueIdentifier;
@@ -186,20 +182,9 @@ namespace RimLLM_Framework.Mod
                 }
                 sb.AppendLine();
                 sb.AppendLine("=== Provider Setup ===");
-                List<string> providers;
-                try
-                {
-                    providers = RimLLMProvider.GetRegisteredProviderIds();
-                }
-                catch (InvalidOperationException)
-                {
-                    providers = new List<string>
-                    {
-                        ProviderIds.Gemini, ProviderIds.OpenAI, ProviderIds.DeepSeek, ProviderIds.Groq,
-                        ProviderIds.Grok, ProviderIds.Zai, ProviderIds.OpenRouter, ProviderIds.Kimi, ProviderIds.MiniMax,
-                        ProviderIds.Qwen, ProviderIds.Nvidia, ProviderIds.OpenAICompatible
-                    };
-                }
+                List<string> providers = RimLLMProvider.TryGetManager(out var providerManager)
+                    ? providerManager.GetRegisteredProviderIds()
+                    : new List<string>(ProviderIds.BuiltIn);
                 foreach (var prov in providers)
                 {
                     bool enabled = Settings.IsProviderEnabled(prov);
@@ -214,9 +199,9 @@ namespace RimLLM_Framework.Mod
                 }
                 sb.AppendLine();
                 sb.AppendLine("=== Recent Request Logs ===");
-                if (RimLLMProvider.Manager is RimLLMManager manager)
+                if (RimLLMProvider.TryGetManager(out var logManager))
                 {
-                    var logs = manager.RequestLogs.ToArray();
+                    var logs = logManager.RequestLogs.ToArray();
                     if (logs.Length == 0)
                     {
                         sb.AppendLine("  No requests recorded in this session.");

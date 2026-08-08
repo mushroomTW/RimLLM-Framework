@@ -1,40 +1,34 @@
 using System;
 using System.Collections.Generic;
-using System.Net;
-using System.Net.Http;
-using System.Text;
+using System.ClientModel;
 using System.Threading;
 using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
+using Google.GenAI;
+using Google.GenAI.Types;
+using OpenAI;
+using OpenAI.Embeddings;
+using RimLLM_Framework.Providers;
 using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Manager
 {
     /// <summary>
-    /// Embedding 向量運算服務，負責呼叫外部 embedding API 取得文字向量，
+    /// Embedding 向量運算服務。線上供應商一律透過官方 SDK 呼叫
+    /// （Google 走 Google.GenAI，Ollama 與自架服務走 OpenAI 相容的 EmbeddingClient），
     /// 並提供餘弦與 Trigram 相似度計算工具供其他 Mod 直接使用。
     /// </summary>
     public class RimLLMEmbeddingService
     {
         /// <summary>
-        /// 共用的 HttpClient。逾時一律交由 CancellationTokenSource 控制，
-        /// 因此這裡設為無限，避免 HttpClient 內建逾時與 ApiTimeout 互相干擾。
-        /// </summary>
-        private static readonly HttpClient HttpClient;
-
-        static RimLLMEmbeddingService()
-        {
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            HttpClient = new HttpClient
-            {
-                Timeout = Timeout.InfiniteTimeSpan
-            };
-        }
-
-        /// <summary>
         /// 代表「不呼叫外部 API，僅使用本機 Trigram 比對」的供應商代號。
         /// </summary>
         public const string OfflineProviderId = "Offline_Trigram";
+
+        /// <summary>
+        /// 本地相容伺服器通常不驗證金鑰，但 OpenAI SDK 不接受空憑證，
+        /// 因此在未設定金鑰時填入佔位字串。
+        /// </summary>
+        private const string PlaceholderApiKey = "not-required";
 
         private readonly IRimLLMSettings _settings;
 
@@ -77,17 +71,21 @@ namespace RimLLM_Framework.Manager
             {
                 try
                 {
-                    if (provider == "Google")
+                    switch (provider)
                     {
-                        return await ComputeGoogleEmbeddingAsync(text, model, apiKey, endpoint, linkedCts.Token).ConfigureAwait(false);
-                    }
-                    if (provider == "LocalAPI_Ollama")
-                    {
-                        return await ComputeOllamaEmbeddingAsync(text, model, endpoint, linkedCts.Token).ConfigureAwait(false);
-                    }
-                    if (provider == "LocalAPI_OpenAI")
-                    {
-                        return await ComputeOpenAiEmbeddingAsync(text, model, apiKey, endpoint, linkedCts.Token).ConfigureAwait(false);
+                        case "Google":
+                            return await ComputeGoogleEmbeddingAsync(text, model, apiKey, linkedCts.Token).ConfigureAwait(false);
+
+                        case "LocalAPI_Ollama":
+                            return await ComputeOpenAiCompatibleEmbeddingAsync(
+                                text, model, apiKey, endpoint, "http://localhost:11434/v1", linkedCts.Token).ConfigureAwait(false);
+
+                        case "LocalAPI_OpenAI":
+                            return await ComputeOpenAiCompatibleEmbeddingAsync(
+                                text, model, apiKey, endpoint, "http://localhost:1234/v1", linkedCts.Token).ConfigureAwait(false);
+
+                        default:
+                            throw new RimLLMException(LLMError.Unknown, $"不支援的 Embedding 供應商：{provider}");
                     }
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -95,18 +93,28 @@ namespace RimLLM_Framework.Manager
                     // 呼叫端沒有取消，代表是 ApiTimeout 觸發的逾時。
                     throw new RimLLMException(LLMError.Timeout, $"Embedding 請求逾時（{timeoutSeconds} 秒）。");
                 }
-                catch (HttpRequestException ex)
+                catch (ClientResultException ex)
                 {
-                    throw new RimLLMException(LLMError.NetworkError, $"Embedding 請求連線失敗：{ex.Message}", ex);
+                    throw LLMErrorMapper.CreateException(
+                        ex.Status,
+                        $"Embedding API：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                        innerException: ex);
                 }
-
-                throw new RimLLMException(LLMError.Unknown, $"不支援的 Embedding 供應商：{provider}");
+                catch (RimLLMException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Google.GenAI 的 ClientError／ServerError 與 Gemini 對話路徑共用同一份轉譯。
+                    throw GeminiProvider.TranslateGoogleException(ex, "embedContent");
+                }
             }
         }
 
         /// <summary>
         /// 批次計算多筆文字的 embedding 向量。
-        /// 三家供應商的批次請求格式不一致，因此採序列呼叫以維持行為一致。
+        /// Google 的批次請求語意與 OpenAI 不同，因此統一採序列呼叫以維持行為一致。
         /// </summary>
         public async Task<IReadOnlyList<float[]>> ComputeEmbeddingsAsync(IEnumerable<string> texts, CancellationToken cancellationToken = default)
         {
@@ -122,114 +130,72 @@ namespace RimLLM_Framework.Manager
         }
 
         private static async Task<float[]> ComputeGoogleEmbeddingAsync(
-            string text, string model, string apiKey, string endpoint, CancellationToken cancellationToken)
+            string text, string model, string apiKey, CancellationToken cancellationToken)
         {
-            string actualUrl = string.IsNullOrEmpty(endpoint)
-                ? $"https://generativelanguage.googleapis.com/v1beta/models/{model}:embedContent"
-                : endpoint;
-
-            var payloadObj = new JObject
+            using (var client = new Client(apiKey: apiKey))
             {
-                ["content"] = new JObject
-                {
-                    ["parts"] = new JArray { new JObject { ["text"] = text } }
-                }
-            };
+                EmbedContentResponse response = await client.Models
+                    .EmbedContentAsync(model, text, null, cancellationToken)
+                    .ConfigureAwait(false);
 
-            using (var request = new HttpRequestMessage(HttpMethod.Post, actualUrl))
-            {
-                request.Content = new StringContent(payloadObj.ToString(), Encoding.UTF8, "application/json");
-                if (!string.IsNullOrEmpty(apiKey))
-                {
-                    request.Headers.Add("x-goog-api-key", apiKey);
-                }
+                // Google.GenAI 以 double 表示向量元素，框架統一使用 float。
+                List<double> values = response?.Embeddings != null && response.Embeddings.Count > 0
+                    ? response.Embeddings[0]?.Values
+                    : null;
 
-                string body = await SendAndReadAsync(request, "Google", cancellationToken).ConfigureAwait(false);
-                var values = JObject.Parse(body)["embedding"]?["values"]?.ToObject<float[]>();
                 if (values == null)
                 {
-                    throw new RimLLMException(LLMError.InvalidResponse, "Google embedding 回應不含 values 欄位。");
+                    throw new RimLLMException(LLMError.InvalidResponse, "Google embedding 回應不含向量資料。");
                 }
-                return values;
+
+                var vector = new float[values.Count];
+                for (int i = 0; i < values.Count; i++)
+                {
+                    vector[i] = (float)values[i];
+                }
+                return vector;
             }
         }
 
-        private static async Task<float[]> ComputeOllamaEmbeddingAsync(
-            string text, string model, string endpoint, CancellationToken cancellationToken)
+        private static async Task<float[]> ComputeOpenAiCompatibleEmbeddingAsync(
+            string text, string model, string apiKey, string endpoint, string defaultEndpoint, CancellationToken cancellationToken)
         {
-            string actualUrl = string.IsNullOrEmpty(endpoint) ? "http://localhost:11434/api/embeddings" : endpoint;
-
-            var payloadObj = new JObject
+            var options = new OpenAIClientOptions
             {
-                ["model"] = model,
-                ["prompt"] = text
+                Endpoint = new Uri(NormalizeEmbeddingEndpoint(endpoint) ?? defaultEndpoint, UriKind.Absolute)
             };
+            var credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
+            var client = new EmbeddingClient(model, credential, options);
 
-            using (var request = new HttpRequestMessage(HttpMethod.Post, actualUrl))
+            OpenAIEmbedding embedding = await client
+                .GenerateEmbeddingAsync(text, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            if (embedding == null)
             {
-                request.Content = new StringContent(payloadObj.ToString(), Encoding.UTF8, "application/json");
-
-                string body = await SendAndReadAsync(request, "Ollama", cancellationToken).ConfigureAwait(false);
-                var values = JObject.Parse(body)["embedding"]?.ToObject<float[]>();
-                if (values == null)
-                {
-                    throw new RimLLMException(LLMError.InvalidResponse, "Ollama embedding 回應不含 embedding 欄位。");
-                }
-                return values;
+                throw new RimLLMException(LLMError.InvalidResponse, "OpenAI 相容 embedding 回應不含向量資料。");
             }
+            return embedding.ToFloats().ToArray();
         }
 
-        private static async Task<float[]> ComputeOpenAiEmbeddingAsync(
-            string text, string model, string apiKey, string endpoint, CancellationToken cancellationToken)
+        /// <summary>
+        /// SDK 需要的是服務根位址（如 http://localhost:11434/v1），
+        /// 因此把使用者可能填入的完整 embeddings 路徑收斂回根位址。
+        /// </summary>
+        internal static string NormalizeEmbeddingEndpoint(string endpoint)
         {
-            string actualUrl = string.IsNullOrEmpty(endpoint) ? "http://localhost:1234/v1/embeddings" : endpoint;
+            if (string.IsNullOrWhiteSpace(endpoint)) return null;
 
-            var payloadObj = new JObject
+            string normalized = endpoint.Trim().TrimEnd(new char[] { '/' });
+            foreach (string suffix in new[] { "/embeddings", "/api/embed" })
             {
-                ["model"] = model,
-                ["input"] = text
-            };
-
-            using (var request = new HttpRequestMessage(HttpMethod.Post, actualUrl))
-            {
-                request.Content = new StringContent(payloadObj.ToString(), Encoding.UTF8, "application/json");
-                if (!string.IsNullOrEmpty(apiKey))
+                if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 {
-                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                    normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd(new char[] { '/' });
+                    break;
                 }
-
-                string body = await SendAndReadAsync(request, "OpenAI", cancellationToken).ConfigureAwait(false);
-                var values = JObject.Parse(body)["data"]?[0]?["embedding"]?.ToObject<float[]>();
-                if (values == null)
-                {
-                    throw new RimLLMException(LLMError.InvalidResponse, "OpenAI 相容 embedding 回應不含 embedding 欄位。");
-                }
-                return values;
             }
-        }
-
-        private static async Task<string> SendAndReadAsync(
-            HttpRequestMessage request, string providerLabel, CancellationToken cancellationToken)
-        {
-            using (var response = await HttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false))
-            {
-                string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
-                {
-                    LLMError error;
-                    int status = (int)response.StatusCode;
-                    if (status == 401 || status == 403) error = LLMError.InvalidKey;
-                    else if (status == 404) error = LLMError.ModelNotFound;
-                    else if (status == 429) error = LLMError.RateLimit;
-                    else if (status >= 500) error = LLMError.ProviderOffline;
-                    else error = LLMError.Unknown;
-
-                    throw new RimLLMException(
-                        error,
-                        $"{providerLabel} embedding API 回傳錯誤狀態 {status}：{Core.RimLLMLog.SanitizeForLog(body, 300)}");
-                }
-                return body;
-            }
+            return normalized.Length == 0 ? null : normalized;
         }
 
         private static string GetMainProviderIdForEmbedding(string embeddingProvider)

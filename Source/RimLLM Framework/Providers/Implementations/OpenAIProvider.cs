@@ -1,13 +1,12 @@
 using System;
+using System.ClientModel;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
 using Microsoft.Extensions.AI;
+using OpenAI;
 using OpenAI.Chat;
+using OpenAI.Models;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Core;
@@ -234,44 +233,61 @@ namespace RimLLM_Framework.Providers
 
         protected override string DefaultTestModel => _defaultTestModel;
 
+        /// <summary>
+        /// 透過官方 SDK 的 /models 端點取得可用模型清單。
+        /// 端點正規化與 chat client 共用同一份邏輯，不再手動改寫 URL。
+        /// </summary>
         public override async Task<List<string>> FetchAvailableModelsAsync()
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
-            string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
+            string endpoint = OpenAIChatClientFactory.NormalizeEndpoint(
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint));
 
-            string url = endpoint;
-            if (url.EndsWith("/chat/completions"))
+            var options = new OpenAIClientOptions();
+            if (!string.IsNullOrEmpty(endpoint))
             {
-                url = url.Replace("/chat/completions", "/models");
-            }
-            else if (!url.EndsWith("/models"))
-            {
-                url = url.TrimEnd(new char[] { '/' }) + "/models";
+                options.Endpoint = new Uri(endpoint, UriKind.Absolute);
             }
 
-            string responseJson = await SendGetAsync(url, apiKey).ConfigureAwait(false);
+            // 本地相容伺服器多半不驗證金鑰，但 SDK 不接受空憑證。
+            var credential = new ApiKeyCredential(
+                string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
+
             var list = new List<string>();
             try
             {
-                var obj = JObject.Parse(responseJson);
-                var data = obj["data"] as JArray;
-                if (data != null)
+                OpenAIModelCollection models = await new OpenAIClient(credential, options)
+                    .GetOpenAIModelClient()
+                    .GetModelsAsync()
+                    .ConfigureAwait(false);
+
+                foreach (OpenAIModel model in models)
                 {
-                    foreach (var item in data)
+                    if (!string.IsNullOrEmpty(model?.Id))
                     {
-                        string id = item["id"]?.ToString();
-                        if (!string.IsNullOrEmpty(id))
-                        {
-                            list.Add(id);
-                        }
+                        list.Add(model.Id);
                     }
                 }
             }
+            catch (ClientResultException ex)
+            {
+                throw LLMErrorMapper.CreateException(
+                    ex.Status,
+                    $"Failed to fetch {ProviderId} models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}",
+                    innerException: ex);
+            }
             catch (Exception ex)
             {
-                throw new RimLLMException(LLMError.InvalidResponse, $"Failed to fetch {ProviderId} models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
+                throw new RimLLMException(
+                    LLMError.InvalidResponse,
+                    $"Failed to fetch {ProviderId} models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
             }
             return list;
         }
+
+        /// <summary>
+        /// 本地相容伺服器未設定金鑰時使用的佔位憑證。
+        /// </summary>
+        private const string PlaceholderApiKey = "not-required";
     }
 }

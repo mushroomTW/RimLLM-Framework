@@ -48,8 +48,6 @@ namespace RimLLM_Framework.Providers
 
         public abstract Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived);
 
-
-
         public virtual async Task<TestResult> TestConnectionAsync()
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
@@ -108,37 +106,21 @@ namespace RimLLM_Framework.Providers
         public abstract Task<List<string>> FetchAvailableModelsAsync();
 
         /// <summary>
-        /// 統一的 HTTP POST 請求發送方法，包含異常處理與 LLMError 對照。
+        /// 統一的 HTTP POST 請求發送方法：套用認證 Header、超時控制、回應錯誤對照與傳輸層例外轉換。
+        /// 對話與模型清單皆已改走官方 SDK，此路徑僅供 SDK 未涵蓋的端點使用（如 Gemini 顯式快取）。
         /// </summary>
-        protected virtual Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
-        {
-            return SendRequestAsync(HttpMethod.Post, url, payload, apiKey, authScheme, cancellationToken);
-        }
-
-        /// <summary>
-        /// 統一的 HTTP GET 請求發送方法，包含異常處理與 LLMError 對照。
-        /// </summary>
-        protected virtual Task<string> SendGetAsync(string url, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
-        {
-            return SendRequestAsync(HttpMethod.Get, url, null, apiKey, authScheme, cancellationToken);
-        }
-
-        /// <summary>
-        /// GET 與 POST 共用的 HTTP 發送核心：套用認證 Header、超時控制、回應錯誤對照與傳輸層例外轉換。
-        /// </summary>
-        private async Task<string> SendRequestAsync(HttpMethod method, string url, string payload, string apiKey, string authScheme, System.Threading.CancellationToken cancellationToken)
+        protected virtual async Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
         {
             try
             {
-                using (var httpRequest = new HttpRequestMessage(method, url))
+                using (var httpRequest = new HttpRequestMessage(HttpMethod.Post, url))
                 {
                     if (payload != null)
                     {
                         httpRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
                     }
 
-                    // Anthropic 的 thinking beta 僅在生成類 (POST) 請求需要
-                    ApplyAuthHeaders(httpRequest, apiKey, authScheme, includeThinkingBeta: method == HttpMethod.Post);
+                    ApplyAuthHeaders(httpRequest, apiKey, authScheme);
 
                     float timeoutSeconds = Settings?.ApiTimeout ?? 30f;
                     using (var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
@@ -182,7 +164,7 @@ namespace RimLLM_Framework.Providers
         /// <summary>
         /// 依 authScheme 套用對應的認證 Header。Gemini 採 x-goog-api-key Header 認證，避免金鑰出現在 URL。
         /// </summary>
-        private static void ApplyAuthHeaders(HttpRequestMessage httpRequest, string apiKey, string authScheme, bool includeThinkingBeta)
+        private static void ApplyAuthHeaders(HttpRequestMessage httpRequest, string apiKey, string authScheme)
         {
             if (string.IsNullOrEmpty(apiKey))
                 return;
@@ -195,9 +177,7 @@ namespace RimLLM_Framework.Providers
             {
                 httpRequest.Headers.Add("x-api-key", apiKey);
                 httpRequest.Headers.Add("anthropic-version", "2023-06-01");
-                httpRequest.Headers.Add("anthropic-beta", includeThinkingBeta
-                    ? "prompt-caching-2024-07-31,thinking-2025-02-15"
-                    : "prompt-caching-2024-07-31");
+                httpRequest.Headers.Add("anthropic-beta", "prompt-caching-2024-07-31,thinking-2025-02-15");
             }
             else if (authScheme == AuthSchemes.Gemini)
             {
@@ -207,37 +187,6 @@ namespace RimLLM_Framework.Providers
             {
                 httpRequest.Headers.Add(authScheme, apiKey);
             }
-        }
-
-        protected void ThrowIfStreamTimedOut(System.Threading.CancellationToken linkedToken, System.Threading.CancellationToken userToken)
-        {
-            if (!linkedToken.IsCancellationRequested) return;
-
-            if (userToken.IsCancellationRequested)
-            {
-                throw new OperationCanceledException(userToken);
-            }
-
-            throw new RimLLMException(LLMError.Timeout, "Stream request timed out");
-        }
-
-        protected Exception ConvertStreamTransportException(string providerName, Exception ex, System.Threading.CancellationToken userToken)
-        {
-            if (ex is OperationCanceledException)
-            {
-                if (userToken.IsCancellationRequested)
-                {
-                    return new OperationCanceledException(userToken);
-                }
-                return new RimLLMException(LLMError.Timeout, $"{providerName} stream request timed out", ex);
-            }
-
-            if (ex is HttpRequestException)
-            {
-                return new RimLLMException(LLMError.NetworkError, $"{providerName} stream network error", ex);
-            }
-
-            return new RimLLMException(LLMError.NetworkError, $"{providerName} stream request failed: {RimLLMLog.SanitizeForLog(ex.Message, 300)}", ex);
         }
 
         /// <summary>
@@ -289,74 +238,10 @@ namespace RimLLM_Framework.Providers
         protected void ThrowHttpError(HttpResponseMessage response, string responseBody)
         {
             int statusCode = (int)response.StatusCode;
-            string friendlyErr = ExtractFriendlyError(responseBody, statusCode);
-            if (statusCode == 401 || statusCode == 403)
-            {
-                throw new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {friendlyErr}");
-            }
-            if (statusCode == 402)
-            {
-                throw new RimLLMException(LLMError.QuotaExceeded, $"Payment required, please check your account balance: {friendlyErr}");
-            }
-            if (statusCode == 404)
-            {
-                // 模型或端點不存在屬於不可重試錯誤，重試只會空耗延遲。
-                throw new RimLLMException(LLMError.ModelNotFound, $"Model or endpoint not found: {friendlyErr}");
-            }
-            if (statusCode == 408)
-            {
-                throw new RimLLMException(LLMError.Timeout, $"Request timed out on the server side: {friendlyErr}")
-                {
-                    RetryAfter = ParseRetryAfter(response)
-                };
-            }
-            if (statusCode == 400 || statusCode == 413 || statusCode == 422)
-            {
-                // 請求本身有問題，以同一份 payload 重試必然再次失敗。
-                throw new RimLLMException(LLMError.InvalidResponse, $"The request was rejected by the provider: {friendlyErr}")
-                {
-                    IsSchemaRejection = LooksLikeSchemaRejection(friendlyErr)
-                };
-            }
-            if (statusCode == 429)
-            {
-                if (ContainsIgnoreCase(friendlyErr, "quota") || ContainsIgnoreCase(friendlyErr, "insufficient"))
-                {
-                    throw new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.")
-                    {
-                        RetryAfter = ParseRetryAfter(response)
-                    };
-                }
-                throw new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {friendlyErr}")
-                {
-                    RetryAfter = ParseRetryAfter(response)
-                };
-            }
-            if (statusCode >= 500)
-            {
-                throw new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {friendlyErr}")
-                {
-                    RetryAfter = ParseRetryAfter(response)
-                };
-            }
-            throw new RimLLMException(LLMError.Unknown, $"API request failed: {friendlyErr}");
-        }
-
-        private static bool ContainsIgnoreCase(string haystack, string needle)
-        {
-            return !string.IsNullOrEmpty(haystack) &&
-                   haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        /// <summary>
-        /// 判斷 4xx 錯誤訊息是否指向「服務端不接受原生 JSON Schema」，
-        /// 供框架決定是否降級為提示式 JSON 重打一次。
-        /// </summary>
-        private static bool LooksLikeSchemaRejection(string friendlyErr)
-        {
-            return ContainsIgnoreCase(friendlyErr, "response_format") ||
-                   ContainsIgnoreCase(friendlyErr, "json_schema") ||
-                   ContainsIgnoreCase(friendlyErr, "schema");
+            throw LLMErrorMapper.CreateException(
+                statusCode,
+                ExtractFriendlyError(responseBody, statusCode),
+                ParseRetryAfter(response));
         }
 
         /// <summary>

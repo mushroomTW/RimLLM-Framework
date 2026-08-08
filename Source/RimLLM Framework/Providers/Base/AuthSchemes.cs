@@ -15,7 +15,7 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         public const string Anthropic = "Anthropic";
 
-        /// <summary>Gemini 採 URL query 認證，不加任何 Header。</summary>
+        /// <summary>Gemini 的 x-goog-api-key Header 認證（不把金鑰放進 URL query）。</summary>
         public const string Gemini = "Gemini";
     }
 }

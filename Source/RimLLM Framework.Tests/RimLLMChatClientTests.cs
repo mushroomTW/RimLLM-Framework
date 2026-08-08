@@ -171,6 +171,47 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestGetStreamingResponseAsync_ProducerFailurePropagates()
+        {
+            // 所有供應商都失敗時，例外必須傳到列舉端，不能被靜默吞成「串流正常結束」。
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockDead:model-a" },
+                MaxRetries = 0,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockDead"] = true;
+            mockSettings.ApiKeys["MockDead"] = "key";
+
+            var manager = new RimLLMManager(mockSettings);
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "MockDead",
+                StreamHandler = (messages, options, model, onChunk) =>
+                    throw new RimLLMException(LLMError.ProviderOffline, "provider is down")
+            });
+
+            var client = CreateClient(manager, "test.stream.failure.mod");
+            var enumerator = client.GetStreamingResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
+                new RimLLMChatOptions()).GetAsyncEnumerator();
+
+            Assert.Throws<RimLLMException>(() =>
+            {
+                try
+                {
+                    while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                    {
+                    }
+                }
+                finally
+                {
+                    enumerator.DisposeAsync().GetAwaiter().GetResult();
+                }
+            }, "產生端失敗時列舉必須擲出例外");
+        }
+
+        [Test]
         public void TestGetStreamingResponseAsync_RestartMarkerPushed()
         {
             var mockSettings = new MockSettings

@@ -1,5 +1,4 @@
-using UnityEngine;
-using Verse;
+﻿using Verse;
 
 namespace RimLLM_Framework.Mod
 {
@@ -10,7 +9,7 @@ namespace RimLLM_Framework.Mod
     {
         private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
-        public static void DrawOpenAICompatibleSettings(Listing_Standard listing, string providerId, string defaultEndpoint, string defaultModel)
+        public static void DrawOpenAICompatibleSettings(Listing_Standard listing, string providerId, string defaultEndpoint)
         {
             // 1. 啟用 / 停用
             bool enabled = Settings.IsProviderEnabled(providerId);

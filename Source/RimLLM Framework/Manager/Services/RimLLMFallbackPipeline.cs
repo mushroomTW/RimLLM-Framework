@@ -1,11 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.Mod;
 using RimLLM_Framework.Providers;
 using RimLLM_Framework.SDK;
 
@@ -157,7 +155,6 @@ namespace RimLLM_Framework.Manager
                 string providerId = candidate.ProviderId;
                 ILLMProvider provider = candidate.Provider;
                 string modelName = candidate.ModelName;
-                bool candidateSuccess = false;
                 bool isRetryableFailure = false;
 
                 for (int attempt = 0; attempt <= maxRetries; attempt++)
@@ -186,7 +183,6 @@ namespace RimLLM_Framework.Manager
                         RecordLatency(providerId, requestStopwatch.ElapsedMilliseconds);
 
                         _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
-                        candidateSuccess = true;
                         return attemptResult;
                     }
                     catch (OperationCanceledException)
@@ -232,7 +228,7 @@ namespace RimLLM_Framework.Manager
                     }
                 }
 
-                if (!candidateSuccess && isRetryableFailure)
+                if (isRetryableFailure)
                 {
                     // 只有在因為網路或暫時性錯誤（可重試錯誤）導致失敗時，才置入冷卻阻斷期
                     ProviderFailCooldowns[providerId] = DateTime.UtcNow.AddSeconds(60);
@@ -246,28 +242,20 @@ namespace RimLLM_Framework.Manager
 
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
         {
-            providerId = entry;
+            providerId = ProviderIds.ParseProviderId(entry);
             modelName = "";
 
-            if (string.IsNullOrEmpty(entry))
+            if (providerId == null)
             {
+                providerId = entry;
                 return false;
             }
 
             int colonIndex = entry.IndexOf(':');
-            if (colonIndex > 0)
-            {
-                providerId = entry.Substring(0, colonIndex);
-                modelName = entry.Substring(colonIndex + 1);
-            }
-            else
-            {
-                // 純供應商
-                if (string.IsNullOrEmpty(modelName))
-                {
-                    modelName = _settings.GetDefaultModel(providerId, "default");
-                }
-            }
+            modelName = colonIndex > 0
+                ? entry.Substring(colonIndex + 1)
+                // 純供應商：取該供應商的預設模型
+                : _settings.GetDefaultModel(providerId, "default");
 
             return true;
         }

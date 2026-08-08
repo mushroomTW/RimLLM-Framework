@@ -145,6 +145,9 @@ public async void StreamResponse()
 }
 ```
 
+> 整條 Fallback 鏈都失敗時，例外會由 `await foreach` 重新擲出，因此上例的 `catch` 一定會收到錯誤；
+> 串流不會在失敗時靜默結束。chunk 一產生即送出，中間沒有輪詢延遲。
+
 ### 6. 上下文快取節省 Token (Context Caching)
 
 若您的 Mod 擁有非常龐大、且**短時間內會重複使用**的穩定上下文（例如世界觀規則、固定的角色背景設定、輸出 Schema 等），且需要高頻率呼叫 API，您可以透過 `RimLLMChatOptions.CachedContext` 啟用 **Context Caching**：
@@ -225,6 +228,7 @@ public async void GenerateVector()
    * **節省可量化**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`）並套用折扣費率計入成本估算，讓費用面板真實反映快取帶來的節省。
 10. **Embedding 向量 SDK (Embeddings)**
     * 框架提供公開的 Embedding 運算能力，支援 Google、Ollama 與 OpenAI 相容三種來源，並附帶餘弦相似度與離線 Trigram 相似度工具。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索、聚類或相似度比對。
+    * 三種線上來源皆走官方 SDK：Google 使用 `Google.GenAI` 的 `EmbedContentAsync`，Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此 `Embedding 端點` 欄位填的是**服務根位址**（如 `http://localhost:11434/v1`），若貼上完整的 `/embeddings` 路徑會自動收斂。
     * Embedding 屬於計費 API，因此與一般生成請求共用同一套呼叫端校驗與防濫用檢查；金鑰亦與 provider 金鑰採同一套 AES 加密儲存。
 
 ---
@@ -247,7 +251,12 @@ public async void GenerateVector()
 * 網路請求通常是在背景線程（Thread Pool）中異步執行的。然而，Unity 的大部分 API 以及 RimWorld 的邏輯並非線程安全，在背景線程中直接呼叫這些 API 會導致遊戲崩潰或 TPS 抖動。
 * `RimLLMDispatcher` 作為一個 MonoBehaviour 單例，利用安全佇列（ConcurrentQueue）收集背景線程發送回來的 Callback，並在 Unity 每幀的 `Update` 週期中將這些 Callback 安全地分發回主線程執行。
 
-### 4. 容錯結構化輸出 (Structured Output & JSON Repair)
+### 4. 統一的 HTTP 錯誤對照 (`LLMErrorMapper`)
+
+* HTTP 狀態碼轉換為 `LLMError` 的規則集中在 `LLMErrorMapper`，由三條路徑共用：官方 SDK（`ClientResultException`）、raw HTTP provider，以及 embedding 服務。
+* 因此「哪些狀態碼可重試」「哪些屬於 Schema 遭拒需降級」的判斷在所有路徑上完全一致；第三方自訂 provider 亦可直接引用此對照。
+
+### 5. 容錯結構化輸出 (Structured Output & JSON Repair)
 
 * 許多時候開發者需要模型回傳特定的 JSON 格式。
 * 內建 OpenAI 與 Gemini provider 會優先使用官方 SDK 的原生結構化輸出：OpenAI 透過 `IChatClient` 的 JSON Schema response format，Gemini 透過 `ResponseMimeType = "application/json"` 與 `ResponseSchema`。框架會在回應後驗證必要成員與 null 狀態，再反序列化為 C# 目標物件。
@@ -255,12 +264,14 @@ public async void GenerateVector()
 
 ---
 
-### 5. 官方 SDK 與 provider 分工
+### 6. 官方 SDK 與 provider 分工
 
 * 主專案與測試專案維持 `net472`，不要求 RimWorld Mod 升級到 .NET 8；官方 SDK 的相依 DLL 會隨 Mod 輸出，並在啟動相容性閘門中確認可載入。`System.ValueTuple` 雖會被 .NET Framework 視為 framework assembly，建置時仍會明確部署其 `4.0.5.0` DLL，避免 RimWorld Mono 反射掃描 MEAI 時發生 `ReflectionTypeLoadException`。
 * **OpenAI** 使用 `OpenAI` SDK `2.12.0` 與 `Microsoft.Extensions.AI`／`Microsoft.Extensions.AI.OpenAI` `10.8.3`。內建 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用管理器；LM Studio、Ollama、vLLM 等真正符合 OpenAI Chat Completions 協定的 endpoint 才適合使用 OpenAI-compatible adapter。
 * **Gemini** 使用官方 `Google.GenAI` `1.16.0`，以 API key 建立 Gemini Developer API client。文字、串流、原生 Schema、thinking、context cache 與 Safety 一律走 `Google.GenAI` 原生 generateContent 路徑（程式碼以 `CreateGenAiClient`／`GenerateContentNativeAsync`／`GenerateContentStreamNativeAsync` 三個測試縫隔離），不使用 `OpenAI.Chat.ChatClient` 模擬 Gemini，也不保留 raw HTTP 對話路徑。
-* 任務 6 之後，**所有內建 provider 一律走官方 SDK**：OpenAI 系列（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）透過 `OpenAI` SDK `2.12.0` + MEAI `IChatClient`；Gemini 透過 `Google.GenAI` 原生路徑。raw HTTP 僅保留在 `FetchAvailableModelsAsync`、Gemini `cachedContents` 快取與共用 `SendPostAsync` 工具，不再作為對話路徑。
+* **所有內建 provider 一律走官方 SDK**：OpenAI 系列（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）透過 `OpenAI` SDK `2.12.0` + MEAI `IChatClient`；Gemini 透過 `Google.GenAI` 原生路徑。模型清單改用 `OpenAIModelClient.GetModelsAsync()`，不再手動改寫 `/models` URL 或剖析 JSON。
+* raw HTTP 目前**只剩 Gemini 的 `cachedContents` 顯式快取建立**一處（`Google.GenAI 1.16.0` 的 `Caches` 僅公開 `ListAsync`，沒有建立 API）。`BaseHttpProvider` 因此收斂為單一 `SendPostAsync` 路徑。
+* **JSON Schema 產生刻意不使用 `AIJsonUtilities.CreateJsonSchema`**：MEAI 產生的是完整 JSON Schema（可空欄位為 `"type": ["string","null"]` 聯合型別、循環型別以 `$ref` 表示），實測這三種測試型別的輸出全部被 `Google.GenAI` 的 `Schema.FromJson` 拒絕。`RimLLMJsonHelper` 產生的是「所有供應商都吃得下的受限子集」（單一 type、循環成員截斷），兩者解決的問題不同。
 * provider-specific SDK 不會出現在 `RimLLMManager` 或既有 SDK façade；共用層只依賴 `IChatClient`、`LLMProviderCapabilities` 與既有 `ILLMProvider` API。API key 一律由目前加密設定提供，不寫入程式碼或一般日誌。
 
 ---

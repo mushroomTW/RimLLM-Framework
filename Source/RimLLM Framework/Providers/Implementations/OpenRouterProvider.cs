@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
 using RimLLM_Framework.SDK;
@@ -11,16 +10,12 @@ namespace RimLLM_Framework.Providers
 {
     /// <summary>
     /// OpenRouter 聚合供應商，完全相容 OpenAI API 格式。
+    /// 支援 response_format: json_schema，因此沿用基底的原生 Schema 預設值。
     /// </summary>
     public class OpenRouterProvider : OpenAIProvider
     {
-        public override string ProviderId => "OpenRouter";
+        public override string ProviderId => ProviderIds.OpenRouter;
         protected override string DefaultEndpoint => "https://openrouter.ai/api/v1";
-
-        /// <summary>
-        /// OpenRouter 支援 OpenAI 相容的 response_format: json_schema。
-        /// </summary>
-        protected override bool SupportsNativeJsonSchemaPayload => true;
 
         public OpenRouterProvider(IRimLLMSettings settings) : base(settings)
         {

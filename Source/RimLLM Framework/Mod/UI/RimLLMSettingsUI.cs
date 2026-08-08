@@ -1,8 +1,7 @@
-using System;
+﻿using System;
 using UnityEngine;
 using Verse;
 using RimWorld;
-using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Mod
 {
@@ -12,9 +11,6 @@ namespace RimLLM_Framework.Mod
     /// </summary>
     public static class RimLLMSettingsUI
     {
-        // 快捷訪問設定實例
-        private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
-
         // 全域選單狀態
         private static string activeMainCategory = "Providers";
         private static Vector2 _detailScrollPosition = Vector2.zero;

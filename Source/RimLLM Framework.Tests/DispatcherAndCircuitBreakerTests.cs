@@ -1033,6 +1033,21 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestEmbeddingEndpointNormalizesToServiceRoot()
+        {
+            // OpenAI SDK 需要的是服務根位址，使用者可能貼上完整的 embeddings 路徑。
+            Assert.AreEqual("http://localhost:11434/v1",
+                RimLLMEmbeddingService.NormalizeEmbeddingEndpoint("http://localhost:11434/v1/embeddings"));
+            Assert.AreEqual("http://localhost:1234/v1",
+                RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(" http://localhost:1234/v1/ "));
+            Assert.AreEqual("http://localhost:11434",
+                RimLLMEmbeddingService.NormalizeEmbeddingEndpoint("http://localhost:11434/api/embed"));
+            Assert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(""),
+                "空字串應回傳 null，讓呼叫端改用預設端點");
+            Assert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(null));
+        }
+
+        [Test]
         public void TestEmbeddingServiceRejectsOfflineProvider()
         {
             var mockSettings = new MockSettings { EmbeddingProvider = "Offline_Trigram" };

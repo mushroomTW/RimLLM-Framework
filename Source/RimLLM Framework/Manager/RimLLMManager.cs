@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -303,14 +302,6 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private Task<RimLLMGenerationResult> GenerateInternalDirectAsync(RimLLMRequest request)
         {
-            // 1.5 檢查是否啟用串流輸出，若是則改走串流路徑（沿用舊版行為）。
-            if (request.EnableStreaming)
-            {
-                return StreamInternalDirectAsync(
-                    request,
-                    chunk => DispatchChunk(request.OnChunkReceived, chunk));
-            }
-
             // 交由專屬 Fallback Pipeline 執行核心處理
             return _fallbackPipeline.ExecuteWithFallbackAsync(
                 request,
@@ -534,16 +525,10 @@ namespace RimLLM_Framework.Manager
                     {
                         if (provider is INativeStructuredOutputProvider nativeProvider)
                         {
-                            var nativeMessages = RimLLMChatClientExecutor.BuildMessages(request);
-                            var nativeOptions = RimLLMChatClientExecutor.BuildOptions(request, model, useNativeSchema: true, ResolveChatOptionsCustomizer(provider, request, model));
-                            if (request.ResponseType != null)
-                            {
-                                nativeOptions.AdditionalProperties["rimllm_response_schema"] =
-                                    RimLLMJsonHelper.GenerateJsonSchema(request.ResponseType, uppercaseTypes: false).ToString();
-                            }
+                            ProviderCall nativeCall = BuildProviderCall(provider, request, request, model, useNativeSchema: true);
                             string nativeText = await nativeProvider.GenerateStructuredAsync(
-                                nativeMessages,
-                                nativeOptions,
+                                nativeCall.Messages,
+                                nativeCall.Options,
                                 model).ConfigureAwait(false);
                             return new RimLLMGenerationResult
                             {
@@ -587,24 +572,8 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
-            RimLLMRequest prepReq = PrepareRequestForProvider(provider, request);
-            var nonChatMessages = RimLLMChatClientExecutor.BuildMessages(prepReq);
-            var nonChatOptions = RimLLMChatClientExecutor.BuildOptions(prepReq, model, useNativeSchema: false, ResolveChatOptionsCustomizer(provider, request, model));
-            if (prepReq.ResponseType != null)
-            {
-                nonChatOptions.AdditionalProperties["rimllm_response_schema"] =
-                    RimLLMJsonHelper.GenerateJsonSchema(prepReq.ResponseType, uppercaseTypes: false).ToString();
-            }
-            string text = await provider.GenerateAsync(
-                nonChatMessages,
-                nonChatOptions,
-                model).ConfigureAwait(false);
-            return new RimLLMGenerationResult
-            {
-                Text = text,
-                ProviderId = provider.ProviderId,
-                ModelName = model
-            };
+            return await InvokeRawProviderAsync(
+                provider, PrepareRequestForProvider(provider, request), request, model).ConfigureAwait(false);
         }
 
         private async Task<RimLLMGenerationResult> StreamProviderAsync(
@@ -633,21 +602,75 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
-            RimLLMRequest prepStreamReq = PrepareRequestForProvider(provider, request);
-            var streamMessages = RimLLMChatClientExecutor.BuildMessages(prepStreamReq);
-            var streamOptions = RimLLMChatClientExecutor.BuildOptions(prepStreamReq, model, useNativeSchema: false, ResolveChatOptionsCustomizer(provider, request, model));
-            if (prepStreamReq.ResponseType != null)
-            {
-                streamOptions.AdditionalProperties["rimllm_response_schema"] =
-                    RimLLMJsonHelper.GenerateJsonSchema(prepStreamReq.ResponseType, uppercaseTypes: false).ToString();
-            }
+            ProviderCall streamCall = BuildProviderCall(
+                provider, PrepareRequestForProvider(provider, request), request, model, useNativeSchema: false);
             await provider.StreamAsync(
-                streamMessages,
-                streamOptions,
+                streamCall.Messages,
+                streamCall.Options,
                 model,
                 onChunkReceived).ConfigureAwait(false);
             return new RimLLMGenerationResult
             {
+                ProviderId = provider.ProviderId,
+                ModelName = model
+            };
+        }
+
+        /// <summary>
+        /// 送往 provider 的一次呼叫所需的 messages 與 options。
+        /// 刻意用具名型別而非 ValueTuple：RimWorld 的 Mono 環境對額外 BCL 型別的載入較敏感。
+        /// </summary>
+        private sealed class ProviderCall
+        {
+            public IList<ChatMessage> Messages;
+            public ChatOptions Options;
+        }
+
+        /// <summary>
+        /// 組出送往 provider 的 messages 與 options，並在有結構化輸出需求時附上 schema。
+        /// options 客製化一律以 <paramref name="originalRequest"/> 為依據：
+        /// 提示式 JSON fallback 只改寫 system prompt，不應影響 reasoning／temperature 等推導結果。
+        /// </summary>
+        private ProviderCall BuildProviderCall(
+            ILLMProvider provider,
+            RimLLMRequest preparedRequest,
+            RimLLMRequest originalRequest,
+            string model,
+            bool useNativeSchema)
+        {
+            var options = RimLLMChatClientExecutor.BuildOptions(
+                preparedRequest,
+                model,
+                useNativeSchema,
+                ResolveChatOptionsCustomizer(provider, originalRequest, model));
+
+            if (preparedRequest.ResponseType != null)
+            {
+                options.AdditionalProperties["rimllm_response_schema"] =
+                    RimLLMJsonHelper.GenerateJsonSchemaString(preparedRequest.ResponseType);
+            }
+
+            return new ProviderCall
+            {
+                Messages = RimLLMChatClientExecutor.BuildMessages(preparedRequest),
+                Options = options
+            };
+        }
+
+        /// <summary>
+        /// 呼叫未採用 IChatClient 的 provider（raw 文字路徑）。
+        /// </summary>
+        private async Task<RimLLMGenerationResult> InvokeRawProviderAsync(
+            ILLMProvider provider,
+            RimLLMRequest preparedRequest,
+            RimLLMRequest originalRequest,
+            string model)
+        {
+            ProviderCall call = BuildProviderCall(provider, preparedRequest, originalRequest, model, useNativeSchema: false);
+            string text = await provider.GenerateAsync(call.Messages, call.Options, model).ConfigureAwait(false);
+            return new RimLLMGenerationResult
+            {
+                Text = text,
                 ProviderId = provider.ProviderId,
                 ModelName = model
             };
@@ -678,23 +701,7 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
-            var fallbackMessages = RimLLMChatClientExecutor.BuildMessages(fallbackRequest);
-            var fallbackOptions = RimLLMChatClientExecutor.BuildOptions(fallbackRequest, model, useNativeSchema: false, ResolveChatOptionsCustomizer(provider, request, model));
-            if (fallbackRequest.ResponseType != null)
-            {
-                fallbackOptions.AdditionalProperties["rimllm_response_schema"] =
-                    RimLLMJsonHelper.GenerateJsonSchema(fallbackRequest.ResponseType, uppercaseTypes: false).ToString();
-            }
-            string text = await provider.GenerateAsync(
-                fallbackMessages,
-                fallbackOptions,
-                model).ConfigureAwait(false);
-            return new RimLLMGenerationResult
-            {
-                Text = text,
-                ProviderId = provider.ProviderId,
-                ModelName = model
-            };
+            return await InvokeRawProviderAsync(provider, fallbackRequest, request, model).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -888,11 +895,6 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private string GetSampleJson<T>()
-        {
-            return RimLLMJsonHelper.GetSampleJson<T>();
-        }
-
         internal string GetSampleJson(Type type)
         {
             return RimLLMJsonHelper.GetSampleJson(type);
@@ -998,17 +1000,10 @@ namespace RimLLM_Framework.Manager
                 return false;
             }
 
-            if (_settings.BudgetPolicy == 2)
-            {
-                return true; 
-            }
-
-            if (_settings.BudgetPolicy == 0)
-            {
-                return false;
-            }
-
-            if (_settings.BudgetPolicy == 1)
+            // 0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt
+            // SilentMocking 於此放行，後續由 IsBudgetMocked 換成模擬回應；
+            // FallbackToFree 也放行，改由 Fallback Pipeline 只挑免費供應商。
+            if (_settings.BudgetPolicy == 1 || _settings.BudgetPolicy == 2)
             {
                 return true;
             }

@@ -29,6 +29,15 @@ namespace RimLLM_Framework.SDK
             }
         }
 
+        /// <summary>
+        /// 嘗試取得 manager。SDK 尚未初始化時回傳 false 而不擲出例外，
+        /// 供設定 UI 在框架未載入時安全地略過相依於 manager 的區塊。
+        /// </summary>
+        internal static bool TryGetManager(out RimLLMManager manager)
+        {
+            manager = _manager;
+            return manager != null;
+        }
 
         internal static void Initialize(RimLLMManager manager)
         {

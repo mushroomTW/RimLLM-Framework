@@ -1,12 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
 using RimLLM_Framework.SDK;
-using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace RimLLM_Framework.Providers
 {
@@ -52,44 +47,10 @@ namespace RimLLM_Framework.Providers
             };
         }
 
-        public override async Task<TestResult> TestConnectionAsync()
-        {
-            // 本地相容 API 通常不需要 API 金鑰，故此處放寬檢查，不強制要求 API Key 必須存在。
-            var result = new TestResult { Provider = ProviderId };
-            var stopwatch = Stopwatch.StartNew();
-
-            try
-            {
-                var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "ping") };
-                var options = new ChatOptions { MaxOutputTokens = 5 };
-                // 預設測試模型使用 "default"
-                string testModel = Settings.GetDefaultModel(ProviderId, "default");
-
-                string content = await GenerateAsync(messages, options, testModel).ConfigureAwait(false);
-                stopwatch.Stop();
-
-                result.Success = true;
-                result.Model = testModel;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-            catch (RimLLMException ex)
-            {
-                stopwatch.Stop();
-                result.Success = false;
-                result.ErrorMessage = ex.Message;
-                result.ErrorCode = ex.Error;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-            catch (Exception ex)
-            {
-                stopwatch.Stop();
-                result.Success = false;
-                result.ErrorMessage = ex.Message;
-                result.ErrorCode = LLMError.Unknown;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
-            }
-
-            return result;
-        }
+        /// <summary>
+        /// 本地伺服器沒有固定的模型名稱，回傳 "default" 讓基底的連線測試改讀快取模型清單的第一筆。
+        /// 搭配 <see cref="RequiresApiKey"/> 為 false，基底也會自動略過金鑰檢查。
+        /// </summary>
+        protected override string DefaultTestModel => "default";
     }
 }

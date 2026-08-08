@@ -78,41 +78,64 @@ namespace RimLLM_Framework.SDK
             }
         }
 
-        private sealed class StreamUpdateBridge
+        private sealed class StreamUpdateBridge : IDisposable
         {
-            private readonly System.Collections.Concurrent.ConcurrentQueue<object> _queue =
-                new System.Collections.Concurrent.ConcurrentQueue<object>();
+            private readonly System.Collections.Concurrent.ConcurrentQueue<ChatResponseUpdate> _queue =
+                new System.Collections.Concurrent.ConcurrentQueue<ChatResponseUpdate>();
             private readonly TaskCompletionSource<bool> _completed =
                 new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            public void Push(ChatResponseUpdate update) => _queue.Enqueue(update);
-            public void Complete() => _completed.TrySetResult(true);
-            public void Fail(Exception ex) => _completed.TrySetException(ex);
+            /// <summary>
+            /// 有新 update 或串流結束時釋出。以號誌喚醒消費端，取代固定間隔輪詢，
+            /// 讓 chunk 一入列就能被取走（原本每個 chunk 最多要多等 10ms）。
+            /// </summary>
+            private readonly SemaphoreSlim _signal = new SemaphoreSlim(0);
 
+            public void Push(ChatResponseUpdate update)
+            {
+                _queue.Enqueue(update);
+                _signal.Release();
+            }
+
+            public void Complete()
+            {
+                _completed.TrySetResult(true);
+                _signal.Release();
+            }
+
+            public void Fail(Exception ex)
+            {
+                _completed.TrySetException(ex);
+                _signal.Release();
+            }
+
+            /// <summary>
+            /// 取得下一個 update。串流正常結束回傳 null；產生端失敗時重新擲出其原始例外。
+            /// </summary>
             public async Task<ChatResponseUpdate> WaitNextAsync(CancellationToken cancellationToken)
             {
                 while (true)
                 {
-                    if (_queue.TryDequeue(out object item))
+                    if (_queue.TryDequeue(out ChatResponseUpdate update))
                     {
-                        if (item is Exception ex)
-                        {
-                            throw ex;
-                        }
-                        return (ChatResponseUpdate)item;
+                        return update;
                     }
+
                     if (_completed.Task.IsCompleted)
                     {
-                        // 佇列已清空且流程已結束：串流終止。
+                        // 佇列已清空且流程已結束。正常完成時 await 直接返回並以 null 表示串流終止；
+                        // 產生端失敗時則由 await 重新擲出，避免例外被靜默吞掉。
+                        await _completed.Task.ConfigureAwait(false);
                         return null;
                     }
-                    Task winner = await Task.WhenAny(_completed.Task, Task.Delay(10, cancellationToken)).ConfigureAwait(false);
-                    if (ReferenceEquals(winner, _completed.Task))
-                    {
-                        continue;
-                    }
-                    cancellationToken.ThrowIfCancellationRequested();
+
+                    await _signal.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
+            }
+
+            public void Dispose()
+            {
+                _signal.Dispose();
             }
         }
 
@@ -207,6 +230,7 @@ namespace RimLLM_Framework.SDK
 
             public ste::System.Threading.Tasks.ValueTask DisposeAsync()
             {
+                _bridge.Dispose();
                 return default;
             }
         }

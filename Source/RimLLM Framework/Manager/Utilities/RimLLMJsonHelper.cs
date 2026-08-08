@@ -1,11 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
 {
@@ -20,6 +19,7 @@ namespace RimLLM_Framework.Manager
         private static readonly Regex ThinkTagRegex = new Regex(@"<think>.*?</think>", RegexOptions.Compiled | RegexOptions.Singleline);
         private static readonly ConcurrentDictionary<Type, string> SampleJsonCache = new ConcurrentDictionary<Type, string>();
         private static readonly ConcurrentDictionary<string, JObject> SchemaCache = new ConcurrentDictionary<string, JObject>();
+        private static readonly ConcurrentDictionary<string, string> SchemaJsonCache = new ConcurrentDictionary<string, string>();
 
         /// <summary>
         /// Schema 遞迴的最大深度。超過此深度的巢狀成員會被略過，避免病態型別造成堆疊耗盡。
@@ -65,7 +65,7 @@ namespace RimLLM_Framework.Manager
         {
             if (type == null) throw new ArgumentNullException(nameof(type));
 
-            string cacheKey = type.AssemblyQualifiedName + "|" + uppercaseTypes;
+            string cacheKey = SchemaCacheKey(type, uppercaseTypes);
             if (!SchemaCache.TryGetValue(cacheKey, out JObject cached))
             {
                 cached = BuildSchema(type, uppercaseTypes, new HashSet<Type>(), 0)
@@ -74,6 +74,30 @@ namespace RimLLM_Framework.Manager
             }
 
             return (JObject)cached.DeepClone();
+        }
+
+        /// <summary>
+        /// 取得 JSON Schema 的字串形式。送往 provider 一律使用字串，
+        /// 因此在此另外快取，避免每次請求都重新 DeepClone 與序列化。
+        /// </summary>
+        public static string GenerateJsonSchemaString(Type type, bool uppercaseTypes = false)
+        {
+            if (type == null) throw new ArgumentNullException(nameof(type));
+
+            string cacheKey = SchemaCacheKey(type, uppercaseTypes);
+            if (SchemaJsonCache.TryGetValue(cacheKey, out string json))
+            {
+                return json;
+            }
+
+            json = GenerateJsonSchema(type, uppercaseTypes).ToString();
+            SchemaJsonCache[cacheKey] = json;
+            return json;
+        }
+
+        private static string SchemaCacheKey(Type type, bool uppercaseTypes)
+        {
+            return type.AssemblyQualifiedName + "|" + uppercaseTypes;
         }
 
         /// <summary>

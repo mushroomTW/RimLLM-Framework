@@ -1,19 +1,14 @@
-extern alias bclasync;
+﻿extern alias bclasync;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using Google.GenAI;
 using Google.GenAI.Types;
 using Microsoft.Extensions.AI;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Providers
 {
@@ -544,7 +539,11 @@ namespace RimLLM_Framework.Providers
             emit(part.Text);
         }
 
-        private static Exception TranslateGoogleException(Exception exception, string operation)
+        /// <summary>
+        /// 將 Google.GenAI 的例外轉為框架的 <see cref="RimLLMException"/>。
+        /// 對話與 embedding 兩條路徑共用同一份對照。
+        /// </summary>
+        internal static Exception TranslateGoogleException(Exception exception, string operation)
         {
             if (exception is OperationCanceledException)
             {

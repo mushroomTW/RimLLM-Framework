@@ -110,13 +110,7 @@ namespace RimLLM_Framework.Manager
                     throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} 回傳空白內容。");
                 }
 
-                int promptTokens = 0, completionTokens = 0, cachedPromptTokens = 0;
-                if (response?.Usage != null)
-                {
-                    promptTokens = ToInt32(response.Usage.InputTokenCount);
-                    completionTokens = ToInt32(response.Usage.OutputTokenCount);
-                    cachedPromptTokens = ToInt32(response.Usage.CachedInputTokenCount);
-                }
+                ReadUsage(response?.Usage, out int promptTokens, out int completionTokens, out int cachedPromptTokens);
                 RecordUsage(providerId, model, request, result, response?.Usage);
                 return new RimLLMGenerationResult
                 {
@@ -229,13 +223,7 @@ namespace RimLLM_Framework.Manager
 
             RecordUsage(providerId, model, request, responseBuilder.ToString(), lastUsage);
 
-            int promptTokens = 0, completionTokens = 0, cachedPromptTokens = 0;
-            if (lastUsage != null)
-            {
-                promptTokens = ToInt32(lastUsage.InputTokenCount);
-                completionTokens = ToInt32(lastUsage.OutputTokenCount);
-                cachedPromptTokens = ToInt32(lastUsage.CachedInputTokenCount);
-            }
+            ReadUsage(lastUsage, out int promptTokens, out int completionTokens, out int cachedPromptTokens);
             return new RimLLMGenerationResult
             {
                 Text = responseBuilder.ToString(),
@@ -314,9 +302,7 @@ namespace RimLLM_Framework.Manager
             // response_format.json_schema.strict，OpenAIClientExtensions.HasStrict）。
             if (useNativeSchema && request.ResponseType != null)
             {
-                string schemaJson = RimLLMJsonHelper.GenerateJsonSchema(
-                    request.ResponseType,
-                    uppercaseTypes: false).ToString();
+                string schemaJson = RimLLMJsonHelper.GenerateJsonSchemaString(request.ResponseType);
                 using (JsonDocument document = JsonDocument.Parse(schemaJson))
                 {
                     options.ResponseFormat = ChatResponseFormat.ForJsonSchema(
@@ -363,62 +349,16 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private static RimLLMException MapChatClientException(string providerId, ClientResultException ex)
         {
-            int? status = ex.Status;
             string rawBody = SafeGetRawBody(ex);
             string message = !string.IsNullOrEmpty(rawBody) ? rawBody : ex.Message;
-            string friendly = RimLLMLog.SanitizeForLog(message, 300);
-            TimeSpan? retryAfter = ParseRetryAfter(ex);
 
-            if (status == 401 || status == 403)
-            {
-                return new RimLLMException(LLMError.InvalidKey, $"Invalid API key or authorization failed: {friendly}");
-            }
-            if (status == 402)
-            {
-                return new RimLLMException(LLMError.QuotaExceeded, $"Payment required, please check your account balance: {friendly}");
-            }
-            if (status == 404)
-            {
-                // 模型或端點不存在屬於不可重試錯誤，重試只會空耗延遲。
-                return new RimLLMException(LLMError.ModelNotFound, $"Model or endpoint not found: {friendly}");
-            }
-            if (status == 408)
-            {
-                return new RimLLMException(LLMError.Timeout, $"Request timed out on the server side: {friendly}")
-                {
-                    RetryAfter = retryAfter
-                };
-            }
-            if (status == 400 || status == 413 || status == 422)
-            {
-                // 請求本身有問題，以同一份 payload 重試必然再次失敗。
-                return new RimLLMException(LLMError.InvalidResponse, $"The request was rejected by the provider: {friendly}")
-                {
-                    IsSchemaRejection = LooksLikeSchemaRejection(message)
-                };
-            }
-            if (status == 429)
-            {
-                if (ContainsIgnoreCase(message, "quota") || ContainsIgnoreCase(message, "insufficient"))
-                {
-                    return new RimLLMException(LLMError.QuotaExceeded, "API insufficient quota (insufficient_quota), please check your account balance.")
-                    {
-                        RetryAfter = retryAfter
-                    };
-                }
-                return new RimLLMException(LLMError.RateLimit, $"Rate limit triggered: {friendly}")
-                {
-                    RetryAfter = retryAfter
-                };
-            }
-            if (status.HasValue && status.Value >= 500)
-            {
-                return new RimLLMException(LLMError.ProviderOffline, $"Internal server error: {friendly}")
-                {
-                    RetryAfter = retryAfter
-                };
-            }
-            return new RimLLMException(LLMError.Unknown, $"API request failed: {friendly}", ex);
+            // 顯示用訊息經過淨化與截斷；關鍵字偵測則沿用未截斷的原始內容，避免關鍵字被切掉。
+            return LLMErrorMapper.CreateException(
+                ex.Status,
+                RimLLMLog.SanitizeForLog(message, 300),
+                ParseRetryAfter(ex),
+                ex,
+                detectionText: message);
         }
 
         private static string SafeGetRawBody(ClientResultException ex)
@@ -456,20 +396,6 @@ namespace RimLLM_Framework.Manager
             return null;
         }
 
-        private static bool LooksLikeSchemaRejection(string message)
-        {
-            return message != null &&
-                (ContainsIgnoreCase(message, "response_format") ||
-                 ContainsIgnoreCase(message, "json_schema") ||
-                 ContainsIgnoreCase(message, "schema"));
-        }
-
-        private static bool ContainsIgnoreCase(string haystack, string needle)
-        {
-            return !string.IsNullOrEmpty(haystack) &&
-                   haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
         private static void RecordUsage(
             string providerId,
             string model,
@@ -482,9 +408,7 @@ namespace RimLLM_Framework.Manager
             int cachedPromptTokens = 0;
             if (usage != null && (usage.InputTokenCount.HasValue || usage.OutputTokenCount.HasValue))
             {
-                promptTokens = ToInt32(usage.InputTokenCount);
-                completionTokens = ToInt32(usage.OutputTokenCount);
-                cachedPromptTokens = ToInt32(usage.CachedInputTokenCount);
+                ReadUsage(usage, out promptTokens, out completionTokens, out cachedPromptTokens);
             }
             else
             {
@@ -511,6 +435,16 @@ namespace RimLLM_Framework.Manager
             {
                 // 直接測試 provider 時可能尚未建立 manager；不影響實際回應。
             }
+        }
+
+        /// <summary>
+        /// 由 SDK 的 <see cref="UsageDetails"/> 取出三項 token 計數；usage 為 null 時一律回傳 0。
+        /// </summary>
+        private static void ReadUsage(UsageDetails usage, out int promptTokens, out int completionTokens, out int cachedPromptTokens)
+        {
+            promptTokens = ToInt32(usage?.InputTokenCount);
+            completionTokens = ToInt32(usage?.OutputTokenCount);
+            cachedPromptTokens = ToInt32(usage?.CachedInputTokenCount);
         }
 
         private static int EstimateTokens(int characterCount)

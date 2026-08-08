@@ -85,29 +85,14 @@ namespace RimLLM_Framework.Manager
         {
             foreach (string entry in fallbackChain)
             {
-                if (!ResolveFallbackEntry(entry, out string providerId)) continue;
+                string providerId = ProviderIds.ParseProviderId(entry);
+                if (providerId == null) continue;
                 if (!isEligibleProvider(providerId)) continue;
 
                 if (!IsCooldown(providerId, out _, out _))
                 {
                     return false; // 有一個可用且不在冷卻中
                 }
-            }
-            return true;
-        }
-
-        private bool ResolveFallbackEntry(string entry, out string providerId)
-        {
-            providerId = entry;
-            if (string.IsNullOrEmpty(entry))
-            {
-                return false;
-            }
-
-            int colonIndex = entry.IndexOf(':');
-            if (colonIndex > 0)
-            {
-                providerId = entry.Substring(0, colonIndex);
             }
             return true;
         }

@@ -1,10 +1,8 @@
-using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using RimWorld;
 using RimLLM_Framework.SDK;
-using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
 {
@@ -33,20 +31,10 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static List<string> GetRegisteredProviderIds()
         {
-            try
-            {
-                return RimLLMProvider.GetRegisteredProviderIds();
-            }
-            catch (InvalidOperationException)
-            {
-                // SDK 尚未初始化時退回內建清單
-                return new List<string>
-                {
-                    ProviderIds.Gemini, ProviderIds.OpenAI, ProviderIds.DeepSeek, ProviderIds.Groq,
-                    ProviderIds.Grok, ProviderIds.Zai, ProviderIds.OpenRouter, ProviderIds.Kimi, ProviderIds.MiniMax,
-                    ProviderIds.Qwen, ProviderIds.Nvidia, ProviderIds.OpenAICompatible
-                };
-            }
+            // SDK 尚未初始化時退回內建清單
+            return RimLLMProvider.TryGetManager(out var manager)
+                ? manager.GetRegisteredProviderIds()
+                : new List<string>(ProviderIds.BuiltIn);
         }
 
         /// <summary>
@@ -54,11 +42,9 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static bool IsProviderSelectable(string providerId)
         {
-            if (RimLLMProvider.Manager is RimLLMManager manager)
-            {
-                return manager.IsProviderEnabled(providerId);
-            }
-            return Settings.IsProviderEnabled(providerId);
+            return RimLLMProvider.TryGetManager(out var manager)
+                ? manager.IsProviderEnabled(providerId)
+                : Settings.IsProviderEnabled(providerId);
         }
 
         /// <summary>
@@ -307,15 +293,8 @@ namespace RimLLM_Framework.Mod
         private static void SetDefaultAddModelName(string providerId)
         {
             addProviderId = providerId;
-            var models = Settings.GetModelList(providerId);
-            if (models != null && models.Count > 0)
-            {
-                addModelName = models[0];
-            }
-            else
-            {
-                addModelName = Settings.GetDefaultModel(providerId, "default");
-            }
+            // GetDefaultModel 已是「有快取清單就取第一筆，否則用預設值」的語意。
+            addModelName = Settings.GetDefaultModel(providerId, "default");
         }
     }
 }

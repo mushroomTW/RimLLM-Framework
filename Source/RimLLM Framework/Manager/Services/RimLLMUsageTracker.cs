@@ -1,7 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using Verse;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Mod;
 using RimLLM_Framework.SDK;
@@ -268,16 +267,16 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private float EstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
+        /// <summary>
+        /// 估算單次呼叫的美元成本。<paramref name="cachedPromptTokens"/> 由呼叫端保證已落在 [0, promptTokens] 範圍內。
+        /// </summary>
+        private float EstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens)
         {
             string key = $"{NormalizeProvider(providerId)}:{NormalizeModel(modelName)}";
             if (!KnownModelRates.TryGetValue(key, out var rate))
             {
                 return 0f;
             }
-
-            if (cachedPromptTokens < 0) cachedPromptTokens = 0;
-            if (cachedPromptTokens > promptTokens) cachedPromptTokens = promptTokens;
 
             // 快取命中的 Token 以折扣費率計價，其餘輸入 Token 走原價，藉此讓成本面板反映 Context Caching 的節省。
             int fullRatePromptTokens = promptTokens - cachedPromptTokens;
@@ -297,8 +296,8 @@ namespace RimLLM_Framework.Manager
             string provider = (providerId ?? "").Trim().ToLowerInvariant();
             switch (provider)
             {
-                case "anthropic": return 0.1f;  // Anthropic cache read 約為輸入價의 0.1x
-                case "gemini": return 0.25f;     // Gemini cachedContent 約為輸入價의 0.25x
+                case "anthropic": return 0.1f;  // Anthropic cache read 約為輸入價的 0.1x
+                case "gemini": return 0.25f;     // Gemini cachedContent 約為輸入價的 0.25x
                 case "deepseek": return 0.02f;
                 default: return 0.25f;
             }

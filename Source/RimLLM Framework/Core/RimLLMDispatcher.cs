@@ -33,12 +33,6 @@ namespace RimLLM_Framework.Core
         private static volatile bool _hasPump;
 
         /// <summary>
-        /// 取得主線程派遣器單例。可能為 null —— 此 getter 刻意不建立 GameObject，
-        /// 因為背景執行緒建立 Unity 物件並不安全。建立請改用 <see cref="EnsureInitialized"/>。
-        /// </summary>
-        public static RimLLMDispatcher Instance => _instance;
-
-        /// <summary>
         /// 於主線程建立派遣器單例。必須由 Mod 進入點在主線程呼叫。
         /// </summary>
         public static void EnsureInitialized()
@@ -58,12 +52,8 @@ namespace RimLLM_Framework.Core
 
         /// <summary>
         /// 將 Action 排入佇列，以便在下一次 Unity Update 週期中於主線程執行。
+        /// 無可運作的 pump 時（單元測試、headless）改為同步執行。
         /// </summary>
-        public void Enqueue(Action action)
-        {
-            TryEnqueueBounded(action);
-        }
-
         public static void EnqueueOnMainThread(Action action)
         {
             if (action == null) return;

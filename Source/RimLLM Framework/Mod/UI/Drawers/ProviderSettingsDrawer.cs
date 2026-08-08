@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Verse;
+using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Mod
 {
@@ -10,10 +12,32 @@ namespace RimLLM_Framework.Mod
     {
         private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
+        /// <summary>
+        /// 中欄選單項目：顯示名稱與供應商識別碼。
+        /// 顯示名稱刻意保留品牌寫法（如 NVIDIA），因此無法直接沿用 ProviderIds 的值。
+        /// </summary>
+        private static readonly List<KeyValuePair<string, string>> MenuEntries = new List<KeyValuePair<string, string>>
+        {
+            new KeyValuePair<string, string>("Google Gemini", ProviderIds.Gemini),
+            new KeyValuePair<string, string>("OpenAI", ProviderIds.OpenAI),
+            new KeyValuePair<string, string>("DeepSeek", ProviderIds.DeepSeek),
+            new KeyValuePair<string, string>("Groq", ProviderIds.Groq),
+            new KeyValuePair<string, string>("Grok", ProviderIds.Grok),
+            new KeyValuePair<string, string>("Z.ai", ProviderIds.Zai),
+            new KeyValuePair<string, string>("OpenRouter", ProviderIds.OpenRouter),
+            new KeyValuePair<string, string>("Kimi", ProviderIds.Kimi),
+            new KeyValuePair<string, string>("MiniMax", ProviderIds.MiniMax),
+            new KeyValuePair<string, string>("Qwen", ProviderIds.Qwen),
+            new KeyValuePair<string, string>("NVIDIA", ProviderIds.Nvidia),
+            new KeyValuePair<string, string>("OpenAI Compatible", ProviderIds.OpenAICompatible)
+        };
+
+        private const float SubButtonHeight = 46f;
+        private const float SubButtonGap = 4f;
+
         // 供應商分頁專屬的 UI 暫存狀態
-        public static string ActiveProviderSubTab { get; set; } = "Gemini";
+        public static string ActiveProviderSubTab { get; set; } = ProviderIds.Gemini;
         private static Vector2 _midScrollPosition = Vector2.zero;
-        private static Vector2 _detailScrollPosition = Vector2.zero;
 
         /// <summary>
         /// 獲取供應商設定詳細內容的滾動高度。
@@ -28,7 +52,7 @@ namespace RimLLM_Framework.Mod
 
             // 動態計算 API 金鑰列表的高度
             float keysHeight = 0f;
-            if (ActiveProviderSubTab != "OpenAICompatible")
+            if (ActiveProviderSubTab != ProviderIds.OpenAICompatible)
             {
                 string rawApiKey = Settings.GetApiKey(ActiveProviderSubTab);
                 var keys = rawApiKey.Split(new char[] { ',' }, System.StringSplitOptions.None);
@@ -37,22 +61,21 @@ namespace RimLLM_Framework.Mod
             }
 
             float extraHeight = 0f;
-            if (ActiveProviderSubTab == "Kimi" || ActiveProviderSubTab == "MiniMax" || ActiveProviderSubTab == "Qwen")
+            if (ProviderIds.HasChinaEndpoint(ActiveProviderSubTab))
             {
                 extraHeight = 30f;
             }
-            else if (ActiveProviderSubTab == "OpenAICompatible")
+            else if (ActiveProviderSubTab == ProviderIds.OpenAICompatible)
             {
                 extraHeight = 60f;
             }
 
             float statsHeight = 120f;
-            if (SDK.RimLLMProvider.Manager is Manager.RimLLMManager mgr)
+            if (RimLLMProvider.TryGetManager(out var mgr) &&
+                mgr.UsageTracker.ProviderStatistics.TryGetValue(ActiveProviderSubTab, out var stats) &&
+                stats.TotalPromptTokens > 0)
             {
-                if (mgr.UsageTracker.ProviderStatistics.TryGetValue(ActiveProviderSubTab, out var stats) && stats.TotalPromptTokens > 0)
-                {
-                    statsHeight += 50f;
-                }
+                statsHeight += 50f;
             }
             return 250f + keysHeight + modelSectionHeight + 100f + statsHeight + extraHeight;
         }
@@ -69,35 +92,17 @@ namespace RimLLM_Framework.Mod
             Widgets.Label(titleRect, "RimLLM_ApiProviders".Translate());
 
             Rect listRect = new Rect(contentRect.x, titleRect.yMax + 4f, contentRect.width, contentRect.height - 24f);
-            // 12 個供應商，每個按鈕高度 46f + 4f gap = 50f
-            Rect viewRect = new Rect(0f, 0f, listRect.width - 16f, 12 * 50f + 10f);
+            float viewHeight = MenuEntries.Count * (SubButtonHeight + SubButtonGap) + 10f;
+            Rect viewRect = new Rect(0f, 0f, listRect.width - 16f, viewHeight);
             Widgets.BeginScrollView(listRect, ref _midScrollPosition, viewRect);
             Listing_Standard listing = new Listing_Standard();
             listing.Begin(viewRect);
 
-            DrawProviderSubButton(listing, "Google Gemini", "Gemini");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "OpenAI", "OpenAI");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "DeepSeek", "DeepSeek");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "Groq", "Groq");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "Grok", "Grok");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "Z.ai", "Z.ai");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "OpenRouter", "OpenRouter");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "Kimi", "Kimi");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "MiniMax", "MiniMax");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "Qwen", "Qwen");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "NVIDIA", "Nvidia");
-            listing.Gap(4f);
-            DrawProviderSubButton(listing, "OpenAI Compatible", "OpenAICompatible");
+            foreach (var entry in MenuEntries)
+            {
+                DrawProviderSubButton(listing, entry.Key, entry.Value);
+                listing.Gap(SubButtonGap);
+            }
             listing.End();
 
             Widgets.EndScrollView();
@@ -105,7 +110,7 @@ namespace RimLLM_Framework.Mod
 
         private static void DrawProviderSubButton(Listing_Standard listing, string label, string providerId)
         {
-            Rect btnRect = listing.GetRect(46f);
+            Rect btnRect = listing.GetRect(SubButtonHeight);
 
             if (ActiveProviderSubTab == providerId)
             {
@@ -123,7 +128,6 @@ namespace RimLLM_Framework.Mod
             if (Widgets.ButtonInvisible(btnRect))
             {
                 ActiveProviderSubTab = providerId;
-                _detailScrollPosition = Vector2.zero;
             }
 
             Rect nameRect = new Rect(btnRect.x + 8f, btnRect.y + 3f, btnRect.width - 16f, 22f);
@@ -150,33 +154,19 @@ namespace RimLLM_Framework.Mod
 
         /// <summary>
         /// 根據目前的供應商，調度右側的詳細配置渲染。
+        /// 除了本地相容介面需要自訂 Endpoint 之外，其餘供應商共用同一組通用面板。
         /// </summary>
         public static void DrawRightDetailContent(Listing_Standard listing)
         {
-            if (ActiveProviderSubTab == "Gemini")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "Gemini", "https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-flash");
-            else if (ActiveProviderSubTab == "OpenAI")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "OpenAI", "https://api.openai.com/v1/chat/completions", "gpt-4o-mini");
-            else if (ActiveProviderSubTab == "DeepSeek")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "DeepSeek", "https://api.deepseek.com", "deepseek-chat");
-            else if (ActiveProviderSubTab == "Groq")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile");
-            else if (ActiveProviderSubTab == "Grok")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "Grok", "https://api.x.ai/v1", "grok-2-1212");
-            else if (ActiveProviderSubTab == "Z.ai")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "Z.ai", "https://api.z.ai/api/paas/v4", "glm-4.5-flash");
-            else if (ActiveProviderSubTab == "OpenRouter")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "OpenRouter", "https://openrouter.ai/api/v1", "google/gemini-2.5-flash");
-            else if (ActiveProviderSubTab == "Kimi")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "Kimi", "https://api.moonshot.ai/v1", "moonshot-v1-8k");
-            else if (ActiveProviderSubTab == "MiniMax")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "MiniMax", "https://api.minimax.io/v1", "abab6.5g-chat");
-            else if (ActiveProviderSubTab == "Qwen")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "Qwen", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "qwen-plus");
-            else if (ActiveProviderSubTab == "Nvidia")
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, "Nvidia", "https://integrate.api.nvidia.com/v1", "meta/llama-3.1-8b-instruct");
-            else if (ActiveProviderSubTab == "OpenAICompatible")
-                OpenAICompatibleSubTabDrawer.DrawOpenAICompatibleSettings(listing, "OpenAICompatible", "http://localhost:1234/v1", "default");
+            if (ActiveProviderSubTab == ProviderIds.OpenAICompatible)
+            {
+                OpenAICompatibleSubTabDrawer.DrawOpenAICompatibleSettings(
+                    listing, ProviderIds.OpenAICompatible, "http://localhost:1234/v1");
+            }
+            else
+            {
+                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, ActiveProviderSubTab);
+            }
         }
     }
 }
