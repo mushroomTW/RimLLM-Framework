@@ -11,6 +11,12 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         protected override bool SupportsNativeJsonSchemaPayload => false;
 
+        /// <summary>
+        /// xAI 的推理模型無法關閉思考（官方文件明載 reasoning cannot be disabled），
+        /// 送出關閉指令只會換來 400，因此關閉請求在此靜默忽略。
+        /// </summary>
+        protected override bool SupportsDisablingReasoning => false;
+
         public GrokProvider(IRimLLMSettings settings)
             : base(settings, ProviderIds.Grok, "https://api.x.ai/v1", "grok-2-1212")
         {

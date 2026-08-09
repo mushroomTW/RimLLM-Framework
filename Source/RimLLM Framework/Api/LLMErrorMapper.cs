@@ -96,6 +96,8 @@ namespace RimLLM_Framework
                     RimLLMException rejected = Create(LLMError.InvalidResponse,
                         $"The request was rejected by the provider: {friendlyMessage}", null, innerException);
                     rejected.IsSchemaRejection = LooksLikeSchemaRejection(probe);
+                    rejected.IsReasoningRejection = LooksLikeReasoningRejection(probe);
+                    rejected.IsTemperatureRejection = LooksLikeTemperatureRejection(probe);
                     return rejected;
 
                 case 429:
@@ -124,6 +126,29 @@ namespace RimLLM_Framework
             return ContainsIgnoreCase(message, "response_format") ||
                    ContainsIgnoreCase(message, "json_schema") ||
                    ContainsIgnoreCase(message, "schema");
+        }
+
+        /// <summary>
+        /// 判斷 4xx 錯誤訊息是否指向「服務端不接受思考相關參數」。
+        /// 各家的欄位名不同（reasoning_effort、reasoning、thinking、enable_thinking、thinking_budget），
+        /// 而且支援範圍細到模型層級，因此以服務端回報的欄位名判定，再由框架去掉參數重打一次。
+        /// </summary>
+        public static bool LooksLikeReasoningRejection(string message)
+        {
+            return ContainsIgnoreCase(message, "reasoning_effort") ||
+                   ContainsIgnoreCase(message, "reasoning") ||
+                   ContainsIgnoreCase(message, "enable_thinking") ||
+                   ContainsIgnoreCase(message, "thinking_budget") ||
+                   ContainsIgnoreCase(message, "thinking");
+        }
+
+        /// <summary>
+        /// 判斷 4xx 錯誤訊息是否指向「服務端不接受 temperature」。
+        /// 推理模型多半禁用取樣參數，OpenAI gpt-5 系列會直接回 400 而非忽略。
+        /// </summary>
+        public static bool LooksLikeTemperatureRejection(string message)
+        {
+            return ContainsIgnoreCase(message, "temperature");
         }
 
         public static bool ContainsIgnoreCase(string haystack, string needle)

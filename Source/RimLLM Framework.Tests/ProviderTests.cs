@@ -1058,6 +1058,21 @@ namespace RimLLM_Framework.Tests
 
         public string LastRequestUrl => RequestUrls.Count == 0 ? null : RequestUrls[RequestUrls.Count - 1];
 
+        /// <summary>
+        /// 依序套用的回應腳本（狀態碼與 body）。用完後回到預設的 200 + <see cref="ResponseBody"/>。
+        /// 供「服務端先拒絕某個參數、框架去掉後才接受」這類降級行為的測試使用。
+        ///
+        /// 用 List 當佇列而非 Queue&lt;T&gt;：這個測試組件載入 Queue&lt;T&gt; 會因為
+        /// netstandard 轉送與 mscorlib 的衝突而丟 TypeLoadException（與專案既有的 Stack&lt;T&gt; 地雷同源）。
+        /// </summary>
+        public System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<System.Net.HttpStatusCode, string>> ScriptedResponses { get; } =
+            new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<System.Net.HttpStatusCode, string>>();
+
+        public void ScriptResponse(System.Net.HttpStatusCode status, string body)
+        {
+            ScriptedResponses.Add(new System.Collections.Generic.KeyValuePair<System.Net.HttpStatusCode, string>(status, body));
+        }
+
         protected override System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage> SendAsync(
             System.Net.Http.HttpRequestMessage request,
             System.Threading.CancellationToken cancellationToken)
@@ -1067,9 +1082,20 @@ namespace RimLLM_Framework.Tests
                 : null;
             RequestBodies.Add(body ?? string.Empty);
             RequestUrls.Add(request.RequestUri != null ? request.RequestUri.ToString() : null);
-            var response = new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK);
+
+            System.Net.HttpStatusCode status = System.Net.HttpStatusCode.OK;
+            string responseBody = ResponseBody;
+            if (ScriptedResponses.Count > 0)
+            {
+                var scripted = ScriptedResponses[0];
+                ScriptedResponses.RemoveAt(0);
+                status = scripted.Key;
+                responseBody = scripted.Value;
+            }
+
+            var response = new System.Net.Http.HttpResponseMessage(status);
             response.Content = new System.Net.Http.StringContent(
-                ResponseBody ?? string.Empty,
+                responseBody ?? string.Empty,
                 System.Text.Encoding.UTF8,
                 ResponseContentType);
             return System.Threading.Tasks.Task.FromResult(response);

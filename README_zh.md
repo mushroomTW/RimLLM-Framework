@@ -272,7 +272,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 框架會擷取 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位），並統一以 `<think>...</think>` 標籤包裹。
    * GUI 對話測試頁會解析這些標籤，將思維鏈以灰色斜體呈現。呼叫端 Mod 可用正規表示式輕易剝除或保留思維鏈。
    * **推理強度控制**：預設為「自動」，讓各供應商執行自己的自適應或動態思考設定（Gemini 的 `thinkingBudget = -1`、OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
-   * OpenRouter 走它的統一 `reasoning` 參數送出強度，因此聚合器後面所有支援推理的模型都收得到。只支援 token 預算的模型由服務端自行換算，Gemini 則換算成 thinking level。
+   * **強度對所有供應商、所有模型都有效**。線上格式由各供應商自行宣告，框架不再靠模型名猜測：頂層 `reasoning_effort`（OpenAI、xAI、Groq、MiniMax、NVIDIA、OpenAI 相容端點）、OpenRouter 的統一 `reasoning` 物件、`thinking: {type}` 加強度（DeepSeek、Z.ai、Kimi）、`enable_thinking` 搭配 `thinking_budget`（Qwen），以及 Gemini 的 `thinkingConfig`。詞彙差異逐家對應 —— Kimi 只吃 low/high/max，xAI 的推理無法關閉，關閉請求在該家會被忽略而不是換來 400。
+   * **未知模型先樂觀送出，再從服務端學習**。以模型名列白名單必然腐化：框架先前只對 `o1`/`o3` 開頭的模型送出強度，其餘一律靜默丟棄。現在除了少數已知不具思考能力的系列之外一律送出；若服務端以 400 拒絕該參數，框架會記下這組 (供應商, 模型)、去掉參數重打一次，並在本次遊戲執行期間不再送。漏掉一個模型的代價因此是一次重試，而不是永久失效。同一套機制也涵蓋 `temperature` —— GPT-5 等推理模型會直接拒絕它。記憶只存在於本次執行，模型日後支援了，重開遊戲就會重新嘗試。
    * **Markdown 呈現**：對話測試頁會把模型回覆轉成 Unity 舊版 rich text，標題、粗體、斜體、清單、引用、連結與程式碼區塊會以結構呈現，而不是印出 `**`、`` ` `` 這些原始符號。舊版 IMGUI 只認得 `b`、`i`、`size`、`color`、`material`、`quad` 六個標籤，沒有對應標籤的結構（縮排、表格）以空白與符號近似。底線斜體刻意不支援，因為會與 `snake_case` 識別字衝突。
 9. **上下文快取與 Prompt 快取**
    * 原生支援 **Gemini context caching** 與 **OpenAI prompt caching**。在 `RimLLMChatOptions` 設定 `CachedContext`，框架會提交 `SystemPrompt + CachedContext` 進行快取，大幅降低高頻重複請求的輸入 Token 成本與延遲。

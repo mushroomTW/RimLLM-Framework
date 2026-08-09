@@ -7,6 +7,12 @@ namespace RimLLM_Framework.Providers
     /// </summary>
     public class DeepSeekProvider : OpenAIProvider
     {
+        /// <summary>
+        /// DeepSeek 以 thinking.type 開關思考，並可同時附上 reasoning_effort 調整強度
+        /// （官方範例即為兩者併送）。
+        /// </summary>
+        protected override ReasoningWireFormat ReasoningFormat => ReasoningWireFormat.ThinkingSwitch;
+
         public DeepSeekProvider(IRimLLMSettings settings)
             : base(settings, ProviderIds.DeepSeek, "https://api.deepseek.com", "deepseek-v4-flash")
         {

@@ -11,6 +11,11 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         protected override bool SupportsNativeJsonSchemaPayload => false;
 
+        /// <summary>
+        /// DashScope 相容模式以頂層 enable_thinking 開關思考，並以 thinking_budget 指定 token 預算。
+        /// </summary>
+        protected override ReasoningWireFormat ReasoningFormat => ReasoningWireFormat.EnableThinkingFlag;
+
         public QwenProvider(IRimLLMSettings settings)
             : base(settings, ProviderIds.Qwen, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "qwen-plus")
         {

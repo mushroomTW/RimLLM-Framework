@@ -36,9 +36,12 @@ namespace RimLLM_Framework.Providers
             base.BuildChatOptions(requestOptions, model, options);
 
             int maxTokens = requestOptions?.MaxOutputTokens ?? 1024;
-            options.RawRepresentationFactory = _ =>
+
+            // 串接而非覆寫基底類別的 factory：直接覆寫會把思考參數的 Patch 一併丟掉。
+            System.Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
+            options.RawRepresentationFactory = client =>
             {
-                var chatCompletionOptions = new ChatCompletionOptions();
+                var chatCompletionOptions = baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
                 chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.stream_options"));
                 chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.max_completion_tokens"));
                 chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_tokens"), maxTokens);

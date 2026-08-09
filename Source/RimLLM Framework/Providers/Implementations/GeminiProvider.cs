@@ -73,14 +73,54 @@ namespace RimLLM_Framework.Providers
             return GenerateWithGoogleGenAiAsync(messages, options, model);
         }
 
-        public override Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
+        public async override Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
-            return GenerateWithGoogleGenAiAsync(messages, options, model);
+            try
+            {
+                return await GenerateWithGoogleGenAiAsync(messages, options, model).ConfigureAwait(false);
+            }
+            catch (RimLLMException ex)
+            {
+                if (!MarkReasoningUnsupported(model, ex)) throw;
+                return await GenerateWithGoogleGenAiAsync(messages, options, model).ConfigureAwait(false);
+            }
         }
 
-        public override Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
+        public async override Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
         {
-            return StreamWithGoogleGenAiAsync(messages, options, model, onChunkReceived);
+            // 已經送出內容就不重打，否則畫面會出現前後兩段混接。參數被拒發生在服務端解析階段，正常不會有 chunk。
+            bool emitted = false;
+            Action<string> trackingCallback = chunk =>
+            {
+                emitted = true;
+                onChunkReceived?.Invoke(chunk);
+            };
+
+            try
+            {
+                await StreamWithGoogleGenAiAsync(messages, options, model, trackingCallback).ConfigureAwait(false);
+            }
+            catch (RimLLMException ex)
+            {
+                if (emitted || !MarkReasoningUnsupported(model, ex)) throw;
+                await StreamWithGoogleGenAiAsync(messages, options, model, trackingCallback).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// 服務端拒絕 thinkingConfig 時記下來，讓後續請求略過思考設定。
+        /// 模型名的判斷只是快速路徑，真正的權威是服務端的回應。
+        /// </summary>
+        private bool MarkReasoningUnsupported(string model, RimLLMException exception)
+        {
+            if (!exception.IsReasoningRejection ||
+                !RimLLMReasoningSupport.MarkReasoningUnsupported(ProviderId, model))
+            {
+                return false;
+            }
+
+            RimLLMLog.Warning($"[RimLLM] {ProviderId} 的模型 {model} 不接受思考設定，之後將不再送出。");
+            return true;
         }
 
         /// <summary>建立 Google.GenAI 用戶端（測試縫）。</summary>
@@ -412,6 +452,12 @@ namespace RimLLM_Framework.Providers
                 return null;
             }
 
+            // 服務端先前明確拒絕過思考設定的模型不再嘗試。
+            if (RimLLMReasoningSupport.IsReasoningUnsupported(ProviderId, model))
+            {
+                return null;
+            }
+
             DetermineGeminiThinkingConfig(model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel);
             if (isThinkingBudgetModel)
             {
@@ -571,10 +617,16 @@ namespace RimLLM_Framework.Providers
                         : clientError.StatusCode == 404
                             ? LLMError.ModelNotFound
                             : LLMError.InvalidResponse;
-                return new RimLLMException(
+                var translated = new RimLLMException(
                     error,
                     $"Gemini {operation} failed ({clientError.StatusCode}): {RimLLMLog.SanitizeForLog(clientError.Message, 300)}",
                     exception);
+                if (clientError.StatusCode == 400)
+                {
+                    // 服務端指名 thinking 相關欄位時標記起來，讓上層去掉思考設定重打一次。
+                    translated.IsReasoningRejection = LLMErrorMapper.LooksLikeReasoningRejection(clientError.Message);
+                }
+                return translated;
             }
             if (exception is ServerError serverError)
             {
@@ -624,19 +676,36 @@ namespace RimLLM_Framework.Providers
             }
         }
 
+        /// <summary>
+        /// 判斷模型用哪一種 thinkingConfig 表達方式。
+        ///
+        /// 兩份清單都是快速路徑而非白名單：認不出來的模型（例如未來的 gemini-5）
+        /// 一律歸到 thinkingLevel —— 那是 Google 自 gemini-3 起的表達方式，也是往後的方向。
+        /// 猜錯時服務端會以 400 拒絕，框架記下來重打一次即可（見 <see cref="RimLLMReasoningSupport"/>），
+        /// 因此漏列的代價是一次重試，而不是設定永久靜默失效。
+        /// </summary>
         private void DetermineGeminiThinkingConfig(string model, out bool isThinkingBudgetModel, out bool isThinkingLevelModel)
         {
             isThinkingBudgetModel = false;
             isThinkingLevelModel = false;
             if (model == null) return;
- 
-            isThinkingBudgetModel = model.IndexOf("thinking", StringComparison.OrdinalIgnoreCase) >= 0 || 
+
+            isThinkingBudgetModel = model.IndexOf("thinking", StringComparison.OrdinalIgnoreCase) >= 0 ||
                                     model.IndexOf("gemini-2.5", StringComparison.OrdinalIgnoreCase) >= 0 ||
                                     model.IndexOf("gemini-2-5", StringComparison.OrdinalIgnoreCase) >= 0;
- 
-            isThinkingLevelModel = model.IndexOf("gemma-4", StringComparison.OrdinalIgnoreCase) >= 0 || 
-                                   model.IndexOf("gemini-3", StringComparison.OrdinalIgnoreCase) >= 0 || 
-                                   model.IndexOf("gemini-4", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            isThinkingLevelModel = !isThinkingBudgetModel && !IsKnownNonThinkingGeminiModel(model);
+        }
+
+        /// <summary>
+        /// 已知不具備思考能力的 Gemini 世代。對這些模型送 thinkingConfig 只會白白換來一次 400。
+        /// </summary>
+        private static bool IsKnownNonThinkingGeminiModel(string model)
+        {
+            return model.IndexOf("gemini-1", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   model.IndexOf("gemini-2.0", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   model.IndexOf("gemini-2-0", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   model.IndexOf("embedding", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string model, string cacheableContext, System.Threading.CancellationToken cancellationToken)

@@ -26,6 +26,19 @@ namespace RimLLM_Framework
         /// </summary>
         public bool IsSchemaRejection { get; set; }
 
+        /// <summary>
+        /// 標記此錯誤是否為「服務端不接受思考相關參數」（reasoning_effort、thinking、enable_thinking 等）。
+        /// 各家對同一參數的支援範圍差到模型層級，光靠模型名無法窮舉，
+        /// 因此改由服務端的拒絕來判定，並讓框架去掉該參數重打一次。
+        /// </summary>
+        public bool IsReasoningRejection { get; set; }
+
+        /// <summary>
+        /// 標記此錯誤是否為「服務端不接受 temperature」。
+        /// 推理模型多半禁用取樣參數（OpenAI gpt-5 系列在 effort 非 none 時直接回 400）。
+        /// </summary>
+        public bool IsTemperatureRejection { get; set; }
+
         public RimLLMException(LLMError error, string message) : base(message)
         {
             Error = error;
