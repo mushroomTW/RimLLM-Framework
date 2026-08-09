@@ -222,6 +222,11 @@ namespace RimLLM_Framework.Tests
             Assert.IsNotNull(provider.InterceptedPayload);
             var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
             Assert.AreEqual("openrouter/free", payload["model"]?.ToString());
+
+            // 連線測試必須留足輸出額度並關閉思考：額度太低時思考型模型會把額度全花在內部推理上，
+            // content 變成空的，明明連得上卻回報「回傳空白內容」。
+            Assert.AreEqual("none", (string)payload["reasoning"]["effort"]);
+            Assert.GreaterOrEqual((int)payload["max_tokens"], 64);
         }
 
         [Test]
@@ -344,7 +349,30 @@ namespace RimLLM_Framework.Tests
                 string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
                 Assert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.AreEqual(2048, (int)payload["max_thinking_tokens"]);
+                Assert.AreEqual("medium", (string)payload["reasoning"]["effort"]);
+                Assert.IsNull(payload["reasoning_effort"], "reasoning 與 reasoning_effort 只能擇一，否則服務端會看到矛盾設定。");
+            }
+
+            // 5b. OpenRouter: 非 R1 的思考型模型也要送出思考強度。
+            // 舊實作把強度限定在 deepseek R1，其餘模型（例如 Gemini）的設定會被靜默丟棄。
+            {
+                var provider = new TestOpenRouterProvider(mockSettings);
+                var options = new ChatOptions
+                {
+                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High }
+                };
+                string response = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                Assert.AreEqual("high", (string)payload["reasoning"]["effort"]);
+            }
+
+            // 5c. OpenRouter: 明確關閉思考對應 effort "none"。
+            {
+                var provider = new TestOpenRouterProvider(mockSettings);
+                var options = new RimLLMChatOptions { DisableReasoning = true };
+                string response = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                Assert.AreEqual("none", (string)payload["reasoning"]["effort"]);
             }
 
             // 6. Test ReasoningEffort? = null (Auto) and DisableReasoning = true (None) payloads
@@ -394,13 +422,13 @@ namespace RimLLM_Framework.Tests
                 Assert.AreEqual(Google.GenAI.Types.ThinkingLevel.Minimal, provider.LastConfig.ThinkingConfig.ThinkingLevel);
             }
 
-            // 6i. OpenRouter Auto -> Omit max_thinking_tokens
+            // 6i. OpenRouter Auto -> 不干預，完全不送 reasoning
             {
                 var provider = new TestOpenRouterProvider(mockSettings);
                 var options = new ChatOptions();
                 string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNull(payload["max_thinking_tokens"]);
+                Assert.IsNull(payload["reasoning"]);
             }
         }
 

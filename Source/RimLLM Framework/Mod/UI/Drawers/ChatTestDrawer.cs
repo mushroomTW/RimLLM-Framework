@@ -136,14 +136,17 @@ namespace RimLLM_Framework.Mod
             }
             string allChatText = chatBuilder.ToString();
 
-            float chatViewHeight = Math.Max(480f, Text.CalcHeight(allChatText, chatContentWidth) + 12f);
+            GUIStyle richLabelStyle = new GUIStyle(Text.CurFontStyle);
+            richLabelStyle.richText = true;
+            richLabelStyle.wordWrap = true;
+
+            // 高度必須用同一個 rich text 樣式量測：Text.CalcHeight 會把標籤當成一般字元算進去，
+            // 又不認得 <size> 造成的行高變化，換成 Markdown 之後兩邊的誤差會更明顯。
+            float chatViewHeight = Math.Max(480f, richLabelStyle.CalcHeight(new GUIContent(allChatText), chatContentWidth - 8f) + 12f);
             Rect chatViewRect = new Rect(0f, 0f, chatContentWidth, chatViewHeight);
 
             Widgets.BeginScrollView(chatRect, ref chatScrollPosition, chatViewRect);
             Rect allChatRect = new Rect(4f, 4f, chatContentWidth - 8f, chatViewHeight - 8f);
-            GUIStyle richLabelStyle = new GUIStyle(Text.CurFontStyle);
-            richLabelStyle.richText = true;
-            richLabelStyle.wordWrap = true;
             GUI.Label(allChatRect, allChatText, richLabelStyle);
             Widgets.EndScrollView();
 
@@ -275,7 +278,7 @@ namespace RimLLM_Framework.Mod
                                             lock (replyLock)
                                             {
                                                 accumulatedReply += textContent.Text;
-                                                localReply = FormatThinkProcess(accumulatedReply);
+                                                localReply = RenderReply(accumulatedReply);
                                             }
                                             UpdateAiHistoryEntry(aiHistoryIndex, localReply);
                                         }
@@ -287,7 +290,7 @@ namespace RimLLM_Framework.Mod
                                 await enumerator.DisposeAsync().ConfigureAwait(false);
                             }
 
-                            string formattedFinal = FormatThinkProcess(accumulatedReply);
+                            string formattedFinal = RenderReply(accumulatedReply);
                             UpdateAiHistoryEntry(aiHistoryIndex, formattedFinal, persist: true);
                         }
                         catch (Exception ex)
@@ -317,6 +320,15 @@ namespace RimLLM_Framework.Mod
         private static string ThinkStartLabel => "RimLLM_ThinkProcessLabel".Translate();
         private static string ThinkEndLabel => "RimLLM_ThinkProcessEndLabel".Translate();
         private static string ThinkingLabel => "RimLLM_ThinkingLabel".Translate();
+
+        /// <summary>
+        /// 把模型回覆整理成可顯示的 rich text：先抽出思考過程並標灰，再把剩下的 Markdown 轉成標籤。
+        /// 順序不能顛倒 —— ```thought 圍籬必須先被思考處理吃掉，否則會被當成一般程式碼區塊。
+        /// </summary>
+        private static string RenderReply(string text)
+        {
+            return RimLLMMarkdown.ToRichText(FormatThinkProcess(text));
+        }
 
         private static string FormatThinkProcess(string text)
         {

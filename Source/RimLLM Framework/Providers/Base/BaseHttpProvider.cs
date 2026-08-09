@@ -53,7 +53,14 @@ namespace RimLLM_Framework.Providers
             try
             {
                 var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "ping") };
-                var options = new ChatOptions { MaxOutputTokens = 5 };
+                // 輸出上限不能壓到極低：思考型模型會先把額度花在內部推理上，
+                // 額度用盡時回傳的 content 是空的，連線其實正常卻會被判成「回傳空白內容」。
+                // 因此給足額度並明確要求關閉思考，讓測試只反映「連線與金鑰是否可用」。
+                var options = new ChatOptions { MaxOutputTokens = 256 };
+                options.AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    ["rimllm_disable_reasoning"] = true
+                };
                 // 優先使用 DefaultTestModel 作為連線測試模型，因為這是最便宜且穩定的內建對話模型。
                 // 只有在 DefaultTestModel 為 "default" (如 OpenAICompatible 本地相容介面) 時，才去讀取快取清單的第一個模型。
                 string testModel = DefaultTestModel;

@@ -272,6 +272,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 框架會擷取 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位），並統一以 `<think>...</think>` 標籤包裹。
    * GUI 對話測試頁會解析這些標籤，將思維鏈以灰色斜體呈現。呼叫端 Mod 可用正規表示式輕易剝除或保留思維鏈。
    * **推理強度控制**：預設為「自動」，讓各供應商執行自己的自適應或動態思考設定（Gemini 的 `thinkingBudget = -1`、OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
+   * OpenRouter 走它的統一 `reasoning` 參數送出強度，因此聚合器後面所有支援推理的模型都收得到。只支援 token 預算的模型由服務端自行換算，Gemini 則換算成 thinking level。
+   * **Markdown 呈現**：對話測試頁會把模型回覆轉成 Unity 舊版 rich text，標題、粗體、斜體、清單、引用、連結與程式碼區塊會以結構呈現，而不是印出 `**`、`` ` `` 這些原始符號。舊版 IMGUI 只認得 `b`、`i`、`size`、`color`、`material`、`quad` 六個標籤，沒有對應標籤的結構（縮排、表格）以空白與符號近似。底線斜體刻意不支援，因為會與 `snake_case` 識別字衝突。
 9. **上下文快取與 Prompt 快取**
    * 原生支援 **Gemini context caching** 與 **OpenAI prompt caching**。在 `RimLLMChatOptions` 設定 `CachedContext`，框架會提交 `SystemPrompt + CachedContext` 進行快取，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **成本防呆**：Gemini 顯式快取有最小尺寸門檻，內容過小時框架會跳過快取改用 `systemInstruction`，避免建立費永遠回收不了。同一份上下文的快取建立也以鎖序列化，防止產生重複資源。
