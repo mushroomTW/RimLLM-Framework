@@ -159,6 +159,8 @@
   <RimLLM_EmbeddingModelLabel>Embedding 模型名称: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>自定义服务端点: </RimLLM_EmbeddingEndpointLabel>
   <RimLLM_EmbeddingApiKeyLabel>自定义 API 密钥 (选填，为空时默认与主 API 相同): </RimLLM_EmbeddingApiKeyLabel>
+  <RimLLM_EmbeddingSelectModelBtn>从列表挑选 ({0})</RimLLM_EmbeddingSelectModelBtn>
+  <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;尚未获取模型列表。可按上方按钮获取，或直接输入模型名称。&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
 
 
   <RimLLM_EmbeddingProvider_Disabled>停用（不使用 Embedding）</RimLLM_EmbeddingProvider_Disabled>

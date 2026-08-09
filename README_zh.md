@@ -282,6 +282,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 10. **Embedding SDK**
     * 框架公開由 Google、Ollama 或 OpenAI 相容端點支援的 embedding 功能，並附餘弦相似度工具。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索、分群或相似度比對。
     * 三種線上來源全走官方 SDK：Google 使用 `Google.GenAI` 的 `EmbedContentAsync`；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。
+    * 設定頁可直接抓取可用模型清單，不必憑記憶輸入名稱。Google 依模型自己宣告的 `supportedActions` 是否包含 `embedContent` 精確篩選，只列出真正的 embedding 模型。OpenAI 相容端點的 `/v1/models` 不回傳能力資訊，因此該清單只**排序**（把像 embedding 的名稱排前面）而不過濾 —— 本地伺服器的模型名由使用者自訂，過濾會把合法選項藏起來。沒有 `/v1/models` 的伺服器仍可手動輸入。
     * `CalculateTrigramSimilarity` 是**獨立的**、不需 API 的字串相似度工具，**不是** Embedding 供應商。它不產生向量，且無論選擇哪個供應商（或不選）都能呼叫。
     * Embedding 屬計費 API，因此與一般生成請求共用同一套防濫用檢查；其金鑰採用與供應商金鑰相同的 AES 加密。
 

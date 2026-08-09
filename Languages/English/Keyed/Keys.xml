@@ -159,6 +159,8 @@
   <RimLLM_EmbeddingModelLabel>Embedding Model Name: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>Custom Endpoint URL: </RimLLM_EmbeddingEndpointLabel>
   <RimLLM_EmbeddingApiKeyLabel>Custom API Key (optional, defaults to provider key if empty): </RimLLM_EmbeddingApiKeyLabel>
+  <RimLLM_EmbeddingSelectModelBtn>Pick from list ({0})</RimLLM_EmbeddingSelectModelBtn>
+  <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;No model list fetched yet. Fetch one, or type the model name above.&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
 
   <RimLLM_EmbeddingProvider_Disabled>Disabled (no embeddings)</RimLLM_EmbeddingProvider_Disabled>
   <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
