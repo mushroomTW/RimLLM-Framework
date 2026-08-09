@@ -79,6 +79,16 @@ using Microsoft.Extensions.AI;
 using RimLLM_Framework;
 ```
 
+`RimLLM_Framework` 提供 13 個公開型別，分三層。多數 Mod 只會碰到第一層的四個：
+
+| 分層 | 型別 | 用途 |
+|---|---|---|
+| **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError` | 靜態進入點，加上框架專屬選項與錯誤契約。`RimLLMClientExtensions` 以擴充方法的形式在 `IChatClient` 上補了 `GetResponseObjectAsync<T>`。 |
+| **提供供應商** | `IChatClientProvider`、`IChatOptionsCustomizer`、`INativeStructuredOutputProvider`、`LLMProviderCapabilities`、`IRimLLMSettings` | 只有要用 `RimLLMProvider.RegisterProvider` 註冊自己的 LLM 後端時才需要（`ILLMProvider` 介面本身在 `RimLLM_Framework.Providers`）。 |
+| **診斷** | `TestResult`、`ProviderIds`、`LLMErrorMapper` | 連線測試、內建供應商 ID 常數，以及共用的 HTTP 狀態碼 → `LLMError` 對照。 |
+
+其餘的 `IChatClient`、`ChatMessage`、`ChatResponse`、`ChatResponseUpdate`、`IEmbeddingGenerator` 全部來自 `Microsoft.Extensions.AI`。具體的 client 類別是 `internal`，所以沒有任何 RimLLM 的 client 型別需要你去對接。
+
 ### 2. 文字生成
 
 `RimLLMProvider.CreateChatClient` 回傳標準的 MEAI `IChatClient`，框架的 Fallback 鏈、請求佇列、防濫用檢查與用量統計會自動套用。不需要註冊步驟 —— 傳入的 `modId` 只是一個標籤，用於每個 Mod 的節流與遙測歸屬：
@@ -337,6 +347,14 @@ float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity("殖民者�
 * **API 金鑰加密屬混淆等級保護。** 金鑰在設定檔中以 AES-256 加密，加密金鑰由固定種子與裝置識別碼（`deviceUniqueIdentifier`）衍生。這能防止設定檔被複製到其他機器後被讀出明文，也避免同步或分享設定時意外外洩 —— 但**無法**防禦在同一台機器上執行的程式碼（包含其他 Mod），因為加密邏輯與素材都在同一個行程內，有心人可還原明文。請把它視為防呆與防止意外揭露，而不是保險箱。
 * **刻意不做呼叫者驗證。** 舊版會把每個 `modId` 綁定到一個呼叫端組件。這個檢查擋不住惡意 Mod —— 全部都在同一行程內，反射就能繞過 —— 而且是先到先贏，載入較早的 Mod 可以占用某個 id，讓正牌擁有者在啟動時直接擲出例外。因此移除：它把可忽略的偽造風險換成了真實的阻斷服務風險。
 * **金鑰不會進入 URL 或日誌。** 所有供應商都以 HTTP Header 傳遞金鑰；日誌輸出一律經過 `SanitizeForLog` 並截斷長度，診斷匯出中的裝置識別碼也會遮罩。
+
+---
+
+## 📜 授權條款
+
+本模組原始碼以 **MIT License** 釋出 —— Copyright (c) 2026 **mushroomTW**。詳見 [LICENSE](LICENSE)。
+
+隨附於 `Assemblies/` 的相依組件維持各自的授權：Microsoft.Extensions.AI、OpenAI .NET SDK 與 Newtonsoft.Json 為 MIT；Google.GenAI 與 Google.Apis.\* 為 Apache-2.0。RimWorld 本身的組件屬於 Ludeon Studios，本模組不予散布。
 
 ---
 

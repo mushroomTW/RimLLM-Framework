@@ -80,6 +80,16 @@ using Microsoft.Extensions.AI;
 using RimLLM_Framework;
 ```
 
+`RimLLM_Framework` exposes 13 public types, in three tiers. Most mods only ever touch the first four:
+
+| Tier | Types | What for |
+|---|---|---|
+| **Consuming a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError` | The static entry point plus the framework-specific options and error contract. `RimLLMClientExtensions` adds `GetResponseObjectAsync<T>` as an extension on `IChatClient`. |
+| **Supplying a provider** | `IChatClientProvider`, `IChatOptionsCustomizer`, `INativeStructuredOutputProvider`, `LLMProviderCapabilities`, `IRimLLMSettings` | Only if you register your own LLM backend via `RimLLMProvider.RegisterProvider` (the `ILLMProvider` interface itself lives in `RimLLM_Framework.Providers`). |
+| **Diagnostics** | `TestResult`, `ProviderIds`, `LLMErrorMapper` | Connection tests, built-in provider id constants, and the shared HTTP-status → `LLMError` mapper. |
+
+Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseUpdate`, `IEmbeddingGenerator` — comes from `Microsoft.Extensions.AI`. The concrete client classes are `internal`, so there is no RimLLM client type to program against.
+
 ### 2. Text generation
 
 `RimLLMProvider.CreateChatClient` returns a standard MEAI `IChatClient`. The framework's fallback chain, request queue, anti-abuse checks and usage tracking are all applied automatically. No registration step is required — the `modId` you pass is just a label used for per-mod throttling and telemetry attribution:
@@ -339,6 +349,14 @@ To avoid misunderstanding, here is an honest description of what each security m
 * **API key encryption is obfuscation-grade protection.** Keys are AES-256 encrypted in the settings file, with the encryption key derived from a fixed seed and the device identifier (`deviceUniqueIdentifier`). This prevents plaintext from being read after the settings file is copied to another machine, and avoids accidental leaks when syncing or sharing settings — but it **cannot** defend against code running on the same machine (including other mods), because the encryption logic and material live in the same process and a determined attacker can recover the plaintext. Treat it as protection against mistakes and accidental disclosure, not as a safe.
 * **There is no caller verification, by design.** Earlier versions bound each `modId` to a calling assembly. That check could not stop a hostile mod — everything runs in one process, so reflection defeats it — and it was first-come-wins, meaning a mod loading earlier could squat an id and make the legitimate owner throw at startup. It was removed: it converted a negligible spoofing risk into a real denial-of-service one.
 * **Keys never reach URLs or logs.** All providers pass keys via HTTP headers; log output always goes through `SanitizeForLog` and is length-truncated, and the device identifier is masked in diagnostic exports.
+
+---
+
+## 📜 License
+
+This mod's source code is released under the **MIT License** — Copyright (c) 2026 **mushroomTW**. See [LICENSE](LICENSE).
+
+Redistributed dependency assemblies in `Assemblies/` keep their own licenses: Microsoft.Extensions.AI, the OpenAI .NET SDK and Newtonsoft.Json are MIT; Google.GenAI and Google.Apis.\* are Apache-2.0. RimWorld's own assemblies belong to Ludeon Studios and are not redistributed here.
 
 ---
 
