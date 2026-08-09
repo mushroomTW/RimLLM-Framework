@@ -56,6 +56,10 @@
   <RimLLM_MaxRetriesLabel>單模型最多重試次數: {0} 次</RimLLM_MaxRetriesLabel>
   <RimLLM_RetryDelayLabel>重試間隔: {0} 秒</RimLLM_RetryDelayLabel>
   <RimLLM_EnterApiKey>&lt;color=red&gt;請先輸入 API 金鑰 (Key)&lt;/color&gt;</RimLLM_EnterApiKey>
+  <RimLLM_RevealApiKey>顯示完整金鑰以便編輯。金鑰預設遮罩，避免截圖或直播時外洩。</RimLLM_RevealApiKey>
+  <RimLLM_HideApiKey>重新遮罩金鑰。</RimLLM_HideApiKey>
+  <RimLLM_ClickToCopy>點擊複製模型名稱</RimLLM_ClickToCopy>
+  <RimLLM_CopiedToClipboard>已複製模型名稱：{0}</RimLLM_CopiedToClipboard>
   <RimLLM_DetailedLogging>詳細日誌</RimLLM_DetailedLogging>
   <RimLLM_DetailedLoggingExplanation>開啟模組詳細日誌，包含 API 呼叫記錄、重試與串流事件。</RimLLM_DetailedLoggingExplanation>
   <RimLLM_TabChatTest>模型對話</RimLLM_TabChatTest>

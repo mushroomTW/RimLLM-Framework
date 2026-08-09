@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 using Verse;
 using RimWorld;
@@ -14,6 +15,15 @@ namespace RimLLM_Framework.Mod
         // 全域選單狀態
         private static string activeMainCategory = "Providers";
         private static Vector2 _detailScrollPosition = Vector2.zero;
+
+        /// <summary>RimWorld 捲軸的固定寬度。</summary>
+        private const float ScrollBarWidth = 16f;
+
+        /// <summary>捲到底時在最後一個控制項下方保留的呼吸空間。</summary>
+        private const float DetailBottomPadding = 12f;
+
+        /// <summary>各分頁上一幀實際畫出的內容高度，見 <see cref="ResolveDetailViewHeight"/>。</summary>
+        private static readonly Dictionary<string, float> _measuredHeights = new Dictionary<string, float>();
 
         /// <summary>
         /// 初始化 UI 狀態，例如還原對話歷史。
@@ -109,7 +119,7 @@ namespace RimLLM_Framework.Mod
 
             if (activeMainCategory == categoryId)
             {
-                Widgets.DrawBoxSolid(btnRect, new Color(1f, 1f, 1f, 0.08f));
+                Widgets.DrawBoxSolid(btnRect, RimLLMUIStyle.SelectionFill);
                 Widgets.DrawBox(btnRect, 1);
             }
             else
@@ -126,10 +136,11 @@ namespace RimLLM_Framework.Mod
                 _detailScrollPosition = Vector2.zero;
             }
 
-            Text.Anchor = TextAnchor.MiddleCenter;
             string text = activeMainCategory == categoryId ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
-            Widgets.Label(btnRect, text);
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+            {
+                Widgets.Label(btnRect, text);
+            }
         }
 
         private static void DrawRightDetailContent(Rect rect)
@@ -176,8 +187,11 @@ namespace RimLLM_Framework.Mod
             Widgets.DrawLineHorizontal(contentRect.x, titleRect.yMax + 4f, contentRect.width);
 
             Rect detailRect = new Rect(contentRect.x, titleRect.yMax + 8f, contentRect.width, contentRect.height - 36f);
-            Rect viewRect = new Rect(0f, 0f, detailRect.width, GetDetailViewHeight(detailRect.width));
-            Widgets.BeginScrollView(detailRect, ref _detailScrollPosition, viewRect, false);
+
+            // 扣掉捲軸寬度，否則垂直捲軸出現時內容被擠出右緣，還會多冒出一條水平捲軸。
+            float viewWidth = detailRect.width - ScrollBarWidth;
+            Rect viewRect = new Rect(0f, 0f, viewWidth, ResolveDetailViewHeight(viewWidth, detailRect.height));
+            Widgets.BeginScrollView(detailRect, ref _detailScrollPosition, viewRect);
             Listing_Standard listing = new Listing_Standard();
             listing.Begin(viewRect);
 
@@ -210,8 +224,39 @@ namespace RimLLM_Framework.Mod
                 DebugSettingsDrawer.DrawDebugSettings(listing);
             }
 
+            // CurHeight 必須在 End() 之前讀取；End() 之後該值不再代表本次繪製的內容高度。
+            _measuredHeights[GetDetailPageKey()] = listing.CurHeight;
+
             listing.End();
             Widgets.EndScrollView();
+        }
+
+        /// <summary>
+        /// 決定捲動內容的高度。優先採用上一幀實際畫出來的高度，只有該分頁第一次繪製時
+        /// 才退回各 Drawer 的估計值。
+        ///
+        /// 先前一律使用估計值，而那些是手調的魔術數字，會與實際繪製內容漂移 ——
+        /// 供應商分頁曾回報 848px 但實際只畫了約 662px，底部因此多出一大塊幽靈空白。
+        /// 改為量測後，新增或調整任何控制項都不必再同步維護一份高度公式。
+        /// </summary>
+        private static float ResolveDetailViewHeight(float width, float visibleHeight)
+        {
+            float height = _measuredHeights.TryGetValue(GetDetailPageKey(), out float measured)
+                ? measured + DetailBottomPadding
+                : GetDetailViewHeight(width);
+
+            // 內容比可視區短時仍讓 viewRect 至少等高，避免捲動範圍為負值。
+            return Mathf.Max(height, visibleHeight);
+        }
+
+        /// <summary>
+        /// 量測值的鍵。供應商分頁各家內容長度不同，因此要連子分頁一起入鍵。
+        /// </summary>
+        private static string GetDetailPageKey()
+        {
+            return activeMainCategory == "Providers"
+                ? "Providers/" + ProviderSettingsDrawer.ActiveProviderSubTab
+                : activeMainCategory;
         }
 
         private static float GetDetailViewHeight(float width)

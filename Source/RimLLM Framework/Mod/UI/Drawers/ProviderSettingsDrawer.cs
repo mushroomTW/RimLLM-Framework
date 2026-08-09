@@ -113,7 +113,7 @@ namespace RimLLM_Framework.Mod
 
             if (ActiveProviderSubTab == providerId)
             {
-                Widgets.DrawBoxSolid(btnRect, new Color(1f, 1f, 1f, 0.08f));
+                Widgets.DrawBoxSolid(btnRect, RimLLMUIStyle.SelectionFill);
                 Widgets.DrawBox(btnRect, 1);
             }
             else
@@ -135,20 +135,21 @@ namespace RimLLM_Framework.Mod
             string nameText = ActiveProviderSubTab == providerId ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
             Widgets.Label(nameRect, nameText);
 
-            Text.Font = GameFont.Tiny;
             bool enabled = Settings.IsProviderEnabled(providerId);
-            Color oldColor = GUI.color;
-            GUI.color = enabled ? new Color(0.13f, 0.77f, 0.37f) : new Color(0.53f, 0.53f, 0.53f);
             string statusText = enabled ? "RimLLM_StatusEnabled".Translate() : "RimLLM_StatusDisabled".Translate();
             if (enabled)
             {
                 int modelCount = Settings.GetModelList(providerId).Count;
                 statusText += " | " + "RimLLM_ModelsCount".Translate(modelCount);
             }
-            Widgets.Label(statusRect, statusText);
-            GUI.color = oldColor;
 
-            Text.Font = GameFont.Small;
+            Color oldColor = GUI.color;
+            GUI.color = enabled ? RimLLMUIStyle.Success : RimLLMUIStyle.Muted;
+            using (RimLLMUIStyle.With(font: GameFont.Tiny))
+            {
+                Widgets.Label(statusRect, statusText);
+            }
+            GUI.color = oldColor;
         }
 
         /// <summary>

@@ -20,6 +20,9 @@ namespace RimLLM_Framework.Mod
         private static bool isFetchingModels;
         private static string fetchStatus = "";
 
+        /// <summary>金鑰是否以明文顯示。預設遮罩，避免截圖或直播時外洩。</summary>
+        private static bool apiKeyRevealed;
+
         public static float GetHeight(float width)
         {
             float baseHeight = 120f;
@@ -89,7 +92,7 @@ namespace RimLLM_Framework.Mod
                 }
 
                 listing.Label("RimLLM_EmbeddingApiKeyLabel".Translate());
-                Settings.EmbeddingApiKey = listing.TextEntry(Settings.EmbeddingApiKey);
+                DrawMaskableApiKeyField(listing);
             }
 
             // 檢查是否有屬性異動以存檔
@@ -100,6 +103,39 @@ namespace RimLLM_Framework.Mod
             {
                 Settings.Write();
             }
+        }
+
+        /// <summary>
+        /// 繪製可切換遮罩的 API 金鑰欄位。與供應商分頁採同一套規則：
+        /// 遮罩時畫唯讀標籤而非 TextField，避免遮罩字串被當成輸入寫回設定。
+        /// </summary>
+        private static void DrawMaskableApiKeyField(Listing_Standard listing)
+        {
+            Rect rowRect = listing.GetRect(30f);
+            Rect inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 48f, rowRect.height);
+            Rect revealRect = new Rect(inputRect.xMax + 8f, rowRect.y, 40f, rowRect.height);
+
+            if (apiKeyRevealed)
+            {
+                Settings.EmbeddingApiKey = Widgets.TextField(inputRect, Settings.EmbeddingApiKey);
+            }
+            else
+            {
+                Widgets.DrawBoxSolid(inputRect, RimLLMUIStyle.ChipFill);
+                Widgets.DrawBox(inputRect, 1);
+                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, wordWrap: false))
+                {
+                    Widgets.Label(inputRect.ContractedBy(4f), RimLLMUIStyle.MaskApiKey(Settings.EmbeddingApiKey));
+                }
+            }
+
+            if (Widgets.ButtonText(revealRect, apiKeyRevealed ? "abc" : "•••"))
+            {
+                apiKeyRevealed = !apiKeyRevealed;
+            }
+            TooltipHandler.TipRegion(
+                revealRect,
+                (apiKeyRevealed ? "RimLLM_HideApiKey" : "RimLLM_RevealApiKey").Translate());
         }
 
         /// <summary>

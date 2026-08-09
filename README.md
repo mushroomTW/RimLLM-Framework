@@ -257,6 +257,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
    * `Retry-After` is honoured in both forms RFC 7231 allows — delay-seconds and HTTP-date — on every path.
 3. **AES-256 settings encryption**
    * API keys are stored with AES-256 symmetric encryption, reducing the risk of plaintext keys sitting in the settings file. This is obfuscation-grade protection — see [Security notes](#-security-notes) below.
+   * Keys are also **masked in the settings UI** by default (head and tail only, so you can still tell which key is which) with a per-row toggle to reveal one for editing. This is about a different leak path from encryption: screenshots, bug reports and live streams.
    * Every provider (including Gemini) passes its API key via an HTTP header, never in the request URL, so keys don't end up in proxy or server access logs.
    * RimWorld mods all run inside the same game process. This framework makes no claim to stop a malicious mod from reading memory, reflecting over public APIs, or otherwise bypassing in-process boundaries.
 4. **Polished scrollable multi-column GUI**

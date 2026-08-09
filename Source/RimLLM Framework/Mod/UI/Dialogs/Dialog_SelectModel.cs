@@ -43,16 +43,8 @@ namespace RimLLM_Framework.Mod
             Rect filterRect = new Rect(75f, 40f, inRect.width - 75f, 30f);
             _filter = Widgets.TextField(filterRect, _filter);
 
-            // 3. 過濾模型清單
-            List<string> filteredModels = new List<string>();
-            string filterLower = _filter.ToLower();
-            foreach (var m in _allModels)
-            {
-                if (string.IsNullOrEmpty(_filter) || m.ToLower().Contains(filterLower))
-                {
-                    filteredModels.Add(m);
-                }
-            }
+            // 3. 過濾模型清單（與供應商設定頁共用同一份比對規則，避免兩處各自漂移）
+            List<string> filteredModels = RimLLMUIStyle.FilterModels(_allModels, _filter);
 
             // 4. 滾動清單區
             float topOffset = 80f;

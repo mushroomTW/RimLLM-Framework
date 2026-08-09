@@ -21,6 +21,35 @@ namespace RimLLM_Framework.Mod
         public static readonly Dictionary<string, bool> Testing = new Dictionary<string, bool>();
         public static readonly Dictionary<string, Vector2> ModelScrollPositions = new Dictionary<string, Vector2>();
 
+        /// <summary>各供應商的模型清單搜尋字串。供應商之間互不影響。</summary>
+        public static readonly Dictionary<string, string> ModelFilters = new Dictionary<string, string>();
+
+        /// <summary>哪幾把金鑰目前是明文顯示。鍵為 providerId + ":" + 索引；預設全部遮罩。</summary>
+        public static readonly Dictionary<string, bool> RevealedKeys = new Dictionary<string, bool>();
+
+        /// <summary>金鑰顯示切換鈕的寬度。</summary>
+        private const float RevealButtonWidth = 40f;
+
+        /// <summary>
+        /// 清掉某供應商所有金鑰的顯示狀態。
+        /// 新增或刪除金鑰會讓索引整體位移，不清除的話「已顯示」旗標會落到別把金鑰上。
+        /// </summary>
+        private static void ResetRevealedKeys(string providerId)
+        {
+            var stale = new List<string>();
+            foreach (var pair in RevealedKeys)
+            {
+                if (pair.Key.StartsWith(providerId + ":", StringComparison.Ordinal))
+                {
+                    stale.Add(pair.Key);
+                }
+            }
+            foreach (string key in stale)
+            {
+                RevealedKeys.Remove(key);
+            }
+        }
+
         public static void DrawGenericProviderSettings(Listing_Standard listing, string providerId)
         {
             // 1. 啟用 / 停用
@@ -72,25 +101,43 @@ namespace RimLLM_Framework.Mod
                 Rect rowRect = listing.GetRect(30f);
                 bool canDelete = keys.Count > 1 || !string.IsNullOrEmpty(keys[i]);
 
-                Rect inputRect;
-                Rect deleteRect = Rect.zero;
+                // 由右至左配置：刪除鈕（可刪時）、顯示切換鈕，其餘給輸入框。
+                float reservedRight = RevealButtonWidth + 8f + (canDelete ? 40f : 0f);
+                Rect inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width - reservedRight, rowRect.height);
+                Rect revealRect = new Rect(inputRect.xMax + 8f, rowRect.y, RevealButtonWidth, rowRect.height);
+                Rect deleteRect = new Rect(rowRect.x + rowRect.width - 32f, rowRect.y, 32f, rowRect.height);
 
-                if (canDelete)
+                string revealKey = providerId + ":" + i;
+                bool revealed = RevealedKeys.TryGetValue(revealKey, out bool r) && r;
+
+                if (revealed)
                 {
-                    inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 40f, rowRect.height);
-                    deleteRect = new Rect(rowRect.x + rowRect.width - 32f, rowRect.y, 32f, rowRect.height);
+                    string oldVal = keys[i];
+                    string newVal = Widgets.TextField(inputRect, oldVal);
+                    if (newVal != oldVal)
+                    {
+                        keys[i] = newVal;
+                    }
                 }
                 else
                 {
-                    inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width, rowRect.height);
+                    // 遮罩時刻意不畫 TextField：TextField 會把畫面上的字串當成使用者輸入寫回，
+                    // 那會讓遮罩字串直接覆蓋掉真正的金鑰。改畫唯讀外觀的標籤。
+                    Widgets.DrawBoxSolid(inputRect, RimLLMUIStyle.ChipFill);
+                    Widgets.DrawBox(inputRect, 1);
+                    using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, wordWrap: false))
+                    {
+                        Widgets.Label(inputRect.ContractedBy(4f), RimLLMUIStyle.MaskApiKey(keys[i]));
+                    }
                 }
 
-                string oldVal = keys[i];
-                string newVal = Widgets.TextField(inputRect, oldVal);
-                if (newVal != oldVal)
+                if (Widgets.ButtonText(revealRect, revealed ? "abc" : "•••"))
                 {
-                    keys[i] = newVal;
+                    RevealedKeys[revealKey] = !revealed;
                 }
+                TooltipHandler.TipRegion(
+                    revealRect,
+                    (revealed ? "RimLLM_HideApiKey" : "RimLLM_RevealApiKey").Translate());
 
                 if (canDelete)
                 {
@@ -106,6 +153,7 @@ namespace RimLLM_Framework.Mod
             {
                 keys.RemoveAt(keyToDelete);
                 if (keys.Count == 0) keys.Add("");
+                ResetRevealedKeys(providerId);
             }
 
             Rect addKeyRowRect = listing.GetRect(28f);
@@ -113,6 +161,7 @@ namespace RimLLM_Framework.Mod
             if (Widgets.ButtonText(addKeyBtnRect, "RimLLM_AddApiKeyBtn".Translate()))
             {
                 keys.Add("");
+                ResetRevealedKeys(providerId);
             }
             listing.Gap(8f);
 
@@ -144,69 +193,98 @@ namespace RimLLM_Framework.Mod
             if (currentModels.Count == 0)
             {
                 listing.Label("RimLLM_NoCachedModels".Translate());
+                return;
             }
-            else
+
+            // 搜尋列：模型動輒數百筆，沒有過濾等於要在 220px 高的框裡目視搜尋。
+            string filter = ModelFilters.TryGetValue(providerId, out string f) ? f : "";
+            Rect searchRowRect = listing.GetRect(28f);
+            float searchLabelWidth = Text.CalcSize("RimLLM_Search".Translate() + ": ").x;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
             {
-                Rect scrollRect = listing.GetRect(220f);
-                Widgets.DrawMenuSection(scrollRect);
-
-                float contentWidth = scrollRect.width - 16f;
-                float chipWidth = 220f;
-                float chipHeight = 28f;
-                float gap = 8f;
-
-                int cols = Mathf.Max(1, Mathf.FloorToInt((contentWidth + gap) / (chipWidth + gap)));
-                int rows = Mathf.CeilToInt((float)currentModels.Count / cols);
-                float viewHeight = Mathf.Max(220f, rows * (chipHeight + gap) + gap);
-
-                Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
-
-                if (!ModelScrollPositions.ContainsKey(providerId))
-                {
-                    ModelScrollPositions[providerId] = Vector2.zero;
-                }
-                Vector2 scrollPos = ModelScrollPositions[providerId];
-
-                Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
-                ModelScrollPositions[providerId] = scrollPos;
-
-                for (int i = 0; i < currentModels.Count; i++)
-                {
-                    string model = currentModels[i];
-                    int col = i % cols;
-                    int row = i / cols;
-
-                    Rect chipRect = new Rect(
-                        col * (chipWidth + gap) + gap,
-                        row * (chipHeight + gap) + gap,
-                        chipWidth,
-                        chipHeight
-                    );
-
-                    Widgets.DrawBoxSolid(chipRect, new Color(1f, 1f, 1f, 0.05f));
-                    Widgets.DrawBox(chipRect, 1);
-
-                    if (Mouse.IsOver(chipRect))
-                    {
-                        Widgets.DrawHighlight(chipRect);
-                    }
-                    TooltipHandler.TipRegion(chipRect, model);
-
-                    Text.Font = GameFont.Tiny;
-                    Text.Anchor = TextAnchor.MiddleCenter;
-                    bool originalWordWrap = Text.WordWrap;
-                    Text.WordWrap = false;
-
-                    Rect textRect = chipRect.ContractedBy(2f);
-                    Widgets.Label(textRect, $"<color=silver>{model}</color>");
-
-                    Text.WordWrap = originalWordWrap;
-                    Text.Anchor = TextAnchor.UpperLeft;
-                    Text.Font = GameFont.Small;
-                }
-
-                Widgets.EndScrollView();
+                Widgets.Label(
+                    new Rect(searchRowRect.x, searchRowRect.y, searchLabelWidth, searchRowRect.height),
+                    "RimLLM_Search".Translate() + ": ");
             }
+            Rect searchFieldRect = new Rect(
+                searchRowRect.x + searchLabelWidth + 4f,
+                searchRowRect.y,
+                searchRowRect.width - searchLabelWidth - 4f,
+                searchRowRect.height);
+            ModelFilters[providerId] = Widgets.TextField(searchFieldRect, filter);
+            listing.Gap(4f);
+
+            List<string> visibleModels = RimLLMUIStyle.FilterModels(currentModels, ModelFilters[providerId]);
+
+            Rect scrollRect = listing.GetRect(220f);
+            Widgets.DrawMenuSection(scrollRect);
+
+            if (visibleModels.Count == 0)
+            {
+                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+                {
+                    Widgets.Label(scrollRect, "<color=grey>" + "RimLLM_NoMatchingModels".Translate() + "</color>");
+                }
+                return;
+            }
+
+            float contentWidth = scrollRect.width - 16f;
+            float chipHeight = 28f;
+            float gap = 8f;
+            RimLLMUIStyle.ComputeChipLayout(contentWidth, gap, 220f, out int cols, out float chipWidth);
+
+            int rows = Mathf.CeilToInt((float)visibleModels.Count / cols);
+            float viewHeight = Mathf.Max(220f, rows * (chipHeight + gap) + gap);
+            Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
+
+            if (!ModelScrollPositions.ContainsKey(providerId))
+            {
+                ModelScrollPositions[providerId] = Vector2.zero;
+            }
+            Vector2 scrollPos = ModelScrollPositions[providerId];
+
+            Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
+            ModelScrollPositions[providerId] = scrollPos;
+
+            for (int i = 0; i < visibleModels.Count; i++)
+            {
+                string model = visibleModels[i];
+                int col = i % cols;
+                int row = i / cols;
+
+                Rect chipRect = new Rect(
+                    col * (chipWidth + gap) + gap,
+                    row * (chipHeight + gap) + gap,
+                    chipWidth,
+                    chipHeight
+                );
+
+                Widgets.DrawBoxSolid(chipRect, RimLLMUIStyle.ChipFill);
+                Widgets.DrawBox(chipRect, 1);
+
+                if (Mouse.IsOver(chipRect))
+                {
+                    Widgets.DrawHighlight(chipRect);
+                }
+                TooltipHandler.TipRegion(chipRect, model + "\n\n" + "RimLLM_ClickToCopy".Translate());
+
+                // 先前只有 hover 高亮卻沒有任何點擊行為，看起來可點、按下去沒反應。
+                // 這份清單多半是要把名稱抄進 Fallback 設定，因此點擊複製到剪貼簿。
+                if (Widgets.ButtonInvisible(chipRect))
+                {
+                    GUIUtility.systemCopyBuffer = model;
+                    Messages.Message("RimLLM_CopiedToClipboard".Translate(model), MessageTypeDefOf.TaskCompletion, false);
+                }
+
+                Rect textRect = chipRect.ContractedBy(4f);
+                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
+                {
+                    // 置中加硬切最難讀：改為左對齊並以省略號收尾，完整名稱留在 tooltip。
+                    Widgets.Label(textRect, $"<color=silver>{model.Truncate(textRect.width)}</color>");
+                }
+            }
+
+            Widgets.EndScrollView();
         }
 
         public static void DrawFetchModelsButton(Listing_Standard listing, string providerId)
@@ -227,9 +305,10 @@ namespace RimLLM_Framework.Mod
                     StartFetchModels(providerId);
                 }
             }
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(fetchMsgRect, fetchMsg);
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(fetchMsgRect, fetchMsg);
+            }
         }
 
         public static void DrawProviderCallStats(Listing_Standard listing, string providerId)
@@ -255,27 +334,26 @@ namespace RimLLM_Framework.Mod
             listing.Label("RimLLM_ProviderSuccessRateLabel".Translate(successRate.ToString("F1")));
 
             Rect successBarRect = listing.GetRect(20f);
-            Widgets.DrawBoxSolid(successBarRect, new Color(0.35f, 0.15f, 0.15f, 0.6f));
+            Widgets.DrawBoxSolid(successBarRect, RimLLMUIStyle.BarTrackDanger);
             if (totalCalls > 0)
             {
                 float fillPercent = (float)successCount / totalCalls;
                 if (fillPercent > 0f)
                 {
                     Rect fillRect = new Rect(successBarRect.x, successBarRect.y, successBarRect.width * fillPercent, successBarRect.height);
-                    Widgets.DrawBoxSolid(fillRect, new Color(0.18f, 0.48f, 0.18f, 0.8f));
+                    Widgets.DrawBoxSolid(fillRect, RimLLMUIStyle.BarFillSuccess);
                 }
             }
             else
             {
-                Widgets.DrawBoxSolid(successBarRect, new Color(0.2f, 0.2f, 0.2f, 0.6f));
+                Widgets.DrawBoxSolid(successBarRect, RimLLMUIStyle.BarTrack);
             }
             Widgets.DrawBox(successBarRect, 1);
 
-            Text.Anchor = TextAnchor.MiddleCenter;
-            Text.Font = GameFont.Tiny;
-            Widgets.Label(successBarRect, totalCalls > 0 ? $"{successRate:F1}%" : "100.0% (N/A)");
-            Text.Anchor = TextAnchor.UpperLeft;
-            Text.Font = GameFont.Small;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny))
+            {
+                Widgets.Label(successBarRect, totalCalls > 0 ? $"{successRate:F1}%" : "100.0% (N/A)");
+            }
             listing.Gap(12f);
 
             if (apiTotalTokens > 0)
@@ -284,20 +362,19 @@ namespace RimLLM_Framework.Mod
                 listing.Label("RimLLM_ProviderApiCacheRateLabel".Translate(apiCacheRate.ToString("F1"), apiCachedTokens, apiTotalTokens));
 
                 Rect apiCacheBarRect = listing.GetRect(20f);
-                Widgets.DrawBoxSolid(apiCacheBarRect, new Color(0.2f, 0.2f, 0.2f, 0.6f));
+                Widgets.DrawBoxSolid(apiCacheBarRect, RimLLMUIStyle.BarTrack);
                 float fillPercent = (float)apiCachedTokens / apiTotalTokens;
                 if (fillPercent > 0f)
                 {
                     Rect fillRect = new Rect(apiCacheBarRect.x, apiCacheBarRect.y, apiCacheBarRect.width * fillPercent, apiCacheBarRect.height);
-                    Widgets.DrawBoxSolid(fillRect, new Color(0.15f, 0.45f, 0.6f, 0.8f));
+                    Widgets.DrawBoxSolid(fillRect, RimLLMUIStyle.BarFillCache);
                 }
                 Widgets.DrawBox(apiCacheBarRect, 1);
 
-                Text.Anchor = TextAnchor.MiddleCenter;
-                Text.Font = GameFont.Tiny;
-                Widgets.Label(apiCacheBarRect, $"{apiCacheRate:F1}%");
-                Text.Anchor = TextAnchor.UpperLeft;
-                Text.Font = GameFont.Small;
+                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny))
+                {
+                    Widgets.Label(apiCacheBarRect, $"{apiCacheRate:F1}%");
+                }
                 listing.Gap(12f);
             }
         }
@@ -321,9 +398,10 @@ namespace RimLLM_Framework.Mod
                     StartTest(providerId);
                 }
             }
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(rightRect, "RimLLM_TestResult".Translate(status));
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(rightRect, "RimLLM_TestResult".Translate(status));
+            }
         }
 
         public static void StartFetchModels(string providerId)

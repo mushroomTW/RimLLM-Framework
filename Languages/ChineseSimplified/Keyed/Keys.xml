@@ -55,6 +55,10 @@
   <RimLLM_ApiTimeoutLabel>API 超时时间: {0} 秒</RimLLM_ApiTimeoutLabel>
   <RimLLM_MaxRetriesLabel>单模型最多重试次数: {0} 次</RimLLM_MaxRetriesLabel>
   <RimLLM_RetryDelayLabel>重试间隔: {0} 秒</RimLLM_RetryDelayLabel>
+  <RimLLM_RevealApiKey>显示完整密钥以便编辑。密钥默认遮罩，避免截图或直播时泄漏。</RimLLM_RevealApiKey>
+  <RimLLM_HideApiKey>重新遮罩密钥。</RimLLM_HideApiKey>
+  <RimLLM_ClickToCopy>点击复制模型名称</RimLLM_ClickToCopy>
+  <RimLLM_CopiedToClipboard>已复制模型名称：{0}</RimLLM_CopiedToClipboard>
   <RimLLM_EnterApiKey>&lt;color=red&gt;请先输入 API 密钥 (Key)&lt;/color&gt;</RimLLM_EnterApiKey>
   <RimLLM_DetailedLogging>詳細日志</RimLLM_DetailedLogging>
   <RimLLM_DetailedLoggingExplanation>開啟模組詳細日志，包含 API 呼叫記錄、重試與串流事件。</RimLLM_DetailedLoggingExplanation>

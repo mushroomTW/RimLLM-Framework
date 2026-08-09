@@ -55,6 +55,10 @@
   <RimLLM_ApiTimeoutLabel>API Timeout: {0} seconds</RimLLM_ApiTimeoutLabel>
   <RimLLM_MaxRetriesLabel>Max Retries per Model: {0} times</RimLLM_MaxRetriesLabel>
   <RimLLM_RetryDelayLabel>Retry Delay: {0} seconds</RimLLM_RetryDelayLabel>
+  <RimLLM_RevealApiKey>Show the full key so you can edit it. Keys are masked by default so screenshots and streams do not leak them.</RimLLM_RevealApiKey>
+  <RimLLM_HideApiKey>Mask the key again.</RimLLM_HideApiKey>
+  <RimLLM_ClickToCopy>Click to copy the model name</RimLLM_ClickToCopy>
+  <RimLLM_CopiedToClipboard>Copied model name: {0}</RimLLM_CopiedToClipboard>
   <RimLLM_EnterApiKey>&lt;color=red&gt;Please enter API Key (Key) first&lt;/color&gt;</RimLLM_EnterApiKey>
   <RimLLM_DetailedLogging>Detailed Logging</RimLLM_DetailedLogging>
   <RimLLM_DetailedLoggingExplanation>Enable detailed logging for call history, retries and stream events.</RimLLM_DetailedLoggingExplanation>
