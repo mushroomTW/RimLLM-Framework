@@ -124,6 +124,29 @@ namespace RimLLM_Framework.Tests
             }
         }
 
+        /// <summary>
+        /// schema 說某個成員可以是 null，執行期驗證就必須接受 null，兩邊不能互相矛盾。
+        ///
+        /// 原本 <c>ValidateRequiredMembers</c> 的判斷式是反的：只在「值為 null 且型別**允許** null」
+        /// 時才拋，也就是只會對合法可為 null 的成員開火。模型照 schema 回傳 null 會被判定為解析失敗，
+        /// 白白走一次靜態修復再加一次付費的 double-repair，最後仍以 RimLLMException 收場。
+        /// 這條路徑先前沒有任何測試涵蓋。
+        /// </summary>
+        [Test]
+        public void NullOptionalMemberPassesValidationButNullRequiredMemberDoesNot()
+        {
+            NullableTestDataStructure parsed = RimLLMManager.DeserializeAndValidate<NullableTestDataStructure>(
+                "{\"Name\":\"Randy\",\"OptionalCount\":null}");
+
+            Assert.AreEqual("Randy", parsed.Name);
+            Assert.IsNull(parsed.OptionalCount, "Nullable<T> 成員為 null 是合法的，schema 也明確允許。");
+
+            Assert.Throws<InvalidOperationException>(
+                () => RimLLMManager.DeserializeAndValidate<NullableTestDataStructure>(
+                    "{\"Name\":null,\"OptionalCount\":3}"),
+                "非選填成員為 null 仍應被擋下 —— 這才是這道驗證原本要防的情況。");
+        }
+
         // -----------------------------------------------------------------
         // 形狀不變式
         // -----------------------------------------------------------------
@@ -276,48 +299,68 @@ namespace RimLLM_Framework.Tests
         public void RecursiveMemberIsTruncatedButDeduplicatedMemberSurvives()
         {
             JObject schema = ParseSchema(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI);
-            var nested = (JObject)schema["properties"]["Nested"];
-            var selfRef = (JObject)nested["properties"]["SelfRef"];
-            Assert.IsNotNull(selfRef, "SelfRef 是去重而非循環，應被展開。");
 
             // 去重的 $ref 必須完整展開成原本的 schema，不能只剩空殼 —— 這是「一律截斷 $ref」會踩到的坑。
-            var skills = (JObject)selfRef["properties"]["Skills"];
+            var skills = (JObject)schema["properties"]["Skills"];
             Assert.IsNotNull(skills, "Skills 是 $ref 去重而非循環，不得被截斷。");
             Assert.AreEqual("array", skills["type"].Value<string>());
             Assert.AreEqual("string", skills["items"]["type"].Value<string>());
 
-            // 循環在 JSON pointer 層截斷（同一個 pointer 不會在同一條展開路徑上解析兩次），
-            // 因此會比舊實作的型別層截斷多展開一輪。真正要守的不變式是「一定收斂」。
-            JObject current = selfRef;
-            int hops = 0;
-            while (true)
-            {
-                var nextNested = current["properties"]["Nested"] as JObject;
-                if (nextNested == null) break;
+            // 循環在 CLR 型別層截斷，而非等到 JSON pointer 重現。exporter 會先把遞迴成員完整
+            // 展開一輪、其中才出現指回祖先的 $ref，只靠 pointer 偵測會多送一整層
+            // （實測 789 → 3119 字元，而那是每次請求都要付的 prompt token）。
+            var nested = (JObject)schema["properties"]["Nested"];
+            Assert.IsNotNull(nested, "非循環的巢狀成員應正常展開。");
+            Assert.AreEqual("number", nested["properties"]["Weight"]["type"].Value<string>());
 
-                var nextSelfRef = nextNested["properties"]["SelfRef"] as JObject;
-                if (nextSelfRef == null)
-                {
-                    current = nextNested;
-                    break;
-                }
-
-                current = nextSelfRef;
-                hops++;
-                Assert.Less(hops, 5, "Nested / SelfRef 的循環展開未收斂。");
-            }
-
-            CollectionAssert.AreEqual(
-                PropertyNames(current),
-                RequiredNames(current),
-                "被截斷的成員不得留在 required。");
+            Assert.IsNull(nested["properties"]["SelfRef"], "指回祖先型別的成員應被截斷。");
+            CollectionAssert.DoesNotContain(RequiredNames(nested), "SelfRef", "被截斷的成員不得留在 required。");
         }
 
+        /// <summary>
+        /// 遞迴型別的 schema 體積是每次結構化請求都要付的 prompt token，
+        /// 因此循環截斷點退步（例如改回只靠 JSON pointer 偵測）必須被擋下來。
+        /// </summary>
         [Test]
-        public void DeepNestingIsTruncatedAtMaxDepth()
+        public void RecursiveSchemaStaysCompact()
         {
-            JObject schema = ParseSchema(typeof(DeepChainLevel0), RimLLMSchemaProfile.OpenAI);
+            int managed = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI).Length;
 
+            RimLLMSchemaBuilder.ForceLegacy = true;
+            int legacy = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI).Length;
+
+            Assert.Less(
+                managed,
+                legacy * 2,
+                "遞迴型別的 schema 不應比舊實作大上一個量級。managed=" + managed + " legacy=" + legacy);
+        }
+
+        /// <summary>
+        /// OpenAI 的 strict structured output 明訂最多 5 層巢狀，超過會被服務端拒絕並靜默降級成
+        /// 提示式 JSON。Gemini 沒有這條限制，不該被連累，所以深度上限依方言而異。
+        /// </summary>
+        [Test]
+        public void DeepNestingIsTruncatedPerProfileDepthLimit()
+        {
+            int openAiDepth = MeasureNextChainDepth(ParseSchema(typeof(DeepChainLevel0), RimLLMSchemaProfile.OpenAI));
+            int geminiDepth = MeasureNextChainDepth(ParseSchema(typeof(DeepChainLevel0), RimLLMSchemaProfile.Gemini));
+
+            Assert.LessOrEqual(
+                openAiDepth,
+                RimLLMSchemaBuilder.OpenAIMaxSchemaDepth,
+                "OpenAI 方言的巢狀層數不得超過服務端上限。實際：" + openAiDepth);
+            Assert.LessOrEqual(
+                geminiDepth,
+                RimLLMSchemaBuilder.MaxSchemaDepth,
+                "Gemini 方言仍受整體深度上限保護。實際：" + geminiDepth);
+            Assert.Greater(
+                geminiDepth,
+                openAiDepth,
+                "Gemini 沒有 5 層限制，不應被 OpenAI 的上限連累。");
+        }
+
+        private static int MeasureNextChainDepth(JObject schema)
+        {
             int depth = 0;
             JObject current = schema;
             while (true)
@@ -330,8 +373,8 @@ namespace RimLLM_Framework.Tests
                 Assert.Less(depth, 20, "深度截斷失效，schema 無限展開。");
             }
 
-            Assert.Less(depth, 10, "超過 MaxSchemaDepth 的巢狀成員應被截斷。實際展開層數：" + depth);
             CollectionAssert.DoesNotContain(RequiredNames(current), "Next", "被截斷的成員不得留在 required。");
+            return depth;
         }
 
         // -----------------------------------------------------------------
@@ -339,15 +382,26 @@ namespace RimLLM_Framework.Tests
         // -----------------------------------------------------------------
 
         [Test]
+        [Explicit("診斷用：比較新舊管線的 schema 體積（每次結構化請求都要送出，直接反映 token 成本）")]
+        public void DumpSchemaSizeComparison()
+        {
+            foreach (Type type in SampleTypes())
+            {
+                RimLLMSchemaBuilder.ForceLegacy = false;
+                int managed = RimLLMSchemaBuilder.BuildJson(type, RimLLMSchemaProfile.OpenAI).Length;
+                RimLLMSchemaBuilder.ForceLegacy = true;
+                int legacy = RimLLMSchemaBuilder.BuildJson(type, RimLLMSchemaProfile.OpenAI).Length;
+                TestContext.WriteLine(type.Name + ": managed=" + managed + " legacy=" + legacy);
+            }
+        }
+
+        [Test]
         [Explicit("診斷用：印出 Stage A 的原始輸出")]
         public void DumpRawExporterOutput()
         {
             foreach (Type type in SampleTypes())
             {
-                var method = typeof(RimLLMSchemaBuilder).GetMethod(
-                    "ExportRaw",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-                TestContext.WriteLine(type.Name + " => " + method.Invoke(null, new object[] { type }));
+                TestContext.WriteLine(type.Name + " => " + RimLLMSchemaBuilder.ExportRaw(type).ToString(Formatting.None));
             }
         }
 
@@ -371,7 +425,12 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual(
                 "殖民者的名字",
                 schema["properties"]["Name"]["description"].Value<string>(),
-                "改走 MEAI 之後 [Description] 應能傳進 schema —— 這是舊反射實作沒有的能力。");
+                "成員層級的 [Description] 應傳進 schema —— 這是舊反射實作沒有的能力。");
+
+            Assert.AreEqual(
+                "一筆殖民者紀錄",
+                schema["description"].Value<string>(),
+                "類別層級的 [Description] 也應傳進 schema。");
         }
 
         [Test]
@@ -545,6 +604,7 @@ namespace RimLLM_Framework.Tests
             public string Label { get; set; }
         }
 
+        [System.ComponentModel.Description("一筆殖民者紀錄")]
         public class DescribedTestDataStructure
         {
             [System.ComponentModel.Description("殖民者的名字")]

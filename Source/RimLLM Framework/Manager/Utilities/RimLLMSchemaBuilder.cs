@@ -57,13 +57,13 @@ namespace RimLLM_Framework.Manager
     ///
     /// 管線分三段：
     /// <list type="number">
-    /// <item>Stage A：<c>AIJsonUtilities.CreateJsonSchema</c> 產生完整的 JSON Schema。</item>
+    /// <item>Stage A：<c>System.Text.Json.Schema.JsonSchemaExporter</c> 產生完整的 JSON Schema。</item>
     /// <item>Stage B：正規化成所有 provider 都吃得下的受限子集 —— 展開 <c>$ref</c>、截斷循環與過深巢狀、
-    /// 把可為 null 的聯集收斂成單一 <c>type</c>、只保留關鍵字白名單。</item>
+    /// 把可為 null 的聯集收斂成單一 <c>type</c>、補上 <c>[Description]</c>、只保留關鍵字白名單。</item>
     /// <item>Stage C：套用目標 provider 的方言（選填成員寫成聯集或 <c>nullable</c>）。</item>
     /// </list>
     ///
-    /// 為什麼不直接送 MEAI 的原始輸出：它把可為 null 的成員寫成 <c>"type": ["string","null"]</c>，
+    /// 為什麼不能直接送 exporter 的原始輸出：它把可為 null 的成員寫成 <c>"type": ["string","null"]</c>，
     /// 而 <c>Google.GenAI.Types.Schema.Type</c> 是單一列舉值，<c>Schema.FromJson</c> 會靜默回傳 null。
     /// 見 <c>ProviderSdkIntegrationTests.RawMeaiSchemaIsRejectedByGoogleSchemaFromJson</c>。
     /// </summary>
@@ -74,6 +74,18 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         public const int MaxSchemaDepth = 8;
 
+        /// <summary>
+        /// OpenAI 的 strict structured output 明訂 schema 最多 5 層巢狀（另有全域 100 個 property 的上限）。
+        /// 超過就會被服務端拒絕，接著被 <c>IsNativeSchemaRejected</c> 靜默降級成提示式 JSON ——
+        /// 與其送出已知會被拒的 schema，不如在此先截斷。Gemini 沒有這條限制，因此不受影響。
+        /// </summary>
+        public const int OpenAIMaxSchemaDepth = 5;
+
+        private static int ResolveMaxDepth(RimLLMSchemaProfile profile)
+        {
+            return profile == RimLLMSchemaProfile.Gemini ? MaxSchemaDepth : OpenAIMaxSchemaDepth;
+        }
+
         /// <summary>Stage B 用來標記「這個成員是 <c>Nullable&lt;T&gt;</c>」的私有關鍵字，Stage C 會翻譯並移除它。</summary>
         private const string OptionalMarker = "x-rimllm-optional";
 
@@ -83,7 +95,7 @@ namespace RimLLM_Framework.Manager
             "type", "enum", "properties", "required", "items", "additionalProperties", "description", OptionalMarker
         };
 
-        private static readonly ConcurrentDictionary<Type, JObject> CanonicalCache = new ConcurrentDictionary<Type, JObject>();
+        private static readonly ConcurrentDictionary<string, JObject> CanonicalCache = new ConcurrentDictionary<string, JObject>();
         private static readonly ConcurrentDictionary<string, RimLLMSchemaResult> ResultCache = new ConcurrentDictionary<string, RimLLMSchemaResult>();
 
         private static readonly object OptionsLock = new object();
@@ -132,7 +144,7 @@ namespace RimLLM_Framework.Manager
             }
 
             bool usedLegacyFallback;
-            JObject canonical = GetCanonical(type, out usedLegacyFallback);
+            JObject canonical = GetCanonical(type, ResolveMaxDepth(profile), out usedLegacyFallback);
             JObject shaped = ApplyProfile(canonical, profile);
 
             bool containsOpenEndedMap = HasOpenEndedMap(shaped);
@@ -174,36 +186,38 @@ namespace RimLLM_Framework.Manager
         // Stage A + B：canonical schema
         // ---------------------------------------------------------------------
 
-        private static JObject GetCanonical(Type type, out bool usedLegacyFallback)
+        private static JObject GetCanonical(Type type, int maxDepth, out bool usedLegacyFallback)
         {
+            // 深度上限依方言而異，因此必須進 cache key —— 否則 Gemini 會拿到被 OpenAI 上限截斷過的樹。
+            string cacheKey = type.AssemblyQualifiedName + "|d" + maxDepth;
             JObject cached;
-            if (CanonicalCache.TryGetValue(type, out cached))
+            if (CanonicalCache.TryGetValue(cacheKey, out cached))
             {
                 usedLegacyFallback = cached[LegacyMarker] != null;
                 return (JObject)cached.DeepClone();
             }
 
-            JObject canonical = BuildCanonical(type, out usedLegacyFallback);
+            JObject canonical = BuildCanonical(type, maxDepth, out usedLegacyFallback);
             if (usedLegacyFallback)
             {
                 canonical[LegacyMarker] = true;
             }
 
-            CanonicalCache[type] = canonical;
+            CanonicalCache[cacheKey] = canonical;
             return (JObject)canonical.DeepClone();
         }
 
         /// <summary>快取內用來記住「這份 canonical 是降級產物」的私有關鍵字，Stage C 會移除。</summary>
         private const string LegacyMarker = "x-rimllm-legacy";
 
-        private static JObject BuildCanonical(Type type, out bool usedLegacyFallback)
+        private static JObject BuildCanonical(Type type, int maxDepth, out bool usedLegacyFallback)
         {
             if (!ForceLegacy)
             {
                 try
                 {
                     JObject raw = ExportRaw(type);
-                    JObject normalized = Normalize(raw, GetTypeInfo(type), raw, new List<string>(), 0);
+                    JObject normalized = Normalize(raw, GetTypeInfo(type), new NormalizeContext(raw, maxDepth), 0);
                     usedLegacyFallback = false;
                     return normalized ?? CreateEmptyObjectSchema();
                 }
@@ -217,7 +231,7 @@ namespace RimLLM_Framework.Manager
             }
 
             usedLegacyFallback = true;
-            return BuildLegacyCanonical(type);
+            return BuildLegacyCanonical(type, maxDepth);
         }
 
         /// <summary>
@@ -249,10 +263,36 @@ namespace RimLLM_Framework.Manager
         /// 且 exporter 正是 MEAI 內部使用的同一個引擎，所以直呼它既能繞開地雷又不損失能力。
         /// MEAI 唯一多做而我們仍需要的是 <c>[Description]</c>，由 Stage B 自行讀取補上。
         /// </summary>
-        private static JObject ExportRaw(Type type)
+        internal static JObject ExportRaw(Type type)
         {
             JsonNode node = JsonSchemaExporter.GetJsonSchemaAsNode(EnsureSerializerOptions(), type);
             return JObject.Parse(node.ToJsonString());
+        }
+
+        /// <summary>
+        /// 正規化遞迴過程中的路徑狀態。
+        /// 兩份路徑刻意都用 <see cref="List{T}"/> 而非 <c>Stack&lt;T&gt;</c>：
+        /// RimWorld Mono 無法載入後者（同 <c>RimLLMJsonHelper.RepairJson</c> 的理由）。
+        /// </summary>
+        private sealed class NormalizeContext
+        {
+            public NormalizeContext(JObject rawRoot, int maxDepth)
+            {
+                RawRoot = rawRoot;
+                MaxDepth = maxDepth;
+            }
+
+            /// <summary>exporter 原始輸出的根節點，<c>$ref</c> 的 JSON pointer 以它為基準。</summary>
+            public JObject RawRoot { get; private set; }
+
+            /// <summary>本次產生適用的巢狀深度上限，依目標方言而異。</summary>
+            public int MaxDepth { get; private set; }
+
+            /// <summary>目前展開路徑上已解析過的 pointer。</summary>
+            public List<string> PointerPath { get; } = new List<string>();
+
+            /// <summary>目前展開路徑上的 CLR 物件型別，用來在型別層截斷循環。</summary>
+            public List<Type> TypePath { get; } = new List<Type>();
         }
 
         /// <summary>
@@ -261,44 +301,41 @@ namespace RimLLM_Framework.Manager
         /// 回傳 <see langword="null"/> 的語意是「這個節點無法表達，父層必須刪掉對應成員並從
         /// <c>required</c> 移除」—— 與舊實作把循環成員截斷為 null 的行為一致。
         /// </summary>
-        /// <param name="node">MEAI 原始輸出中的節點。</param>
+        /// <param name="node">exporter 原始輸出中的節點。</param>
         /// <param name="typeInfo">該節點對應的 CLR 型別資訊，可能為 null（此時退化成純 JSON 正規化）。</param>
-        /// <param name="rawRoot">MEAI 原始輸出的根節點，<c>$ref</c> 的 JSON pointer 以它為基準。</param>
-        /// <param name="refPath">目前展開路徑上已解析過的 pointer，用來偵測循環。刻意用 List 而非 Stack：
-        /// RimWorld Mono 無法載入 <c>Stack&lt;T&gt;</c>（同 <c>RimLLMJsonHelper.RepairJson</c> 的理由）。</param>
-        private static JObject Normalize(JObject node, JsonTypeInfo typeInfo, JObject rawRoot, List<string> refPath, int depth)
+        private static JObject Normalize(JObject node, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
         {
-            if (node == null || depth > MaxSchemaDepth)
+            if (node == null || depth > context.MaxDepth)
             {
                 return null;
             }
 
-            // MEAI 的 $ref 是指向樹內既有節點的 JSON pointer，而且不只用於循環，也用於去重。
-            // 例如 List<string> 第二次出現時會變成 {"$ref":"#/properties/skills"} —— 一律截斷會誤刪正常成員，
+            // exporter 的 $ref 是指向樹內既有節點的 JSON pointer，而且不只用於循環，也用於去重。
+            // 例如 List<string> 第二次出現時會變成 {"$ref":"#/properties/Skills"} —— 一律截斷會誤刪正常成員，
             // 所以必須真的解析 pointer，只在它指向目前展開路徑上的祖先時才視為循環。
             JToken refToken = node["$ref"];
             if (refToken != null && refToken.Type == JTokenType.String)
             {
                 string pointer = refToken.Value<string>();
-                if (refPath.Contains(pointer))
+                if (context.PointerPath.Contains(pointer))
                 {
                     return null;
                 }
 
-                JObject target = ResolvePointer(rawRoot, pointer);
+                JObject target = ResolvePointer(context.RawRoot, pointer);
                 if (target == null)
                 {
                     return null;
                 }
 
-                refPath.Add(pointer);
+                context.PointerPath.Add(pointer);
                 try
                 {
-                    return Normalize(target, typeInfo, rawRoot, refPath, depth);
+                    return Normalize(target, typeInfo, context, depth);
                 }
                 finally
                 {
-                    refPath.RemoveAt(refPath.Count - 1);
+                    context.PointerPath.RemoveAt(context.PointerPath.Count - 1);
                 }
             }
 
@@ -328,8 +365,7 @@ namespace RimLLM_Framework.Manager
                 JObject itemSchema = Normalize(
                     collapsed["items"] as JObject,
                     typeInfo != null ? GetTypeInfo(typeInfo.ElementType) : null,
-                    rawRoot,
-                    refPath,
+                    context,
                     depth + 1);
 
                 // 陣列的元素無法表達時，整個陣列成員一併捨棄（與舊實作一致）。
@@ -340,7 +376,7 @@ namespace RimLLM_Framework.Manager
 
             if (typeName == "object")
             {
-                return NormalizeObject(collapsed, result, typeInfo, rawRoot, refPath, depth);
+                return NormalizeObject(collapsed, result, typeInfo, context, depth);
             }
 
             JArray enumValues = collapsed["enum"] as JArray;
@@ -353,7 +389,7 @@ namespace RimLLM_Framework.Manager
         }
 
         private static JObject NormalizeObject(
-            JObject node, JObject result, JsonTypeInfo typeInfo, JObject rawRoot, List<string> refPath, int depth)
+            JObject node, JObject result, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
         {
             // Dictionary 會產生開放式 map（additionalProperties 是一份 value schema）；
             // 自訂類別則沒有 additionalProperties，由我們補上 false。
@@ -363,8 +399,7 @@ namespace RimLLM_Framework.Manager
                 JObject normalizedValue = Normalize(
                     valueSchema,
                     typeInfo != null ? GetTypeInfo(typeInfo.ElementType) : null,
-                    rawRoot,
-                    refPath,
+                    context,
                     depth + 1);
 
                 if (normalizedValue != null)
@@ -375,46 +410,68 @@ namespace RimLLM_Framework.Manager
                 return result;
             }
 
-            var properties = new JObject();
-            var required = new JArray();
-            JObject rawProperties = node["properties"] as JObject;
-
-            if (rawProperties != null)
+            // 循環在 CLR 型別層截斷，而不是等到 JSON pointer 重現才截斷。
+            // exporter 會把遞迴成員先完整展開一輪、其中才出現指回祖先的 $ref，
+            // 若只靠 pointer 偵測就會多送一整層 —— 實測 ComplexTestDataStructure 的 schema
+            // 從 789 字元漲到 3119 字元，而那是每次結構化請求都要付的 prompt token。
+            Type clrType = typeInfo != null ? typeInfo.Type : null;
+            if (clrType != null)
             {
-                Dictionary<string, JsonPropertyInfo> memberLookup = BuildMemberLookup(typeInfo);
-
-                foreach (KeyValuePair<string, JToken> property in rawProperties)
-                {
-                    JsonPropertyInfo memberInfo;
-                    memberLookup.TryGetValue(property.Key, out memberInfo);
-
-                    JObject memberSchema = Normalize(
-                        property.Value as JObject,
-                        memberInfo != null ? GetTypeInfo(memberInfo.PropertyType) : null,
-                        rawRoot,
-                        refPath,
-                        depth + 1);
-
-                    if (memberSchema == null) continue;
-
-                    ApplyMemberDescription(memberSchema, memberInfo);
-
-                    // 專案未啟用 NRT，所以 exporter 會把所有參考型別都寫成可為 null 的聯集。
-                    // 只有 Nullable<T> 才是真正的選填成員 —— 與舊實作的 IsOptionalMember 判定一致。
-                    if (memberInfo != null && Nullable.GetUnderlyingType(memberInfo.PropertyType) != null)
-                    {
-                        memberSchema[OptionalMarker] = true;
-                    }
-
-                    properties[property.Key] = memberSchema;
-                    required.Add(property.Key);
-                }
+                if (context.TypePath.Contains(clrType)) return null;
+                context.TypePath.Add(clrType);
             }
 
-            result["properties"] = properties;
-            result["required"] = required;
-            result["additionalProperties"] = false;
-            return result;
+            try
+            {
+                ApplyDescription(result, clrType);
+
+                var properties = new JObject();
+                var required = new JArray();
+                JObject rawProperties = node["properties"] as JObject;
+
+                if (rawProperties != null)
+                {
+                    Dictionary<string, JsonPropertyInfo> memberLookup = BuildMemberLookup(typeInfo);
+
+                    foreach (KeyValuePair<string, JToken> property in rawProperties)
+                    {
+                        JsonPropertyInfo memberInfo;
+                        memberLookup.TryGetValue(property.Key, out memberInfo);
+
+                        JObject memberSchema = Normalize(
+                            property.Value as JObject,
+                            memberInfo != null ? GetTypeInfo(memberInfo.PropertyType) : null,
+                            context,
+                            depth + 1);
+
+                        if (memberSchema == null) continue;
+
+                        ApplyMemberDescription(memberSchema, memberInfo);
+
+                        // 專案未啟用 NRT，所以 exporter 會把所有參考型別都寫成可為 null 的聯集。
+                        // 只有 Nullable<T> 才是真正的選填成員 —— 與舊實作的判定一致。
+                        if (memberInfo != null && Nullable.GetUnderlyingType(memberInfo.PropertyType) != null)
+                        {
+                            memberSchema[OptionalMarker] = true;
+                        }
+
+                        properties[property.Key] = memberSchema;
+                        required.Add(property.Key);
+                    }
+                }
+
+                result["properties"] = properties;
+                result["required"] = required;
+                result["additionalProperties"] = false;
+                return result;
+            }
+            finally
+            {
+                if (clrType != null)
+                {
+                    context.TypePath.RemoveAt(context.TypePath.Count - 1);
+                }
+            }
         }
 
         /// <summary>
@@ -427,18 +484,22 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private static void ApplyMemberDescription(JObject memberSchema, JsonPropertyInfo memberInfo)
         {
-            if (memberSchema["description"] != null) return;
+            ApplyDescription(memberSchema, memberInfo?.AttributeProvider as MemberInfo);
+        }
 
-            var member = memberInfo?.AttributeProvider as MemberInfo;
-            if (member == null) return;
+        /// <summary>成員層級與類別層級的 <see cref="DescriptionAttribute"/> 共用同一套讀取邏輯。</summary>
+        private static void ApplyDescription(JObject schema, MemberInfo attributeSource)
+        {
+            if (schema == null || attributeSource == null) return;
+            if (schema["description"] != null) return;
 
-            object[] attributes = member.GetCustomAttributes(typeof(DescriptionAttribute), true);
+            object[] attributes = attributeSource.GetCustomAttributes(typeof(DescriptionAttribute), true);
             if (attributes.Length == 0) return;
 
             string description = ((DescriptionAttribute)attributes[0]).Description;
             if (!string.IsNullOrEmpty(description))
             {
-                memberSchema["description"] = description;
+                schema["description"] = description;
             }
         }
 
@@ -783,18 +844,18 @@ namespace RimLLM_Framework.Manager
         /// <c>Nullable&lt;T&gt;</c> 成員是以「不列入 required」表達，而不是 <see cref="OptionalMarker"/>。
         /// 因此 Stage C 對它等同 no-op，而 <c>StrictCompatible</c> 會被強制為 false。
         /// </summary>
-        private static JObject BuildLegacyCanonical(Type type)
+        private static JObject BuildLegacyCanonical(Type type, int maxDepth)
         {
-            return BuildLegacySchema(type, new HashSet<Type>(), 0) ?? CreateEmptyObjectSchema();
+            return BuildLegacySchema(type, new HashSet<Type>(), maxDepth, 0) ?? CreateEmptyObjectSchema();
         }
 
         /// <summary>
         /// <paramref name="visited"/> 追蹤目前遞迴路徑上的型別，偵測到循環時回傳 null，
         /// 由父層略過該成員（與 <c>CreateDummyInstance</c> 把循環欄位截斷為 null 的行為一致）。
         /// </summary>
-        private static JObject BuildLegacySchema(Type type, HashSet<Type> visited, int depth)
+        private static JObject BuildLegacySchema(Type type, HashSet<Type> visited, int maxDepth, int depth)
         {
-            if (type == null || depth > MaxSchemaDepth)
+            if (type == null || depth > maxDepth)
             {
                 return null;
             }
@@ -803,7 +864,7 @@ namespace RimLLM_Framework.Manager
             Type underlyingType = Nullable.GetUnderlyingType(type);
             if (underlyingType != null)
             {
-                return BuildLegacySchema(underlyingType, visited, depth);
+                return BuildLegacySchema(underlyingType, visited, maxDepth, depth);
             }
 
             var schema = new JObject();
@@ -844,7 +905,7 @@ namespace RimLLM_Framework.Manager
                 // JSON 物件的鍵一律是字串，因此只有 string 或 enum 鍵能忠實表示成 map。
                 if (keyType == typeof(string) || keyType.IsEnum)
                 {
-                    JObject valueSchema = BuildLegacySchema(valueType, visited, depth + 1);
+                    JObject valueSchema = BuildLegacySchema(valueType, visited, maxDepth, depth + 1);
                     if (valueSchema != null)
                     {
                         schema["additionalProperties"] = valueSchema;
@@ -854,7 +915,7 @@ namespace RimLLM_Framework.Manager
             else if (GetSequenceElementType(type) != null)
             {
                 schema["type"] = "array";
-                JObject itemSchema = BuildLegacySchema(GetSequenceElementType(type), visited, depth + 1);
+                JObject itemSchema = BuildLegacySchema(GetSequenceElementType(type), visited, maxDepth, depth + 1);
                 if (itemSchema == null) return null;
                 schema["items"] = itemSchema;
             }
@@ -876,7 +937,7 @@ namespace RimLLM_Framework.Manager
                     {
                         if (prop.CanRead && prop.CanWrite && prop.GetIndexParameters().Length == 0)
                         {
-                            JObject propSchema = BuildLegacySchema(prop.PropertyType, visited, depth + 1);
+                            JObject propSchema = BuildLegacySchema(prop.PropertyType, visited, maxDepth, depth + 1);
                             if (propSchema == null) continue;
 
                             properties[prop.Name] = propSchema;
@@ -891,7 +952,7 @@ namespace RimLLM_Framework.Manager
                     {
                         if (!field.IsLiteral && !field.IsInitOnly)
                         {
-                            JObject fieldSchema = BuildLegacySchema(field.FieldType, visited, depth + 1);
+                            JObject fieldSchema = BuildLegacySchema(field.FieldType, visited, maxDepth, depth + 1);
                             if (fieldSchema == null) continue;
 
                             properties[field.Name] = fieldSchema;

@@ -395,7 +395,7 @@ namespace RimLLM_Framework.Manager
                 }
 
                 object memberValue = property.GetValue(value, null);
-                if (memberValue == null && IsNullableReferenceOrNullableValue(property.PropertyType))
+                if (memberValue == null && IsRequiredMember(property.PropertyType))
                 {
                     throw new InvalidOperationException($"Required structured response member '{property.Name}' is null.");
                 }
@@ -413,7 +413,7 @@ namespace RimLLM_Framework.Manager
                 }
 
                 object memberValue = field.GetValue(value);
-                if (memberValue == null && IsNullableReferenceOrNullableValue(field.FieldType))
+                if (memberValue == null && IsRequiredMember(field.FieldType))
                 {
                     throw new InvalidOperationException($"Required structured response member '{field.Name}' is null.");
                 }
@@ -424,9 +424,17 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private static bool IsNullableReferenceOrNullableValue(Type type)
+        /// <summary>
+        /// 成員是否為必填。與 schema 的判定一致：只有 <c>Nullable&lt;T&gt;</c> 算選填。
+        ///
+        /// 這裡原本的判斷式是反的（<c>!type.IsValueType || Nullable.GetUnderlyingType(type) != null</c>），
+        /// 也就是「值為 null 且型別**允許** null」時才拋 —— 只會對合法可為 null 的成員開火，
+        /// 而非可空實值型別反序列化後永遠不可能是 null，其他情況根本不會觸發。
+        /// 結果是模型照 schema 合法回傳 null 時被判定失敗，白白走一次靜態修復加一次付費的 double-repair。
+        /// </summary>
+        private static bool IsRequiredMember(Type type)
         {
-            return !type.IsValueType || Nullable.GetUnderlyingType(type) != null;
+            return Nullable.GetUnderlyingType(type) == null;
         }
 
         /// <summary>
