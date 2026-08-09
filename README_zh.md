@@ -72,188 +72,175 @@
 
 ## 💻 SDK 使用方式
 
-### 1. 引入命名空間
+**如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.8.3)，你就已經會用這套 API。**
+
+RimLLM Framework 的全部工作，就是交給你一個標準的 MEAI `IChatClient`。從那一行之後全是純 Microsoft.Extensions.AI —— 與你對 [`Microsoft.Extensions.AI.OpenAI`](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.8.3)、Ollama 或任何其他 provider 套件所寫的呼叫完全相同。
+
+### 只有一行不一樣
+
+```csharp
+// Microsoft.Extensions.AI.OpenAI —— 由你提供模型與 API 金鑰
+IChatClient client =
+    new OpenAI.Chat.ChatClient("gpt-4o-mini", Environment.GetEnvironmentVariable("OPENAI_API_KEY"))
+    .AsIChatClient();
+
+// RimLLM Framework —— 由玩家在模組設定中提供供應商、模型、金鑰與 Fallback 鏈
+IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
+```
+
+`"myai.mod"` 只是一個標籤，用於各 Mod 的節流與用量歸屬。你這邊不需要註冊呼叫，也不需要處理任何金鑰。
+
+### 對話
 
 ```csharp
 using Microsoft.Extensions.AI;
 using RimLLM_Framework;
+
+IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
+
+Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 ```
 
-`RimLLM_Framework` 提供 13 個公開型別，分三層。多數 Mod 只會碰到第一層的四個：
-
-| 分層 | 型別 | 用途 |
-|---|---|---|
-| **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError` | 靜態進入點，加上框架專屬選項與錯誤契約。`RimLLMClientExtensions` 以擴充方法的形式在 `IChatClient` 上補了 `GetResponseObjectAsync<T>`。 |
-| **提供供應商** | `IChatClientProvider`、`IChatOptionsCustomizer`、`INativeStructuredOutputProvider`、`LLMProviderCapabilities`、`IRimLLMSettings` | 只有要用 `RimLLMProvider.RegisterProvider` 註冊自己的 LLM 後端時才需要（`ILLMProvider` 介面本身在 `RimLLM_Framework.Providers`）。 |
-| **診斷** | `TestResult`、`ProviderIds`、`LLMErrorMapper` | 連線測試、內建供應商 ID 常數，以及共用的 HTTP 狀態碼 → `LLMError` 對照。 |
-
-其餘的 `IChatClient`、`ChatMessage`、`ChatResponse`、`ChatResponseUpdate`、`IEmbeddingGenerator` 全部來自 `Microsoft.Extensions.AI`。具體的 client 類別是 `internal`，所以沒有任何 RimLLM 的 client 型別需要你去對接。
-
-### 2. 文字生成
-
-`RimLLMProvider.CreateChatClient` 回傳標準的 MEAI `IChatClient`，框架的 Fallback 鏈、請求佇列、防濫用檢查與用量統計會自動套用。不需要註冊步驟 —— 傳入的 `modId` 只是一個標籤，用於每個 Mod 的節流與遙測歸屬：
+改用訊息清單與選項 —— 依然是純 MEAI：
 
 ```csharp
-public async void AskSomething()
+var messages = new List<ChatMessage>
 {
-    try
-    {
-        // 取得綁定你這個 Mod 的 IChatClient。任何非空字串都可以，取一個獨特的即可。
-        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
+    new ChatMessage(ChatRole.System, "你是一個冷酷、隨機且難以預測的說書人。"),
+    new ChatMessage(ChatRole.User, "用隨機蘭迪的口吻向玩家打招呼。")
+};
 
-        var messages = new List<ChatMessage>
-        {
-            new ChatMessage(ChatRole.System, "你是一個冷酷、隨機且難以預測的說書人。"),
-            new ChatMessage(ChatRole.User, "用 RimWorld 隨機蘭迪的口吻向玩家打招呼。")
-        };
+ChatResponse response = await client.GetResponseAsync(
+    messages,
+    new ChatOptions { Temperature = 0.7f, MaxOutputTokens = 150 });
+```
 
-        // 未指定 ModelId 時，會使用玩家設定的 Fallback 鏈
-        ChatResponse response = await chat.GetResponseAsync(messages);
-        Log.Message($"[RandySays] {response.Text}");
-    }
-    catch (RimLLMException ex)
-    {
-        Log.Error($"[MyAIMod] 生成失敗，錯誤碼：{ex.Error}，訊息：{ex.Message}");
-    }
+不設定 `ModelId` 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定。
+
+### 串流
+
+```csharp
+await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync("寫一段殖民地廣播稿。"))
+{
+    // 已派送回 Unity 主執行緒，可安全操作 UI
+    MyGameUI.AppendText(update.Text);
 }
 ```
 
-要調整優先權或傳入進階設定時，使用 `RimLLMChatOptions`：
+整條 Fallback 鏈都失敗時，原始的 `RimLLMException` 會從 `await foreach` 重新擲出，失敗的串流不會靜默結束。
+
+### 結構化輸出
+
+`GetResponseObjectAsync<T>` 是掛在 `IChatClient` 上的擴充方法。它會產生 JSON Schema、修復格式錯誤的輸出，並反序列化給你：
 
 ```csharp
-ChatResponse response = await chat.GetResponseAsync(
-    messages,
-    new RimLLMChatOptions
+public class PawnIncidentDecision
+{
+    public string EventType;       // "Good" 或 "Bad"
+    public string IncidentDefName; // 例如 "RaidEnemy"
+    public float Probability;
+}
+
+PawnIncidentDecision decision = await client.GetResponseObjectAsync<PawnIncidentDecision>(
+    new List<ChatMessage>
     {
-        Priority = 5,
-        Temperature = 0.7f,
-        MaxOutputTokens = 150
+        new ChatMessage(ChatRole.User, "決定下一個事件類型與 DefName。")
     });
 ```
 
-### 3. 結構化輸出
-
-定義你的 C# 資料類別，然後使用 `GetResponseObjectAsync<T>` 擴充方法：
-
-```csharp
-// 1. 定義期望的輸出結構
-public class PawnIncidentDecision
-{
-    public string EventType; // "Good" 或 "Bad"
-    public string IncidentDefName; // 例如 "RaidEnemy"
-    public float Probability;
-    public string RandyReasoning; // 說書人的思路
-}
-
-public async void MakeIncidentDecision()
-{
-    try
-    {
-        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
-
-        // 框架會產生 JSON Schema、送出請求、
-        // 修復格式錯誤的回應，並反序列化為目標物件
-        PawnIncidentDecision decision = await chat.GetResponseObjectAsync<PawnIncidentDecision>(
-            new List<ChatMessage>
-            {
-                new ChatMessage(ChatRole.System, "你是一個專注於製造戲劇衝突的決策引擎。"),
-                new ChatMessage(ChatRole.User, "分析殖民地現況，決定下一個事件類型與 DefName。")
-            });
-
-        Log.Message($"蘭迪選擇的事件：{decision.IncidentDefName}（{decision.RandyReasoning}）");
-    }
-    catch (RimLLMException ex)
-    {
-        Log.Error($"結構化決策生成失敗：{ex.Message}");
-    }
-}
-```
-
-### 4. 串流
-
-使用標準的 MEAI `GetStreamingResponseAsync` 迭代 `ChatResponseUpdate` 串流：
-
-```csharp
-public async void StreamResponse()
-{
-    try
-    {
-        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
-
-        var updates = chat.GetStreamingResponseAsync(
-            new List<ChatMessage>
-            {
-                new ChatMessage(ChatRole.User, "寫一段殖民地廣播稿。")
-            });
-
-        await foreach (ChatResponseUpdate update in updates)
-        {
-            if (!string.IsNullOrEmpty(update.Text))
-            {
-                // 可安全更新 UI（更新已派送回 Unity 主執行緒）
-                MyGameUI.AppendText(update.Text);
-            }
-        }
-    }
-    catch (RimLLMException ex)
-    {
-        Log.Error($"串流生成失敗：{ex.Message}");
-    }
-}
-```
-
-> 整條 Fallback 鏈都失敗時，原始的 `RimLLMException` 會從 `await foreach` 重新擲出，
-> 上面的 `catch` 必定會收到錯誤 —— 失敗的串流不會靜默結束。chunk 一產生就送出，中間沒有輪詢延遲。
-
-### 5. 上下文快取以節省 Token
-
-如果你的 Mod 有很大、穩定、且**在短時間內重複使用**的上下文（世界觀規則、固定角色背景、輸出 Schema 等），而且呼叫頻率高，可以透過 `RimLLMChatOptions.CachedContext` 啟用**上下文快取**：
-
-```csharp
-public async void CallWithCaching()
-{
-    IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
-
-    var options = new RimLLMChatOptions
-    {
-        // 大型、穩定、可重複使用的資料（規則書／Schema／固定設定）
-        CachedContext = BuildAnalysisRulesAndOutputSchema()
-    };
-
-    var messages = new List<ChatMessage>
-    {
-        new ChatMessage(ChatRole.System, "你是 RimWorld 心理分析師。"),
-        new ChatMessage(ChatRole.User, "根據以下殖民地狀態，分析每個成員的心理健康：" + BuildColonySnapshot())
-    };
-
-    ChatResponse response = await chat.GetResponseAsync(messages, options);
-    Log.Message(response.Text);
-}
-```
-
 > [!NOTE]
-> 只要 `CachedContext` 不為空，`EnableContextCaching` 就會自動設為 `true`。
-> **Gemini** 會快取 `SystemPrompt + CachedContext`（TTL 300 秒）。內容太小時（Pro 少於 2048 字元、其他模型少於 1024 字元），框架會退回一般的 `systemInstruction`，避免付了建立費卻沒有效益。
-> **OpenAI** 會在服務端自動對重複前綴套用 prompt caching。
+> 請用這個而不是 MEAI 自己的 `GetResponseAsync<T>`。MEAI 以 `AIJsonUtilities.CreateJsonSchema` 產生 schema，其輸出會被 Google Gemini 拒絕，而且它沒有 JSON 修復路徑。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
 
-### 6. Embedding 向量
+### Embedding 向量
 
-使用 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準的 `IEmbeddingGenerator<string, Embedding<float>>`：
+同樣是標準的 MEAI 介面：
 
 ```csharp
-public async void GenerateVector()
+IEmbeddingGenerator<string, Embedding<float>> generator =
+    RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
+
+GeneratedEmbeddings<Embedding<float>> result =
+    await generator.GenerateAsync(new[] { "殖民者精神崩潰" });
+
+ReadOnlyMemory<float> vector = result[0].Vector;
+```
+
+Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出例外。若需要完全不必 API 的替代方案，可用獨立的 Trigram 工具 —— 它是單純的字串相似度函式，不受供應商設定影響：
+
+```csharp
+float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity(
+    "殖民者精神崩潰", "小人情緒失控了");
+```
+
+### 錯誤處理
+
+所有失敗都以 `RimLLMException` 呈現，並帶有與供應商無關的 `LLMError` 代碼：
+
+```csharp
+try
 {
-    var generator = RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
-    GeneratedEmbeddings<Embedding<float>> result = await generator.GenerateAsync(new[] { "殖民者精神崩潰" });
-    ReadOnlyMemory<float> vector = result[0].Vector;
+    ChatResponse response = await client.GetResponseAsync(messages);
+}
+catch (RimLLMException ex) when (ex.Error == LLMError.QuotaExceeded)
+{
+    Messages.Message("API 額度已用盡。", MessageTypeDefOf.RejectInput, false);
+}
+catch (RimLLMException ex)
+{
+    Log.Error($"[MyAIMod] {ex.Error}：{ex.Message}");
 }
 ```
 
-Embedding 供應商預設為**停用**；玩家在設定中選擇供應商之前，`GenerateAsync` 會擲出 `RimLLMException`。若你需要一個完全不必 API 的替代方案，可使用獨立的 Trigram 工具 —— 它是單純的字串相似度函式，不受 Embedding 供應商設定影響：
+`LLMError` 的值：`Timeout`、`RateLimit`、`InvalidKey`、`ProviderOffline`、`InvalidResponse`、`NetworkError`、`ModelNotFound`、`ContentFilter`、`QuotaExceeded`、`Cancelled`、`Unknown`。
+
+### 唯一多出來的型別：`RimLLMChatOptions`
+
+一般旋鈕用 `ChatOptions` 就夠了。只有在你需要 MEAI 沒有對應概念的功能時，才改用 `RimLLMChatOptions` —— 其餘設定的行為完全不變：
 
 ```csharp
-float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity("殖民者精神崩潰", "小人情緒失控了");
+var options = new RimLLMChatOptions
+{
+    Temperature = 0.7f,          // 這是原本的 ChatOptions
+    Priority = 5,                // 數值越高，在全域請求佇列中越先執行
+    CachedContext = worldRules,  // 大型可重用前綴，啟用供應商端的上下文快取
+    MinFallbackLevel = "Medium", // 降級不得低於此模型等級
+    DisableReasoning = true      // 對支援推理的模型關閉思考
+};
+
+ChatResponse response = await client.GetResponseAsync(messages, options);
 ```
+
+`CachedContext` 不為空時，`EnableContextCaching` 會自動開啟。Gemini 會快取 `SystemPrompt + CachedContext`（TTL 300 秒），內容太小而不值得付建立費時則退回一般的 `systemInstruction`；OpenAI 則在服務端自動對重複前綴套用 prompt caching。
+
+### 你不必自己寫的部分
+
+這才是這個框架存在的意義。以下全部已經在那一個 `IChatClient` 後面完成：
+
+| 你可以省略 | 因為框架已經做了 |
+|---|---|
+| API 金鑰的儲存與 UI | AES-256 加密設定，所有 Mod 共用同一份 |
+| 挑選供應商或模型 | 玩家設定的 Fallback 鏈，項目為 `Provider:Model` 形式 |
+| 重試與 `Retry-After` | 逾時／429／連線錯誤自動重試，兩種標頭格式都支援 |
+| 供應商之間的容錯切換 | 自動沿 Fallback 鏈降級，串流中途也能接手 |
+| 處理掛掉的供應商 | 熔斷器，連續失敗後以指數退避冷卻 |
+| 跨 Mod 的流量控制 | 全域優先佇列與並行上限，避免多個 Mod 同時打 API 造成掉幀 |
+| 費用控管 | 每日預算，可選硬性阻擋／模擬回應／改用免費模型／詢問玩家 |
+| 用量與費用回報 | Debug 分頁的各供應商 Token 與成本看板 |
+| 推理模型的差異 | `reasoning_content` 與 Gemini 的 `thought` 統一正規化為 `<think>...</think>` |
+| 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，並具備 LLM 輔助的二次修復 |
+| 主執行緒切換 | 串流 chunk 與日誌寫入都已派送回 Unity 主執行緒 |
+
+### API 表面速查
+
+`using RimLLM_Framework;` 會引入 13 個公開型別。多數 Mod 只會碰到第一列：
+
+| 分層 | 型別 | 什麼時候需要 |
+|---|---|---|
+| **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError`、`RimLLMClientExtensions` | 一定會用到 —— 這就是全部的使用端 API |
+| **提供供應商** | `IChatClientProvider`、`IChatOptionsCustomizer`、`INativeStructuredOutputProvider`、`LLMProviderCapabilities`、`IRimLLMSettings` | 只有要用 `RimLLMProvider.RegisterProvider` 註冊自己的 LLM 後端時（`ILLMProvider` 在 `RimLLM_Framework.Providers`） |
+| **診斷** | `TestResult`、`ProviderIds`、`LLMErrorMapper` | 連線測試、內建供應商 ID 常數、HTTP 狀態碼對照 |
+
+其餘的 `IChatClient`、`ChatMessage`、`ChatResponse`、`ChatResponseUpdate`、`IEmbeddingGenerator` 全都是 `Microsoft.Extensions.AI`。具體的 client 類別刻意設為 `internal`，所以沒有任何 RimLLM 的 client 型別需要你對接。
 
 ---
 

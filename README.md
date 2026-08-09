@@ -73,189 +73,175 @@ Declare the dependency in your mod's `About/About.xml` so the framework initiali
 
 ## 💻 SDK Usage
 
-### 1. Import the namespaces
+**If you already know [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.8.3), you already know this API.**
+
+RimLLM Framework's entire job is to hand you a standard MEAI `IChatClient`. Every line after that is plain Microsoft.Extensions.AI — exactly the same calls you would write against [`Microsoft.Extensions.AI.OpenAI`](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.8.3), Ollama, or any other provider package.
+
+### Only one line differs
+
+```csharp
+// Microsoft.Extensions.AI.OpenAI — you supply the model and the API key
+IChatClient client =
+    new OpenAI.Chat.ChatClient("gpt-4o-mini", Environment.GetEnvironmentVariable("OPENAI_API_KEY"))
+    .AsIChatClient();
+
+// RimLLM Framework — the player supplies the provider, model, key and fallback chain in the mod settings
+IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
+```
+
+`"myai.mod"` is just a label used for per-mod throttling and usage attribution. There is no registration call and no key handling on your side.
+
+### Chat
 
 ```csharp
 using Microsoft.Extensions.AI;
 using RimLLM_Framework;
+
+IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
+
+Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 ```
 
-`RimLLM_Framework` exposes 13 public types, in three tiers. Most mods only ever touch the first four:
-
-| Tier | Types | What for |
-|---|---|---|
-| **Consuming a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError` | The static entry point plus the framework-specific options and error contract. `RimLLMClientExtensions` adds `GetResponseObjectAsync<T>` as an extension on `IChatClient`. |
-| **Supplying a provider** | `IChatClientProvider`, `IChatOptionsCustomizer`, `INativeStructuredOutputProvider`, `LLMProviderCapabilities`, `IRimLLMSettings` | Only if you register your own LLM backend via `RimLLMProvider.RegisterProvider` (the `ILLMProvider` interface itself lives in `RimLLM_Framework.Providers`). |
-| **Diagnostics** | `TestResult`, `ProviderIds`, `LLMErrorMapper` | Connection tests, built-in provider id constants, and the shared HTTP-status → `LLMError` mapper. |
-
-Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseUpdate`, `IEmbeddingGenerator` — comes from `Microsoft.Extensions.AI`. The concrete client classes are `internal`, so there is no RimLLM client type to program against.
-
-### 2. Text generation
-
-`RimLLMProvider.CreateChatClient` returns a standard MEAI `IChatClient`. The framework's fallback chain, request queue, anti-abuse checks and usage tracking are all applied automatically. No registration step is required — the `modId` you pass is just a label used for per-mod throttling and telemetry attribution:
+With a message list and options — still plain MEAI:
 
 ```csharp
-public async void AskSomething()
+var messages = new List<ChatMessage>
 {
-    try
-    {
-        // Get an IChatClient bound to your mod. Any non-empty id works; use something unique.
-        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
+    new ChatMessage(ChatRole.System, "You are a cold, random and unpredictable storyteller."),
+    new ChatMessage(ChatRole.User, "Greet the player in the voice of Randy Random.")
+};
 
-        var messages = new List<ChatMessage>
-        {
-            new ChatMessage(ChatRole.System, "You are a cold, random and unpredictable storyteller."),
-            new ChatMessage(ChatRole.User, "Greet the player in the voice of Randy Random from RimWorld.")
-        };
+ChatResponse response = await client.GetResponseAsync(
+    messages,
+    new ChatOptions { Temperature = 0.7f, MaxOutputTokens = 150 });
+```
 
-        // When no ModelId is specified, the player-configured fallback chain is used
-        ChatResponse response = await chat.GetResponseAsync(messages);
-        Log.Message($"[RandySays] {response.Text}");
-    }
-    catch (RimLLMException ex)
-    {
-        Log.Error($"[MyAIMod] Generation failed, error code: {ex.Error}, message: {ex.Message}");
-    }
+Leave `ModelId` unset and the player's configured fallback chain decides which provider and model actually runs.
+
+### Chat streaming
+
+```csharp
+await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync("Write a colony radio broadcast."))
+{
+    // Already dispatched onto the Unity main thread — safe to touch the UI
+    MyGameUI.AppendText(update.Text);
 }
 ```
 
-To adjust priority or pass advanced configuration, use `RimLLMChatOptions`:
+If the whole fallback chain fails, the original `RimLLMException` is rethrown from `await foreach`, so a failing stream never ends silently.
+
+### Structured output
+
+`GetResponseObjectAsync<T>` is an extension on `IChatClient`. It generates the JSON Schema, repairs malformed output, and deserializes for you:
 
 ```csharp
-ChatResponse response = await chat.GetResponseAsync(
-    messages,
-    new RimLLMChatOptions
+public class PawnIncidentDecision
+{
+    public string EventType;       // "Good" or "Bad"
+    public string IncidentDefName; // e.g. "RaidEnemy"
+    public float Probability;
+}
+
+PawnIncidentDecision decision = await client.GetResponseObjectAsync<PawnIncidentDecision>(
+    new List<ChatMessage>
     {
-        Priority = 5,
-        Temperature = 0.7f,
-        MaxOutputTokens = 150
+        new ChatMessage(ChatRole.User, "Decide the next incident type and DefName.")
     });
 ```
 
-### 3. Structured output
-
-Define your C# data class and use the `GetResponseObjectAsync<T>` extension method:
-
-```csharp
-// 1. Define the expected output structure
-public class PawnIncidentDecision
-{
-    public string EventType; // "Good" or "Bad"
-    public string IncidentDefName; // e.g. "RaidEnemy"
-    public float Probability;
-    public string RandyReasoning; // The storyteller's train of thought
-}
-
-public async void MakeIncidentDecision()
-{
-    try
-    {
-        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
-
-        // The framework generates the JSON Schema, sends the request,
-        // repairs malformed responses and deserializes into the target object
-        PawnIncidentDecision decision = await chat.GetResponseObjectAsync<PawnIncidentDecision>(
-            new List<ChatMessage>
-            {
-                new ChatMessage(ChatRole.System, "You are a decision engine focused on creating dramatic conflict."),
-                new ChatMessage(ChatRole.User, "Analyse the colony's current state and decide the next incident type and DefName.")
-            });
-
-        Log.Message($"Randy chose incident: {decision.IncidentDefName} ({decision.RandyReasoning})");
-    }
-    catch (RimLLMException ex)
-    {
-        Log.Error($"Structured decision generation failed: {ex.Message}");
-    }
-}
-```
-
-### 4. Streaming
-
-Use the standard MEAI `GetStreamingResponseAsync` to iterate over the `ChatResponseUpdate` stream:
-
-```csharp
-public async void StreamResponse()
-{
-    try
-    {
-        IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
-
-        var updates = chat.GetStreamingResponseAsync(
-            new List<ChatMessage>
-            {
-                new ChatMessage(ChatRole.User, "Write a colony radio broadcast.")
-            });
-
-        await foreach (ChatResponseUpdate update in updates)
-        {
-            if (!string.IsNullOrEmpty(update.Text))
-            {
-                // Safe to update the UI (updates are dispatched on the Unity main thread)
-                MyGameUI.AppendText(update.Text);
-            }
-        }
-    }
-    catch (RimLLMException ex)
-    {
-        Log.Error($"Streaming generation failed: {ex.Message}");
-    }
-}
-```
-
-> When the entire fallback chain fails, the original `RimLLMException` is rethrown from `await foreach`, so the
-> `catch` above is guaranteed to receive the error — a failing stream never ends silently. Chunks are emitted as
-> soon as they are produced, with no polling delay in between.
-
-### 5. Context caching to save tokens
-
-If your mod has a very large, stable context that is **reused within a short time window** (world-building rules, fixed character backgrounds, output schemas, and so on) and you call the API frequently, you can enable **context caching** via `RimLLMChatOptions.CachedContext`:
-
-```csharp
-public async void CallWithCaching()
-{
-    IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
-
-    var options = new RimLLMChatOptions
-    {
-        // Large, stable, reusable data (rulebook / schema / fixed configuration)
-        CachedContext = BuildAnalysisRulesAndOutputSchema()
-    };
-
-    var messages = new List<ChatMessage>
-    {
-        new ChatMessage(ChatRole.System, "You are a RimWorld psychological analyst."),
-        new ChatMessage(ChatRole.User, "Given the colony state below, analyse each member's mental health: " + BuildColonySnapshot())
-    };
-
-    ChatResponse response = await chat.GetResponseAsync(messages, options);
-    Log.Message(response.Text);
-}
-```
-
 > [!NOTE]
-> `EnableContextCaching` is set to `true` automatically whenever `CachedContext` is non-empty.
-> **Gemini** caches `SystemPrompt + CachedContext` (TTL 300s). When the content is too small (< 2048 characters for Pro, < 1024 for other models), the framework falls back to a normal `systemInstruction` to avoid paying the cache creation fee for no benefit.
-> **OpenAI** applies prompt caching to repeated prefixes automatically on the service side.
+> Use this rather than MEAI's own `GetResponseAsync<T>`. MEAI builds its schema with `AIJsonUtilities.CreateJsonSchema`, whose output is rejected by Google Gemini, and it has no JSON-repair path. See [Architecture §6](#6-official-sdks-and-provider-responsibilities).
 
-### 6. Embeddings
+### Embeddings
 
-Use `RimLLMProvider.CreateEmbeddingGenerator` to obtain a standard `IEmbeddingGenerator<string, Embedding<float>>`:
+Also a standard MEAI interface:
 
 ```csharp
-public async void GenerateVector()
+IEmbeddingGenerator<string, Embedding<float>> generator =
+    RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
+
+GeneratedEmbeddings<Embedding<float>> result =
+    await generator.GenerateAsync(new[] { "colonist mental break" });
+
+ReadOnlyMemory<float> vector = result[0].Vector;
+```
+
+The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws. For a fallback that never needs an API, use the standalone trigram helper — a plain string-similarity function, unaffected by the provider setting:
+
+```csharp
+float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity(
+    "colonist mental break", "pawn had a breakdown");
+```
+
+### Error handling
+
+Every failure surfaces as `RimLLMException`, with a provider-independent `LLMError` code:
+
+```csharp
+try
 {
-    var generator = RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
-    GeneratedEmbeddings<Embedding<float>> result = await generator.GenerateAsync(new[] { "colonist mental break" });
-    ReadOnlyMemory<float> vector = result[0].Vector;
+    ChatResponse response = await client.GetResponseAsync(messages);
+}
+catch (RimLLMException ex) when (ex.Error == LLMError.QuotaExceeded)
+{
+    Messages.Message("Out of API credit.", MessageTypeDefOf.RejectInput, false);
+}
+catch (RimLLMException ex)
+{
+    Log.Error($"[MyAIMod] {ex.Error}: {ex.Message}");
 }
 ```
 
-The embedding provider defaults to **Disabled**; until the player picks one in the settings, `GenerateAsync` throws a `RimLLMException`. When you need a fallback that never requires an API, use the standalone trigram helper — it is a plain string-similarity function, unaffected by the embedding provider setting:
+`LLMError` values: `Timeout`, `RateLimit`, `InvalidKey`, `ProviderOffline`, `InvalidResponse`, `NetworkError`, `ModelNotFound`, `ContentFilter`, `QuotaExceeded`, `Cancelled`, `Unknown`.
+
+### The one extra type: `RimLLMChatOptions`
+
+`ChatOptions` covers the standard knobs. Subclass `RimLLMChatOptions` only when you want something MEAI has no concept of — everything else keeps working exactly as before:
 
 ```csharp
-float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity("colonist mental break", "pawn had a breakdown");
+var options = new RimLLMChatOptions
+{
+    Temperature = 0.7f,          // plain ChatOptions
+    Priority = 5,                // higher runs earlier in the global request queue
+    CachedContext = worldRules,  // large reusable prefix; enables provider-side context caching
+    MinFallbackLevel = "Medium", // don't degrade below this model tier
+    DisableReasoning = true      // skip thinking on reasoning-capable models
+};
+
+ChatResponse response = await client.GetResponseAsync(messages, options);
 ```
+
+`EnableContextCaching` turns on automatically when `CachedContext` is non-empty. Gemini caches `SystemPrompt + CachedContext` (TTL 300s) and falls back to a normal `systemInstruction` when the content is too small to be worth the cache creation fee; OpenAI applies prompt caching to repeated prefixes server-side.
+
+### What you don't have to write
+
+This is the point of the framework. All of the following already happens behind that one `IChatClient`:
+
+| You skip | Because the framework does it |
+|---|---|
+| API key storage and UI | AES-256 encrypted settings, shared across every mod |
+| Picking a provider or model | Player-configured fallback chain, `Provider:Model` entries |
+| Retry and `Retry-After` | Retries on timeout / 429 / connection error, honouring both header formats |
+| Failover between providers | Automatic descent through the fallback chain, mid-stream if needed |
+| Dead-provider handling | Circuit breaker with exponential cooldown after repeated failures |
+| Rate limiting across mods | Global priority queue and concurrency cap, so mods don't stutter the game |
+| Cost control | Daily budget with hard-block / mock / free-tier / prompt policies |
+| Usage and cost reporting | Per-provider token and cost dashboard in the Debug tab |
+| Reasoning-model quirks | `reasoning_content` and Gemini `thought` normalized into `<think>...</think>` |
+| Malformed JSON | Markdown fences, unclosed brackets and trailing commas repaired, with LLM-assisted double repair |
+| Main-thread marshalling | Streaming chunks and log writes dispatched back to Unity's main thread |
+
+### API surface at a glance
+
+`using RimLLM_Framework;` brings in 13 public types. Most mods only ever touch the first row:
+
+| Tier | Types | Needed when |
+|---|---|---|
+| **Calling a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError`, `RimLLMClientExtensions` | Always — this is the whole consumer API |
+| **Supplying a provider** | `IChatClientProvider`, `IChatOptionsCustomizer`, `INativeStructuredOutputProvider`, `LLMProviderCapabilities`, `IRimLLMSettings` | Only if you register your own LLM backend via `RimLLMProvider.RegisterProvider` (`ILLMProvider` lives in `RimLLM_Framework.Providers`) |
+| **Diagnostics** | `TestResult`, `ProviderIds`, `LLMErrorMapper` | Connection tests, built-in provider id constants, HTTP-status mapping |
+
+Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseUpdate`, `IEmbeddingGenerator` — is `Microsoft.Extensions.AI`. The concrete client classes are `internal`, so there is deliberately no RimLLM client type to program against.
 
 ---
 
