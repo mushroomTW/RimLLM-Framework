@@ -149,7 +149,7 @@ PawnIncidentDecision decision = await client.GetResponseObjectAsync<PawnIncident
 ```
 
 > [!NOTE]
-> 請用這個而不是 MEAI 自己的 `GetResponseAsync<T>`。MEAI 以 `AIJsonUtilities.CreateJsonSchema` 產生 schema，其輸出會被 Google Gemini 拒絕，而且它沒有 JSON 修復路徑。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
+> 請用這個而不是 MEAI 自己的 `GetResponseAsync<T>`。MEAI 的 `AIJsonUtilities.CreateJsonSchema` 在 RimWorld 的 Mono 環境根本無法執行（它會拉進該環境沒有的 `System.ComponentModel.DataAnnotations`），其原始 schema 形狀（聯集型別、`$ref`）也不被 Google Gemini 接受，而且 MEAI 沒有 JSON 修復路徑。RimLLM 驅動的是同一個底層 `JsonSchemaExporter`，但在其上加了正規化層與各供應商方言。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
 
 ### Embedding 向量
 
@@ -313,6 +313,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 * 開發者經常需要模型回傳特定的 JSON 結構。
 * 內建的 OpenAI 與 Gemini 供應商優先使用官方 SDK 的原生結構化輸出：OpenAI 透過 `IChatClient` 的 JSON Schema response format，Gemini 透過 `ResponseMimeType = "application/json"` 加 `ResponseSchema`。框架會先驗證必要成員與 null 狀態，再反序列化為目標 C# 物件。
+* schema 本身會依供應商方言產生 —— 所有成員都列入 `required`，選填性以 `["integer","null"]` 聯集（OpenAI）或 `nullable: true`（Gemini）表達。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
 * `RepairJson` 回退機制僅在供應商不支援原生 Schema、服務拒絕 Schema，或模型仍回傳格式錯誤內容時啟用。它處理 Markdown 圍籬（如 ` ```json `）、未閉合括號、尾隨逗號與 JSON 區塊擷取。
 
 ### 6. 官方 SDK 與供應商職責
@@ -322,7 +323,14 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 * **Gemini** 使用官方 `Google.GenAI` `1.17.0`，以 API 金鑰建立 Gemini Developer API 用戶端。文字、串流、原生 Schema、思考、上下文快取與安全設定全走原生 `Google.GenAI` 路徑（在程式碼中以測試縫隔離：`CreateGenAiClient`、`GenerateContentNativeAsync`、`GenerateContentStreamNativeAsync`、`CreateCachedContentNativeAsync`）。Gemini 絕不以 `OpenAI.Chat.ChatClient` 模擬。
 * **每個內建供應商都走官方 SDK**：OpenAI 家族（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）使用 `OpenAI` SDK `2.12.0` 加 MEAI 的 `IChatClient`；Gemini 走原生 `Google.GenAI` 路徑。模型清單使用 `OpenAIModelClient.GetModelsAsync()`，而非自行拼 `/models` URL 再解析 JSON。
 * **框架已無任何 raw HTTP 路徑。** 建立 Gemini `cachedContents` 顯式快取是最後一處，現已改走 `Client.Caches.CreateAsync`，回傳型別化的 `CachedContent`（`ExpireTime` 直接是 `DateTime?`，不需要再解析字串）。本文件先前宣稱 `Caches` 只暴露 `ListAsync` —— 那是錯的，而且從未被驗證過；對實際組件反射顯示 `CreateAsync`、`GetAsync`、`UpdateAsync`、`DeleteAsync`、`ListAsync` 全是公開成員。移除該路徑後，整個 HTTP 傳輸層與認證 Header 處理都一併刪除。
-* **JSON Schema 產生刻意不使用 `AIJsonUtilities.CreateJsonSchema`。** MEAI 產出的是完整 JSON Schema —— 可為 null 的成員會變成 `"type": ["string","null"]` 聯集型別，遞迴型別則以 `$ref` 表達。實測顯示三種測試型別的輸出全都被 `Google.GenAI` 的 `Schema.FromJson` 拒絕。`RimLLMJsonHelper` 改為產出所有供應商都接受的受限子集（單一 `type`、遞迴成員截斷）。兩者解決的是不同問題。
+* **JSON Schema 產生走 `System.Text.Json` 的 `JsonSchemaExporter` 加一層正規化**（`RimLLMSchemaBuilder`），分三階段。**Stage A** 由 exporter 匯出完整 JSON Schema。**Stage B** 正規化成所有供應商都接受的受限子集：解析並展開 `$ref` 指標、截斷循環與過深巢狀、把可為 null 的聯集收斂成單一 `type`、只保留關鍵字白名單。**Stage C** 套用目標供應商的方言。方言有兩種，取自 `LLMProviderCapabilities.PreferredSchemaProfile`，第三方供應商因此能宣告自己的方言：OpenAI 把選填成員寫成 `["integer","null"]` 聯集，Gemini 則寫成單一 `type` 加 `nullable: true`。
+  * **直接呼叫 exporter，不經過 MEAI 的 `AIJsonUtilities.CreateJsonSchema` 包裝層。** 該包裝層出貨的是 `net462` 資產，會參考 `System.ComponentModel.DataAnnotations`（用來讀 `[EmailAddress]`、`[Range]` 之類的驗證屬性豐富 schema）。RimWorld 的 Mono BCL 沒有那個組件，所以實機上會拋 `TypeLoadException: Could not resolve type … 'EmailAddressAttribute' in assembly 'System.ComponentModel.DataAnnotations, Version=4.0.0.0'`，整份 schema 產生靜默降級成舊的反射實作 —— 而單元測試跑在有 GAC 的真 .NET Framework 上，完全看不出來。`System.Text.Json` 沒有該參考，而且它就是 MEAI 內部使用的同一個引擎，直呼不損失任何能力。MEAI 唯一多做而仍需要的 `[Description]`，改由 Stage B 自行讀取。這條限制由 `SchemaGenerationEngineHasNoDataAnnotationsDependency` 釘住。
+  * 直呼 exporter 有兩個後果：列舉只會輸出 `{"enum":[…]}` 而不帶 `type`（Stage B 由列舉值反推型別，否則所有列舉成員都會消失），而且它完全沒有 `description` 的概念。
+  * exporter 的原始輸出不能直接送。`Google.GenAI.Types.Schema.Type` 是單一列舉值，聯集型別會讓 `Schema.FromJson` **靜默回傳 null** —— Gemini 於是完全收不到 schema，而且沒有任何錯誤浮上來。這一點由一對迴歸測試釘住（`RawMeaiSchemaIsRejectedByGoogleSchemaFromJson` 與 `GeminiProfileSchemaIsAcceptedByGoogleSchemaFromJson`），不再只是本文件裡的一句宣稱。
+  * `$ref` **不只**用於遞迴 —— MEAI 也用它來為重複出現的型別去重，所以一律截斷 `$ref` 會靜默刪掉正常成員。正規化層會解析 JSON pointer，只有在它指向目前展開路徑上的祖先時才視為循環。
+  * **所有成員一律列入 `required`**，選填性改由型別表達。OpenAI 的 strict structured output 要求 `required` 涵蓋每一個 property，所以舊行為（`Nullable<T>` 不列入 `required` 卻仍送 `strict: true`）在服務端會被拒絕，並被靜默降級成提示式 JSON。
+  * 由於 schema 由 System.Text.Json 的 exporter 產生、反序列化卻是 Newtonsoft，兩者的成員契約由一個 contract modifier 對齊（納入欄位、尊重 `[JsonIgnore]`、套用 `[JsonProperty]` 名稱、排除唯讀成員），並有測試斷言兩邊成員集合一致。**結構化輸出的型別請勿使用自訂的 Newtonsoft `JsonConverter`** —— 它會改變 wire 形狀，而 exporter 看不到。
+  * 若 `JsonSchemaExporter` 在 RimWorld 的 Mono 環境不可用，產生器會記錄警告、永久降級回舊的反射實作，並強制關閉 `strict`。
 * 供應商專屬 SDK 絕不出現在 `RimLLMManager` 或公開 SDK facade 中；共用層只相依 `IChatClient`、`LLMProviderCapabilities` 與既有的 `ILLMProvider` API。API 金鑰一律來自加密設定，絕不寫入原始碼或一般日誌。
 
 ---
@@ -347,7 +355,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 ## 🧪 單元測試與驗證
 
-專案在 `Source/RimLLM Framework.Tests`（與主專案並列的獨立專案）附有完整的單元測試套件，涵蓋 AES 加解密、模型 Fallback、JSON Schema 產生與修復、HTTP 錯誤對照、`Retry-After` 解析、`ChatOptions` 複製、串流重試與預算控制。
+專案在 `Source/RimLLM Framework.Tests`（與主專案並列的獨立專案）附有完整的單元測試套件，涵蓋 AES 加解密、模型 Fallback、JSON Schema 產生（正規化、各供應商方言，以及與 `Google.GenAI` `Schema.FromJson` 的成對對照測試）與修復、HTTP 錯誤對照、`Retry-After` 解析、`ChatOptions` 複製、串流重試與預算控制。
 
 > **前置需求**：測試在執行期需要 RimWorld 的 `Assembly-CSharp` 與 Unity DLL。這些檔案不可轉散布，因此需要本機安裝 RimWorld。
 > 預設路徑為 `C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed`，

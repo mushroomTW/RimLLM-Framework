@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
@@ -18,13 +18,6 @@ namespace RimLLM_Framework.Manager
         private static readonly Regex JsonBlockRegex = new Regex(@"(\{.*\}|\[.*\])", RegexOptions.Compiled | RegexOptions.Singleline);
         private static readonly Regex ThinkTagRegex = new Regex(@"<think>.*?</think>", RegexOptions.Compiled | RegexOptions.Singleline);
         private static readonly ConcurrentDictionary<Type, string> SampleJsonCache = new ConcurrentDictionary<Type, string>();
-        private static readonly ConcurrentDictionary<string, JObject> SchemaCache = new ConcurrentDictionary<string, JObject>();
-        private static readonly ConcurrentDictionary<string, string> SchemaJsonCache = new ConcurrentDictionary<string, string>();
-
-        /// <summary>
-        /// Schema 遞迴的最大深度。超過此深度的巢狀成員會被略過，避免病態型別造成堆疊耗盡。
-        /// </summary>
-        private const int MaxSchemaDepth = 8;
 
         /// <summary>
         /// 獲取指定型別的 Sample JSON 字串。
@@ -58,321 +51,66 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 遞迴使用反射將 C# 型別轉換為 JObject 代表的 JSON Schema。
-        /// 結果會被快取，回傳的一律是深拷貝，呼叫端可自由修改而不影響快取。
+        /// 將 C# 型別轉換為 JObject 代表的 JSON Schema。
         /// </summary>
+        [Obsolete("改用 RimLLMSchemaBuilder.Build(type, profile)。此多載將於下一版移除。", false)]
         public static JObject GenerateJsonSchema(Type type, bool uppercaseTypes = false)
         {
-            if (type == null) throw new ArgumentNullException(nameof(type));
-
-            string cacheKey = SchemaCacheKey(type, uppercaseTypes);
-            if (!SchemaCache.TryGetValue(cacheKey, out JObject cached))
-            {
-                cached = BuildSchema(type, uppercaseTypes, new HashSet<Type>(), 0)
-                         ?? CreateEmptyObjectSchema(uppercaseTypes);
-                SchemaCache[cacheKey] = cached;
-            }
-
-            return (JObject)cached.DeepClone();
+            return JObject.Parse(GenerateJsonSchemaString(type, uppercaseTypes));
         }
 
         /// <summary>
-        /// 取得 JSON Schema 的字串形式。送往 provider 一律使用字串，
-        /// 因此在此另外快取，避免每次請求都重新 DeepClone 與序列化。
+        /// 取得 JSON Schema 的字串形式。
         /// </summary>
+        [Obsolete("改用 RimLLMSchemaBuilder.BuildJson(type, profile)。此多載將於下一版移除。", false)]
         public static string GenerateJsonSchemaString(Type type, bool uppercaseTypes = false)
         {
             if (type == null) throw new ArgumentNullException(nameof(type));
 
-            string cacheKey = SchemaCacheKey(type, uppercaseTypes);
-            if (SchemaJsonCache.TryGetValue(cacheKey, out string json))
+            // uppercaseTypes 原本是為了 Gemini REST 的大寫 type 關鍵字而存在，但生產路徑從未使用它
+            // （小寫同樣被 Schema.FromJson 接受）。這裡仍對映到 Gemini 方言以維持對外相容。
+            RimLLMSchemaProfile profile = uppercaseTypes ? RimLLMSchemaProfile.Gemini : RimLLMSchemaProfile.OpenAI;
+            string json = RimLLMSchemaBuilder.BuildJson(type, profile);
+            if (!uppercaseTypes)
             {
                 return json;
             }
 
-            json = GenerateJsonSchema(type, uppercaseTypes).ToString();
-            SchemaJsonCache[cacheKey] = json;
-            return json;
+            JObject schema = JObject.Parse(json);
+            UppercaseTypeKeywords(schema);
+            return schema.ToString();
         }
 
-        private static string SchemaCacheKey(Type type, bool uppercaseTypes)
+        private static void UppercaseTypeKeywords(JObject node)
         {
-            return type.AssemblyQualifiedName + "|" + uppercaseTypes;
+            if (node == null) return;
+
+            JToken type = node["type"];
+            if (type != null && type.Type == JTokenType.String)
+            {
+                node["type"] = type.Value<string>().ToUpperInvariant();
+            }
+
+            UppercaseTypeKeywords(node["items"] as JObject);
+            UppercaseTypeKeywords(node["additionalProperties"] as JObject);
+
+            var properties = node["properties"] as JObject;
+            if (properties == null) return;
+
+            foreach (KeyValuePair<string, JToken> property in properties)
+            {
+                UppercaseTypeKeywords(property.Value as JObject);
+            }
         }
 
         /// <summary>
-        /// 判斷型別樹中是否含有開放式 map（由 Dictionary 產生的 additionalProperties schema）。
-        /// OpenAI 的 strict structured output 不接受這種形狀，呼叫端需據此關閉 strict 或改走提示式 JSON。
+        /// 判斷型別是否會產生開放式 map（由 Dictionary 產生的 additionalProperties schema）。
+        /// OpenAI 的 strict structured output 不接受這種形狀。
         /// </summary>
+        [Obsolete("改用 RimLLMSchemaBuilder.ContainsOpenEndedMap(type)。此多載將於下一版移除。", false)]
         public static bool ContainsOpenEndedMap(Type type)
         {
-            if (type == null) return false;
-            return ContainsOpenEndedMapCore(type, new HashSet<Type>(), 0);
-        }
-
-        private static bool ContainsOpenEndedMapCore(Type type, HashSet<Type> visited, int depth)
-        {
-            if (type == null || depth > MaxSchemaDepth) return false;
-
-            Type underlying = Nullable.GetUnderlyingType(type);
-            if (underlying != null) return ContainsOpenEndedMapCore(underlying, visited, depth);
-
-            if (IsSupportedDictionary(type, out _, out _)) return true;
-
-            Type elementType = GetSequenceElementType(type);
-            if (elementType != null) return ContainsOpenEndedMapCore(elementType, visited, depth + 1);
-
-            if (IsScalarType(type)) return false;
-
-            if (!visited.Add(type)) return false;
-            try
-            {
-                foreach (Type memberType in EnumerateSerializableMemberTypes(type))
-                {
-                    if (ContainsOpenEndedMapCore(memberType, visited, depth + 1)) return true;
-                }
-            }
-            finally
-            {
-                visited.Remove(type);
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Schema 產生的遞迴核心。
-        /// <paramref name="visited"/> 追蹤目前遞迴路徑上的型別，偵測到循環時回傳 null，
-        /// 由父層略過該成員（與 CreateDummyInstance 把循環欄位截斷為 null 的行為一致）。
-        /// </summary>
-        private static JObject BuildSchema(Type type, bool uppercaseTypes, HashSet<Type> visited, int depth)
-        {
-            if (type == null || depth > MaxSchemaDepth)
-            {
-                return null;
-            }
-
-            // Nullable<T> 一律以底層型別產生 schema；父層負責不將其列入 required。
-            Type underlyingType = Nullable.GetUnderlyingType(type);
-            if (underlyingType != null)
-            {
-                return BuildSchema(underlyingType, uppercaseTypes, visited, depth);
-            }
-
-            var schema = new JObject();
-            string typeStr;
-
-            if (type == typeof(string) || type == typeof(char))
-            {
-                typeStr = uppercaseTypes ? "STRING" : "string";
-                schema["type"] = typeStr;
-            }
-            else if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte) ||
-                     type == typeof(uint) || type == typeof(ulong) || type == typeof(ushort) || type == typeof(sbyte))
-            {
-                typeStr = uppercaseTypes ? "INTEGER" : "integer";
-                schema["type"] = typeStr;
-            }
-            else if (type == typeof(float) || type == typeof(double) || type == typeof(decimal))
-            {
-                typeStr = uppercaseTypes ? "NUMBER" : "number";
-                schema["type"] = typeStr;
-            }
-            else if (type == typeof(bool))
-            {
-                typeStr = uppercaseTypes ? "BOOLEAN" : "boolean";
-                schema["type"] = typeStr;
-            }
-            else if (type.IsEnum)
-            {
-                typeStr = uppercaseTypes ? "STRING" : "string";
-                schema["type"] = typeStr;
-                var names = new JArray();
-                foreach (var name in Enum.GetNames(type))
-                {
-                    names.Add(name);
-                }
-                schema["enum"] = names;
-            }
-            // Dictionary 需以開放式 map 表示，否則反射會落入自訂物件分支而產生空 properties。
-            // 必須排在集合分支之前：Dictionary<,> 同時也實作 ICollection<KeyValuePair<,>>。
-            else if (IsSupportedDictionary(type, out Type keyType, out Type valueType))
-            {
-                typeStr = uppercaseTypes ? "OBJECT" : "object";
-                schema["type"] = typeStr;
-
-                // JSON 物件的鍵一律是字串，因此只有 string 或 enum 鍵能忠實表示成 map。
-                if (keyType == typeof(string) || keyType.IsEnum)
-                {
-                    JObject valueSchema = BuildSchema(valueType, uppercaseTypes, visited, depth + 1);
-                    if (valueSchema != null)
-                    {
-                        schema["additionalProperties"] = valueSchema;
-                    }
-                }
-            }
-            else if (type.IsGenericType && (type.GetGenericTypeDefinition() == typeof(List<>) ||
-                                            type.GetGenericTypeDefinition() == typeof(IList<>) ||
-                                            type.GetGenericTypeDefinition() == typeof(IReadOnlyList<>) ||
-                                            type.GetGenericTypeDefinition() == typeof(ICollection<>)))
-            {
-                typeStr = uppercaseTypes ? "ARRAY" : "array";
-                schema["type"] = typeStr;
-                Type itemType = type.GetGenericArguments()[0];
-                JObject itemSchema = BuildSchema(itemType, uppercaseTypes, visited, depth + 1);
-                if (itemSchema == null) return null;
-                schema["items"] = itemSchema;
-            }
-            else if (type.IsArray)
-            {
-                typeStr = uppercaseTypes ? "ARRAY" : "array";
-                schema["type"] = typeStr;
-                Type itemType = type.GetElementType();
-                JObject itemSchema = BuildSchema(itemType, uppercaseTypes, visited, depth + 1);
-                if (itemSchema == null) return null;
-                schema["items"] = itemSchema;
-            }
-            else // 自定義物件
-            {
-                // 循環引用偵測：若該型別已在目前遞迴路徑上，回傳 null 讓父層略過此成員。
-                if (!visited.Add(type))
-                {
-                    return null;
-                }
-
-                try
-                {
-                    typeStr = uppercaseTypes ? "OBJECT" : "object";
-                    schema["type"] = typeStr;
-                    var properties = new JObject();
-                    var required = new JArray();
-
-                    // 獲取所有公開屬性
-                    foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                    {
-                        if (prop.CanRead && prop.CanWrite && prop.GetIndexParameters().Length == 0)
-                        {
-                            JObject propSchema = BuildSchema(prop.PropertyType, uppercaseTypes, visited, depth + 1);
-                            if (propSchema == null) continue;
-
-                            properties[prop.Name] = propSchema;
-                            if (!IsOptionalMember(prop.PropertyType))
-                            {
-                                required.Add(prop.Name);
-                            }
-                        }
-                    }
-
-                    // 獲取所有公開欄位
-                    foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-                    {
-                        if (!field.IsLiteral && !field.IsInitOnly)
-                        {
-                            JObject fieldSchema = BuildSchema(field.FieldType, uppercaseTypes, visited, depth + 1);
-                            if (fieldSchema == null) continue;
-
-                            properties[field.Name] = fieldSchema;
-                            if (!IsOptionalMember(field.FieldType))
-                            {
-                                required.Add(field.Name);
-                            }
-                        }
-                    }
-
-                    schema["properties"] = properties;
-                    schema["required"] = required;
-                    schema["additionalProperties"] = false;
-                }
-                finally
-                {
-                    visited.Remove(type);
-                }
-            }
-
-            return schema;
-        }
-
-        private static JObject CreateEmptyObjectSchema(bool uppercaseTypes)
-        {
-            return new JObject
-            {
-                ["type"] = uppercaseTypes ? "OBJECT" : "object",
-                ["properties"] = new JObject(),
-                ["required"] = new JArray(),
-                ["additionalProperties"] = false
-            };
-        }
-
-        /// <summary>
-        /// Nullable&lt;T&gt; 成員視為選填，不列入 required。
-        /// </summary>
-        private static bool IsOptionalMember(Type memberType)
-        {
-            return Nullable.GetUnderlyingType(memberType) != null;
-        }
-
-        private static bool IsSupportedDictionary(Type type, out Type keyType, out Type valueType)
-        {
-            keyType = null;
-            valueType = null;
-
-            if (!type.IsGenericType) return false;
-
-            Type definition = type.GetGenericTypeDefinition();
-            if (definition != typeof(Dictionary<,>) &&
-                definition != typeof(IDictionary<,>) &&
-                definition != typeof(IReadOnlyDictionary<,>))
-            {
-                return false;
-            }
-
-            Type[] args = type.GetGenericArguments();
-            keyType = args[0];
-            valueType = args[1];
-            return true;
-        }
-
-        private static Type GetSequenceElementType(Type type)
-        {
-            if (type.IsArray) return type.GetElementType();
-
-            if (type.IsGenericType)
-            {
-                Type definition = type.GetGenericTypeDefinition();
-                if (definition == typeof(List<>) ||
-                    definition == typeof(IList<>) ||
-                    definition == typeof(IReadOnlyList<>) ||
-                    definition == typeof(ICollection<>))
-                {
-                    return type.GetGenericArguments()[0];
-                }
-            }
-
-            return null;
-        }
-
-        private static bool IsScalarType(Type type)
-        {
-            return type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal);
-        }
-
-        private static IEnumerable<Type> EnumerateSerializableMemberTypes(Type type)
-        {
-            foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (prop.CanRead && prop.CanWrite && prop.GetIndexParameters().Length == 0)
-                {
-                    yield return prop.PropertyType;
-                }
-            }
-
-            foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (!field.IsLiteral && !field.IsInitOnly)
-                {
-                    yield return field.FieldType;
-                }
-            }
+            return RimLLMSchemaBuilder.ContainsOpenEndedMap(type);
         }
 
         /// <summary>

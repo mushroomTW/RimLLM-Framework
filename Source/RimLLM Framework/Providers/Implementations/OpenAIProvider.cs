@@ -104,7 +104,10 @@ namespace RimLLM_Framework.Providers
                 {
                     using (System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(schemaJsonStr))
                     {
-                        bool strict = !schemaJsonStr.Contains("additionalProperties\": true") && !schemaJsonStr.Contains("additionalProperties\":true");
+                        // strict 只認 RimLLMSchemaBuilder 算出的值。此處原本還有一段以字串比對
+                        // "additionalProperties": true 來推斷 strict 的 heuristic —— 那是死碼：
+                        // 產生器對開放式 map 輸出的是 value schema 物件而非字面 true，比對永遠不命中。
+                        bool strict = false;
                         if (requestOptions.AdditionalProperties.TryGetValue("strict", out object sObj) && sObj is bool sBool)
                         {
                             strict = sBool;

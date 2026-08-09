@@ -606,8 +606,9 @@ namespace RimLLM_Framework.Tests
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             var options = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
-            options.AdditionalProperties["rimllm_response_schema"] = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure), uppercaseTypes: false).ToString();
-            options.AdditionalProperties["strict"] = !RimLLMJsonHelper.ContainsOpenEndedMap(typeof(TestDataStructure));
+            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
+            options.AdditionalProperties["rimllm_response_schema"] = schema.Json;
+            options.AdditionalProperties["strict"] = schema.StrictCompatible;
             provider.GenerateStructuredAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
@@ -633,8 +634,9 @@ namespace RimLLM_Framework.Tests
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             var options = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
-            options.AdditionalProperties["rimllm_response_schema"] = RimLLMJsonHelper.GenerateJsonSchema(typeof(ComplexTestDataStructure), uppercaseTypes: false).ToString();
-            options.AdditionalProperties["strict"] = !RimLLMJsonHelper.ContainsOpenEndedMap(typeof(ComplexTestDataStructure));
+            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI);
+            options.AdditionalProperties["rimllm_response_schema"] = schema.Json;
+            options.AdditionalProperties["strict"] = schema.StrictCompatible;
             provider.GenerateStructuredAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);

@@ -616,16 +616,25 @@ namespace RimLLM_Framework.Manager
             string model,
             bool useNativeSchema)
         {
+            // 方言優先取自 provider 自己宣告的 capability，第三方 provider 才能不改框架就換方言；
+            // 未實作 IChatClientProvider 的 provider 退回以 id 推導。
+            RimLLMSchemaProfile schemaProfile = provider is IChatClientProvider capabilityProvider
+                ? capabilityProvider.Capabilities.PreferredSchemaProfile
+                : RimLLMSchemaBuilder.ResolveProfile(provider.ProviderId);
             var options = RimLLMChatClientExecutor.BuildOptions(
                 preparedRequest,
                 model,
                 useNativeSchema,
-                ResolveChatOptionsCustomizer(provider, originalRequest, model));
+                ResolveChatOptionsCustomizer(provider, originalRequest, model),
+                schemaProfile);
 
+            // 無論是否走原生 schema 都附上：對不使用 IChatClient 的 provider（raw 路徑）而言，
+            // 這是取得 schema 的唯一管道 —— useNativeSchema 只決定要不要設 MEAI 的 ResponseFormat。
+            // strict 旗標則留給 BuildOptions 在原生路徑上設定，raw provider 自行決定如何使用 schema。
             if (preparedRequest.ResponseType != null)
             {
                 options.AdditionalProperties["rimllm_response_schema"] =
-                    RimLLMJsonHelper.GenerateJsonSchemaString(preparedRequest.ResponseType);
+                    RimLLMSchemaBuilder.BuildJson(preparedRequest.ResponseType, schemaProfile);
             }
 
             return new ProviderCall

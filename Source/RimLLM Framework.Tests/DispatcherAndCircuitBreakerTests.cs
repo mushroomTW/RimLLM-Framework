@@ -685,6 +685,12 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual("model-mini", calledModels[0]);
         }
 
+        // 以下幾個測試刻意呼叫已標記 [Obsolete] 的 RimLLMJsonHelper schema API。
+        // RimLLM 是給其他 Mod 使用的框架，這些是仍在對外提供的 public 介面，
+        // 直接刪除會讓第三方 Mod 在遊戲中拋 MissingMethodException（Mono 沒有編譯期警告），
+        // 因此保留一版並在此驗證它們仍正確轉呼叫新管線。
+#pragma warning disable CS0618
+
         [Test]
         public void TestJsonSchemaGenerator()
         {
@@ -715,13 +721,12 @@ namespace RimLLM_Framework.Tests
             Assert.IsNotNull(nested, "非循環的巢狀成員應正常展開");
             Assert.AreEqual("number", nested["properties"]?["Weight"]?["type"]?.ToString());
 
-            // 循環成員應被略過，且不得列入 required。
-            Assert.IsNull(nested["properties"]?["SelfRef"], "循環引用成員應於偵測後截斷，不得展開");
-            var nestedRequired = (JArray)nested["required"];
-            foreach (var item in nestedRequired)
-            {
-                Assert.AreNotEqual("SelfRef", item.ToString(), "被截斷的循環成員不得列入 required");
-            }
+            // 循環的截斷點與收斂性由 SchemaBuilderTests 詳測，此處只確認整體有限且合法。
+            // （新管線在 JSON pointer 層截斷，會比舊的型別層截斷多展開一輪。）
+            Assert.Less(
+                schema.ToString().Length,
+                200000,
+                "循環型別的 schema 應收斂到有限大小");
         }
 
         [Test]
@@ -742,20 +747,28 @@ namespace RimLLM_Framework.Tests
                 "不含 Dictionary 的型別不應被誤判為開放式 map");
         }
 
+        /// <summary>
+        /// required 語意在改走 MEAI 管線後刻意翻轉：所有成員一律列入 required，選填性改由型別表達。
+        /// 原因是 OpenAI 的 strict structured output 規格要求 required 涵蓋每一個 property，
+        /// 舊行為（Nullable 不列入 required 卻仍送 strict=true）在服務端會被 400，
+        /// 只是被 IsNativeSchemaRejected 的降級路徑靜默吞掉，表現為「莫名其妙失去原生 schema」。
+        /// </summary>
         [Test]
-        public void TestJsonSchemaNullableUnwrapsUnderlyingType()
+        public void TestJsonSchemaNullableIsRequiredButTypedAsUnion()
         {
             var schema = RimLLMJsonHelper.GenerateJsonSchema(typeof(NullableTestDataStructure));
 
-            Assert.AreEqual("integer", schema["properties"]?["OptionalCount"]?["type"]?.ToString(),
-                "Nullable<int> 應解包為底層型別 integer");
+            var optionalType = (JArray)schema["properties"]["OptionalCount"]["type"];
+            CollectionAssert.AreEquivalent(
+                new[] { "integer", "null" },
+                optionalType.ToObject<string[]>(),
+                "Nullable<int> 的選填性應以聯集型別表達");
 
-            var required = (JArray)schema["required"];
             var requiredNames = new List<string>();
-            foreach (var item in required) requiredNames.Add(item.ToString());
+            foreach (var item in (JArray)schema["required"]) requiredNames.Add(item.ToString());
 
-            Assert.IsTrue(requiredNames.Contains("Name"), "非 Nullable 成員應列入 required");
-            Assert.IsFalse(requiredNames.Contains("OptionalCount"), "Nullable 成員屬選填，不應列入 required");
+            CollectionAssert.Contains(requiredNames, "Name");
+            CollectionAssert.Contains(requiredNames, "OptionalCount", "OpenAI strict 要求 required 涵蓋所有 property");
         }
 
         [Test]
@@ -771,6 +784,8 @@ namespace RimLLM_Framework.Tests
                 "schema 快取必須回傳深拷貝，避免呼叫端汙染");
             Assert.IsNotNull(second["properties"]?["Value"], "快取內容不得被前一次呼叫端的修改影響");
         }
+
+#pragma warning restore CS0618
 
         [Test]
         public void TestRepairJsonClosesInterleavedBracketsInOrder()

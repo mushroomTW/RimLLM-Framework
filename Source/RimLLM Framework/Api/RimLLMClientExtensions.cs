@@ -39,8 +39,10 @@ namespace RimLLM_Framework
             CancellationToken cancellationToken)
         {
             ChatOptions effective = options ?? new RimLLMChatOptions();
-            // schema 字串的快取由 RimLLMJsonHelper 統一負責，此處不再另建一份。
-            string schemaJson = RimLLMJsonHelper.GenerateJsonSchemaString(typeof(T));
+            // schema 的快取由 RimLLMSchemaBuilder 統一負責，此處不再另建一份。
+            // 這條路徑接受任意 IChatClient，無從得知目標供應商，因此一律以 OpenAI 方言送出；
+            // 走 RimLLM facade 的請求則會依 provider capability 選擇正確方言。
+            string schemaJson = RimLLMSchemaBuilder.BuildJson(typeof(T), RimLLMSchemaProfile.OpenAI);
             using (JsonDocument document = JsonDocument.Parse(schemaJson))
             {
                 effective.ResponseFormat = ChatResponseFormat.ForJsonSchema(

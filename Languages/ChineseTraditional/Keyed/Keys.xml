@@ -77,7 +77,15 @@
   <RimLLM_LocalCompatibleMode> (本地模型 / 相容介面)</RimLLM_LocalCompatibleMode>
   <RimLLM_ExportDiagSuccess>診斷資訊已成功匯出至: {0}</RimLLM_ExportDiagSuccess>
   <RimLLM_ExportDiagFailed>匯出診斷失敗: {0}</RimLLM_ExportDiagFailed>
-  
+
+  <RimLLM_SchemaSelfTest>結構化輸出自我檢查</RimLLM_SchemaSelfTest>
+  <RimLLM_SchemaSelfTestRunning>檢查中…</RimLLM_SchemaSelfTestRunning>
+  <RimLLM_SchemaSelfTestLocalOk>schema 已在本機產生，正在發出實際請求…</RimLLM_SchemaSelfTestLocalOk>
+  <RimLLM_SchemaSelfTestLegacy>本執行環境無法使用受管理的 schema 產生器，框架已降級回舊的反射實作。結構化輸出仍可運作，但會失去成員說明與 strict 模式。兩種方言的 schema 已寫入偵錯日誌。</RimLLM_SchemaSelfTestLegacy>
+  <RimLLM_SchemaSelfTestBuildFailed>schema 產生失敗: {0}</RimLLM_SchemaSelfTestBuildFailed>
+  <RimLLM_SchemaSelfTestOk>結構化輸出正常。Summary：「{0}」，Score：{1}</RimLLM_SchemaSelfTestOk>
+  <RimLLM_SchemaSelfTestRemoteFailed>實際請求失敗: {0}</RimLLM_SchemaSelfTestRemoteFailed>
+
   <RimLLM_ReasoningEffortLabel>預設思考強度: </RimLLM_ReasoningEffortLabel>
   <RimLLM_ReasoningEffort_Auto>自動 / 預設</RimLLM_ReasoningEffort_Auto>
   <RimLLM_ReasoningEffort_Low>低</RimLLM_ReasoningEffort_Low>

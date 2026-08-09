@@ -77,7 +77,15 @@
   <RimLLM_LocalCompatibleMode> (Local Model / Compatible Mode)</RimLLM_LocalCompatibleMode>
   <RimLLM_ExportDiagSuccess>Diagnostics successfully exported to: {0}</RimLLM_ExportDiagSuccess>
   <RimLLM_ExportDiagFailed>Failed to export diagnostics: {0}</RimLLM_ExportDiagFailed>
-  
+
+  <RimLLM_SchemaSelfTest>Structured Output Self-Test</RimLLM_SchemaSelfTest>
+  <RimLLM_SchemaSelfTestRunning>Running…</RimLLM_SchemaSelfTestRunning>
+  <RimLLM_SchemaSelfTestLocalOk>Schema generated locally. Sending a live request…</RimLLM_SchemaSelfTestLocalOk>
+  <RimLLM_SchemaSelfTestLegacy>The managed schema exporter is unavailable in this runtime; the framework has fallen back to the legacy reflection generator. Structured output still works, but loses member descriptions and strict mode. Both schemas were written to the debug log.</RimLLM_SchemaSelfTestLegacy>
+  <RimLLM_SchemaSelfTestBuildFailed>Schema generation failed: {0}</RimLLM_SchemaSelfTestBuildFailed>
+  <RimLLM_SchemaSelfTestOk>Structured output OK. Summary: "{0}", Score: {1}</RimLLM_SchemaSelfTestOk>
+  <RimLLM_SchemaSelfTestRemoteFailed>Live request failed: {0}</RimLLM_SchemaSelfTestRemoteFailed>
+
   <RimLLM_ReasoningEffortLabel>Default Reasoning Effort: </RimLLM_ReasoningEffortLabel>
   <RimLLM_ReasoningEffort_Auto>Auto / Default</RimLLM_ReasoningEffort_Auto>
   <RimLLM_ReasoningEffort_Low>Low</RimLLM_ReasoningEffort_Low>

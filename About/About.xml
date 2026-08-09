@@ -3,7 +3,7 @@
   <name>RimLLM Framework</name>
   <author>綠菇</author>
   <packageId>GreenMushroom.RimLLMFramework</packageId>
-  <modVersion>2026.08.09.6</modVersion>
+  <modVersion>2026.08.09.8</modVersion>
   <supportedVersions>
     <li>1.6</li>
   </supportedVersions>
@@ -19,7 +19,7 @@ This mod provides a stable and flexible foundation for managing API keys, model 
 5. <b>Reasoning Models &amp; Auto Effort</b>: Native support for DeepSeek-R1, Gemini 2.0/2.5 Thinking, and other reasoning models. The layer automatically extracts reasoning_content and thought blocks, wrapping them uniformly in &lt;think&gt;...&lt;/think&gt; tags.
 6. <b>Embedding SDK</b>: A public embedding API backed by Google, Ollama, or OpenAI-compatible endpoints, plus a cosine similarity helper, so other mods can build semantic search and clustering on top of the framework. A separate API-free Trigram string-similarity utility is also available for use when no embedding provider is configured.
 7. <b>Provider Stats</b>: Each provider settings page shows a request success-rate progress bar and an API-side prompt cache hit-rate chart (supports Gemini Context Caching, etc.).
-8. <b>Developer SDK</b>: Everything crossing the boundary is a standard Microsoft.Extensions.AI type (IChatClient, IEmbeddingGenerator) — no bespoke client interface to learn, and no registration step. Includes dynamic streaming control and reflection-based recursive JSON Schema cache warm-up, so other mods can integrate LLM services and build Agent tools quickly and reliably.]]>
+8. <b>Developer SDK</b>: Everything crossing the boundary is a standard Microsoft.Extensions.AI type (IChatClient, IEmbeddingGenerator) — no bespoke client interface to learn, and no registration step. Includes dynamic streaming control and a cached JSON Schema pipeline that normalizes Microsoft.Extensions.AI schema output into per-provider dialects, so other mods can integrate LLM services and build Agent tools quickly and reliably.]]>
   </description>
   <loadAfter>
     <li>brrainz.harmony</li>

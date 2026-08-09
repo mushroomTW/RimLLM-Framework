@@ -77,7 +77,15 @@
   <RimLLM_LocalCompatibleMode> (本地模型 / 相容界面)</RimLLM_LocalCompatibleMode>
   <RimLLM_ExportDiagSuccess>诊断信息已成功导出至: {0}</RimLLM_ExportDiagSuccess>
   <RimLLM_ExportDiagFailed>导出诊断失败: {0}</RimLLM_ExportDiagFailed>
-  
+
+  <RimLLM_SchemaSelfTest>结构化输出自我检查</RimLLM_SchemaSelfTest>
+  <RimLLM_SchemaSelfTestRunning>检查中…</RimLLM_SchemaSelfTestRunning>
+  <RimLLM_SchemaSelfTestLocalOk>schema 已在本机生成，正在发出实际请求…</RimLLM_SchemaSelfTestLocalOk>
+  <RimLLM_SchemaSelfTestLegacy>本运行环境无法使用受管理的 schema 生成器，框架已降级回旧的反射实现。结构化输出仍可运作，但会失去成员说明与 strict 模式。两种方言的 schema 已写入调试日志。</RimLLM_SchemaSelfTestLegacy>
+  <RimLLM_SchemaSelfTestBuildFailed>schema 生成失败: {0}</RimLLM_SchemaSelfTestBuildFailed>
+  <RimLLM_SchemaSelfTestOk>结构化输出正常。Summary：「{0}」，Score：{1}</RimLLM_SchemaSelfTestOk>
+  <RimLLM_SchemaSelfTestRemoteFailed>实际请求失败: {0}</RimLLM_SchemaSelfTestRemoteFailed>
+
   <RimLLM_ReasoningEffortLabel>预设思考强度: </RimLLM_ReasoningEffortLabel>
   <RimLLM_ReasoningEffort_Auto>自动 / 预设</RimLLM_ReasoningEffort_Auto>
   <RimLLM_ReasoningEffort_Low>低</RimLLM_ReasoningEffort_Low>

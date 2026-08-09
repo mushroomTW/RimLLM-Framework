@@ -8,6 +8,7 @@ using Google.GenAI.Types;
 using Microsoft.Extensions.AI;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.Core;
+using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Providers
 {
@@ -48,7 +49,9 @@ namespace RimLLM_Framework.Providers
         {
             SupportsNativeStructuredOutput = true,
             SupportsStreaming = true,
-            SupportsUsageMetadata = true
+            SupportsUsageMetadata = true,
+            // Google.GenAI 的 Schema.Type 是單一列舉值，聯集型別會讓 Schema.FromJson 靜默回傳 null。
+            PreferredSchemaProfile = RimLLMSchemaProfile.Gemini
         };
 
         public GeminiProvider(IRimLLMSettings settings) : this(settings, new GeminiChatClientFactory())

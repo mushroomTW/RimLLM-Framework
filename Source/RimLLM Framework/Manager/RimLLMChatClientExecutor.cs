@@ -73,7 +73,7 @@ namespace RimLLM_Framework.Manager
                 {
                     response = await client.GetResponseAsync(
                         BuildMessages(request),
-                        BuildOptions(request, model, useNativeSchema, customizeOptions),
+                        BuildOptions(request, model, useNativeSchema, customizeOptions, RimLLMSchemaBuilder.ResolveProfile(providerId)),
                         linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (ClientResultException ex)
@@ -153,7 +153,7 @@ namespace RimLLM_Framework.Manager
                 {
                     await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync(
                         BuildMessages(request),
-                        BuildOptions(request, model, useNativeSchema, customizeOptions),
+                        BuildOptions(request, model, useNativeSchema, customizeOptions, RimLLMSchemaBuilder.ResolveProfile(providerId)),
                         linkedCts.Token))
                     {
                         // 收到任何更新即重設閒置計時器，避免長回應被整體逾時誤殺。
@@ -272,11 +272,25 @@ namespace RimLLM_Framework.Manager
             return messages;
         }
 
+        /// <summary>
+        /// 不指定方言時一律以 OpenAI 方言產生 schema。
+        /// 呼叫端若知道目標供應商，請改用帶 <see cref="RimLLMSchemaProfile"/> 的多載。
+        /// </summary>
         internal static ChatOptions BuildOptions(
             RimLLMRequest request,
             string model,
             bool useNativeSchema,
             Action<ChatOptions> customizeOptions)
+        {
+            return BuildOptions(request, model, useNativeSchema, customizeOptions, RimLLMSchemaProfile.OpenAI);
+        }
+
+        internal static ChatOptions BuildOptions(
+            RimLLMRequest request,
+            string model,
+            bool useNativeSchema,
+            Action<ChatOptions> customizeOptions,
+            RimLLMSchemaProfile schemaProfile)
         {
             var options = new ChatOptions
             {
@@ -301,15 +315,16 @@ namespace RimLLM_Framework.Manager
             // response_format.json_schema.strict，OpenAIClientExtensions.HasStrict）。
             if (useNativeSchema && request.ResponseType != null)
             {
-                string schemaJson = RimLLMJsonHelper.GenerateJsonSchemaString(request.ResponseType);
-                using (JsonDocument document = JsonDocument.Parse(schemaJson))
+                // schema 與 strict 取自同一次產生結果，避免兩者各算一次而分歧。
+                RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(request.ResponseType, schemaProfile);
+                using (JsonDocument document = JsonDocument.Parse(schema.Json))
                 {
                     options.ResponseFormat = ChatResponseFormat.ForJsonSchema(
                         document.RootElement.Clone(),
                         "custom_type",
                         "RimLLM structured response");
                 }
-                options.AdditionalProperties["strict"] = !RimLLMJsonHelper.ContainsOpenEndedMap(request.ResponseType);
+                options.AdditionalProperties["strict"] = schema.StrictCompatible;
             }
 
             // 供應商專屬客製化最後套用，可覆寫上述基礎選項（如 reasoning 模型的 temperature/reasoning）。
