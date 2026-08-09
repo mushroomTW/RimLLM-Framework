@@ -308,7 +308,7 @@ float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity("殖民者�
 
 ### 4. 統一的 HTTP 錯誤對照（`LLMErrorMapper`）
 
-* HTTP 狀態碼轉換為 `LLMError` 的規則集中在 `LLMErrorMapper` 一處，由三條路徑共用：官方 SDK（`ClientResultException`）、raw HTTP 傳輸層，以及 embedding 服務。
+* HTTP 狀態碼轉換為 `LLMError` 的規則集中在 `LLMErrorMapper` 一處，由官方 SDK 路徑（`ClientResultException`）與 embedding 服務共用。
 * `Retry-After` 的解析也在其中，基於 `RetryConditionHeaderValue`，因此延遲秒數與 HTTP 日期兩種格式在各處行為一致。
 * 這使得「哪些狀態碼可重試」與「哪些代表 Schema 遭拒應降級」在各處行為完全相同。第三方自訂供應商也能引用同一份對照。
 
@@ -322,9 +322,9 @@ float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity("殖民者�
 
 * 主專案與測試專案維持 `net472`；RimWorld Mod 不需要遷移到 .NET 8。官方 SDK 的相依 DLL 隨 Mod 發佈，並由啟動相容性檢查確認可載入。雖然 .NET Framework 將 `System.ValueTuple` 視為框架組件，建置仍明確部署其 `4.0.5.0` DLL，以避免 RimWorld 的 Mono 反射 MEAI 時發生 `ReflectionTypeLoadException`。
 * **OpenAI** 使用 `OpenAI` SDK `2.12.0` 搭配 `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.8.3`。內建的 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用 manager。只有真正實作 OpenAI Chat Completions 協定的端點（LM Studio、Ollama、vLLM…）才適合 OpenAI 相容轉接。
-* **Gemini** 使用官方 `Google.GenAI` `1.16.0`，以 API 金鑰建立 Gemini Developer API 用戶端。文字、串流、原生 Schema、思考、上下文快取與安全設定全走原生 `Google.GenAI` 的 generateContent 路徑（在程式碼中以測試縫隔離：`CreateGenAiClient`、`GenerateContentNativeAsync`、`GenerateContentStreamNativeAsync`、`PostCachedContentsAsync`）。Gemini 絕不以 `OpenAI.Chat.ChatClient` 模擬，也不保留 raw HTTP 對話路徑。
+* **Gemini** 使用官方 `Google.GenAI` `1.17.0`，以 API 金鑰建立 Gemini Developer API 用戶端。文字、串流、原生 Schema、思考、上下文快取與安全設定全走原生 `Google.GenAI` 路徑（在程式碼中以測試縫隔離：`CreateGenAiClient`、`GenerateContentNativeAsync`、`GenerateContentStreamNativeAsync`、`CreateCachedContentNativeAsync`）。Gemini 絕不以 `OpenAI.Chat.ChatClient` 模擬。
 * **每個內建供應商都走官方 SDK**：OpenAI 家族（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）使用 `OpenAI` SDK `2.12.0` 加 MEAI 的 `IChatClient`；Gemini 走原生 `Google.GenAI` 路徑。模型清單使用 `OpenAIModelClient.GetModelsAsync()`，而非自行拼 `/models` URL 再解析 JSON。
-* Raw HTTP 現在只剩**唯一一處 —— 建立 Gemini `cachedContents` 顯式快取**（`Google.GenAI 1.16.0` 的 `Caches` 只暴露 `ListAsync`，沒有建立 API）。該路徑已隔離在 `RimLLMHttpTransport`，共用的供應商基底類別不再夾帶一整套沒人用的 HTTP 機制。
+* **框架已無任何 raw HTTP 路徑。** 建立 Gemini `cachedContents` 顯式快取是最後一處，現已改走 `Client.Caches.CreateAsync`，回傳型別化的 `CachedContent`（`ExpireTime` 直接是 `DateTime?`，不需要再解析字串）。本文件先前宣稱 `Caches` 只暴露 `ListAsync` —— 那是錯的，而且從未被驗證過；對實際組件反射顯示 `CreateAsync`、`GetAsync`、`UpdateAsync`、`DeleteAsync`、`ListAsync` 全是公開成員。移除該路徑後，整個 HTTP 傳輸層與認證 Header 處理都一併刪除。
 * **JSON Schema 產生刻意不使用 `AIJsonUtilities.CreateJsonSchema`。** MEAI 產出的是完整 JSON Schema —— 可為 null 的成員會變成 `"type": ["string","null"]` 聯集型別，遞迴型別則以 `$ref` 表達。實測顯示三種測試型別的輸出全都被 `Google.GenAI` 的 `Schema.FromJson` 拒絕。`RimLLMJsonHelper` 改為產出所有供應商都接受的受限子集（單一 `type`、遞迴成員截斷）。兩者解決的是不同問題。
 * 供應商專屬 SDK 絕不出現在 `RimLLMManager` 或公開 SDK facade 中；共用層只相依 `IChatClient`、`LLMProviderCapabilities` 與既有的 `ILLMProvider` API。API 金鑰一律來自加密設定，絕不寫入原始碼或一般日誌。
 

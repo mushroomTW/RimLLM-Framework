@@ -10,13 +10,20 @@
     <DebugType>none</DebugType>
     <!-- 確保建置時不會自動在路徑後附加 net472/ 資料夾 -->
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <OutputPath>..\..\Assemblies\</OutputPath>
+    <!--
+      只有 Release 會寫入實際出貨的 Assemblies/。
+      先前 OutputPath 是無條件的，導致 `dotnet test` 以 Debug 重建主專案時
+      會把出貨 DLL 蓋成未最佳化的 Debug 組建 —— 而「建置→測試→commit」的流程
+      讓測試永遠是最後一個寫入者，因此歷來出貨的都是 Debug。
+      注意：改動程式碼後要讓遊戲載入到新版，必須跑 `dotnet build -c Release`。
+    -->
+    <OutputPath Condition="'$(Configuration)' == 'Release'">..\..\Assemblies\</OutputPath>
+    <OutputPath Condition="'$(Configuration)' != 'Release'">bin\$(Configuration)\</OutputPath>
     <Deterministic>true</Deterministic>
     <!-- 避免與原本 Properties/AssemblyInfo.cs 產生屬性重複衝突 -->
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <!-- 啟用 C# 8.0 語言版本，以支援非同步資料流 (IAsyncEnumerable) -->
     <LangVersion>8.0</LangVersion>
-    <BaseOutputPath>~\Assemblies\</BaseOutputPath>
     <!-- ChatCompletionOptions.Patch 為實驗性 API (SCME0001)，本專案刻意使用它以補救 wire 差異。 -->
     <NoWarn>$(NoWarn);SCME0001</NoWarn>
     <Authors>mushroomTW</Authors>
@@ -32,7 +39,7 @@
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.3" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
     <PackageReference Include="OpenAI" Version="2.12.0" />
-    <PackageReference Include="Google.GenAI" Version="1.16.0" />
+    <PackageReference Include="Google.GenAI" Version="1.17.0" />
     <!--
       升級 System.Threading.Tasks.Extensions 至 4.6.3，並以 alias 隔離其 ValueTask，
       避免與 Krafs.Rimworld.Ref 附帶的 RimWorld Mono mscorlib（同樣定義 ValueTask）衝突（CS0433）。

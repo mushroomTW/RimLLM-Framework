@@ -9,7 +9,7 @@ namespace RimLLM_Framework.Providers
 {
     /// <summary>
     /// 供應商基底類別：提供設定存取、連線測試與共用的能力宣告。
-    /// 對話與模型清單皆走官方 SDK；少數 SDK 未涵蓋的端點請改用 <see cref="RimLLMHttpTransport"/>。
+    /// 對話、模型清單與 Gemini 顯式快取全走官方 SDK，框架已無 raw HTTP 路徑。
     /// </summary>
     public abstract class BaseHttpProvider : ILLMProvider
     {

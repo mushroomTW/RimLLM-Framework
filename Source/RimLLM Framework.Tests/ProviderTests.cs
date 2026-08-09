@@ -140,24 +140,23 @@ namespace RimLLM_Framework.Tests
             // 1. 第一次呼叫：應觸發快取建立與快取引用
             string response1 = provider.GenerateAsync(messages, options, "gemini-1.5-pro").GetAwaiter().GetResult();
             Assert.AreEqual("gemini-response", response1);
-            Assert.AreEqual(1, provider.SendCalls.Count);
+            Assert.AreEqual(1, provider.CacheCreateCalls.Count);
 
-            // 驗證唯一的 raw 呼叫是建立快取
-            var firstCall = provider.SendCalls[0];
-            Assert.IsTrue(firstCall.url.Contains("cachedContents"));
-            var firstPayload = Newtonsoft.Json.Linq.JObject.Parse(firstCall.payload);
-            Assert.AreEqual("models/gemini-1.5-pro", firstPayload["model"]?.ToString());
-            Assert.AreEqual(expectedSystemText, firstPayload["systemInstruction"]?["parts"]?[0]?["text"]?.ToString());
+            // 驗證快取建立參數（改走官方 SDK 後為型別化物件，不再解析 JSON 字串）
+            var firstCall = provider.CacheCreateCalls[0];
+            Assert.AreEqual("models/gemini-1.5-pro", firstCall.model);
+            Assert.AreEqual(expectedSystemText, firstCall.config.SystemInstruction?.Parts?[0]?.Text);
+            Assert.AreEqual("300s", firstCall.config.Ttl);
 
             // 驗證 SDK seam 收到 cachedContent 且未附帶 systemInstruction
             Assert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
             Assert.IsNull(provider.LastConfig.SystemInstruction);
 
             // 2. 第二次呼叫：快取已存在，應直接引用而不重複建立快取
-            provider.SendCalls.Clear();
+            provider.CacheCreateCalls.Clear();
             string response2 = provider.GenerateAsync(messages, options, "gemini-1.5-pro").GetAwaiter().GetResult();
             Assert.AreEqual("gemini-response", response2);
-            Assert.AreEqual(0, provider.SendCalls.Count);
+            Assert.AreEqual(0, provider.CacheCreateCalls.Count);
             Assert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
             Assert.IsNull(provider.LastConfig.SystemInstruction);
         }
@@ -184,7 +183,7 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual("gemini-response", response);
 
             // 不應有任何建立快取的呼叫
-            Assert.AreEqual(0, provider.SendCalls.Count);
+            Assert.AreEqual(0, provider.CacheCreateCalls.Count);
 
             // SDK seam 未附 cachedContent，改以 systemInstruction 承載
             Assert.IsNull(provider.LastConfig.CachedContent);
@@ -206,7 +205,7 @@ namespace RimLLM_Framework.Tests
             Assert.IsTrue(result.Success);
             Assert.AreEqual("gemini-3.5-flash", result.Model);
             Assert.AreEqual("gemini-3.5-flash", provider.LastModel);
-            Assert.AreEqual(0, provider.SendCalls.Count);
+            Assert.AreEqual(0, provider.CacheCreateCalls.Count);
         }
 
         [Test]
@@ -929,7 +928,8 @@ namespace RimLLM_Framework.Tests
 
     public class TestGeminiProvider : GeminiProvider
     {
-        public List<(string url, string payload)> SendCalls { get; } = new List<(string, string)>();
+        /// <summary>快取建立呼叫紀錄（走官方 SDK 的 Caches.CreateAsync seam）。</summary>
+        public List<(string model, CreateCachedContentConfig config)> CacheCreateCalls { get; } = new List<(string, CreateCachedContentConfig)>();
 
         /// <summary>非串流 seam 最後收到的組態，供斷言 cachedContent / systemInstruction。</summary>
         public GenerateContentConfig LastConfig { get; private set; }
@@ -973,15 +973,18 @@ namespace RimLLM_Framework.Tests
             return System.Threading.Tasks.Task.FromResult(MockResponse);
         }
 
-        protected override System.Threading.Tasks.Task<string> PostCachedContentsAsync(string url, string payload, string apiKey, System.Threading.CancellationToken cancellationToken)
+        protected override System.Threading.Tasks.Task<CachedContent> CreateCachedContentNativeAsync(
+            string apiKey,
+            string modelWithPrefix,
+            CreateCachedContentConfig config,
+            System.Threading.CancellationToken cancellationToken)
         {
-            SendCalls.Add((url, payload));
-            if (url.Contains("cachedContents"))
+            CacheCreateCalls.Add((modelWithPrefix, config));
+            return System.Threading.Tasks.Task.FromResult(new CachedContent
             {
-                string expireStr = DateTime.UtcNow.AddMinutes(5).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-                return System.Threading.Tasks.Task.FromResult("{\"name\": \"cachedContents/mock-cache-id\", \"expireTime\": \"" + expireStr + "\"}");
-            }
-            return System.Threading.Tasks.Task.FromResult("{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"gemini-response\"}]}}]}");
+                Name = "cachedContents/mock-cache-id",
+                ExpireTime = DateTime.UtcNow.AddMinutes(5)
+            });
         }
     }
 
@@ -1216,8 +1219,8 @@ namespace RimLLM_Framework.Tests
     }
 
     /// <summary>
-    /// 探測 raw HTTP 路徑的狀態碼對照。傳輸層已抽離為 RimLLMHttpTransport，
-    /// 此處直接重現它擲出例外的方式，維持與生產路徑相同的語意。
+    /// 探測 HTTP 狀態碼 → LLMError 的對照。框架已無 raw HTTP 路徑，
+    /// 此處直接驗證所有路徑共用的 LLMErrorMapper。
     /// </summary>
     public class HttpErrorProbeProvider : OpenAIProvider
     {
@@ -1227,10 +1230,9 @@ namespace RimLLM_Framework.Tests
         {
             using (var response = new System.Net.Http.HttpResponseMessage(statusCode))
             {
-                int code = (int)statusCode;
                 throw LLMErrorMapper.CreateException(
-                    code,
-                    RimLLMHttpTransport.ExtractFriendlyError(responseBody, code),
+                    (int)statusCode,
+                    responseBody,
                     LLMErrorMapper.ParseRetryAfter(response));
             }
         }

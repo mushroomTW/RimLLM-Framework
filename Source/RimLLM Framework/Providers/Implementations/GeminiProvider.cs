@@ -86,18 +86,17 @@ namespace RimLLM_Framework.Providers
             return new Client(apiKey: apiKey);
         }
 
-        /// <summary>
-        /// 建立 cachedContents 資源（測試縫）。這是官方 Google.GenAI SDK 未涵蓋的端點，
-        /// 也是整個框架唯一還需要 raw HTTP 的地方。
-        /// </summary>
-        protected virtual Task<string> PostCachedContentsAsync(
-            string url,
-            string payload,
+        /// <summary>建立 cachedContents 資源（測試縫）。走官方 SDK 的 Caches.CreateAsync。</summary>
+        protected virtual async Task<CachedContent> CreateCachedContentNativeAsync(
             string apiKey,
+            string modelWithPrefix,
+            CreateCachedContentConfig config,
             System.Threading.CancellationToken cancellationToken)
         {
-            return RimLLMHttpTransport.SendPostAsync(
-                url, payload, apiKey, AuthSchemes.Gemini, Settings?.ApiTimeout ?? 30f, cancellationToken);
+            using (Client client = CreateGenAiClient(apiKey))
+            {
+                return await client.Caches.CreateAsync(modelWithPrefix, config, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         /// <summary>呼叫非串流 generateContent（測試縫）。</summary>
@@ -359,13 +358,11 @@ namespace RimLLM_Framework.Providers
                 enableContextCaching = ecBool;
             }
 
-            string baseEndpoint = Settings.GetEndpoint(ProviderId, "https://generativelanguage.googleapis.com/v1beta");
             string cacheId = null;
             if (enableContextCaching && !string.IsNullOrEmpty(systemContext))
             {
                 cacheId = await GetOrCreateCachedContentAsync(
                     apiKey,
-                    baseEndpoint,
                     model,
                     systemContext,
                     default).ConfigureAwait(false);
@@ -639,7 +636,7 @@ namespace RimLLM_Framework.Providers
                                    model.IndexOf("gemini-4", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string cacheableContext, System.Threading.CancellationToken cancellationToken)
+        private async Task<string> GetOrCreateCachedContentAsync(string apiKey, string model, string cacheableContext, System.Threading.CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(cacheableContext)) return null;
 
@@ -672,7 +669,7 @@ namespace RimLLM_Framework.Providers
                 existing = TryGetValidCachedId(cacheKey);
                 if (existing != null) return existing;
 
-                return await CreateCachedContentAsync(apiKey, baseEndpoint, model, cacheKey, cacheableContext, cancellationToken).ConfigureAwait(false);
+                return await CreateCachedContentAsync(apiKey, model, cacheKey, cacheableContext, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -708,50 +705,35 @@ namespace RimLLM_Framework.Providers
             return null;
         }
 
-        private async Task<string> CreateCachedContentAsync(string apiKey, string baseEndpoint, string model, string cacheKey, string cacheableContext, System.Threading.CancellationToken cancellationToken)
-        {
-            // 建立新的 Cached Content 資源
-            // API url 格式: POST https://generativelanguage.googleapis.com/v1beta/cachedContents（金鑰走 x-goog-api-key Header）
-            string cacheUrl = $"{baseEndpoint.TrimEnd(new char[] { '/' })}/cachedContents";
+        /// <summary>快取的預設存活時間。</summary>
+        private const int CacheTtlSeconds = 300;
 
-            // 剥離 model 中的 "models/" 前綴以對齊格式 (Gemini 官方要求建立快取時 model 必須包含 models/ 前綴)
+        private async Task<string> CreateCachedContentAsync(string apiKey, string model, string cacheKey, string cacheableContext, System.Threading.CancellationToken cancellationToken)
+        {
+            // Gemini 官方要求建立快取時 model 必須包含 models/ 前綴。
             string modelWithPrefix = model.StartsWith("models/") ? model : $"models/{model}";
 
-            var cachePayload = new JObject
+            var config = new CreateCachedContentConfig
             {
-                ["model"] = modelWithPrefix,
-                ["systemInstruction"] = new JObject
-                {
-                    ["parts"] = new JArray
-                    {
-                        new JObject { ["text"] = cacheableContext }
-                    }
-                },
-                ["ttl"] = "300s" // 預設保留 5 分鐘
+                SystemInstruction = BuildTextContent(cacheableContext),
+                Ttl = $"{CacheTtlSeconds}s"
             };
 
             try
             {
-                string cacheResponseJson = await PostCachedContentsAsync(
-                    cacheUrl, cachePayload.ToString(), apiKey, cancellationToken).ConfigureAwait(false);
-                var cacheObj = JObject.Parse(cacheResponseJson);
-                string cacheId = cacheObj["name"]?.ToString();
-                string expireTimeStr = cacheObj["expireTime"]?.ToString();
+                CachedContent created = await CreateCachedContentNativeAsync(
+                    apiKey, modelWithPrefix, config, cancellationToken).ConfigureAwait(false);
 
+                string cacheId = created?.Name;
                 if (!string.IsNullOrEmpty(cacheId))
                 {
-                    DateTime expireTime = DateTime.UtcNow.AddSeconds(300); // 預設 300 秒
-                    if (DateTime.TryParse(expireTimeStr, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsedTime))
-                    {
-                        expireTime = parsedTime;
-                    }
-
-                    var newEntry = new GeminiCacheEntry
+                    // SDK 直接給 DateTime?，不需要再解析字串；未回傳時退回本地推算的到期時間。
+                    _contextCaches[cacheKey] = new GeminiCacheEntry
                     {
                         CacheId = cacheId,
-                        ExpireTime = expireTime
+                        ExpireTime = created.ExpireTime?.ToUniversalTime()
+                            ?? DateTime.UtcNow.AddSeconds(CacheTtlSeconds)
                     };
-                    _contextCaches[cacheKey] = newEntry;
                     return cacheId;
                 }
             }
