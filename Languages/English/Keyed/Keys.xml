@@ -146,13 +146,13 @@
 
   <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
   <RimLLM_TitleEmbedding>Embedding Vector Settings</RimLLM_TitleEmbedding>
-  <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and similarity comparison. Other mods can call them through the RimLLM SDK. Offline Trigram mode needs no API and works entirely on your machine.</RimLLM_EmbeddingExplanation>
+  <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and similarity comparison. Other mods can call them through the RimLLM SDK. When set to Disabled no vectors are produced; RimLLMEmbeddingService.CalculateTrigramSimilarity is still available for local string matching without any API.</RimLLM_EmbeddingExplanation>
   <RimLLM_EmbeddingProviderLabel>Embedding Provider: </RimLLM_EmbeddingProviderLabel>
   <RimLLM_EmbeddingModelLabel>Embedding Model Name: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>Custom Endpoint URL: </RimLLM_EmbeddingEndpointLabel>
   <RimLLM_EmbeddingApiKeyLabel>Custom API Key (optional, defaults to provider key if empty): </RimLLM_EmbeddingApiKeyLabel>
 
-  <RimLLM_EmbeddingProvider_Offline_Trigram>Offline Trigram Calculation (Offline)</RimLLM_EmbeddingProvider_Offline_Trigram>
+  <RimLLM_EmbeddingProvider_Disabled>Disabled (no embeddings)</RimLLM_EmbeddingProvider_Disabled>
   <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
   <RimLLM_EmbeddingProvider_LocalAPI_Ollama>Local Ollama API (Ollama)</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
   <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>Local OpenAI Compatible (LM Studio/Local)</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>

@@ -146,14 +146,14 @@
 
   <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
   <RimLLM_TitleEmbedding>Embedding 向量設定</RimLLM_TitleEmbedding>
-  <RimLLM_EmbeddingExplanation>Embedding 會把文字轉換成數值向量，可用於語意檢索與相似度比對，其他 Mod 能透過 RimLLM SDK 呼叫。離線 Trigram 模式完全在本機運算，不需要 API。</RimLLM_EmbeddingExplanation>
+  <RimLLM_EmbeddingExplanation>Embedding 會把文字轉換成數值向量，可用於語意檢索與相似度比對，其他 Mod 能透過 RimLLM SDK 呼叫。選「停用」時不會產生向量；此時仍可使用不需 API 的 RimLLMEmbeddingService.CalculateTrigramSimilarity 做本機字串比對。</RimLLM_EmbeddingExplanation>
   <RimLLM_EmbeddingProviderLabel>Embedding 供應商: </RimLLM_EmbeddingProviderLabel>
   <RimLLM_EmbeddingModelLabel>Embedding 模型名稱: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>自訂服務端點: </RimLLM_EmbeddingEndpointLabel>
   <RimLLM_EmbeddingApiKeyLabel>自訂 API 金鑰 (選填，為空時預設與主 API 相同): </RimLLM_EmbeddingApiKeyLabel>
 
 
-  <RimLLM_EmbeddingProvider_Offline_Trigram>離線 Trigram 計算</RimLLM_EmbeddingProvider_Offline_Trigram>
+  <RimLLM_EmbeddingProvider_Disabled>停用（不使用 Embedding）</RimLLM_EmbeddingProvider_Disabled>
   <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
   <RimLLM_EmbeddingProvider_LocalAPI_Ollama>本地 Ollama API</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
   <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>本地 OpenAI 相容 API</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>

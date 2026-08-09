@@ -1,4 +1,4 @@
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// API 連線測試回傳結果。

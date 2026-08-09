@@ -1,6 +1,8 @@
 using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// HTTP 狀態碼 → <see cref="LLMError"/> 的單一對照來源。
@@ -9,6 +11,44 @@ namespace RimLLM_Framework.SDK
     /// </summary>
     public static class LLMErrorMapper
     {
+        /// <summary>
+        /// 解析 Retry-After 標頭值。RFC 7231 允許「延遲秒數」與「HTTP 日期」兩種格式，
+        /// 交由 <see cref="RetryConditionHeaderValue"/> 一併處理，避免各路徑各自實作而漏掉日期格式。
+        /// 無法解析或已過期時回傳 null。
+        /// </summary>
+        public static TimeSpan? ParseRetryAfter(string headerValue)
+        {
+            if (string.IsNullOrWhiteSpace(headerValue)) return null;
+            return RetryConditionHeaderValue.TryParse(headerValue, out RetryConditionHeaderValue parsed)
+                ? ToDelay(parsed)
+                : null;
+        }
+
+        /// <summary>
+        /// 從已解析的 HTTP 回應標頭取出 Retry-After 建議等待時間。
+        /// </summary>
+        public static TimeSpan? ParseRetryAfter(HttpResponseMessage response)
+        {
+            return ToDelay(response?.Headers?.RetryAfter);
+        }
+
+        /// <summary>把 Retry-After 的兩種表示法統一換算成剩餘等待時間；非正值視為無建議。</summary>
+        private static TimeSpan? ToDelay(RetryConditionHeaderValue retryAfter)
+        {
+            if (retryAfter == null) return null;
+
+            if (retryAfter.Delta.HasValue)
+            {
+                return retryAfter.Delta.Value > TimeSpan.Zero ? retryAfter.Delta : null;
+            }
+            if (retryAfter.Date.HasValue)
+            {
+                TimeSpan delta = retryAfter.Date.Value - DateTimeOffset.UtcNow;
+                return delta > TimeSpan.Zero ? (TimeSpan?)delta : null;
+            }
+            return null;
+        }
+
         /// <summary>
         /// 依 HTTP 狀態碼建立對應的 <see cref="RimLLMException"/>。
         /// </summary>

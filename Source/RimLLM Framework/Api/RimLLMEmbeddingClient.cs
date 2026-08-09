@@ -5,13 +5,13 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Manager;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// 綁定單一 Mod 的 IEmbeddingGenerator facade。內部接到既有 RimLLMEmbeddingService
     /// （線上供應商 + 防濫用）。透過 RimLLMProvider.CreateEmbeddingGenerator(modId) 取得。
     /// </summary>
-    public class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedding<float>>
+    internal class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedding<float>>
     {
         private readonly RimLLMManager _manager;
         private readonly string _modId;

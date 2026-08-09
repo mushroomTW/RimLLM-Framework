@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Microsoft.Extensions.AI;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// 定義 RimLLM Framework 的設定檔介面。

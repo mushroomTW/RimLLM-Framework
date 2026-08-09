@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Newtonsoft.Json;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Providers;
 using RimLLM_Framework.Mod;
@@ -216,13 +215,13 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 包裝排隊佇列的 GenerateInternalAsync。
         /// </summary>
-        private async Task<RimLLMGenerationResult> GenerateInternalAsync(RimLLMRequest request, Assembly callingAssembly, bool verifyCaller)
+        private async Task<RimLLMGenerationResult> GenerateInternalAsync(RimLLMRequest request)
         {
             RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
 
             // 准入檢查一律在進入佇列之前執行，且整條請求路徑只執行一次。
             // 特別是預算對話框：若在佇列委派內等待，會持續佔用一個並行名額。
-            if (await RunAdmissionChecksAsync(normalizedRequest, callingAssembly, verifyCaller).ConfigureAwait(false)
+            if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false)
                 is string mockResult)
             {
                 return new RimLLMGenerationResult { Text = mockResult };
@@ -232,14 +231,11 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 執行呼叫端校驗、防濫用與預算檢查。
+        /// 執行防濫用與預算檢查。
         /// 若預算政策指示以模擬回應取代真實請求，回傳該模擬字串；否則回傳 null 代表可繼續。
         /// </summary>
-        private async Task<string> RunAdmissionChecksAsync(RimLLMRequest request, Assembly callingAssembly, bool verifyCaller)
+        private async Task<string> RunAdmissionChecksAsync(RimLLMRequest request)
         {
-            // 1. 來源身分安全校驗 (Caller Verification)
-            VerifyCallerOrThrow(request, callingAssembly, verifyCaller);
-
             // Anti-abuse check
             if (_settings.EnableAntiAbuse)
             {
@@ -257,33 +253,24 @@ namespace RimLLM_Framework.Manager
             return IsBudgetMocked(request, out string mockResult) ? mockResult : null;
         }
 
-        /// <summary>建立綁定指定 Mod 的 IChatClient facade。呼叫端 assembly 須已註冊該 Mod。</summary>
         /// <summary>內部存取目前設定（供 facade 的結構化輸出流程使用）。</summary>
         internal IRimLLMSettings Settings => _settings;
 
-        internal RimLLMChatClient CreateChatClient(string modId, Assembly callingAssembly)
+        internal RimLLMChatClient CreateChatClient(string modId)
         {
             if (string.IsNullOrEmpty(modId))
             {
                 throw new ArgumentException("ModId cannot be empty or null", nameof(modId));
-            }
-            if (!ClientRegistry.Verify(modId, callingAssembly))
-            {
-                throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{modId}' did not pass.");
             }
             return new RimLLMChatClient(this, modId);
         }
 
-        /// <summary>建立綁定指定 Mod 的 embedding generator。呼叫端 assembly 須已註冊該 Mod。</summary>
-        internal RimLLMEmbeddingClient CreateEmbeddingGenerator(string modId, Assembly callingAssembly)
+        /// <summary>建立綁定指定 Mod 的 embedding generator。modId 用於防濫用節流與遙測歸屬。</summary>
+        internal RimLLMEmbeddingClient CreateEmbeddingGenerator(string modId)
         {
             if (string.IsNullOrEmpty(modId))
             {
                 throw new ArgumentException("ModId cannot be empty or null", nameof(modId));
-            }
-            if (!ClientRegistry.Verify(modId, callingAssembly))
-            {
-                throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{modId}' did not pass.");
             }
             return new RimLLMEmbeddingClient(this, modId);
         }
@@ -445,26 +432,19 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// SDK facade 的非串流唯一入口（回傳包含實際 provider/model 與用量的結果）。
         /// </summary>
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        internal Task<RimLLMGenerationResult> GenerateResultAsync(
-            RimLLMRequest request,
-            Assembly callingAssembly = null,
-            bool verifyCaller = true)
+        internal Task<RimLLMGenerationResult> GenerateResultAsync(RimLLMRequest request)
         {
-            return GenerateInternalAsync(request, callingAssembly, verifyCaller);
+            return GenerateInternalAsync(request);
         }
 
         /// <summary>
         /// SDK facade 的串流唯一入口。串流 chunk 經 <paramref name="onChunkReceived"/> 送出。
         /// </summary>
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         internal Task<RimLLMGenerationResult> StreamResultAsync(
             RimLLMRequest request,
-            Action<string> onChunkReceived,
-            Assembly callingAssembly = null,
-            bool verifyCaller = true)
+            Action<string> onChunkReceived)
         {
-            return StreamInternalAsync(request, onChunkReceived, callingAssembly, verifyCaller);
+            return StreamInternalAsync(request, onChunkReceived);
         }
 
         /// <summary>
@@ -472,14 +452,12 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private async Task<RimLLMGenerationResult> StreamInternalAsync(
             RimLLMRequest request,
-            Action<string> onChunkReceived,
-            Assembly callingAssembly,
-            bool verifyCaller)
+            Action<string> onChunkReceived)
         {
             RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
 
             // 與 GenerateInternalAsync 一致：准入檢查在佇列之前執行且只執行一次。
-            if (await RunAdmissionChecksAsync(normalizedRequest, callingAssembly, verifyCaller).ConfigureAwait(false)
+            if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false)
                 is string mockResult)
             {
                 DispatchChunk(onChunkReceived, mockResult);
@@ -786,20 +764,6 @@ namespace RimLLM_Framework.Manager
                    chatProvider.UsesIChatClient &&
                    chatProvider.Capabilities.SupportsNativeStructuredOutput &&
                    _settings.EnableNativeSchema;
-        }
-
-        /// <summary>
-        /// 來源身分安全校驗 (Caller Verification)。
-        /// </summary>
-        private static void VerifyCallerOrThrow(RimLLMRequest request, Assembly callingAssembly, bool verifyCaller)
-        {
-            if (!verifyCaller || callingAssembly == null)
-                return;
-
-            if (!ClientRegistry.Verify(request.ModId, callingAssembly))
-            {
-                throw new RimLLMException(LLMError.InvalidKey, $"[RimLLM] Caller verification failed. Assembly verification for ModId '{request.ModId}' did not pass.");
-            }
         }
 
         public async Task<TestResult> TestProviderAsync(string providerId)

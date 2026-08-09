@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using System.ClientModel;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Manager;
-using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Tests
 {

@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Manager;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>RimLLM SDK 對 IChatClient 的擴充方法。</summary>
     public static class RimLLMClientExtensions

@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
 using RimLLM_Framework.Mod;
@@ -202,7 +201,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.abuse.mod";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
@@ -244,7 +242,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.budget.block.mod";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
@@ -280,7 +277,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.budget.mock.mod";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             // 1. 一般文字請求

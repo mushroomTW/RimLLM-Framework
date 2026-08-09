@@ -7,7 +7,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.ClientModel;
 using Microsoft.Extensions.AI;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
@@ -383,17 +382,17 @@ namespace RimLLM_Framework.Manager
         {
             try
             {
-                if (ex.GetRawResponse()?.Headers.TryGetValue("Retry-After", out string value) == true &&
-                    double.TryParse(value, out double seconds) && seconds > 0)
-                {
-                    return TimeSpan.FromSeconds(seconds);
-                }
+                // 交給 LLMErrorMapper 統一解析：秒數與 HTTP 日期兩種格式都吃，
+                // 與 raw HTTP 路徑（BaseHttpProvider）行為一致。
+                return ex.GetRawResponse()?.Headers.TryGetValue("Retry-After", out string value) == true
+                    ? LLMErrorMapper.ParseRetryAfter(value)
+                    : null;
             }
             catch
             {
                 // 無法解析 Retry-After 時忽略，重試仍會採用使用者設定的延遲。
+                return null;
             }
-            return null;
         }
 
         private static void RecordUsage(

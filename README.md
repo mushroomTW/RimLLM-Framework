@@ -7,44 +7,89 @@
 
 `RimLLM Framework` is a foundational framework providing a Large Language Model (LLM) calling interface and core infrastructure for RimWorld mods. It gives other RimWorld AI mods a robust, convenient, efficient and ready-to-use SDK, so mod developers don't have to reinvent the wheel.
 
+Everything you get back from the framework is a **standard Microsoft.Extensions.AI type** — `IChatClient`, `ChatMessage`, `ChatResponse`, `IEmbeddingGenerator`. There is no bespoke client interface to learn.
+
+---
+
+## 📦 Installation
+
+Your mod needs the Microsoft.Extensions.AI (MEAI) types at **compile time**, but must **not ship them at run time**. RimLLM Framework already deploys every MEAI DLL into its own `Assemblies/` folder, and RimWorld loads all mods into a single AppDomain — a second copy would create two distinct `IChatClient` types and every cast between them would fail.
+
+The rule is the same for both options below: **reference, don't copy.**
+
+### Option A — NuGet (recommended)
+
+```xml
+<ItemGroup>
+  <!-- IChatClient / ChatMessage / ChatResponse / IEmbeddingGenerator.
+       ExcludeAssets="runtime" keeps the reference but stops the DLLs
+       being copied into your mod's Assemblies folder. -->
+  <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.3" ExcludeAssets="runtime" />
+</ItemGroup>
+```
+
+* [`Microsoft.Extensions.AI` 10.8.3](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.8.3) — this is all a consuming mod needs. It brings in `Microsoft.Extensions.AI.Abstractions`, where `IChatClient` lives.
+* [`Microsoft.Extensions.AI.OpenAI` 10.8.3](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.8.3) — additionally shipped by the framework. You only need to reference it if you construct OpenAI SDK clients yourself; a mod that just calls `RimLLMProvider.CreateChatClient` does not.
+
+> [!IMPORTANT]
+> **Pin the version to exactly `10.8.3`.** Assembly identity must match what the framework loaded. Do not set `CopyLocalLockFileAssemblies` to `true` in a consuming mod — that is what causes the duplicate-DLL problem above.
+
+You still need a reference to the framework assembly itself, which is not on NuGet — see Option B for that part.
+
+### Option B — Direct DLL reference
+
+Reference the DLLs straight out of the installed framework mod. `<Private>false</Private>` is what stops MSBuild copying them to your output.
+
+```xml
+<PropertyGroup>
+  <RimLLMDir>$(MSBuildProgramFiles32)\Steam\steamapps\common\RimWorld\Mods\RimLLM Framework\Assemblies</RimLLMDir>
+</PropertyGroup>
+
+<ItemGroup>
+  <Reference Include="RimLLM Framework">
+    <HintPath>$(RimLLMDir)\RimLLM Framework.dll</HintPath>
+    <Private>false</Private>
+  </Reference>
+  <Reference Include="Microsoft.Extensions.AI.Abstractions">
+    <HintPath>$(RimLLMDir)\Microsoft.Extensions.AI.Abstractions.dll</HintPath>
+    <Private>false</Private>
+  </Reference>
+</ItemGroup>
+```
+
+Adjust `RimLLMDir` if RimWorld is not installed under the default Steam path.
+
+### Load order
+
+Declare the dependency in your mod's `About/About.xml` so the framework initialises first:
+
+```xml
+<loadAfter>
+  <li>GreenMushroom.RimLLMFramework</li>
+</loadAfter>
+```
+
 ---
 
 ## 💻 SDK Usage
 
 ### 1. Import the namespaces
 
-Reference the Microsoft Extensions AI and RimLLM SDK namespaces in your RimWorld mod's C# project:
-
 ```csharp
 using Microsoft.Extensions.AI;
-using RimLLM_Framework.SDK;
+using RimLLM_Framework;
 ```
 
-### 2. Register your client mod
+### 2. Text generation
 
-Register in your mod's entry point (its constructor or `StaticConstructorOnStartup`):
-
-```csharp
-public class MyAIMod : Verse.Mod
-{
-    public MyAIMod(ModContentPack content) : base(content)
-    {
-        // Register your ModId so the framework can identify the caller
-        RimLLMProvider.RegisterClient("myai.mod");
-    }
-}
-```
-
-### 3. Text generation
-
-Use `RimLLMProvider.CreateChatClient` to obtain a standard MEAI `IChatClient`. The framework's fallback chain, request queue, anti-abuse checks and usage tracking are all applied automatically:
+`RimLLMProvider.CreateChatClient` returns a standard MEAI `IChatClient`. The framework's fallback chain, request queue, anti-abuse checks and usage tracking are all applied automatically. No registration step is required — the `modId` you pass is just a label used for per-mod throttling and telemetry attribution:
 
 ```csharp
 public async void AskSomething()
 {
     try
     {
-        // Get an IChatClient bound to the current mod
+        // Get an IChatClient bound to your mod. Any non-empty id works; use something unique.
         IChatClient chat = RimLLMProvider.CreateChatClient("myai.mod");
 
         var messages = new List<ChatMessage>
@@ -77,7 +122,7 @@ ChatResponse response = await chat.GetResponseAsync(
     });
 ```
 
-### 4. Structured output
+### 3. Structured output
 
 Define your C# data class and use the `GetResponseObjectAsync<T>` extension method:
 
@@ -115,7 +160,7 @@ public async void MakeIncidentDecision()
 }
 ```
 
-### 5. Streaming
+### 4. Streaming
 
 Use the standard MEAI `GetStreamingResponseAsync` to iterate over the `ChatResponseUpdate` stream:
 
@@ -148,11 +193,11 @@ public async void StreamResponse()
 }
 ```
 
-> When the entire fallback chain fails, the exception is rethrown from `await foreach`, so the `catch` above
-> is guaranteed to receive the error — a failing stream never ends silently. Chunks are emitted as soon as
-> they are produced, with no polling delay in between.
+> When the entire fallback chain fails, the original `RimLLMException` is rethrown from `await foreach`, so the
+> `catch` above is guaranteed to receive the error — a failing stream never ends silently. Chunks are emitted as
+> soon as they are produced, with no polling delay in between.
 
-### 6. Context caching to save tokens
+### 5. Context caching to save tokens
 
 If your mod has a very large, stable context that is **reused within a short time window** (world-building rules, fixed character backgrounds, output schemas, and so on) and you call the API frequently, you can enable **context caching** via `RimLLMChatOptions.CachedContext`:
 
@@ -183,7 +228,7 @@ public async void CallWithCaching()
 > **Gemini** caches `SystemPrompt + CachedContext` (TTL 300s). When the content is too small (< 2048 characters for Pro, < 1024 for other models), the framework falls back to a normal `systemInstruction` to avoid paying the cache creation fee for no benefit.
 > **OpenAI** applies prompt caching to repeated prefixes automatically on the service side.
 
-### 7. Embeddings
+### 6. Embeddings
 
 Use `RimLLMProvider.CreateEmbeddingGenerator` to obtain a standard `IEmbeddingGenerator<string, Embedding<float>>`:
 
@@ -194,6 +239,12 @@ public async void GenerateVector()
     GeneratedEmbeddings<Embedding<float>> result = await generator.GenerateAsync(new[] { "colonist mental break" });
     ReadOnlyMemory<float> vector = result[0].Vector;
 }
+```
+
+The embedding provider defaults to **Disabled**; until the player picks one in the settings, `GenerateAsync` throws a `RimLLMException`. When you need a fallback that never requires an API, use the standalone trigram helper — it is a plain string-similarity function, unaffected by the embedding provider setting:
+
+```csharp
+float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity("colonist mental break", "pawn had a breakdown");
 ```
 
 ---
@@ -207,10 +258,10 @@ public async void GenerateVector()
 2. **Failover and model fallback**
    * **Client-side fallback chain**: configure a chain made up of a primary model and multiple exact fallback models. When the current model hits a timeout, rate limit (HTTP 429) or connection error, the framework switches down the chain seamlessly. The UI produces entries in `Provider:Model` form; the framework still parses bare provider entries for compatibility and uses that provider's default model.
    * **OpenRouter server-side auto fallback (`openrouter/auto`)**: you can put OpenRouter's official `openrouter/auto` model in the fallback chain and let OpenRouter pick among its recommended models server-side.
-3. **AES-256 settings encryption and caller registration**
+   * `Retry-After` is honoured in both forms RFC 7231 allows — delay-seconds and HTTP-date — on every path.
+3. **AES-256 settings encryption**
    * API keys are stored with AES-256 symmetric encryption, reducing the risk of plaintext keys sitting in the settings file. This is obfuscation-grade protection — see [Security notes](#-security-notes) below.
    * Every provider (including Gemini) passes its API key via an HTTP header, never in the request URL, so keys don't end up in proxy or server access logs.
-   * **Caller verification**: automatic registration has been removed. Async call layers are wrapped in synchronous shells marked `NoInlining` so the framework can identify registered callers reliably.
    * RimWorld mods all run inside the same game process. This framework makes no claim to stop a malicious mod from reading memory, reflecting over public APIs, or otherwise bypassing in-process boundaries.
 4. **Polished scrollable multi-column GUI**
    * An intuitive flow-grid of model chips with highlighted selection and full model names in tooltips.
@@ -231,9 +282,10 @@ public async void GenerateVector()
    * **Cost guard**: Gemini explicit caching has a minimum size threshold. When the content is too small the framework skips the cache and uses `systemInstruction` instead, avoiding the case where the creation fee is never recouped. Cache creation for the same context is also serialized by a lock to prevent duplicate resources.
    * **Quantified savings**: usage tracking parses the cache-hit tokens returned by the API (OpenAI `cached_tokens`, Gemini `cachedContentTokenCount`) and applies a discounted rate to the cost estimate, so the cost panel reflects the real saving.
 10. **Embedding SDK**
-    * The framework exposes public embedding functionality backed by Google, Ollama or an OpenAI-compatible endpoint, plus cosine similarity and offline trigram similarity helpers. Other mods obtain a standard `IEmbeddingGenerator` through `RimLLMProvider.CreateEmbeddingGenerator` for semantic search, clustering or similarity comparison.
+    * The framework exposes public embedding functionality backed by Google, Ollama or an OpenAI-compatible endpoint, plus a cosine similarity helper. Other mods obtain a standard `IEmbeddingGenerator` through `RimLLMProvider.CreateEmbeddingGenerator` for semantic search, clustering or similarity comparison.
     * All three online sources go through official SDKs: Google uses `EmbedContentAsync` from `Google.GenAI`; Ollama and self-hosted services use the OpenAI SDK's `EmbeddingClient` (Ollama via its OpenAI-compatible `/v1` endpoint). The *Embedding endpoint* field therefore takes a **service root address** such as `http://localhost:11434/v1`; a full `/embeddings` path is normalized automatically.
-    * Embeddings are a billed API, so they share the same caller verification and anti-abuse checks as ordinary generation requests. Their keys use the same AES encryption as provider keys.
+    * `CalculateTrigramSimilarity` is a **separate**, API-free string-similarity utility — not an embedding provider. It produces no vectors and is callable regardless of which provider (or none) is selected.
+    * Embeddings are a billed API, so they share the same anti-abuse checks as ordinary generation requests. Their keys use the same AES encryption as provider keys.
 
 ---
 
@@ -242,22 +294,24 @@ public async void GenerateVector()
 ### 1. Unified interface and dispatch core (`IChatClient` / `IEmbeddingGenerator` and `RimLLMProvider`)
 
 * The framework exposes the standard Microsoft.Extensions.AI interfaces. Callers only work against `IChatClient` or `IEmbeddingGenerator` and never need to know which provider or model handled the request — `RimLLMManager` handles dispatch and fallback rotation.
+* The concrete facades (`RimLLMChatClient`, `RimLLMEmbeddingClient`) are `internal`. The only framework-specific types a consumer touches are `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException` and `LLMError`; everything else crossing the boundary is a MEAI type.
+* `modId` is a plain label, not a credential. It keys per-mod anti-abuse throttling and telemetry attribution, and requires no registration call.
 
-### 2. Caller registration (`ClientRegistry`)
-
-* The framework verifies the calling assembly so API calls can be attributed to a registered ModId and assembly, reducing misuse, debugging confusion and accidental identifier collisions.
-* **Automatic registration has been removed**: every calling mod must invoke `RegisterClient` explicitly. On each API call the framework inspects the caller's `Assembly` and compares it against the registration table. If the `ModId` is not registered, or the registered assembly does not match the actual caller, the SDK call is blocked.
-* **Async caller stack protection**: to prevent the C# async state machine from attributing the caller assembly to `mscorlib`, entry points such as `GenerateObjectAsync` and `StreamAsync` are wrapped in synchronous shells marked `[MethodImplOptions.NoInlining]` to prevent JIT inlining.
-* This is not an anti-malware sandbox. If a player installs an untrusted mod, that mod can still cause data leakage or damage using ordinary in-process capabilities.
-
-### 3. Unity main-thread dispatcher (`RimLLMDispatcher`)
+### 2. Unity main-thread dispatcher (`RimLLMDispatcher`)
 
 * Network requests run asynchronously on background thread-pool threads, but most Unity APIs and RimWorld logic are not thread safe — calling them from a background thread causes crashes or TPS spikes.
 * `RimLLMDispatcher` is a MonoBehaviour singleton that collects callbacks from background threads in a `ConcurrentQueue` and dispatches them back to the main thread during Unity's per-frame `Update`.
 
+### 3. Streaming bridge (`Channel<T>`)
+
+* The manager's streaming API is callback-shaped (`Action<string> onChunkReceived`), while MEAI expects `IAsyncEnumerable<ChatResponseUpdate>`. The bridge between them is an unbounded `System.Threading.Channels.Channel<T>`; the consumer side is simply `ChannelReader.ReadAllAsync()`.
+* Because `IAsyncEnumerable` reaches this project through the `bclasync` extern alias, C# 8 cannot compile an async iterator over it. `ReadAllAsync()` sidesteps that entirely: it returns the same assembly's `IAsyncEnumerable`, so no iterator has to be hand-written.
+* A thin wrapper unwraps `ChannelClosedException` so producer failures surface to callers as the original `RimLLMException`.
+
 ### 4. Unified HTTP error mapping (`LLMErrorMapper`)
 
-* The rules that translate HTTP status codes into `LLMError` live in a single place, `LLMErrorMapper`, shared by three paths: the official SDK (`ClientResultException`), raw HTTP providers, and the embedding service.
+* The rules that translate HTTP status codes into `LLMError` live in a single place, `LLMErrorMapper`, shared by three paths: the official SDK (`ClientResultException`), the raw HTTP transport, and the embedding service.
+* `Retry-After` parsing lives there too, built on `RetryConditionHeaderValue`, so both the delay-seconds and HTTP-date forms are handled identically everywhere.
 * As a result, "which status codes are retryable" and "which indicate a rejected schema that should be downgraded" behave identically everywhere. Third-party custom providers can reference the same mapper.
 
 ### 5. Fault-tolerant structured output (structured output & JSON repair)
@@ -266,15 +320,13 @@ public async void GenerateVector()
 * The built-in OpenAI and Gemini providers prefer the official SDKs' native structured output: OpenAI through `IChatClient`'s JSON Schema response format, Gemini through `ResponseMimeType = "application/json"` plus `ResponseSchema`. The framework validates required members and null state before deserializing into the target C# object.
 * The `RepairJson` fallback is only used when the provider has no native schema support, the service rejects the schema, or the model still returns malformed output. It handles Markdown fences (such as ` ```json `), unclosed brackets, trailing commas and JSON block extraction.
 
----
-
 ### 6. Official SDKs and provider responsibilities
 
 * The main project and the test project stay on `net472`; RimWorld mods are not required to move to .NET 8. The official SDKs' dependency DLLs ship with the mod and are verified loadable by a startup compatibility gate. Although .NET Framework treats `System.ValueTuple` as a framework assembly, the build explicitly deploys its `4.0.5.0` DLL to avoid a `ReflectionTypeLoadException` when RimWorld's Mono reflects over MEAI.
 * **OpenAI** uses the `OpenAI` SDK `2.12.0` together with `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.8.3`. The built-in `OpenAIProvider` enters the shared manager through `ChatClient.AsIChatClient()`. Only endpoints that genuinely implement the OpenAI Chat Completions protocol (LM Studio, Ollama, vLLM, …) are suitable for the OpenAI-compatible adapter.
-* **Gemini** uses the official `Google.GenAI` `1.16.0`, building a Gemini Developer API client from an API key. Text, streaming, native schema, thinking, context cache and safety settings all go through the native `Google.GenAI` generateContent path (isolated in code behind three test seams: `CreateGenAiClient`, `GenerateContentNativeAsync`, `GenerateContentStreamNativeAsync`). Gemini is never emulated with `OpenAI.Chat.ChatClient`, and no raw HTTP chat path is kept.
+* **Gemini** uses the official `Google.GenAI` `1.16.0`, building a Gemini Developer API client from an API key. Text, streaming, native schema, thinking, context cache and safety settings all go through the native `Google.GenAI` generateContent path (isolated in code behind test seams: `CreateGenAiClient`, `GenerateContentNativeAsync`, `GenerateContentStreamNativeAsync`, `PostCachedContentsAsync`). Gemini is never emulated with `OpenAI.Chat.ChatClient`, and no raw HTTP chat path is kept.
 * **Every built-in provider goes through an official SDK**: the OpenAI family (OpenAI, OpenRouter, DeepSeek, Groq, Grok, Z.ai, Kimi, MiniMax, Qwen, NVIDIA, OpenAICompatible) uses the `OpenAI` SDK `2.12.0` plus MEAI's `IChatClient`; Gemini uses the native `Google.GenAI` path. Model listings use `OpenAIModelClient.GetModelsAsync()` rather than hand-rewriting the `/models` URL and parsing JSON.
-* Raw HTTP now remains in **exactly one place — creating Gemini `cachedContents` explicit caches** (`Caches` in `Google.GenAI 1.16.0` only exposes `ListAsync`, with no creation API). `BaseHttpProvider` has therefore collapsed to a single `SendPostAsync` path.
+* Raw HTTP now remains in **exactly one place — creating Gemini `cachedContents` explicit caches** (`Caches` in `Google.GenAI 1.16.0` only exposes `ListAsync`, with no creation API). That path is isolated in `RimLLMHttpTransport`, so the shared provider base class no longer carries an HTTP stack that nothing else uses.
 * **JSON Schema generation deliberately does not use `AIJsonUtilities.CreateJsonSchema`.** MEAI emits full JSON Schema — nullable members become `"type": ["string","null"]` union types and recursive types are expressed with `$ref`. Testing showed that output for all three test types is rejected by `Google.GenAI`'s `Schema.FromJson`. `RimLLMJsonHelper` instead emits a restricted subset every provider accepts (single `type`, recursive members truncated). The two solve different problems.
 * Provider-specific SDKs never appear in `RimLLMManager` or the public SDK façade; the shared layer depends only on `IChatClient`, `LLMProviderCapabilities` and the existing `ILLMProvider` API. API keys always come from the encrypted settings and are never written into source code or ordinary logs.
 
@@ -285,14 +337,14 @@ public async void GenerateVector()
 To avoid misunderstanding, here is an honest description of what each security mechanism actually protects against:
 
 * **API key encryption is obfuscation-grade protection.** Keys are AES-256 encrypted in the settings file, with the encryption key derived from a fixed seed and the device identifier (`deviceUniqueIdentifier`). This prevents plaintext from being read after the settings file is copied to another machine, and avoids accidental leaks when syncing or sharing settings — but it **cannot** defend against code running on the same machine (including other mods), because the encryption logic and material live in the same process and a determined attacker can recover the plaintext. Treat it as protection against mistakes and accidental disclosure, not as a safe.
-* **Caller registration is a misuse guard, not a security boundary.** `RegisterClient` plus assembly comparison prevents ModId misuse, impersonation and debugging confusion, but every RimWorld mod runs in the same process, so a malicious mod can still bypass the check through reflection, memory reads and other in-process capabilities. This framework does not, and cannot, provide in-process sandbox isolation.
+* **There is no caller verification, by design.** Earlier versions bound each `modId` to a calling assembly. That check could not stop a hostile mod — everything runs in one process, so reflection defeats it — and it was first-come-wins, meaning a mod loading earlier could squat an id and make the legitimate owner throw at startup. It was removed: it converted a negligible spoofing risk into a real denial-of-service one.
 * **Keys never reach URLs or logs.** All providers pass keys via HTTP headers; log output always goes through `SanitizeForLog` and is length-truncated, and the device identifier is masked in diagnostic exports.
 
 ---
 
 ## 🧪 Unit tests and verification
 
-The project ships with a full unit test suite in `Source/RimLLM Framework.Tests` (a standalone project alongside the main one) covering AES encryption/decryption, caller registration, model fallback, JSON Schema generation and repair, HTTP error mapping, streaming retries and budget control.
+The project ships with a full unit test suite in `Source/RimLLM Framework.Tests` (a standalone project alongside the main one) covering AES encryption/decryption, model fallback, JSON Schema generation and repair, HTTP error mapping, `Retry-After` parsing, `ChatOptions` cloning, streaming retries and budget control.
 
 > **Prerequisite**: the tests need RimWorld's `Assembly-CSharp` and Unity DLLs at run time. Those files are not redistributable, so a local RimWorld installation is required.
 > The default path is `C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed`,

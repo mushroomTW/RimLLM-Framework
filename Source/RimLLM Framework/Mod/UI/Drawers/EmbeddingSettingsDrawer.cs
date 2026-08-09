@@ -15,7 +15,7 @@ namespace RimLLM_Framework.Mod
         public static float GetHeight(float width)
         {
             float baseHeight = 120f;
-            if (Settings.EmbeddingProvider != "Offline_Trigram")
+            if (Settings.EmbeddingProvider != "Disabled")
             {
                 // 模型名稱與 API 金鑰輸入框
                 baseHeight += 120f;
@@ -54,7 +54,7 @@ namespace RimLLM_Framework.Mod
             {
                 List<FloatMenuOption> options = new List<FloatMenuOption>
                 {
-                    new FloatMenuOption("RimLLM_EmbeddingProvider_Offline_Trigram".Translate(), () => { Settings.EmbeddingProvider = "Offline_Trigram"; Settings.Write(); }),
+                    new FloatMenuOption("RimLLM_EmbeddingProvider_Disabled".Translate(), () => { Settings.EmbeddingProvider = "Disabled"; Settings.Write(); }),
                     new FloatMenuOption("RimLLM_EmbeddingProvider_Google".Translate(), () => { Settings.EmbeddingProvider = "Google"; Settings.Write(); }),
                     new FloatMenuOption("RimLLM_EmbeddingProvider_LocalAPI_Ollama".Translate(), () => { Settings.EmbeddingProvider = "LocalAPI_Ollama"; Settings.Write(); }),
                     new FloatMenuOption("RimLLM_EmbeddingProvider_LocalAPI_OpenAI".Translate(), () => { Settings.EmbeddingProvider = "LocalAPI_OpenAI"; Settings.Write(); })
@@ -64,7 +64,7 @@ namespace RimLLM_Framework.Mod
             listing.Gap(6f);
 
             // 2. 根據供應商繪製細部屬性
-            if (Settings.EmbeddingProvider != "Offline_Trigram")
+            if (Settings.EmbeddingProvider != "Disabled")
             {
                 listing.Label("RimLLM_EmbeddingModelLabel".Translate());
                 Settings.EmbeddingModel = listing.TextEntry(Settings.EmbeddingModel);

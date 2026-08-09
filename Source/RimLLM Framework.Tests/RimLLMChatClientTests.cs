@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Manager;
-using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Tests
 {
@@ -33,8 +32,7 @@ namespace RimLLM_Framework.Tests
 
         private RimLLMChatClient CreateClient(RimLLMManager manager, string modId)
         {
-            RimLLMProvider.RegisterClient(modId);
-            return manager.CreateChatClient(modId, Assembly.GetCallingAssembly());
+            return manager.CreateChatClient(modId);
         }
 
         [Test]
@@ -121,12 +119,35 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual("test.translate.mod", request.ModId);
         }
 
-        [Test]
-        public void TestGetResponseAsync_UnregisteredModThrows()
+                [Test]
+        public void TestRimLLMChatOptionsClonePreservesFrameworkFields()
         {
-            var manager = CreateManager();
-            Assert.Throws<RimLLMException>(() =>
-                manager.CreateChatClient("test.notregistered.mod", Assembly.GetCallingAssembly()));
+            var original = new RimLLMChatOptions
+            {
+                Temperature = 0.5f,
+                Priority = 9,
+                MinFallbackLevel = "Medium",
+                CachedContext = "world rules",
+                DisableReasoning = true,
+                OnStreamRestart = () => { }
+            };
+
+            ChatOptions cloned = original.Clone();
+
+            // base.Clone() 必須回傳衍生型別，否則框架欄位會在任何 middleware clone 時被切掉。
+            Assert.IsInstanceOf<RimLLMChatOptions>(cloned, "Clone 必須保留 RimLLMChatOptions 型別");
+            var typed = (RimLLMChatOptions)cloned;
+            Assert.AreEqual(0.5f, typed.Temperature);
+            Assert.AreEqual(9, typed.Priority);
+            Assert.AreEqual("Medium", typed.MinFallbackLevel);
+            Assert.AreEqual("world rules", typed.CachedContext);
+            Assert.IsTrue(typed.DisableReasoning);
+            Assert.IsTrue(typed.EnableContextCaching, "CachedContext 不為空時應沿用計算預設值");
+            Assert.IsNotNull(typed.OnStreamRestart);
+
+            // 明確設定 false 時不可被 CachedContext 的計算預設值蓋掉。
+            original.EnableContextCaching = false;
+            Assert.IsFalse(((RimLLMChatOptions)original.Clone()).EnableContextCaching);
         }
 
         [Test]

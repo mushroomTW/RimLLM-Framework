@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// 內建供應商識別碼常數。

@@ -8,7 +8,6 @@ using Google.GenAI.Types;
 using OpenAI;
 using OpenAI.Embeddings;
 using RimLLM_Framework.Providers;
-using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Manager
 {
@@ -20,9 +19,11 @@ namespace RimLLM_Framework.Manager
     public class RimLLMEmbeddingService
     {
         /// <summary>
-        /// 代表「不呼叫外部 API，僅使用本機 Trigram 比對」的供應商代號。
+        /// 代表「尚未設定 Embedding 供應商」的代號，選用時向量運算一律擲回例外。
+        /// 這不是一種離線演算法：<see cref="CalculateTrigramSimilarity"/> 是獨立的靜態工具，
+        /// 與本設定無關，任何供應商設定下都能呼叫。
         /// </summary>
-        public const string OfflineProviderId = "Offline_Trigram";
+        public const string DisabledProviderId = "Disabled";
 
         /// <summary>
         /// 本地相容伺服器通常不驗證金鑰，但 OpenAI SDK 不接受空憑證，
@@ -41,7 +42,7 @@ namespace RimLLM_Framework.Manager
         /// 計算單筆文字的 embedding 向量。
         /// </summary>
         /// <exception cref="RimLLMException">
-        /// 當 EmbeddingProvider 設為離線模式、供應商不支援或 API 回傳錯誤時拋出。
+        /// 當 EmbeddingProvider 尚未設定、供應商不支援或 API 回傳錯誤時拋出。
         /// </exception>
         public async Task<float[]> ComputeEmbeddingAsync(string text, CancellationToken cancellationToken = default)
         {
@@ -51,11 +52,11 @@ namespace RimLLM_Framework.Manager
             }
 
             string provider = _settings.EmbeddingProvider;
-            if (string.IsNullOrEmpty(provider) || provider == OfflineProviderId)
+            if (string.IsNullOrEmpty(provider) || provider == DisabledProviderId)
             {
                 throw new RimLLMException(
                     LLMError.Unknown,
-                    "目前的 Embedding 供應商為離線 Trigram 模式，不支援向量運算。請先在設定中選擇線上 Embedding 供應商，或改用 CalculateTrigramSimilarity。");
+                    "Embedding 尚未設定供應商，無法產生向量。請先在設定中選擇 Embedding 供應商；若只需要本機字串比對，可改用 RimLLMEmbeddingService.CalculateTrigramSimilarity。");
             }
 
             string model = _settings.EmbeddingModel;
@@ -227,7 +228,10 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 以 Trigram 詞袋計算兩段文字的餘弦相似度。完全在本機運算，不需要外部 API。
+        /// 以 Trigram 詞袋計算兩段文字的餘弦相似度，回傳 0~1。
+        /// 這是獨立的字串相似度工具，<b>不是</b> Embedding 供應商：它不產生向量、
+        /// 不受 EmbeddingProvider 設定影響，任何設定下都可直接呼叫。
+        /// 適合在沒有 Embedding 服務時做模糊比對的替代方案。
         /// </summary>
         public static float CalculateTrigramSimilarity(string s1, string s2)
         {

@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using UnityEngine;
 using Verse;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Mod

@@ -4,7 +4,6 @@ using System;
 using System.Reflection;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Mod;
 
 namespace RimLLM_Framework.Tests
@@ -27,36 +26,7 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual("", EncryptionUtility.Decrypt(""));
         }
 
-        [Test]
-        public void TestClientRegistry()
-        {
-            Assembly thisAssembly = Assembly.GetExecutingAssembly();
-            Assembly externalAssembly = typeof(string).Assembly;
-            string modId = "test.unit.mod.id";
-
-            // 1. 正常註冊與驗證
-            ClientRegistry.RegisterClient(modId, thisAssembly);
-            Assert.IsTrue(ClientRegistry.Verify(modId, thisAssembly));
-
-            // 2. 阻擋來源不一致的呼叫
-            Assert.IsFalse(ClientRegistry.Verify(modId, externalAssembly));
-
-            // 3. 驗證無自動補註冊 (未註冊時 Verify 應回傳 false)
-            string newModId = "auto.unit.mod.id";
-            Assert.IsFalse(ClientRegistry.Verify(newModId, thisAssembly));
-            
-            // 註冊後驗證
-            ClientRegistry.RegisterClient(newModId, thisAssembly);
-            Assert.IsTrue(ClientRegistry.Verify(newModId, thisAssembly));
-            Assert.IsFalse(ClientRegistry.Verify(newModId, externalAssembly));
-
-            // 4. 驗證 RimLLM Framework 自身 Assembly 的內部放行機制 (避免內部調用崩潰)
-            Assembly frameworkAssembly = typeof(ClientRegistry).Assembly;
-            Assert.IsTrue(ClientRegistry.Verify(modId, frameworkAssembly));
-            Assert.IsTrue(ClientRegistry.Verify(newModId, frameworkAssembly));
-        }
-
-        [Test]
+                [Test]
         public void TestDynamicHardwareSalt()
         {
             string original = "sensitive-api-key";

@@ -1,6 +1,6 @@
 using System;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// RimLLM SDK 拋出的專屬例外。

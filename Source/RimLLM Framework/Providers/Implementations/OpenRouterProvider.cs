@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
-using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
 {

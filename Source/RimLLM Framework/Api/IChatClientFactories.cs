@@ -3,14 +3,14 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
-    public interface IOpenAIChatClientFactory
+    internal interface IOpenAIChatClientFactory
     {
         IChatClient Create(string apiKey, string model, string endpoint = null);
     }
 
-    public interface IGeminiChatClientFactory
+    internal interface IGeminiChatClientFactory
     {
         IChatClient Create(string apiKey, string model);
     }

@@ -129,7 +129,7 @@ namespace RimLLM_Framework.Core
                 catch (Exception ex)
                 {
                     RimLLMLog.Error($"[RimLLM] 加密金鑰時發生異常: {ex.Message}");
-                    throw new RimLLM_Framework.SDK.RimLLMException(RimLLM_Framework.SDK.LLMError.Unknown, $"Encryption failed: {ex.Message}", ex);
+                    throw new RimLLMException(LLMError.Unknown, $"Encryption failed: {ex.Message}", ex);
                 }
             }
         }

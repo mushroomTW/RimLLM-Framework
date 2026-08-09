@@ -7,7 +7,6 @@ using Google.GenAI;
 using Google.GenAI.Types;
 using Microsoft.Extensions.AI;
 using Newtonsoft.Json.Linq;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Providers
@@ -56,7 +55,7 @@ namespace RimLLM_Framework.Providers
         {
         }
 
-        protected GeminiProvider(IRimLLMSettings settings, IGeminiChatClientFactory chatClientFactory) : base(settings)
+        private protected GeminiProvider(IRimLLMSettings settings, IGeminiChatClientFactory chatClientFactory) : base(settings)
         {
             _chatClientFactory = chatClientFactory ?? throw new ArgumentNullException(nameof(chatClientFactory));
         }
@@ -85,6 +84,20 @@ namespace RimLLM_Framework.Providers
         protected virtual Client CreateGenAiClient(string apiKey)
         {
             return new Client(apiKey: apiKey);
+        }
+
+        /// <summary>
+        /// 建立 cachedContents 資源（測試縫）。這是官方 Google.GenAI SDK 未涵蓋的端點，
+        /// 也是整個框架唯一還需要 raw HTTP 的地方。
+        /// </summary>
+        protected virtual Task<string> PostCachedContentsAsync(
+            string url,
+            string payload,
+            string apiKey,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            return RimLLMHttpTransport.SendPostAsync(
+                url, payload, apiKey, AuthSchemes.Gemini, Settings?.ApiTimeout ?? 30f, cancellationToken);
         }
 
         /// <summary>呼叫非串流 generateContent（測試縫）。</summary>
@@ -719,7 +732,8 @@ namespace RimLLM_Framework.Providers
 
             try
             {
-                string cacheResponseJson = await SendPostAsync(cacheUrl, cachePayload.ToString(), apiKey, AuthSchemes.Gemini, cancellationToken).ConfigureAwait(false);
+                string cacheResponseJson = await PostCachedContentsAsync(
+                    cacheUrl, cachePayload.ToString(), apiKey, cancellationToken).ConfigureAwait(false);
                 var cacheObj = JObject.Parse(cacheResponseJson);
                 string cacheId = cacheObj["name"]?.ToString();
                 string expireTimeStr = cacheObj["expireTime"]?.ToString();

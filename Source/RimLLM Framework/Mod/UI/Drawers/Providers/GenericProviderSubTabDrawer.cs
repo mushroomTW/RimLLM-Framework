@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using UnityEngine;
 using Verse;
 using RimWorld;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Mod

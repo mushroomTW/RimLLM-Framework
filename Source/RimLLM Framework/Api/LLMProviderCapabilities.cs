@@ -1,4 +1,4 @@
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// 描述 LLM 供應商可使用的原生功能，讓共用服務層不必依賴 provider-specific SDK。

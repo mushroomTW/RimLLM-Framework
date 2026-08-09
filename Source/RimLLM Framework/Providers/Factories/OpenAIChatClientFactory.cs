@@ -3,7 +3,6 @@ using System.ClientModel;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Chat;
-using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
 {

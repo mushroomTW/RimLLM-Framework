@@ -9,7 +9,6 @@ using NUnit.Framework;
 using OpenAI.Chat;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
-using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Tests
 {
@@ -207,7 +206,6 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings();
             var manager = new RimLLMManager(settings);
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient("sdk.integration.test");
             IChatClient client = RimLLMProvider.CreateChatClient("sdk.integration.test");
             Assert.IsNotNull(client);
             Assert.IsInstanceOf<RimLLMChatClient>(client);
@@ -217,12 +215,18 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void CreateChatClient_UnregisteredModThrows()
+        public void CreateChatClient_NeedsNoRegistration()
         {
             var settings = new MockSettings();
             var manager = new RimLLMManager(settings);
             RimLLMProvider.Initialize(manager);
-            Assert.Throws<RimLLMException>(() => RimLLMProvider.CreateChatClient("never.registered"));
+
+            // 已移除呼叫者組件驗證：任何 modId 都能直接取得 client，不需事先註冊。
+            Assert.IsNotNull(RimLLMProvider.CreateChatClient("never.registered"));
+
+            // modId 仍為必填，因為防濫用節流與遙測歸屬都以它為鍵。
+            Assert.Throws<ArgumentException>(() => RimLLMProvider.CreateChatClient(string.Empty));
+            Assert.Throws<ArgumentException>(() => RimLLMProvider.CreateEmbeddingGenerator(null));
         }
 
         private sealed class StructuredResponse

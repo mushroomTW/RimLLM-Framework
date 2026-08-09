@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
 using RimLLM_Framework.Mod;
@@ -62,7 +61,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.fallback.unit.id";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "test") };
@@ -122,7 +120,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.simple.generate";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> 
@@ -172,7 +169,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.global.reasoning.default";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
@@ -206,7 +202,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.simple.object";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> 
@@ -250,7 +245,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.simple.streaming";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var chunks = new List<string>();
@@ -312,7 +306,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.object.unit.id";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage>
@@ -387,8 +380,6 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockProv);
 
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient("mod1");
-            RimLLMProvider.RegisterClient("mod2");
             IChatClient client1 = RimLLMProvider.CreateChatClient("mod1");
             IChatClient client2 = RimLLMProvider.CreateChatClient("mod2");
 
@@ -446,7 +437,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "mod.minfallback";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
@@ -500,7 +490,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "mod.circuitbreaker";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
@@ -565,7 +554,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.invalidkey.retry";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
@@ -612,7 +600,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "mod.doublerepair";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
@@ -686,7 +673,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "mod.level.override";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var userMsgs = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
@@ -873,7 +859,6 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockFast);
 
             const string modId = "test.routing.latency";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             var request = new RimLLMRequest
             {
@@ -937,7 +922,6 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockSuccess);
 
             const string modId = "test.routing.failover";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             var request = new RimLLMRequest
             {
@@ -980,7 +964,6 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(mockJSON);
 
             const string modId = "test.json.repair.settings";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             var request = new RimLLMRequest
             {
@@ -1003,6 +986,26 @@ namespace RimLLM_Framework.Tests
             Assert.IsNotNull(res);
             Assert.AreEqual(42, res.Value);
             Assert.AreEqual(okStr(res.Message), "ok");
+        }
+
+        [Test]
+        public void TestParseRetryAfterHandlesSecondsAndHttpDate()
+        {
+            // 秒數格式
+            Assert.AreEqual(TimeSpan.FromSeconds(30), LLMErrorMapper.ParseRetryAfter("30"));
+
+            // HTTP 日期格式（RFC 7231 允許，先前只吃秒數的路徑會整個漏掉）
+            string future = DateTimeOffset.UtcNow.AddSeconds(120).ToString("r");
+            TimeSpan? fromDate = LLMErrorMapper.ParseRetryAfter(future);
+            Assert.IsNotNull(fromDate, "HTTP 日期格式的 Retry-After 必須能被解析");
+            Assert.Greater(fromDate.Value.TotalSeconds, 60);
+            Assert.LessOrEqual(fromDate.Value.TotalSeconds, 121);
+
+            // 已過期的日期與非正值不應產生建議延遲
+            Assert.IsNull(LLMErrorMapper.ParseRetryAfter(DateTimeOffset.UtcNow.AddSeconds(-60).ToString("r")));
+            Assert.IsNull(LLMErrorMapper.ParseRetryAfter("0"));
+            Assert.IsNull(LLMErrorMapper.ParseRetryAfter("not-a-date"));
+            Assert.IsNull(LLMErrorMapper.ParseRetryAfter((string)null));
         }
 
         [Test]
@@ -1050,28 +1053,15 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestEmbeddingServiceRejectsOfflineProvider()
         {
-            var mockSettings = new MockSettings { EmbeddingProvider = "Offline_Trigram" };
+            var mockSettings = new MockSettings { EmbeddingProvider = "Disabled" };
             var service = new RimLLMEmbeddingService(mockSettings);
 
             var ex = Assert.Throws<RimLLMException>(() =>
                 service.ComputeEmbeddingAsync("hello").GetAwaiter().GetResult());
-            Assert.IsTrue(ex.Message.Contains("Trigram"), "離線模式不支援向量運算，應明確拋出錯誤");
+            Assert.IsTrue(ex.Message.Contains("尚未設定供應商"), "停用狀態下不產生向量，應明確拋出錯誤");
         }
 
-        [Test]
-        public void TestEmbeddingRequestVerifiesCaller()
-        {
-            var mockSettings = new MockSettings { EmbeddingProvider = "Google" };
-            var manager = new RimLLMManager(mockSettings);
-            RimLLMProvider.Initialize(manager);
-
-            // 未透過 ClientRegistry 註冊的 ModId 不得取用計費的 Embedding API。
-            Assert.Throws<RimLLMException>(() =>
-                RimLLMProvider.CreateEmbeddingGenerator("unregistered.mod.id"),
-                "Embedding 為計費 API，必須通過呼叫端身分校驗");
-        }
-
-        [Test]
+                [Test]
         public void TestModelNotFoundDoesNotConsumeRetries()
         {
             var mockSettings = new MockSettings
@@ -1097,7 +1087,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.modelnotfound";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
@@ -1140,7 +1129,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.emptystream.fallback";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var received = new List<string>();
@@ -1195,7 +1183,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.schema.marker";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };

@@ -7,14 +7,14 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Manager;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// 綁定單一 Mod 的 IChatClient facade。框架核心功能（fallback、預算、佇列、
     /// 防濫用、用量統計）全部保留在此 client 內部，不允許繞過。
     /// 透過 RimLLMProvider.CreateChatClient(modId) 取得。
     /// </summary>
-    public class RimLLMChatClient : IChatClient
+    internal class RimLLMChatClient : IChatClient
     {
         private readonly RimLLMManager _manager;
         private readonly string _modId;
@@ -38,7 +38,7 @@ namespace RimLLM_Framework.SDK
         {
             RimLLMRequest request = Translate(messages, options, cancellationToken);
             RimLLMGenerationResult result = await _manager
-                .GenerateResultAsync(request, verifyCaller: false)
+                .GenerateResultAsync(request)
                 .ConfigureAwait(false);
             return BuildResponse(result, options);
         }
@@ -51,7 +51,10 @@ namespace RimLLM_Framework.SDK
             return new StreamUpdateEnumerable(this, messages, options, cancellationToken);
         }
 
-        /// <summary>把串流 chunk / restart 事件 / 完成訊號橋接成 IAsyncEnumerable（C# 8 不支援 aliased IAsyncEnumerable 的 async iterator）。</summary>
+        /// <summary>
+        /// 把串流 chunk / restart 事件 / 完成訊號橋接成 IAsyncEnumerable。
+        /// 生產端在第一次 GetAsyncEnumerator 時才啟動，避免沒有人列舉時就先送出請求。
+        /// </summary>
         private sealed class StreamUpdateEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
         {
             private readonly RimLLMChatClient _client;
@@ -74,124 +77,38 @@ namespace RimLLM_Framework.SDK
             public bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
                 CancellationToken cancellationToken = default)
             {
-                return new StreamUpdateEnumerator(_client, _messages, _options, cancellationToken);
-            }
-        }
+                // GetStreamingResponseAsync 與 await foreach（WithCancellation）兩邊的 token 都要生效。
+                var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken, cancellationToken);
 
-        private sealed class StreamUpdateBridge : IDisposable
-        {
-            private readonly System.Collections.Concurrent.ConcurrentQueue<ChatResponseUpdate> _queue =
-                new System.Collections.Concurrent.ConcurrentQueue<ChatResponseUpdate>();
-            private readonly TaskCompletionSource<bool> _completed =
-                new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                // 無界 channel + TryWrite：不需要 ValueTask，因此不必碰 ste 別名。
+                var channel = System.Threading.Channels.Channel.CreateUnbounded<ChatResponseUpdate>(
+                    new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
-            /// <summary>
-            /// 有新 update 或串流結束時釋出。以號誌喚醒消費端，取代固定間隔輪詢，
-            /// 讓 chunk 一入列就能被取走（原本每個 chunk 最多要多等 10ms）。
-            /// </summary>
-            private readonly SemaphoreSlim _signal = new SemaphoreSlim(0);
+                StartProducer(channel.Writer, linkedCts.Token);
 
-            public void Push(ChatResponseUpdate update)
-            {
-                _queue.Enqueue(update);
-                _signal.Release();
+                // ReadAllAsync 回傳的 IAsyncEnumerable 與 bclasync 別名指向同一顆組件，可直接沿用。
+                return new StreamUpdateEnumerator(
+                    channel.Reader.ReadAllAsync(linkedCts.Token).GetAsyncEnumerator(linkedCts.Token),
+                    linkedCts);
             }
 
-            public void Complete()
-            {
-                _completed.TrySetResult(true);
-                _signal.Release();
-            }
-
-            public void Fail(Exception ex)
-            {
-                _completed.TrySetException(ex);
-                _signal.Release();
-            }
-
-            /// <summary>
-            /// 取得下一個 update。串流正常結束回傳 null；產生端失敗時重新擲出其原始例外。
-            /// </summary>
-            public async Task<ChatResponseUpdate> WaitNextAsync(CancellationToken cancellationToken)
-            {
-                while (true)
-                {
-                    if (_queue.TryDequeue(out ChatResponseUpdate update))
-                    {
-                        return update;
-                    }
-
-                    if (_completed.Task.IsCompleted)
-                    {
-                        // 佇列已清空且流程已結束。正常完成時 await 直接返回並以 null 表示串流終止；
-                        // 產生端失敗時則由 await 重新擲出，避免例外被靜默吞掉。
-                        await _completed.Task.ConfigureAwait(false);
-                        return null;
-                    }
-
-                    await _signal.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-            }
-
-            public void Dispose()
-            {
-                _signal.Dispose();
-            }
-        }
-
-        private sealed class StreamUpdateEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
-        {
-            private readonly RimLLMChatClient _client;
-            private readonly IEnumerable<ChatMessage> _messages;
-            private readonly ChatOptions _options;
-            private readonly CancellationToken _cancellationToken;
-            private readonly StreamUpdateBridge _bridge = new StreamUpdateBridge();
-            private bool _started;
-
-            public StreamUpdateEnumerator(
-                RimLLMChatClient client,
-                IEnumerable<ChatMessage> messages,
-                ChatOptions options,
+            private void StartProducer(
+                System.Threading.Channels.ChannelWriter<ChatResponseUpdate> writer,
                 CancellationToken cancellationToken)
             {
-                _client = client;
-                _messages = messages;
-                _options = options;
-                _cancellationToken = cancellationToken;
-            }
-
-            public ChatResponseUpdate Current { get; private set; }
-
-            public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
-            {
-                if (!_started)
-                {
-                    _started = true;
-                    StartProducer();
-                }
-                ChatResponseUpdate next = await _bridge.WaitNextAsync(_cancellationToken).ConfigureAwait(false);
-                if (next == null)
-                {
-                    return false;
-                }
-                Current = next;
-                return true;
-            }
-
-            private void StartProducer()
-            {
                 var rimOptions = _options as RimLLMChatOptions;
-                RimLLMRequest request = _client.Translate(_messages, _options, _cancellationToken);
+                RimLLMRequest request = _client.Translate(_messages, _options, cancellationToken);
                 Action userRestart = rimOptions?.OnStreamRestart;
                 request.OnStreamRestart = () =>
                 {
                     // 供應商接手（restart）時先推送 marker update，再通知使用者清空顯示內容。
-                    _bridge.Push(new ChatResponseUpdate
+                    writer.TryWrite(new ChatResponseUpdate
                     {
                         AdditionalProperties = new AdditionalPropertiesDictionary { ["rimllm_stream_restart"] = true }
                     });
                     userRestart?.Invoke();
                 };
+
                 Task.Run(async () =>
                 {
                     try
@@ -202,10 +119,9 @@ namespace RimLLM_Framework.SDK
                             {
                                 if (!string.IsNullOrEmpty(chunk))
                                 {
-                                    _bridge.Push(new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { new TextContent(chunk) }));
+                                    writer.TryWrite(new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { new TextContent(chunk) }));
                                 }
-                            },
-                            verifyCaller: false).ConfigureAwait(false);
+                            }).ConfigureAwait(false);
 
                         var finalUpdate = new ChatResponseUpdate
                         {
@@ -218,20 +134,59 @@ namespace RimLLM_Framework.SDK
                             OutputTokenCount = result.CompletionTokens,
                             CachedInputTokenCount = result.CachedPromptTokens
                         }));
-                        _bridge.Push(finalUpdate);
-                        _bridge.Complete();
+                        writer.TryWrite(finalUpdate);
+                        writer.TryComplete();
                     }
                     catch (Exception ex)
                     {
-                        _bridge.Fail(ex);
+                        writer.TryComplete(ex);
                     }
-                }, _cancellationToken);
+                }, cancellationToken);
+            }
+        }
+
+        /// <summary>
+        /// 包住 channel 的列舉器，只做兩件事：解開 ChannelClosedException 還原生產端的原始例外
+        /// （呼叫端 catch 的是 RimLLMException，不能讓它變成 channel 的內部型別），以及釋放連動 CTS。
+        /// </summary>
+        private sealed class StreamUpdateEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
+        {
+            private readonly bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> _inner;
+            private readonly CancellationTokenSource _linkedCts;
+
+            public StreamUpdateEnumerator(
+                bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> inner,
+                CancellationTokenSource linkedCts)
+            {
+                _inner = inner;
+                _linkedCts = linkedCts;
             }
 
-            public ste::System.Threading.Tasks.ValueTask DisposeAsync()
+            public ChatResponseUpdate Current => _inner.Current;
+
+            public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
             {
-                _bridge.Dispose();
-                return default;
+                try
+                {
+                    return await _inner.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (System.Threading.Channels.ChannelClosedException ex) when (ex.InnerException != null)
+                {
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                    throw; // 不會執行到，僅滿足編譯器
+                }
+            }
+
+            public async ste::System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                try
+                {
+                    await _inner.DisposeAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    _linkedCts.Dispose();
+                }
             }
         }
 
@@ -247,7 +202,7 @@ namespace RimLLM_Framework.SDK
             RimLLMRequest request = Translate(messages, options, cancellationToken);
             request.ResponseType = typeof(T);
             RimLLMGenerationResult result = await _manager
-                .GenerateResultAsync(request, verifyCaller: false)
+                .GenerateResultAsync(request)
                 .ConfigureAwait(false);
             return _manager.DeserializeStructured<T>(result.Text, _manager.Settings, request);
         }

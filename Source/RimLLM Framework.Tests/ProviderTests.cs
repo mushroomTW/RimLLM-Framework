@@ -12,7 +12,6 @@ using OpenAI;
 using OpenAI.Chat;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
 using RimLLM_Framework.Mod;
@@ -31,8 +30,6 @@ namespace RimLLM_Framework.Tests
 
             var provider = new TestOpenRouterProvider(mockSettings);
 
-            const string modId = "test.openrouter.fallback";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             // 1. 測試單一模型
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
@@ -436,7 +433,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.stream.unified.id";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "test prompt") };
@@ -584,8 +580,6 @@ namespace RimLLM_Framework.Tests
             var manager = new RimLLMManager(mockSettings);
             var provider = new TestKimiPayloadProvider(mockSettings);
 
-            const string modId = "test.kimi.payload";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             provider.GenerateAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
@@ -610,8 +604,6 @@ namespace RimLLM_Framework.Tests
 
             var provider = new TestDeepSeekPayloadProvider(mockSettings);
 
-            const string modId = "test.deepseek.payload";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             var options = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
@@ -639,8 +631,6 @@ namespace RimLLM_Framework.Tests
 
             var provider = new TestDeepSeekPayloadProvider(mockSettings);
 
-            const string modId = "test.deepseek.strict";
-            ClientRegistry.RegisterClient(modId, Assembly.GetExecutingAssembly());
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             var options = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
@@ -679,7 +669,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.stream.antiabuse";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
@@ -737,7 +726,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.stream.partial";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
@@ -807,7 +795,6 @@ namespace RimLLM_Framework.Tests
 
             const string modId = "test.stream.restart";
             RimLLMProvider.Initialize(manager);
-            RimLLMProvider.RegisterClient(modId);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
             int restartCount = 0;
@@ -881,7 +868,7 @@ namespace RimLLM_Framework.Tests
         public bool EnableNativeSchema { get; set; } = true;
         public bool EnableJsonRepair { get; set; } = true;
 
-        public string EmbeddingProvider { get; set; } = "Offline_Trigram";
+        public string EmbeddingProvider { get; set; } = "Disabled";
         public string EmbeddingModel { get; set; } = "text-embedding-004";
         public string EmbeddingEndpoint { get; set; } = "";
         public string EmbeddingApiKey { get; set; } = "";
@@ -986,7 +973,7 @@ namespace RimLLM_Framework.Tests
             return System.Threading.Tasks.Task.FromResult(MockResponse);
         }
 
-        protected override System.Threading.Tasks.Task<string> SendPostAsync(string url, string payload, string apiKey, string authScheme = "Bearer", System.Threading.CancellationToken cancellationToken = default)
+        protected override System.Threading.Tasks.Task<string> PostCachedContentsAsync(string url, string payload, string apiKey, System.Threading.CancellationToken cancellationToken)
         {
             SendCalls.Add((url, payload));
             if (url.Contains("cachedContents"))
@@ -1228,6 +1215,10 @@ namespace RimLLM_Framework.Tests
         }
     }
 
+    /// <summary>
+    /// 探測 raw HTTP 路徑的狀態碼對照。傳輸層已抽離為 RimLLMHttpTransport，
+    /// 此處直接重現它擲出例外的方式，維持與生產路徑相同的語意。
+    /// </summary>
     public class HttpErrorProbeProvider : OpenAIProvider
     {
         public HttpErrorProbeProvider(IRimLLMSettings settings) : base(settings) {}
@@ -1236,7 +1227,11 @@ namespace RimLLM_Framework.Tests
         {
             using (var response = new System.Net.Http.HttpResponseMessage(statusCode))
             {
-                ThrowHttpError(response, responseBody);
+                int code = (int)statusCode;
+                throw LLMErrorMapper.CreateException(
+                    code,
+                    RimLLMHttpTransport.ExtractFriendlyError(responseBody, code),
+                    LLMErrorMapper.ParseRetryAfter(response));
             }
         }
     }

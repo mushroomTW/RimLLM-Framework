@@ -1,16 +1,14 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
-using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
-    /// RimLLM SDK 全域靜態入口。第三方 Mod 以 RegisterClient + CreateChatClient /
-    /// CreateEmbeddingGenerator 取得標準 MEAI client 使用框架。
+    /// RimLLM SDK 全域靜態入口。第三方 Mod 以 CreateChatClient /
+    /// CreateEmbeddingGenerator 取得標準 MEAI client 使用框架，無須事先註冊。
     /// </summary>
     public static class RimLLMProvider
     {
@@ -44,25 +42,21 @@ namespace RimLLM_Framework.SDK
             _manager = manager;
         }
 
-        /// <summary>註冊呼叫端 Mod。內部使用 Assembly.GetCallingAssembly() 獲取呼叫端組件並進行安全綁定。</summary>
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        public static void RegisterClient(string modId)
-        {
-            ClientRegistry.RegisterClient(modId, Assembly.GetCallingAssembly());
-        }
-
-        /// <summary>建立綁定此 Mod 的 IChatClient facade（需先 RegisterClient）。</summary>
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        /// <summary>
+        /// 建立標準 MEAI <see cref="IChatClient"/>。modId 為呼叫端自取的識別字串，
+        /// 用於防濫用節流與遙測歸屬，不需事先註冊。
+        /// </summary>
         public static IChatClient CreateChatClient(string modId)
         {
-            return Manager.CreateChatClient(modId, Assembly.GetCallingAssembly());
+            return Manager.CreateChatClient(modId);
         }
 
-        /// <summary>建立綁定此 Mod 的 IEmbeddingGenerator facade（需先 RegisterClient）。</summary>
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        /// <summary>
+        /// 建立標準 MEAI embedding generator。modId 同 <see cref="CreateChatClient"/>。
+        /// </summary>
         public static IEmbeddingGenerator<string, Embedding<float>> CreateEmbeddingGenerator(string modId)
         {
-            return Manager.CreateEmbeddingGenerator(modId, Assembly.GetCallingAssembly());
+            return Manager.CreateEmbeddingGenerator(modId);
         }
 
         /// <summary>註冊外部 LLM 供應商的靜態便捷入口。</summary>

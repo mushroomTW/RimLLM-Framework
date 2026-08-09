@@ -7,7 +7,6 @@ using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Chat;
 using OpenAI.Models;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Core;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
@@ -56,7 +55,7 @@ namespace RimLLM_Framework.Providers
         {
         }
 
-        protected OpenAIProvider(
+        private protected OpenAIProvider(
             IRimLLMSettings settings,
             string providerId,
             string defaultEndpoint,

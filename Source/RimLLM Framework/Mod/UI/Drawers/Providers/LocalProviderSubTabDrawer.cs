@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using UnityEngine;
 using Verse;
 using RimWorld;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Mod
@@ -14,6 +13,15 @@ namespace RimLLM_Framework.Mod
     public static class LocalProviderSubTabDrawer
     {
         private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
+
+        /// <summary>
+        /// 偵測用的共用 HttpClient。每次偵測 new 一個會累積未釋放的連線並讓 DNS 結果失效，
+        /// 因此改為靜態重用；逾時對本機探測固定為 600ms。
+        /// </summary>
+        private static readonly System.Net.Http.HttpClient DetectClient = new System.Net.Http.HttpClient
+        {
+            Timeout = TimeSpan.FromMilliseconds(600)
+        };
 
         public static bool IsDetectingLocal { get; private set; } = false;
         public static string DetectStatusMsg { get; private set; } = "";
@@ -61,37 +69,33 @@ namespace RimLLM_Framework.Mod
                     ("LocalAI/vLLM (8000)", "http://localhost:8000/v1", "http://localhost:8000/v1/models")
                 };
 
-                using (var client = new System.Net.Http.HttpClient())
+                foreach (var target in targets)
                 {
-                    client.Timeout = TimeSpan.FromMilliseconds(600);
-                    foreach (var target in targets)
+                    try
                     {
-                        try
+                        var response = await DetectClient.GetAsync(target.TestUrl).ConfigureAwait(false);
+                        if (response.IsSuccessStatusCode)
                         {
-                            var response = await client.GetAsync(target.TestUrl).ConfigureAwait(false);
-                            if (response.IsSuccessStatusCode)
+                            string finalUrl = target.BaseUrl;
+                            if (target.Name == "Ollama (Raw)")
                             {
-                                string finalUrl = target.BaseUrl;
-                                if (target.Name == "Ollama (Raw)")
-                                {
-                                    finalUrl = "http://localhost:11434/v1";
-                                }
-
-                                RimLLMDispatcher.EnqueueOnMainThread(() =>
-                                {
-                                    Settings.SetEndpoint(providerId, finalUrl);
-                                    Settings.Write();
-                                    IsDetectingLocal = false;
-                                    DetectStatusMsg = "RimLLM_DetectSuccess".Translate(target.Name, finalUrl);
-                                    Messages.Message("RimLLM_MsgDetectSuccess".Translate(target.Name), MessageTypeDefOf.PositiveEvent, false);
-                                });
-                                return;
+                                finalUrl = "http://localhost:11434/v1";
                             }
+
+                            RimLLMDispatcher.EnqueueOnMainThread(() =>
+                            {
+                                Settings.SetEndpoint(providerId, finalUrl);
+                                Settings.Write();
+                                IsDetectingLocal = false;
+                                DetectStatusMsg = "RimLLM_DetectSuccess".Translate(target.Name, finalUrl);
+                                Messages.Message("RimLLM_MsgDetectSuccess".Translate(target.Name), MessageTypeDefOf.PositiveEvent, false);
+                            });
+                            return;
                         }
-                        catch
-                        {
-                            // Ignore
-                        }
+                    }
+                    catch
+                    {
+                        // 探測失敗屬正常情形（服務未啟動），繼續試下一個候選端點。
                     }
                 }
 

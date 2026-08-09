@@ -4,7 +4,6 @@ using Microsoft.Extensions.AI;
 using Newtonsoft.Json;
 using Verse;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.SDK;
 using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
@@ -84,7 +83,7 @@ namespace RimLLM_Framework.Mod
         public bool EnableNativeSchema { get; set; } = true;
         public bool EnableJsonRepair { get; set; } = true;
 
-        public string EmbeddingProvider { get; set; } = "Offline_Trigram";
+        public string EmbeddingProvider { get; set; } = "Disabled";
         public string EmbeddingModel { get; set; } = "text-embedding-004";
         public string EmbeddingEndpoint { get; set; } = "";
         public string EmbeddingApiKey { get; set; } = "";
@@ -219,7 +218,7 @@ namespace RimLLM_Framework.Mod
             public bool EnableNativeSchema = true;
             public bool EnableJsonRepair = true;
             public string EncryptedEmbeddingApiKey;
-            public string EmbeddingProvider = "Offline_Trigram";
+            public string EmbeddingProvider = "Disabled";
             public string EmbeddingModel = "text-embedding-004";
             public string EmbeddingEndpoint = "";
             public string EmbeddingApiKey = "";
@@ -385,7 +384,7 @@ namespace RimLLM_Framework.Mod
                                 this.RoutingStrategy = dto.RoutingStrategy < 0 ? 0 : dto.RoutingStrategy;
                                 this.EnableNativeSchema = dto.EnableNativeSchema;
                                 this.EnableJsonRepair = dto.EnableJsonRepair;
-                                this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? "Offline_Trigram" : dto.EmbeddingProvider;
+                                this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? "Disabled" : dto.EmbeddingProvider;
                                 this.EmbeddingModel = string.IsNullOrEmpty(dto.EmbeddingModel) ? "text-embedding-004" : dto.EmbeddingModel;
                                 this.EmbeddingEndpoint = dto.EmbeddingEndpoint ?? "";
                                 this.EmbeddingApiKey = dto.EmbeddingApiKey ?? "";

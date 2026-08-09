@@ -1,7 +1,6 @@
 using System;
 using Google.GenAI;
 using Microsoft.Extensions.AI;
-using RimLLM_Framework.SDK;
 
 namespace RimLLM_Framework.Providers
 {

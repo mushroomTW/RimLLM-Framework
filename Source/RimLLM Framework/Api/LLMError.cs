@@ -1,4 +1,4 @@
-namespace RimLLM_Framework.SDK
+namespace RimLLM_Framework
 {
     /// <summary>
     /// RimLLM 統一錯誤碼列舉。
