@@ -132,7 +132,10 @@ namespace RimLLM_Framework.Core
         /// </summary>
         internal static void ResetQueueForTests()
         {
-            while (ExecutionQueue.TryDequeue(out _)) { }
+            while (ExecutionQueue.TryDequeue(out _))
+            {
+                // 刻意清空佇列，僅需出列副作用，無需額外處理。
+            }
             Interlocked.Exchange(ref _queuedCount, 0);
             Interlocked.Exchange(ref _droppedCount, 0);
         }

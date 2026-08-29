@@ -15,6 +15,7 @@ namespace RimLLM_Framework
     {
         private readonly RimLLMManager _manager;
         private readonly string _modId;
+        private bool _disposed;
 
         internal RimLLMEmbeddingClient(RimLLMManager manager, string modId)
         {
@@ -49,6 +50,18 @@ namespace RimLLM_Framework
 
         public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+            if (disposing)
+            {
+                // 目前無託管資源需釋放，保留供未來擴充。
+            }
+            _disposed = true;
         }
     }
 }

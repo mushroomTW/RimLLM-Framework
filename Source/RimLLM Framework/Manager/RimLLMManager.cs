@@ -29,7 +29,6 @@ namespace RimLLM_Framework.Manager
         private readonly object _providerLock = new object();
 
         private readonly RimLLMRequestQueue _requestQueue;
-        private readonly RimLLMCircuitBreaker _circuitBreaker;
         private readonly RimLLMUsageTracker _usageTracker;
         private readonly RimLLMEmbeddingService _embeddingService;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
@@ -80,12 +79,12 @@ namespace RimLLM_Framework.Manager
 
             // 建立子模組
             _requestQueue = new RimLLMRequestQueue(settings);
-            _circuitBreaker = new RimLLMCircuitBreaker();
+            var circuitBreaker = new RimLLMCircuitBreaker();
             _usageTracker = new RimLLMUsageTracker(settings);
 
             _fallbackPipeline = new RimLLMFallbackPipeline(
                 settings,
-                _circuitBreaker,
+                circuitBreaker,
                 _usageTracker,
                 providerId => TryGetProvider(providerId, out var provider) ? provider : null,
                 IsProviderEnabled);
