@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
@@ -303,6 +304,7 @@ namespace RimLLM_Framework.Manager
         /// <param name="node">exporter 原始輸出中的節點。</param>
         #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         /// <param name="typeInfo">該節點對應的 CLR 型別資訊，可能為 null（此時退化成純 JSON 正規化）。</param>
+        [SuppressMessage("csharpsquid", "S1168", Justification = "null 表示不可表達節點，與空集合語意不同，呼叫端需區分")]
         private static JObject Normalize(JObject node, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
         {
             #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
@@ -871,6 +873,7 @@ namespace RimLLM_Framework.Manager
         /// 由父層略過該成員（與 <c>CreateDummyInstance</c> 把循環欄位截斷為 null 的行為一致）。
         #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         /// </summary>
+        [SuppressMessage("csharpsquid", "S1168", Justification = "null 表示不可表達節點，與空集合語意不同，呼叫端需區分")]
         private static JObject BuildLegacySchema(Type type, HashSet<Type> visited, int maxDepth, int depth)
         {
             if (type == null || depth > maxDepth)
