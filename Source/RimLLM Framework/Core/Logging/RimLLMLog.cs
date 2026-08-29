@@ -82,10 +82,7 @@ namespace RimLLM_Framework.Core
             }
             catch
             {
-                var orig = Console.ForegroundColor;
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"[WARN] {msg}");
-                Console.ForegroundColor = orig;
+                WriteConsole(ConsoleColor.Yellow, "WARN", msg);
             }
         }
 
@@ -100,10 +97,25 @@ namespace RimLLM_Framework.Core
             }
             catch
             {
-                var orig = Console.ForegroundColor;
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine($"[ERROR] {msg}");
-                Console.ForegroundColor = orig;
+                WriteConsole(ConsoleColor.Red, "ERROR", msg);
+            }
+        }
+
+        /// <summary>
+        /// 無 Unity 引擎時的控制台輸出。還原前景色的責任集中在此，
+        /// 避免每個等級各自 set / restore 而漏掉還原。
+        /// </summary>
+        private static void WriteConsole(ConsoleColor color, string level, string msg)
+        {
+            ConsoleColor original = Console.ForegroundColor;
+            Console.ForegroundColor = color;
+            try
+            {
+                Console.WriteLine($"[{level}] {msg}");
+            }
+            finally
+            {
+                Console.ForegroundColor = original;
             }
         }
     }

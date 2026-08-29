@@ -75,15 +75,7 @@ namespace RimLLM_Framework.Manager
                 foreach (var log in frameworkSettings.RequestLogs)
                 {
                     RequestLogs.Enqueue(log);
-                    var stats = ProviderStatistics.GetOrAdd(log.Provider, _ => new ProviderStats());
-                    if (log.Success)
-                    {
-                        stats.SuccessCount++;
-                    }
-                    else
-                    {
-                        stats.FailureCount++;
-                    }
+                    CountOutcome(log.Provider, log.Success);
                 }
             }
         }
@@ -110,15 +102,7 @@ namespace RimLLM_Framework.Manager
                 RequestLogs.TryDequeue(out _);
             }
 
-            var providerStats = ProviderStatistics.GetOrAdd(provider, _ => new ProviderStats());
-            if (success)
-            {
-                System.Threading.Interlocked.Increment(ref providerStats.SuccessCount);
-            }
-            else
-            {
-                System.Threading.Interlocked.Increment(ref providerStats.FailureCount);
-            }
+            CountOutcome(provider, success);
 
             if (_settings is RimLLMFrameworkSettings frameworkSettings)
             {
@@ -152,14 +136,27 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
+        /// 將一次請求結果計入該供應商的成功／失敗計數。
+        /// </summary>
+        private void CountOutcome(string provider, bool success)
+        {
+            var stats = ProviderStatistics.GetOrAdd(provider, _ => new ProviderStats());
+            if (success)
+            {
+                System.Threading.Interlocked.Increment(ref stats.SuccessCount);
+            }
+            else
+            {
+                System.Threading.Interlocked.Increment(ref stats.FailureCount);
+            }
+        }
+
+        /// <summary>
         /// 清空所有快取的請求日誌，並儲存設定。
         /// </summary>
         public void ClearLogs()
         {
-            while (RequestLogs.Count > 0)
-            {
-                RequestLogs.TryDequeue(out _);
-            }
+            while (RequestLogs.TryDequeue(out _)) { }
             ProviderStatistics.Clear();
 
             if (_settings is RimLLMFrameworkSettings frameworkSettings)
@@ -292,8 +289,7 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private static float GetCacheReadDiscount(string providerId)
         {
-            string provider = (providerId ?? "").Trim().ToLowerInvariant();
-            switch (provider)
+            switch (NormalizeProvider(providerId))
             {
                 case "anthropic": return 0.1f;  // Anthropic cache read 約為輸入價的 0.1x
                 case "gemini": return 0.25f;     // Gemini cachedContent 約為輸入價的 0.25x
@@ -302,12 +298,12 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private string NormalizeProvider(string providerId)
+        private static string NormalizeProvider(string providerId)
         {
             return (providerId ?? "").Trim().ToLowerInvariant();
         }
 
-        private string NormalizeModel(string modelName)
+        private static string NormalizeModel(string modelName)
         {
             string model = (modelName ?? "").Trim().ToLowerInvariant();
             if (model.StartsWith("models/"))

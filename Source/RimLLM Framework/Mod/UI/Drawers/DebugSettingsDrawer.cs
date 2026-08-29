@@ -65,14 +65,15 @@ namespace RimLLM_Framework.Mod
             Rect usageInfoRect = new Rect(usageRect.x + 8f, usageRect.y + 4f, usageRect.width - 160f, usageRect.height - 8f);
             Rect resetUsageBtnRect = new Rect(usageRect.xMax - 150f, usageRect.y + 10f, 140f, 30f);
 
-            Text.Anchor = TextAnchor.MiddleLeft;
-            string usageText = "RimLLM_UsageInfo".Translate(
-                Settings.TotalPromptTokens.ToString(),
-                Settings.TotalCompletionTokens.ToString(),
-                Settings.TotalEstimatedCost.ToString("F4")
-            );
-            Widgets.Label(usageInfoRect, usageText);
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                string usageText = "RimLLM_UsageInfo".Translate(
+                    Settings.TotalPromptTokens.ToString(),
+                    Settings.TotalCompletionTokens.ToString(),
+                    Settings.TotalEstimatedCost.ToString("F4")
+                );
+                Widgets.Label(usageInfoRect, usageText);
+            }
 
             if (Widgets.ButtonText(resetUsageBtnRect, "RimLLM_ResetUsageBtn".Translate()) &&
                 RimLLMProvider.TryGetManager(out var usageManager))
@@ -82,13 +83,13 @@ namespace RimLLM_Framework.Mod
             }
             listing.Gap(10f);
 
-            bool prevDetailedLogging = Settings.DetailedLogging;
             // 詳細日誌
             bool detailedLogging = Settings.DetailedLogging;
+            bool prevDetailedLogging = detailedLogging;
             listing.CheckboxLabeled("RimLLM_DetailedLogging".Translate(), ref detailedLogging, "RimLLM_DetailedLoggingExplanation".Translate());
             Settings.DetailedLogging = detailedLogging;
             RimLLMLog.Enabled = detailedLogging;
-            if (prevDetailedLogging != Settings.DetailedLogging)
+            if (prevDetailedLogging != detailedLogging)
             {
                 Settings.Write();
             }
@@ -120,9 +121,10 @@ namespace RimLLM_Framework.Mod
             Rect labelRect = new Rect(headerRect.x, headerRect.y, headerRect.width - 150f, headerRect.height);
             Rect clearBtnRect = new Rect(headerRect.x + headerRect.width - 140f, headerRect.y + 2f, 140f, headerRect.height - 4f);
 
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(labelRect, "<b>" + "RimLLM_RecentRequests".Translate(30) + "</b>");
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(labelRect, "<b>" + "RimLLM_RecentRequests".Translate(30) + "</b>");
+            }
 
             if (Widgets.ButtonText(clearBtnRect, "RimLLM_ClearRequestsBtn".Translate()) &&
                 RimLLMProvider.TryGetManager(out var logManager))
@@ -132,46 +134,72 @@ namespace RimLLM_Framework.Mod
             }
             listing.Gap(4f);
 
-            if (RimLLMProvider.TryGetManager(out var manager))
+            // manager 尚未初始化時（載入順序異常、或框架自身載入失敗）不能整段不畫 ——
+            // 那會讓面板變成一片空白，看起來像「請求沒有被記錄」。改為退回讀持久化的遙測資料。
+            bool managerAvailable = RimLLMProvider.TryGetManager(out var manager);
+            List<RimLLMManager.RequestLogEntry> logs = managerAvailable
+                ? new List<RimLLMManager.RequestLogEntry>(manager.RequestLogs)
+                : new List<RimLLMManager.RequestLogEntry>();
+
+            // 面板為空時，光看畫面分不出是「沒有紀錄」還是「讀錯來源」，因此把兩邊的筆數直接標出來。
+            int persistedCount = Settings.RequestLogs != null ? Settings.RequestLogs.Count : 0;
+            Text.Font = GameFont.Tiny;
+            listing.Label("RimLLM_RequestsSourceCounts".Translate(
+                managerAvailable ? "OK" : "NULL", logs.Count, persistedCount));
+            Text.Font = GameFont.Small;
+
+            // 記憶體佇列是空的（核心未初始化，或這個 session 還沒發過請求）就退回已保存的紀錄，
+            // 免得明明跑過請求、面板卻什麼都不顯示。
+            if (logs.Count == 0 && Settings.RequestLogs != null && Settings.RequestLogs.Count > 0)
             {
-                var logs = new List<RimLLMManager.RequestLogEntry>(manager.RequestLogs);
-                logs.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
-
-                if (logs.Count == 0)
-                {
-                    listing.Label("RimLLM_NoRequests".Translate());
-                }
-                else
-                {
-                    Rect logScrollRect = listing.GetRect(420f);
-                    Widgets.DrawMenuSection(logScrollRect);
-
-                    float contentWidth = logScrollRect.width - 16f;
-                    float logHeight = 24f;
-                    float viewHeight = Math.Max(420f, logs.Count * logHeight + 10f);
-                    Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
-                    Widgets.BeginScrollView(logScrollRect, ref debugScrollPosition, viewRect);
-
-                    for (int i = 0; i < logs.Count; i++)
-                    {
-                        var log = logs[i];
-                        Rect lineRect = new Rect(4f, i * logHeight + 4f, contentWidth - 8f, logHeight - 2f);
-
-                        string timeStr = log.Timestamp.ToString("HH:mm:ss");
-                        // 色碼保留在程式碼中，只有文字部分抽成翻譯鍵，避免譯者需要處理富文字標記。
-                        string statusText = log.Success
-                            ? $"<color=#22c55e>{"RimLLM_StatusRequestSuccess".Translate(log.LatencyMs)}</color>"
-                            : $"<color=#ef4444>{"RimLLM_StatusRequestFailed".Translate(RimLLMLog.SanitizeForLog(log.ErrorMessage, 160))}</color>";
-
-                        string logLine = $"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}";
-
-                        Text.Font = GameFont.Tiny;
-                        Widgets.Label(lineRect, logLine);
-                        Text.Font = GameFont.Small;
-                    }
-                    Widgets.EndScrollView();
-                }
+                logs = new List<RimLLMManager.RequestLogEntry>(Settings.RequestLogs);
+                listing.Label("RimLLM_RequestsFromTelemetry".Translate());
             }
+
+            logs.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
+
+            if (logs.Count == 0)
+            {
+                listing.Label("RimLLM_NoRequests".Translate());
+                return;
+            }
+
+            Rect logScrollRect = listing.GetRect(420f);
+            Widgets.DrawMenuSection(logScrollRect);
+
+            float contentWidth = logScrollRect.width - 16f;
+            float logHeight = 24f;
+            float viewHeight = Math.Max(420f, logs.Count * logHeight + 10f);
+            Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
+
+            // 清除歷史後內容會從 30 筆縮回幾筆，捲動位置若留在原處，僅存的那幾列會被畫到可視範圍之外，
+            // 看起來就像「請求沒有被記錄」。內容變短時必須把捲動位置一起收回來。
+            float maxScrollY = Math.Max(0f, viewHeight - logScrollRect.height);
+            if (debugScrollPosition.y > maxScrollY)
+            {
+                debugScrollPosition.y = maxScrollY;
+            }
+
+            Widgets.BeginScrollView(logScrollRect, ref debugScrollPosition, viewRect);
+
+            for (int i = 0; i < logs.Count; i++)
+            {
+                var log = logs[i];
+                Rect lineRect = new Rect(4f, i * logHeight + 4f, contentWidth - 8f, logHeight - 2f);
+
+                string timeStr = log.Timestamp.ToString("HH:mm:ss");
+                // 色碼保留在程式碼中，只有文字部分抽成翻譯鍵，避免譯者需要處理富文字標記。
+                string statusText = log.Success
+                    ? $"<color=#22c55e>{"RimLLM_StatusRequestSuccess".Translate(log.LatencyMs)}</color>"
+                    : $"<color=#ef4444>{"RimLLM_StatusRequestFailed".Translate(RimLLMLog.SanitizeForLog(log.ErrorMessage, 160))}</color>";
+
+                string logLine = $"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}";
+
+                Text.Font = GameFont.Tiny;
+                Widgets.Label(lineRect, logLine);
+                Text.Font = GameFont.Small;
+            }
+            Widgets.EndScrollView();
         }
 
         /// <summary>

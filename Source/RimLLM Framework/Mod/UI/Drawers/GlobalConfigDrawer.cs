@@ -76,9 +76,10 @@ namespace RimLLM_Framework.Mod
             Rect effortRect = listing.GetRect(30f);
             Rect labelRect = new Rect(effortRect.x, effortRect.y, 250f, effortRect.height);
             Rect btnRect = new Rect(effortRect.x + 260f, effortRect.y, 200f, effortRect.height);
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(labelRect, "RimLLM_ReasoningEffortLabel".Translate());
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(labelRect, "RimLLM_ReasoningEffortLabel".Translate());
+            }
 
             string currentEffortLabel = Settings.DefaultReasoningEffort == null ? "RimLLM_ReasoningEffort_Auto".Translate() : $"RimLLM_ReasoningEffort_{Settings.DefaultReasoningEffort}".Translate();
             if (Widgets.ButtonText(btnRect, currentEffortLabel))

@@ -218,6 +218,9 @@ namespace RimLLM_Framework.Manager
                         else if (!retryable)
                         {
                             RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) returned a non-retryable error: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Fallbacking to the next entry.");
+                            // 非重試類錯誤多半是請求組裝或 SDK 層的問題，只有訊息無從定位；
+                            // 詳細日誌開啟時一併輸出完整例外鏈與堆疊。
+                            RimLLMLog.Message($"[RimLLM] Non-retryable error detail:\n{RimLLMLog.SanitizeForLog(ex.ToString(), 4000)}");
                             break;
                         }
                         else
@@ -276,8 +279,9 @@ namespace RimLLM_Framework.Manager
             {
                 lock (list)
                 {
+                    if (list.Count == 0) return 0f;
                     long sum = 0;
-                    foreach (var val in list) sum += val;
+                    foreach (long val in list) sum += val;
                     return (float)sum / list.Count;
                 }
             }
@@ -305,13 +309,8 @@ namespace RimLLM_Framework.Manager
 
         private bool IsProviderUsable(string providerId, ILLMProvider provider)
         {
-            if (!_isProviderEnabledFunc(providerId))
-                return false;
-
-            if (provider.RequiresApiKey && string.IsNullOrEmpty(_settings.GetApiKey(providerId)))
-                return false;
-
-            return true;
+            return _isProviderEnabledFunc(providerId) &&
+                   (!provider.RequiresApiKey || !string.IsNullOrEmpty(_settings.GetApiKey(providerId)));
         }
 
         private bool TryGetEligibleCandidate(string entry, List<string> fallbackChain, RimLLMRequest request, out string providerId, out ILLMProvider provider, out string modelName)
@@ -328,17 +327,12 @@ namespace RimLLM_Framework.Manager
             if (!IsProviderUsable(providerId, provider))
                 return false;
 
-            // Budget fallback to free
-            if (_settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit)
+            // Budget fallback to free (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)
+            if (_settings.BudgetPolicy == 2 &&
+                _settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit &&
+                providerId != ProviderIds.OpenAICompatible && !modelName.ToLower().Contains("free"))
             {
-                if (_settings.BudgetPolicy == 2) // FallbackToFree (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)
-                {
-                    bool isFree = providerId == ProviderIds.OpenAICompatible || modelName.ToLower().Contains("free");
-                    if (!isFree)
-                    {
-                        return false;
-                    }
-                }
+                return false;
             }
 
             // 評估 MinFallbackLevel 模型分級
@@ -383,36 +377,24 @@ namespace RimLLM_Framework.Manager
 
             string lower = modelName.ToLower();
 
-            // 如果含有 High 關鍵字，則優先判定為 Tier 3
-            foreach (var kw in HighLevelKeywords)
-            {
-                if (lower.Contains(kw))
-                {
-                    return 3;
-                }
-            }
-
-            // 如果不含 High 關鍵字但含有 Medium 關鍵字，則為 Tier 2
-            foreach (var kw in MediumLevelKeywords)
-            {
-                if (lower.Contains(kw))
-                {
-                    return 2;
-                }
-            }
-
-            // 其餘為 Tier 1
+            // High 關鍵字優先判定為 Tier 3，其次 Medium 為 Tier 2，其餘 Tier 1。
+            if (HighLevelKeywords.Exists(lower.Contains)) return 3;
+            if (MediumLevelKeywords.Exists(lower.Contains)) return 2;
             return 1;
         }
 
         private int ParseMinFallbackLevel(string levelStr)
         {
-            if (string.IsNullOrEmpty(levelStr)) return 0;
-            string lower = levelStr.ToLower();
-            if (lower == "high" || lower == "3") return 3;
-            if (lower == "medium" || lower == "2") return 2;
-            if (lower == "low" || lower == "1") return 1;
-            return 0;
+            switch ((levelStr ?? string.Empty).ToLower())
+            {
+                case "high":
+                case "3": return 3;
+                case "medium":
+                case "2": return 2;
+                case "low":
+                case "1": return 1;
+                default: return 0;
+            }
         }
 
         private bool IsRetryableException(Exception ex)

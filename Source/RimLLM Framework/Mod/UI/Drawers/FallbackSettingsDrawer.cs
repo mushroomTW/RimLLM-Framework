@@ -57,19 +57,21 @@ namespace RimLLM_Framework.Mod
             Rect strategyLabelRect = new Rect(routingRect.x, routingRect.y, routingLabelWidth + 5f, routingRect.height);
             Rect strategyBtnRect = new Rect(routingRect.x + routingLabelWidth + 15f, routingRect.y, 220f, routingRect.height);
 
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(strategyLabelRect, "RimLLM_RoutingStrategyLabel".Translate());
-            Text.Anchor = TextAnchor.UpperLeft;
-
-            string strategyLabelKey = $"RimLLM_RoutingStrategy_{GetStrategyEnumName(Settings.RoutingStrategy)}";
-            if (Widgets.ButtonText(strategyBtnRect, strategyLabelKey.Translate()))
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
             {
-                List<FloatMenuOption> options = new List<FloatMenuOption>
+                Widgets.Label(strategyLabelRect, "RimLLM_RoutingStrategyLabel".Translate());
+            }
+
+            if (Widgets.ButtonText(strategyBtnRect, StrategyLabelKey(Settings.RoutingStrategy).Translate()))
+            {
+                var options = new List<FloatMenuOption>();
+                for (int strategy = 0; strategy < StrategyNames.Length; strategy++)
                 {
-                    new FloatMenuOption("RimLLM_RoutingStrategy_PriorityFailover".Translate(), () => { Settings.RoutingStrategy = 0; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_RoutingStrategy_MinLatency".Translate(), () => { Settings.RoutingStrategy = 1; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_RoutingStrategy_RoundRobin".Translate(), () => { Settings.RoutingStrategy = 2; Settings.Write(); })
-                };
+                    int captured = strategy;
+                    options.Add(new FloatMenuOption(
+                        StrategyLabelKey(captured).Translate(),
+                        () => { Settings.RoutingStrategy = captured; Settings.Write(); }));
+                }
                 Find.WindowStack.Add(new FloatMenu(options));
             }
             listing.GapLine(10f);
@@ -278,15 +280,16 @@ namespace RimLLM_Framework.Mod
 
         }
 
-        private static string GetStrategyEnumName(int strategy)
+        /// <summary>
+        /// 路由策略名稱，索引即為 <see cref="RimLLMFrameworkSettings.RoutingStrategy"/> 的值。
+        /// 目前選項的顯示與下拉選單共用這份清單，不需要另外維護一份 switch 對照。
+        /// </summary>
+        private static readonly string[] StrategyNames = { "PriorityFailover", "MinLatency", "RoundRobin" };
+
+        private static string StrategyLabelKey(int strategy)
         {
-            switch (strategy)
-            {
-                case 0: return "PriorityFailover";
-                case 1: return "MinLatency";
-                case 2: return "RoundRobin";
-                default: return "PriorityFailover";
-            }
+            string name = strategy >= 0 && strategy < StrategyNames.Length ? StrategyNames[strategy] : StrategyNames[0];
+            return "RimLLM_RoutingStrategy_" + name;
         }
 
         private static void SetDefaultAddModelName(string providerId)

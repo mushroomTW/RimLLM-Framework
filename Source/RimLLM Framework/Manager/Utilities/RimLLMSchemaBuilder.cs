@@ -40,16 +40,16 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>已套用目標 provider 方言的 schema JSON。</summary>
-        public string Json { get; private set; }
+        public string Json { get; }
 
         /// <summary>schema 中是否含開放式 map（由 Dictionary 產生的 <c>additionalProperties</c> 物件）。</summary>
-        public bool ContainsOpenEndedMap { get; private set; }
+        public bool ContainsOpenEndedMap { get; }
 
         /// <summary>是否可安全地以 OpenAI strict structured output 送出。</summary>
-        public bool StrictCompatible { get; private set; }
+        public bool StrictCompatible { get; }
 
         /// <summary>是否因 MEAI exporter 不可用而降級走舊反射實作。</summary>
-        public bool UsedLegacyFallback { get; private set; }
+        public bool UsedLegacyFallback { get; }
     }
 
     /// <summary>
@@ -137,14 +137,12 @@ namespace RimLLM_Framework.Manager
             if (type == null) throw new ArgumentNullException(nameof(type));
 
             string cacheKey = type.AssemblyQualifiedName + "|" + (int)profile;
-            RimLLMSchemaResult cached;
-            if (ResultCache.TryGetValue(cacheKey, out cached))
+            if (ResultCache.TryGetValue(cacheKey, out RimLLMSchemaResult cached))
             {
                 return cached;
             }
 
-            bool usedLegacyFallback;
-            JObject canonical = GetCanonical(type, ResolveMaxDepth(profile), out usedLegacyFallback);
+            JObject canonical = GetCanonical(type, ResolveMaxDepth(profile), out bool usedLegacyFallback);
             JObject shaped = ApplyProfile(canonical, profile);
 
             bool containsOpenEndedMap = HasOpenEndedMap(shaped);
@@ -190,8 +188,7 @@ namespace RimLLM_Framework.Manager
         {
             // 深度上限依方言而異，因此必須進 cache key —— 否則 Gemini 會拿到被 OpenAI 上限截斷過的樹。
             string cacheKey = type.AssemblyQualifiedName + "|d" + maxDepth;
-            JObject cached;
-            if (CanonicalCache.TryGetValue(cacheKey, out cached))
+            if (CanonicalCache.TryGetValue(cacheKey, out JObject cached))
             {
                 usedLegacyFallback = cached[LegacyMarker] != null;
                 return (JObject)cached.DeepClone();
@@ -283,10 +280,10 @@ namespace RimLLM_Framework.Manager
             }
 
             /// <summary>exporter 原始輸出的根節點，<c>$ref</c> 的 JSON pointer 以它為基準。</summary>
-            public JObject RawRoot { get; private set; }
+            public JObject RawRoot { get; }
 
             /// <summary>本次產生適用的巢狀深度上限，依目標方言而異。</summary>
-            public int MaxDepth { get; private set; }
+            public int MaxDepth { get; }
 
             /// <summary>目前展開路徑上已解析過的 pointer。</summary>
             public List<string> PointerPath { get; } = new List<string>();
@@ -435,8 +432,7 @@ namespace RimLLM_Framework.Manager
 
                     foreach (KeyValuePair<string, JToken> property in rawProperties)
                     {
-                        JsonPropertyInfo memberInfo;
-                        memberLookup.TryGetValue(property.Key, out memberInfo);
+                        memberLookup.TryGetValue(property.Key, out JsonPropertyInfo memberInfo);
 
                         JObject memberSchema = Normalize(
                             property.Value as JObject,
@@ -656,7 +652,8 @@ namespace RimLLM_Framework.Manager
         {
             if (node == null) return;
 
-            bool optional = node[OptionalMarker] != null && node[OptionalMarker].Value<bool>();
+            JToken optionalMarker = node[OptionalMarker];
+            bool optional = optionalMarker != null && optionalMarker.Value<bool>();
             node.Remove(OptionalMarker);
 
             if (optional)
@@ -912,10 +909,10 @@ namespace RimLLM_Framework.Manager
                     }
                 }
             }
-            else if (GetSequenceElementType(type) != null)
+            else if (GetSequenceElementType(type) is Type elementType)
             {
                 schema["type"] = "array";
-                JObject itemSchema = BuildLegacySchema(GetSequenceElementType(type), visited, maxDepth, depth + 1);
+                JObject itemSchema = BuildLegacySchema(elementType, visited, maxDepth, depth + 1);
                 if (itemSchema == null) return null;
                 schema["items"] = itemSchema;
             }
@@ -933,18 +930,25 @@ namespace RimLLM_Framework.Manager
                     var properties = new JObject();
                     var required = new JArray();
 
+                    // 屬性與欄位的處理完全相同（產生 schema、加入 properties、非 Nullable<T> 才列入 required），
+                    // 差別只在如何取得成員的型別與名稱。
+                    void AddMember(string memberName, Type memberType)
+                    {
+                        JObject memberSchema = BuildLegacySchema(memberType, visited, maxDepth, depth + 1);
+                        if (memberSchema == null) return;
+
+                        properties[memberName] = memberSchema;
+                        if (Nullable.GetUnderlyingType(memberType) == null)
+                        {
+                            required.Add(memberName);
+                        }
+                    }
+
                     foreach (PropertyInfo prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
                     {
                         if (prop.CanRead && prop.CanWrite && prop.GetIndexParameters().Length == 0)
                         {
-                            JObject propSchema = BuildLegacySchema(prop.PropertyType, visited, maxDepth, depth + 1);
-                            if (propSchema == null) continue;
-
-                            properties[prop.Name] = propSchema;
-                            if (Nullable.GetUnderlyingType(prop.PropertyType) == null)
-                            {
-                                required.Add(prop.Name);
-                            }
+                            AddMember(prop.Name, prop.PropertyType);
                         }
                     }
 
@@ -952,14 +956,7 @@ namespace RimLLM_Framework.Manager
                     {
                         if (!field.IsLiteral && !field.IsInitOnly)
                         {
-                            JObject fieldSchema = BuildLegacySchema(field.FieldType, visited, maxDepth, depth + 1);
-                            if (fieldSchema == null) continue;
-
-                            properties[field.Name] = fieldSchema;
-                            if (Nullable.GetUnderlyingType(field.FieldType) == null)
-                            {
-                                required.Add(field.Name);
-                            }
+                            AddMember(field.Name, field.FieldType);
                         }
                     }
 

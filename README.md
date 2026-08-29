@@ -9,6 +9,29 @@
 
 Everything you get back from the framework is a **standard Microsoft.Extensions.AI type** — `IChatClient`, `ChatMessage`, `ChatResponse`, `IEmbeddingGenerator`. There is no bespoke client interface to learn.
 
+```csharp
+// The whole consumer API. The player has already configured the provider,
+// model, API key and fallback chain in this mod's settings.
+IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
+
+Log.Message((await client.GetResponseAsync("What is AI?")).Text);
+```
+
+> [!IMPORTANT]
+> This framework is a dependency, not a standalone feature. At run time the player must have the
+> **RimLLM Framework** mod active *and* have configured at least one provider with an API key —
+> otherwise `RimLLMProvider.CreateChatClient` throws `InvalidOperationException` and calls fail with
+> `RimLLMException`. Supported game version: **RimWorld 1.6** (see `About/About.xml`).
+
+## Contents
+
+* [Installation](#-installation) — reference the assemblies without shipping duplicates
+* [SDK Usage](#-sdk-usage) — chat, streaming, structured output, embeddings, error handling
+* [Features](#-features) — what the framework does for you
+* [Architecture](#️-architecture) — how it does it, and why
+* [Security notes](#-security-notes) — what each mechanism actually protects against
+* [License](#-license) · [Unit tests and verification](#-unit-tests-and-verification)
+
 ---
 
 ## 📦 Installation
@@ -253,7 +276,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
    * **Kimi**, **MiniMax** and **Qwen** offer a one-click "use China-specific endpoint" toggle (off by default) for better connectivity.
 2. **Failover and model fallback**
    * **Client-side fallback chain**: configure a chain made up of a primary model and multiple exact fallback models. When the current model hits a timeout, rate limit (HTTP 429) or connection error, the framework switches down the chain seamlessly. The UI produces entries in `Provider:Model` form; the framework still parses bare provider entries for compatibility and uses that provider's default model.
-   * **OpenRouter server-side auto fallback (`openrouter/auto`)**: you can put OpenRouter's official `openrouter/auto` model in the fallback chain and let OpenRouter pick among its recommended models server-side.
+   * **OpenRouter server-side fallback**: an OpenRouter entry may name several comma-separated models — set `ChatOptions.ModelId` to `"OpenRouter:model-a, model-b, model-c"` (a fallback-chain entry accepts the same form). The provider then sends OpenRouter's `models` array instead of a single `model` field, moving the choice among those models to OpenRouter's side; a single model name still sends a plain `model`. Pinned by `TestOpenRouterFallbackPayload`. Note the settings UI builds entries from the cached model list one model at a time, so this multi-model form comes from calling code rather than from the fallback-chain editor.
    * `Retry-After` is honoured in both forms RFC 7231 allows — delay-seconds and HTTP-date — on every path.
 3. **AES-256 settings encryption**
    * API keys are stored with AES-256 symmetric encryption, reducing the risk of plaintext keys sitting in the settings file. This is obfuscation-grade protection — see [Security notes](#-security-notes) below.

@@ -9,6 +9,29 @@
 
 框架回傳的一切都是**標準的 Microsoft.Extensions.AI 型別** —— `IChatClient`、`ChatMessage`、`ChatResponse`、`IEmbeddingGenerator`，沒有另一套自訂 client 介面要學。
 
+```csharp
+// 呼叫端 API 的全貌。供應商、模型、API 金鑰與 Fallback 鏈
+// 都已經由玩家在本 Mod 的設定介面裡配置好。
+IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
+
+Log.Message((await client.GetResponseAsync("What is AI?")).Text);
+```
+
+> [!IMPORTANT]
+> 本框架是相依項，不是獨立功能。執行期玩家必須同時啟用 **RimLLM Framework** 這個 Mod，
+> 並且已經設定好至少一個帶 API 金鑰的供應商；否則 `RimLLMProvider.CreateChatClient` 會擲出
+> `InvalidOperationException`，呼叫也會以 `RimLLMException` 失敗。
+> 支援的遊戲版本：**RimWorld 1.6**（見 `About/About.xml`）。
+
+## 目錄
+
+* [安裝](#-安裝) —— 只參考組件，不重複出貨
+* [SDK 使用方式](#-sdk-使用方式) —— 對話、串流、結構化輸出、Embedding、錯誤處理
+* [功能特色](#-功能特色) —— 框架替你做掉了什麼
+* [架構設計](#️-架構設計) —— 怎麼做到的，以及為什麼這樣做
+* [安全性說明](#-安全性說明) —— 每個機制實際防得住什麼
+* [授權條款](#-授權條款) · [單元測試與驗證](#-單元測試與驗證)
+
 ---
 
 ## 📦 安裝
@@ -217,7 +240,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 這才是這個框架存在的意義。以下全部已經在那一個 `IChatClient` 後面完成：
 
 | 你可以省略 | 因為框架已經做了 |
-|---|---|
+| --- | --- |
 | API 金鑰的儲存與 UI | AES-256 加密設定，所有 Mod 共用同一份 |
 | 挑選供應商或模型 | 玩家設定的 Fallback 鏈，項目為 `Provider:Model` 形式 |
 | 重試與 `Retry-After` | 逾時／429／連線錯誤自動重試，兩種標頭格式都支援 |
@@ -235,7 +258,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 `using RimLLM_Framework;` 會引入 13 個公開型別。多數 Mod 只會碰到第一列：
 
 | 分層 | 型別 | 什麼時候需要 |
-|---|---|---|
+| --- | --- | --- |
 | **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError`、`RimLLMClientExtensions` | 一定會用到 —— 這就是全部的使用端 API |
 | **提供供應商** | `IChatClientProvider`、`IChatOptionsCustomizer`、`INativeStructuredOutputProvider`、`LLMProviderCapabilities`、`IRimLLMSettings` | 只有要用 `RimLLMProvider.RegisterProvider` 註冊自己的 LLM 後端時（`ILLMProvider` 在 `RimLLM_Framework.Providers`） |
 | **診斷** | `TestResult`、`ProviderIds`、`LLMErrorMapper` | 連線測試、內建供應商 ID 常數、HTTP 狀態碼對照 |
@@ -252,7 +275,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * **Kimi**、**MiniMax**、**Qwen** 提供一鍵切換「使用中國專用端點」（預設關閉），以改善連線品質。
 2. **容錯與模型 Fallback**
    * **客戶端 Fallback 鏈**：可設定由主要模型與多個精確備援模型組成的鏈。目前模型遇到逾時、速率限制（HTTP 429）或連線錯誤時，框架會無縫往下切換。UI 產生的項目為 `Provider:Model` 形式；框架仍相容只填供應商的舊項目，並使用該供應商的預設模型。
-   * **OpenRouter 服務端自動 Fallback（`openrouter/auto`）**：可把 OpenRouter 官方的 `openrouter/auto` 模型放進 Fallback 鏈，交由 OpenRouter 在服務端從推薦模型中挑選。
+   * **OpenRouter 服務端 Fallback**：OpenRouter 的項目可以用逗號列出多個模型 —— 把 `ChatOptions.ModelId` 設為 `"OpenRouter:model-a, model-b, model-c"`（Fallback 鏈項目也接受同樣的格式）。此時供應商會改送 OpenRouter 的 `models` 陣列而非單一 `model` 欄位，把「要用哪一個」的決定交給 OpenRouter 服務端；只填一個模型名時仍送出一般的 `model`。由 `TestOpenRouterFallbackPayload` 驗證。注意設定介面是從快取模型清單一次挑一個模型來組出項目，因此這種多模型寫法來自呼叫端程式碼，而不是 Fallback 鏈編輯器。
    * `Retry-After` 在所有路徑上都支援 RFC 7231 允許的兩種格式 —— 延遲秒數與 HTTP 日期。
 3. **AES-256 設定加密**
    * API 金鑰以 AES-256 對稱加密儲存，降低設定檔中出現明文金鑰的風險。這是混淆等級的保護 —— 詳見下方[安全性說明](#-安全性說明)。

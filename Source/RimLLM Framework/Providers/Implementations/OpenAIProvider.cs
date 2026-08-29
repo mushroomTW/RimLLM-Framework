@@ -91,38 +91,60 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         protected virtual void BuildChatOptions(ChatOptions requestOptions, string model, ChatOptions options)
         {
-            if (requestOptions?.ResponseFormat != null)
+            bool strict = false;
+            if (requestOptions?.AdditionalProperties != null &&
+                requestOptions.AdditionalProperties.TryGetValue("strict", out object strictVal) && strictVal is bool strictBool)
             {
-                options.ResponseFormat = requestOptions.ResponseFormat;
-            }
-            if (requestOptions?.AdditionalProperties != null)
-            {
-                if (requestOptions.AdditionalProperties.TryGetValue("strict", out object strictVal) && strictVal is bool strictBool)
-                {
-                    options.AdditionalProperties["strict"] = strictBool;
-                }
-                if (requestOptions.AdditionalProperties.TryGetValue("rimllm_response_schema", out object schemaVal) && schemaVal is string schemaJsonStr)
-                {
-                    using (System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(schemaJsonStr))
-                    {
-                        // strict 只認 RimLLMSchemaBuilder 算出的值。此處原本還有一段以字串比對
-                        // "additionalProperties": true 來推斷 strict 的 heuristic —— 那是死碼：
-                        // 產生器對開放式 map 輸出的是 value schema 物件而非字面 true，比對永遠不命中。
-                        bool strict = false;
-                        if (requestOptions.AdditionalProperties.TryGetValue("strict", out object sObj) && sObj is bool sBool)
-                        {
-                            strict = sBool;
-                        }
-                        options.ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(
-                            document.RootElement.Clone(),
-                            "custom_type",
-                            "RimLLM structured response");
-                        options.AdditionalProperties["strict"] = strict;
-                    }
-                }
+                // strict 只認 RimLLMSchemaBuilder 算出的值。此處原本還有一段以字串比對
+                // "additionalProperties": true 來推斷 strict 的 heuristic —— 那是死碼：
+                // 產生器對開放式 map 輸出的是 value schema 物件而非字面 true，比對永遠不命中。
+                strict = strictBool;
+                options.AdditionalProperties["strict"] = strictBool;
             }
 
-            ApplyReasoningAndSampling(requestOptions, model, options);
+            // response_format 一律以 Patch 寫入原始 JSON，並確保 MEAI 這一側維持 null。
+            // OpenAI SDK 的 ChatCompletionOptions.ResponseFormat 是 JsonPatch 支撐的屬性：
+            // 只要框架動過同一個模型的 Patch（max_tokens／reasoning／model），RimWorld 的 Mono
+            // 還原該屬性時會拿到基底 ChatResponseFormat，送出請求時序列化就會拋
+            // "The WriteCore method should be invoked on an overriding type derived from ChatResponseFormat."
+            options.ResponseFormat = null;
+            string responseFormatJson = BuildResponseFormatJson(requestOptions, strict);
+
+            ApplyReasoningAndSampling(requestOptions, model, options, responseFormatJson);
+        }
+
+        /// <summary>
+        /// 組出 <c>response_format</c> 欄位的完整 JSON。schema 優先取框架以
+        /// AdditionalProperties 傳遞的字串，其次才回頭讀 MEAI 的 ChatResponseFormatJson。
+        /// 兩者都沒有、但呼叫端指定了 JSON 模式時退回 json_object；完全沒有 JSON 需求才回傳 null。
+        /// </summary>
+        private static string BuildResponseFormatJson(ChatOptions requestOptions, bool strict)
+        {
+            string schemaJson = RimLLMChatOptions.ReadAdditional<string>(requestOptions, "rimllm_response_schema", null);
+
+            if (string.IsNullOrEmpty(schemaJson) &&
+                requestOptions?.ResponseFormat is ChatResponseFormatJson jsonFormat && jsonFormat.Schema.HasValue)
+            {
+                schemaJson = jsonFormat.Schema.Value.GetRawText();
+            }
+
+            if (string.IsNullOrEmpty(schemaJson))
+            {
+                // 沒有 schema 但呼叫端仍要求 JSON 模式時要送出 json_object，
+                // 否則這個選項會被靜默丟棄，模型照樣回散文而呼叫端無從察覺。
+                return requestOptions?.ResponseFormat is ChatResponseFormatJson
+                    ? "{\"type\":\"json_object\"}"
+                    : null;
+            }
+
+            // schema 是直接拼進送出的 JSON 的，不合法就會毀掉整個 request body。
+            // 先在本地解析一次，讓錯誤停在組裝階段，而不是換成服務端一句沒有線索的 400。
+            using (JsonDocument.Parse(schemaJson)) { }
+
+            return "{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"custom_type\"," +
+                   "\"description\":\"RimLLM structured response\"," +
+                   "\"strict\":" + (strict ? "true" : "false") + "," +
+                   "\"schema\":" + schemaJson + "}}";
         }
 
         /// <summary>
@@ -145,10 +167,19 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         protected virtual bool IsKnownNonReasoningModel(string modelName)
         {
-            if (string.IsNullOrEmpty(modelName)) return false;
-            string name = modelName.Contains("/") ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
-            name = name.ToLowerInvariant();
+            string name = NormalizeModelName(modelName);
             return name.StartsWith("gpt-3.5") || name.StartsWith("gpt-4") || name.StartsWith("chatgpt-4");
+        }
+
+        /// <summary>
+        /// 取出可用於前綴比對的模型名：去掉聚合服務端的 "vendor/" 前綴並轉小寫。
+        /// null 或空字串一律回傳空字串，讓呼叫端的前綴比對自然地不命中。
+        /// </summary>
+        private static string NormalizeModelName(string modelName)
+        {
+            if (string.IsNullOrEmpty(modelName)) return string.Empty;
+            string name = modelName.Contains("/") ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
+            return name.ToLowerInvariant();
         }
 
         /// <summary>
@@ -169,7 +200,7 @@ namespace RimLLM_Framework.Providers
         /// 思考參數一律由 Patch 掌控而不交給 MEAI 的 <c>ChatOptions.Reasoning</c>：
         /// 後者只會序列化成 OpenAI 的 <c>reasoning_effort</c>，表達不了其他家的方言。
         /// </summary>
-        private void ApplyReasoningAndSampling(ChatOptions requestOptions, string model, ChatOptions options)
+        private void ApplyReasoningAndSampling(ChatOptions requestOptions, string model, ChatOptions options, string responseFormatJson)
         {
             bool disableReasoning = ResolveDisableReasoning(requestOptions);
             ReasoningEffort? effort = requestOptions?.Reasoning?.Effort;
@@ -198,6 +229,13 @@ namespace RimLLM_Framework.Providers
             options.RawRepresentationFactory = client =>
             {
                 var chatCompletionOptions = baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
+
+                if (responseFormatJson != null)
+                {
+                    chatCompletionOptions.Patch.Set(
+                        Encoding.UTF8.GetBytes("$.response_format"),
+                        Encoding.UTF8.GetBytes(responseFormatJson));
+                }
 
                 if (rewriteMaxTokens)
                 {
@@ -261,13 +299,9 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         private static bool ResolveDisableReasoning(ChatOptions requestOptions)
         {
-            if (requestOptions is RimLLMChatOptions rimOptions)
-            {
-                return rimOptions.DisableReasoning;
-            }
-            return requestOptions?.AdditionalProperties != null &&
-                   requestOptions.AdditionalProperties.TryGetValue("rimllm_disable_reasoning", out object val) &&
-                   val is bool flag && flag;
+            return requestOptions is RimLLMChatOptions rimOptions
+                ? rimOptions.DisableReasoning
+                : RimLLMChatOptions.ReadAdditional(requestOptions, "rimllm_disable_reasoning", false);
         }
 
         /// <summary>
@@ -419,9 +453,7 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         protected bool IsOpenAiReasoningModel(string modelName)
         {
-            if (string.IsNullOrEmpty(modelName)) return false;
-            string name = modelName.Contains("/") ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
-            name = name.ToLowerInvariant();
+            string name = NormalizeModelName(modelName);
             return name.StartsWith("o1") || name.StartsWith("o3") || name.StartsWith("o4") ||
                    name.StartsWith("gpt-5");
         }

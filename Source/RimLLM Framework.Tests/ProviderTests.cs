@@ -672,6 +672,49 @@ namespace RimLLM_Framework.Tests
                 "含 Dictionary 的型別必須關閉 strict，否則服務端會拒絕開放式 map");
         }
 
+        /// <summary>
+        /// response_format 必須只由 Patch 的原始 JSON 供應，MEAI 的 ChatOptions.ResponseFormat 要保持 null。
+        /// 交給 SDK 的 ChatCompletionOptions.ResponseFormat 屬性的話，該屬性是 JsonPatch 支撐的，
+        /// 在框架動過同一個模型的 Patch 之後，RimWorld 的 Mono 會把它還原成基底 ChatResponseFormat，
+        /// 送出請求時序列化直接拋 "The WriteCore method should be invoked on an overriding type..."。
+        /// </summary>
+        [Test]
+        public void TestResponseFormatIsSentThroughPatchOnly()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "DeepSeek:deepseek-chat" },
+                EnableNativeSchema = true
+            };
+            mockSettings.EnabledProviders["DeepSeek"] = true;
+            mockSettings.ApiKeys["DeepSeek"] = "key";
+
+            var provider = new TestDeepSeekPayloadProvider(mockSettings);
+
+            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
+            var requestOptions = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
+            requestOptions.AdditionalProperties["rimllm_response_schema"] = schema.Json;
+            requestOptions.AdditionalProperties["strict"] = schema.StrictCompatible;
+
+            // 模擬 executor 已先設好 MEAI 的 ResponseFormat：客製化後必須被清掉。
+            var produced = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
+            using (System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(schema.Json))
+            {
+                produced.ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(
+                    document.RootElement.Clone(), "custom_type", "RimLLM structured response");
+            }
+            provider.CreateChatOptionsCustomizer(requestOptions, "deepseek-chat")(produced);
+            Assert.IsNull(produced.ResponseFormat, "MEAI 這一側不得再帶 ResponseFormat 物件");
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            provider.GenerateStructuredAsync(messages, requestOptions, "deepseek-chat").GetAwaiter().GetResult();
+
+            var payload = JObject.Parse(provider.CapturedPayload);
+            Assert.IsNotNull(payload["response_format"]?["json_schema"]?["schema"],
+                "response_format 仍必須完整出現在送出的 payload 中");
+            Assert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());
+        }
+
         [Test]
         public void TestStreamRequestChargesAntiAbuseOnce()
         {

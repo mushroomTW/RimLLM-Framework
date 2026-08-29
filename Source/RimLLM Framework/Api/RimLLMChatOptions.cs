@@ -36,6 +36,21 @@ namespace RimLLM_Framework
         public bool DisableReasoning { get; set; }
 
         /// <summary>
+        /// 從 <see cref="ChatOptions.AdditionalProperties"/> 取出框架私有欄位。
+        /// 框架把這些欄位以 AdditionalProperties 轉遞給 provider（呼叫端未使用
+        /// <see cref="RimLLMChatOptions"/> 時的唯一管道），而「不存在或型別不符就用預設值」
+        /// 的三段式判斷先前散落在 executor 與各 provider，逐字重複了六次。
+        /// </summary>
+        internal static T ReadAdditional<T>(ChatOptions options, string key, T fallback)
+        {
+            return options?.AdditionalProperties != null &&
+                   options.AdditionalProperties.TryGetValue(key, out object value) &&
+                   value is T typed
+                ? typed
+                : fallback;
+        }
+
+        /// <summary>
         /// ChatOptions 的可寫入公開屬性。以反射列舉而非硬編清單，
         /// 未來 MEAI 新增欄位時不需同步修改此處。
         /// </summary>

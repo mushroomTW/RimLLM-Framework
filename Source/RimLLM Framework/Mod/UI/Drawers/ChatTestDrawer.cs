@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
@@ -21,9 +20,9 @@ namespace RimLLM_Framework.Mod
         private static string chatInput = "";
         private static readonly List<string> chatHistory = new List<string>();
         private static Vector2 chatScrollPosition = Vector2.zero;
-        private static bool chatLoading = false;
-        private static ReasoningEffort? chatReasoningEffort = null;
-        private static bool chatReasoningInitialized = false;
+        private static bool chatLoading;
+        private static ReasoningEffort? chatReasoningEffort;
+        private static bool chatReasoningInitialized;
 
         /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
         private const string ChatInputControlName = "RimLLM_ChatInput";
@@ -124,17 +123,9 @@ namespace RimLLM_Framework.Mod
 
             float chatContentWidth = chatRect.width - 16f;
 
-            StringBuilder chatBuilder = new StringBuilder();
-            for (int i = 0; i < chatHistory.Count; i++)
-            {
-                chatBuilder.Append(chatHistory[i]);
-                if (i < chatHistory.Count - 1)
-                {
-                    chatBuilder.AppendLine();
-                    chatBuilder.AppendLine();
-                }
-            }
-            string allChatText = chatBuilder.ToString();
+            // 分隔用 Environment.NewLine 而非 "\n"：與原本的 StringBuilder.AppendLine 一致，
+            // 換行字元不同會讓 CalcHeight 的量測結果與實際繪製對不上。
+            string allChatText = string.Join(Environment.NewLine + Environment.NewLine, chatHistory.ToArray());
 
             GUIStyle richLabelStyle = new GUIStyle(Text.CurFontStyle);
             richLabelStyle.richText = true;
@@ -157,9 +148,10 @@ namespace RimLLM_Framework.Mod
             float effortLabelWidth = Text.CalcSize("RimLLM_ReasoningEffortLabel".Translate()).x;
             Rect effortLabelRect = new Rect(effortRowRect.x, effortRowRect.y, effortLabelWidth + 5f, effortRowRect.height);
             Rect effortBtnRect = new Rect(effortRowRect.x + effortLabelWidth + 15f, effortRowRect.y, 160f, effortRowRect.height);
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(effortLabelRect, "RimLLM_ReasoningEffortLabel".Translate());
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(effortLabelRect, "RimLLM_ReasoningEffortLabel".Translate());
+            }
             string chatEffortLabel = chatReasoningEffort == null ? "RimLLM_ReasoningEffort_Auto".Translate() : $"RimLLM_ReasoningEffort_{chatReasoningEffort}".Translate();
             if (Widgets.ButtonText(effortBtnRect, chatEffortLabel))
             {

@@ -70,6 +70,8 @@
   <RimLLM_ExportDiag>Export Diagnostics (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
   <RimLLM_RecentRequests>Recent Request History (Last {0})</RimLLM_RecentRequests>
   <RimLLM_NoRequests>&lt;color=gray&gt;No request history currently.&lt;/color&gt;</RimLLM_NoRequests>
+  <RimLLM_RequestsSourceCounts>&lt;color=gray&gt;core={0} | in-memory={1} | persisted={2}&lt;/color&gt;</RimLLM_RequestsSourceCounts>
+  <RimLLM_RequestsFromTelemetry>&lt;color=gray&gt;The in-memory queue is empty for this session; showing the persisted history instead.&lt;/color&gt;</RimLLM_RequestsFromTelemetry>
   <RimLLM_ChatTitle>Model Chat Interface</RimLLM_ChatTitle>
   <RimLLM_Send>Send</RimLLM_Send>
   <RimLLM_ClearBtn>Clear</RimLLM_ClearBtn>

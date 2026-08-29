@@ -15,7 +15,7 @@ namespace RimLLM_Framework.Manager
         private readonly IRimLLMSettings _settings;
         private readonly object _queueLock = new object();
         private readonly List<QueueEntry> _waitingQueue = new List<QueueEntry>();
-        private int _activeRequests = 0;
+        private int _activeRequests;
 
         /// <summary>
         /// 佇列實體定義。

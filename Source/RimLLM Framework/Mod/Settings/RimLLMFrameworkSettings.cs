@@ -144,44 +144,36 @@ namespace RimLLM_Framework.Mod
         private readonly Dictionary<string, string> _endpoints = new Dictionary<string, string>();
         private readonly Dictionary<string, int> _modelLevelOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         
-        private readonly Dictionary<string, bool> _chinaModeProviders = new Dictionary<string, bool>
-        {
-            [ProviderIds.MiniMax] = false,
-            [ProviderIds.Qwen] = false,
-            [ProviderIds.Kimi] = false
-        };
+        /// <summary>中國端點切換旗標。鍵由 <see cref="ProviderIds.HasChinaEndpoint"/> 決定，不另外手寫一份清單。</summary>
+        private readonly Dictionary<string, bool> _chinaModeProviders = BuildChinaModeMap();
 
-        private readonly Dictionary<string, bool> _enabledProviders = new Dictionary<string, bool>
+        private static Dictionary<string, bool> BuildChinaModeMap()
         {
-            [ProviderIds.OpenAI] = false,
-            [ProviderIds.Gemini] = false,
-            [ProviderIds.OpenAICompatible] = false,
-            [ProviderIds.DeepSeek] = false,
-            [ProviderIds.Groq] = false,
-            [ProviderIds.Grok] = false,
-            [ProviderIds.Zai] = false,
-            [ProviderIds.OpenRouter] = false,
-            [ProviderIds.Kimi] = false,
-            [ProviderIds.MiniMax] = false,
-            [ProviderIds.Qwen] = false,
-            [ProviderIds.Nvidia] = false
-        };
+            var map = new Dictionary<string, bool>();
+            foreach (string providerId in ProviderIds.BuiltIn)
+            {
+                if (ProviderIds.HasChinaEndpoint(providerId)) map[providerId] = false;
+            }
+            return map;
+        }
 
-        private readonly Dictionary<string, List<string>> _providerModels = new Dictionary<string, List<string>>
+        /// <summary>
+        /// 內建供應商的啟用旗標與模型清單快取。兩份字典的鍵一律等同 <see cref="ProviderIds.BuiltIn"/>，
+        /// 因此直接由該清單產生 —— 先前是各自手寫一份 12 筆的字面清單，新增供應商得同步改三處。
+        /// </summary>
+        private readonly Dictionary<string, bool> _enabledProviders = BuildBuiltInMap(_ => false);
+
+        private readonly Dictionary<string, List<string>> _providerModels = BuildBuiltInMap(_ => new List<string>());
+
+        private static Dictionary<string, TValue> BuildBuiltInMap<TValue>(Func<string, TValue> valueFactory)
         {
-            [ProviderIds.OpenAI] = new List<string>(),
-            [ProviderIds.Gemini] = new List<string>(),
-            [ProviderIds.OpenAICompatible] = new List<string>(),
-            [ProviderIds.DeepSeek] = new List<string>(),
-            [ProviderIds.Groq] = new List<string>(),
-            [ProviderIds.Grok] = new List<string>(),
-            [ProviderIds.Zai] = new List<string>(),
-            [ProviderIds.OpenRouter] = new List<string>(),
-            [ProviderIds.Kimi] = new List<string>(),
-            [ProviderIds.MiniMax] = new List<string>(),
-            [ProviderIds.Qwen] = new List<string>(),
-            [ProviderIds.Nvidia] = new List<string>()
-        };
+            var map = new Dictionary<string, TValue>();
+            foreach (string providerId in ProviderIds.BuiltIn)
+            {
+                map[providerId] = valueFactory(providerId);
+            }
+            return map;
+        }
 
         /// <summary>
         /// 用於 JSON 序列化與反序列化的 DTO 結構，避開 RimWorld Scribe 字典嵌套序列化的兼容問題。
@@ -411,8 +403,7 @@ namespace RimLLM_Framework.Mod
         {
             lock (_settingsLock)
             {
-                string raw = GetApiKey(providerId);
-                if (string.IsNullOrEmpty(raw)) return "";
+                if (!_apiKeys.TryGetValue(providerId, out string raw) || string.IsNullOrEmpty(raw)) return "";
 
                 var keys = raw.Split(new char[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
                 if (keys.Length == 0) return "";
@@ -439,23 +430,34 @@ namespace RimLLM_Framework.Mod
 
         public string GetEndpoint(string providerId, string defaultVal)
         {
-            string resolvedDefault = defaultVal;
             lock (_settingsLock)
             {
-                if (_chinaModeProviders.TryGetValue(providerId, out bool isChina) && isChina)
-                {
-                    if (providerId == ProviderIds.MiniMax) resolvedDefault = "https://api.minimaxi.com/v1";
-                    else if (providerId == ProviderIds.Qwen) resolvedDefault = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-                    else if (providerId == ProviderIds.Kimi) resolvedDefault = "https://api.moonshot.cn/v1";
-                }
-                else
-                {
-                    if (providerId == ProviderIds.MiniMax) resolvedDefault = "https://api.minimax.io/v1";
-                    else if (providerId == ProviderIds.Qwen) resolvedDefault = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
-                    else if (providerId == ProviderIds.Kimi) resolvedDefault = "https://api.moonshot.ai/v1";
-                }
+                bool isChina = _chinaModeProviders.TryGetValue(providerId, out bool china) && china;
+                string resolvedDefault = ResolveRegionalDefaultEndpoint(providerId, isChina) ?? defaultVal;
 
-                return _endpoints.TryGetValue(providerId, out string val) ? (string.IsNullOrEmpty(val) ? resolvedDefault : val) : resolvedDefault;
+                return _endpoints.TryGetValue(providerId, out string val) && !string.IsNullOrEmpty(val)
+                    ? val
+                    : resolvedDefault;
+            }
+        }
+
+        /// <summary>
+        /// 有中國／國際兩組網域的供應商的預設端點。其餘供應商回傳 null，由呼叫端沿用傳入的預設值。
+        /// </summary>
+        private static string ResolveRegionalDefaultEndpoint(string providerId, bool isChina)
+        {
+            switch (providerId)
+            {
+                case ProviderIds.MiniMax:
+                    return isChina ? "https://api.minimaxi.com/v1" : "https://api.minimax.io/v1";
+                case ProviderIds.Qwen:
+                    return isChina
+                        ? "https://dashscope.aliyuncs.com/compatible-mode/v1"
+                        : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+                case ProviderIds.Kimi:
+                    return isChina ? "https://api.moonshot.cn/v1" : "https://api.moonshot.ai/v1";
+                default:
+                    return null;
             }
         }
 
@@ -548,17 +550,6 @@ namespace RimLLM_Framework.Mod
                 {
                     _modelLevelOverrides[modelName] = Math.Min(level, 3);
                 }
-            }
-        }
-
-        /// <summary>
-        /// 取得目前所有模型分級覆寫的複本，供 UI 列表顯示。
-        /// </summary>
-        public Dictionary<string, int> GetModelLevelOverridesSnapshot()
-        {
-            lock (_settingsLock)
-            {
-                return new Dictionary<string, int>(_modelLevelOverrides, StringComparer.OrdinalIgnoreCase);
             }
         }
     }

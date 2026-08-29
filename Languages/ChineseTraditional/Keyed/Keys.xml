@@ -70,6 +70,8 @@
   <RimLLM_ExportDiag>匯出診斷資訊 (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
   <RimLLM_RecentRequests>最近請求歷史紀錄 (最近 {0} 筆)</RimLLM_RecentRequests>
   <RimLLM_NoRequests>&lt;color=gray&gt;目前無請求紀錄。&lt;/color&gt;</RimLLM_NoRequests>
+  <RimLLM_RequestsSourceCounts>&lt;color=gray&gt;核心={0} ｜ 即時佇列={1} 筆 ｜ 已保存={2} 筆&lt;/color&gt;</RimLLM_RequestsSourceCounts>
+  <RimLLM_RequestsFromTelemetry>&lt;color=gray&gt;本次工作階段的即時佇列為空，以下改為顯示已保存的歷史紀錄。&lt;/color&gt;</RimLLM_RequestsFromTelemetry>
   <RimLLM_ChatTitle>模型對話測試介面</RimLLM_ChatTitle>
   <RimLLM_Send>發送</RimLLM_Send>
   <RimLLM_ClearBtn>清空</RimLLM_ClearBtn>

@@ -46,9 +46,10 @@ namespace RimLLM_Framework.Mod
                 }
             }
 
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(detectStatusRect, DetectStatusMsg);
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(detectStatusRect, DetectStatusMsg);
+            }
 
             listing.Gap(4f);
         }

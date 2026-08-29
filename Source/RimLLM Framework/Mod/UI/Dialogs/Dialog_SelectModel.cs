@@ -36,9 +36,10 @@ namespace RimLLM_Framework.Mod
 
             // 2. 搜尋框
             Rect searchLabelRect = new Rect(0f, 40f, 70f, 30f);
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(searchLabelRect, "RimLLM_Search".Translate() + ": ");
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(searchLabelRect, "RimLLM_Search".Translate() + ": ");
+            }
 
             Rect filterRect = new Rect(75f, 40f, inRect.width - 75f, 30f);
             _filter = Widgets.TextField(filterRect, _filter);
@@ -54,15 +55,17 @@ namespace RimLLM_Framework.Mod
 
             if (_allModels.Count == 0)
             {
-                Text.Anchor = TextAnchor.MiddleCenter;
-                Widgets.Label(listRect, "<color=gray>" + "RimLLM_NoCachedModels".Translate() + "</color>");
-                Text.Anchor = TextAnchor.UpperLeft;
+                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+                {
+                    Widgets.Label(listRect, "<color=gray>" + "RimLLM_NoCachedModels".Translate() + "</color>");
+                }
             }
             else if (filteredModels.Count == 0)
             {
-                Text.Anchor = TextAnchor.MiddleCenter;
-                Widgets.Label(listRect, "<color=gray>" + "RimLLM_NoMatchingModels".Translate() + "</color>");
-                Text.Anchor = TextAnchor.UpperLeft;
+                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+                {
+                    Widgets.Label(listRect, "<color=gray>" + "RimLLM_NoMatchingModels".Translate() + "</color>");
+                }
             }
             else
             {

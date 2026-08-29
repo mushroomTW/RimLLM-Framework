@@ -139,5 +139,72 @@ namespace RimLLM_Framework.Mod
             columns = Mathf.Max(1, Mathf.FloorToInt((contentWidth - gap) / (preferredWidth + gap)));
             chipWidth = Mathf.Max(1f, (contentWidth - gap * (columns + 1)) / columns);
         }
+
+        /// <summary>
+        /// 清單項目的選取／滑過外框。左欄一級分頁與中欄供應商清單共用同一套視覺。
+        /// </summary>
+        public static void DrawSelectableFrame(Rect rect, bool selected)
+        {
+            if (selected)
+            {
+                Widgets.DrawBoxSolid(rect, SelectionFill);
+                Widgets.DrawBox(rect, 1);
+            }
+            else if (Mouse.IsOver(rect))
+            {
+                Widgets.DrawHighlight(rect);
+            }
+        }
+
+        /// <summary>
+        /// 帶「顯示／遮罩」切換鈕的 API 金鑰欄位，回傳欄位內的最新值。
+        ///
+        /// 遮罩時刻意不畫 TextField：TextField 會把畫面上的字串當成使用者輸入寫回，
+        /// 那會讓遮罩字串直接覆蓋掉真正的金鑰。改畫唯讀外觀的標籤。
+        /// 供應商分頁與 Embedding 分頁共用，否則兩處的遮罩規則會各自漂移。
+        /// </summary>
+        /// <param name="revealed">傳入目前是否明文顯示；使用者按下切換鈕時就地翻轉。</param>
+        public static string DrawMaskableKeyField(Rect inputRect, Rect revealRect, string value, ref bool revealed)
+        {
+            string result = value;
+            if (revealed)
+            {
+                result = Widgets.TextField(inputRect, value);
+            }
+            else
+            {
+                Widgets.DrawBoxSolid(inputRect, ChipFill);
+                Widgets.DrawBox(inputRect, 1);
+                using (With(TextAnchor.MiddleLeft, wordWrap: false))
+                {
+                    Widgets.Label(inputRect.ContractedBy(4f), MaskApiKey(value));
+                }
+            }
+
+            if (Widgets.ButtonText(revealRect, revealed ? "abc" : "•••"))
+            {
+                revealed = !revealed;
+            }
+            TooltipHandler.TipRegion(revealRect, (revealed ? "RimLLM_HideApiKey" : "RimLLM_RevealApiKey").Translate());
+            return result;
+        }
+
+        /// <summary>
+        /// 比例條：底色 + 依比例填滿 + 外框 + 置中百分比標籤。
+        /// </summary>
+        public static void DrawRatioBar(Rect rect, float fillPercent, Color track, Color fill, string label)
+        {
+            Widgets.DrawBoxSolid(rect, track);
+            if (fillPercent > 0f)
+            {
+                Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, rect.width * fillPercent, rect.height), fill);
+            }
+            Widgets.DrawBox(rect, 1);
+
+            using (With(TextAnchor.MiddleCenter, GameFont.Tiny))
+            {
+                Widgets.Label(rect, label);
+            }
+        }
     }
 }

@@ -59,9 +59,10 @@ namespace RimLLM_Framework.Mod
             Rect providerLabelRect = new Rect(providerRect.x, providerRect.y, providerLabelWidth + 5f, providerRect.height);
             Rect providerBtnRect = new Rect(providerRect.x + providerLabelWidth + 15f, providerRect.y, 250f, providerRect.height);
 
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(providerLabelRect, "RimLLM_EmbeddingProviderLabel".Translate());
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(providerLabelRect, "RimLLM_EmbeddingProviderLabel".Translate());
+            }
 
             string currentProviderLabel = $"RimLLM_EmbeddingProvider_{Settings.EmbeddingProvider}".Translate();
             if (Widgets.ButtonText(providerBtnRect, currentProviderLabel))
@@ -106,8 +107,8 @@ namespace RimLLM_Framework.Mod
         }
 
         /// <summary>
-        /// 繪製可切換遮罩的 API 金鑰欄位。與供應商分頁採同一套規則：
-        /// 遮罩時畫唯讀標籤而非 TextField，避免遮罩字串被當成輸入寫回設定。
+        /// 繪製可切換遮罩的 API 金鑰欄位。與供應商分頁共用 <see cref="RimLLMUIStyle.DrawMaskableKeyField"/>，
+        /// 兩處的遮罩規則因此不會各自漂移。
         /// </summary>
         private static void DrawMaskableApiKeyField(Listing_Standard listing)
         {
@@ -115,27 +116,8 @@ namespace RimLLM_Framework.Mod
             Rect inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 48f, rowRect.height);
             Rect revealRect = new Rect(inputRect.xMax + 8f, rowRect.y, 40f, rowRect.height);
 
-            if (apiKeyRevealed)
-            {
-                Settings.EmbeddingApiKey = Widgets.TextField(inputRect, Settings.EmbeddingApiKey);
-            }
-            else
-            {
-                Widgets.DrawBoxSolid(inputRect, RimLLMUIStyle.ChipFill);
-                Widgets.DrawBox(inputRect, 1);
-                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, wordWrap: false))
-                {
-                    Widgets.Label(inputRect.ContractedBy(4f), RimLLMUIStyle.MaskApiKey(Settings.EmbeddingApiKey));
-                }
-            }
-
-            if (Widgets.ButtonText(revealRect, apiKeyRevealed ? "abc" : "•••"))
-            {
-                apiKeyRevealed = !apiKeyRevealed;
-            }
-            TooltipHandler.TipRegion(
-                revealRect,
-                (apiKeyRevealed ? "RimLLM_HideApiKey" : "RimLLM_RevealApiKey").Translate());
+            Settings.EmbeddingApiKey = RimLLMUIStyle.DrawMaskableKeyField(
+                inputRect, revealRect, Settings.EmbeddingApiKey, ref apiKeyRevealed);
         }
 
         /// <summary>
@@ -157,9 +139,10 @@ namespace RimLLM_Framework.Mod
                 StartFetchEmbeddingModels();
             }
 
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(statusRect, fetchStatus);
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(statusRect, fetchStatus);
+            }
 
             listing.Gap(6f);
 
@@ -169,9 +152,10 @@ namespace RimLLM_Framework.Mod
 
             if (cached.Count == 0)
             {
-                Text.Anchor = TextAnchor.MiddleLeft;
-                Widgets.Label(pickRect, "RimLLM_EmbeddingNoModelList".Translate());
-                Text.Anchor = TextAnchor.UpperLeft;
+                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+                {
+                    Widgets.Label(pickRect, "RimLLM_EmbeddingNoModelList".Translate());
+                }
                 return;
             }
 

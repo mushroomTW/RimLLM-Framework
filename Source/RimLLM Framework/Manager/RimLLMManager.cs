@@ -47,7 +47,7 @@ namespace RimLLM_Framework.Manager
         private string _budgetApprovalDate = "";
         private string _budgetDeclineDate = "";
         private readonly object BudgetPromptLock = new object();
-        private TaskCompletionSource<bool> _activePromptTcs = null;
+        private TaskCompletionSource<bool> _activePromptTcs;
 
         /// <summary>
         /// 預算詢問對話框的最長等待時間。逾時視為拒絕，避免請求無限期佔用資源。
@@ -996,7 +996,7 @@ namespace RimLLM_Framework.Manager
                     return false;
                 }
 
-                TaskCompletionSource<bool> tcs = null;
+                TaskCompletionSource<bool> tcs;
                 lock (BudgetPromptLock)
                 {
                     if (_activePromptTcs != null)
@@ -1088,31 +1088,33 @@ namespace RimLLM_Framework.Manager
         private bool IsBudgetMocked(RimLLMRequest request, out string mockResult)
         {
             mockResult = null;
-            if (_settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit)
+
+            // BudgetPolicy 1 = SilentMocking：超出預算後以模擬回應取代真實請求。
+            if (_settings.BudgetPolicy != 1 ||
+                _settings.DailyBudgetLimit <= 0f ||
+                _settings.DailyAccumulatedCost < _settings.DailyBudgetLimit)
             {
-                if (_settings.BudgetPolicy == 1)
-                {
-                    if (request.ResponseType != null)
-                    {
-                        mockResult = "{}";
-                    }
-                    else
-                    {
-                        try
-                        {
-                            mockResult = (LanguageDatabase.activeLanguage != null) 
-                                ? "RimLLM_SilentMockResponse".Translate().ToString() 
-                                : "*AI is temporarily resting due to daily budget limits...*";
-                        }
-                        catch
-                        {
-                            mockResult = "*AI is temporarily resting due to daily budget limits...*";
-                        }
-                    }
-                    return true;
-                }
+                return false;
             }
-            return false;
+
+            if (request.ResponseType != null)
+            {
+                mockResult = "{}";
+                return true;
+            }
+
+            const string fallbackMock = "*AI is temporarily resting due to daily budget limits...*";
+            try
+            {
+                mockResult = LanguageDatabase.activeLanguage != null
+                    ? "RimLLM_SilentMockResponse".Translate().ToString()
+                    : fallbackMock;
+            }
+            catch
+            {
+                mockResult = fallbackMock;
+            }
+            return true;
         }
 
         #endregion

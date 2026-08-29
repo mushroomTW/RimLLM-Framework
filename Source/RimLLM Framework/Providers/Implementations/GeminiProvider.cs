@@ -331,17 +331,9 @@ namespace RimLLM_Framework.Providers
             string model,
             string apiKey)
         {
-            bool disableReasoning = false;
-            if (options is RimLLMChatOptions rimOptsDR)
-            {
-                disableReasoning = rimOptsDR.DisableReasoning;
-            }
-            else if (options?.AdditionalProperties != null &&
-                options.AdditionalProperties.TryGetValue("rimllm_disable_reasoning", out object dr) &&
-                dr is bool drBool)
-            {
-                disableReasoning = drBool;
-            }
+            bool disableReasoning = options is RimLLMChatOptions rimOptsDR
+                ? rimOptsDR.DisableReasoning
+                : RimLLMChatOptions.ReadAdditional(options, "rimllm_disable_reasoning", false);
 
             var config = new GenerateContentConfig
             {
@@ -366,39 +358,28 @@ namespace RimLLM_Framework.Providers
                 }
             }
 
-            string systemContext = null;
             string ccStr = (options as RimLLMChatOptions)?.CachedContext;
-            if (string.IsNullOrEmpty(ccStr) &&
-                options?.AdditionalProperties != null &&
-                options.AdditionalProperties.TryGetValue("rimllm_cached_context", out object cc) &&
-                cc is string ccVal)
+            if (string.IsNullOrEmpty(ccStr))
             {
-                ccStr = ccVal;
+                ccStr = RimLLMChatOptions.ReadAdditional<string>(options, "rimllm_cached_context", null);
             }
 
-            if (!string.IsNullOrEmpty(ccStr))
-            {
-                if (!string.IsNullOrEmpty(systemPromptMsg) && systemPromptMsg != ccStr)
-                {
-                    systemContext = systemPromptMsg + "\n\n" + ccStr;
-                }
-                else
-                {
-                    systemContext = ccStr;
-                }
-            }
-            else
+            string systemContext;
+            if (string.IsNullOrEmpty(ccStr))
             {
                 systemContext = systemPromptMsg;
             }
+            else
+            {
+                systemContext = !string.IsNullOrEmpty(systemPromptMsg) && systemPromptMsg != ccStr
+                    ? systemPromptMsg + "\n\n" + ccStr
+                    : ccStr;
+            }
 
             bool enableContextCaching = (options as RimLLMChatOptions)?.EnableContextCaching ?? false;
-            if (!enableContextCaching &&
-                options?.AdditionalProperties != null &&
-                options.AdditionalProperties.TryGetValue("rimllm_enable_context_caching", out object ec) &&
-                ec is bool ecBool)
+            if (!enableContextCaching)
             {
-                enableContextCaching = ecBool;
+                enableContextCaching = RimLLMChatOptions.ReadAdditional(options, "rimllm_enable_context_caching", false);
             }
 
             string cacheId = null;
@@ -420,14 +401,8 @@ namespace RimLLM_Framework.Providers
                 config.SystemInstruction = BuildTextContent(systemContext);
             }
 
-            string schemaJson = null;
-            if (options?.AdditionalProperties != null &&
-                options.AdditionalProperties.TryGetValue("rimllm_response_schema", out object rs) &&
-                rs is string rsStr)
-            {
-                schemaJson = rsStr;
-            }
-            else if (options?.ResponseFormat is ChatResponseFormatJson jsonFormat)
+            string schemaJson = RimLLMChatOptions.ReadAdditional<string>(options, "rimllm_response_schema", null);
+            if (schemaJson == null && options?.ResponseFormat is ChatResponseFormatJson jsonFormat)
             {
                 schemaJson = jsonFormat.Schema?.GetRawText();
             }
@@ -570,22 +545,16 @@ namespace RimLLM_Framework.Providers
             ref bool inReasoning,
             ref bool hasFinishedReasoning)
         {
-            bool isThought = part.Thought == true;
-            if (isThought)
+            if (part.Thought == true)
             {
-                if (!hasFinishedReasoning)
+                // 思考已經收尾過的話不再開新的 <think>，但內容照樣輸出 ——
+                // 原本的 if/else 兩個分支結尾都是同一行 emit，只有開頭的標記需要條件判斷。
+                if (!hasFinishedReasoning && !inReasoning)
                 {
-                    if (!inReasoning)
-                    {
-                        inReasoning = true;
-                        emit("<think>\n");
-                    }
-                    emit(part.Text);
+                    inReasoning = true;
+                    emit("<think>\n");
                 }
-                else
-                {
-                    emit(part.Text);
-                }
+                emit(part.Text);
                 return;
             }
 
@@ -610,13 +579,15 @@ namespace RimLLM_Framework.Providers
             }
             if (exception is ClientError clientError)
             {
-                LLMError error = clientError.StatusCode == 429
-                    ? LLMError.RateLimit
-                    : clientError.StatusCode == 401 || clientError.StatusCode == 403
-                        ? LLMError.InvalidKey
-                        : clientError.StatusCode == 404
-                            ? LLMError.ModelNotFound
-                            : LLMError.InvalidResponse;
+                LLMError error;
+                switch (clientError.StatusCode)
+                {
+                    case 429: error = LLMError.RateLimit; break;
+                    case 401:
+                    case 403: error = LLMError.InvalidKey; break;
+                    case 404: error = LLMError.ModelNotFound; break;
+                    default: error = LLMError.InvalidResponse; break;
+                }
                 var translated = new RimLLMException(
                     error,
                     $"Gemini {operation} failed ({clientError.StatusCode}): {RimLLMLog.SanitizeForLog(clientError.Message, 300)}",

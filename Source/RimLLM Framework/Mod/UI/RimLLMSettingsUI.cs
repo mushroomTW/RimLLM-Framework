@@ -97,38 +97,18 @@ namespace RimLLM_Framework.Mod
             listing.Label("RimLLM_MainMenu".Translate());
             listing.Gap(6f);
 
-            DrawCategoryButton(listing, "RimLLM_TabProviders".Translate(), "Providers");
-            listing.Gap(4f);
-            DrawCategoryButton(listing, "RimLLM_TabFallback".Translate(), "Fallback");
-            listing.Gap(4f);
-            DrawCategoryButton(listing, "RimLLM_TabGlobalConfig".Translate(), "GlobalConfig");
-            listing.Gap(4f);
-            DrawCategoryButton(listing, "RimLLM_TabEmbedding".Translate(), "Embedding");
-            listing.Gap(4f);
-            DrawCategoryButton(listing, "RimLLM_TabBudget".Translate(), "Budget");
-            listing.Gap(4f);
-            DrawCategoryButton(listing, "RimLLM_TabChatTest".Translate(), "ChatTest");
-            listing.Gap(4f);
-            DrawCategoryButton(listing, "RimLLM_TabDebug".Translate(), "Debug");
+            for (int i = 0; i < Pages.Length; i++)
+            {
+                if (i > 0) listing.Gap(4f);
+                DrawCategoryButton(listing, Pages[i].MenuLabelKey.Translate(), Pages[i].Id);
+            }
             listing.End();
         }
 
         private static void DrawCategoryButton(Listing_Standard listing, string label, string categoryId)
         {
             Rect btnRect = listing.GetRect(32f);
-
-            if (activeMainCategory == categoryId)
-            {
-                Widgets.DrawBoxSolid(btnRect, RimLLMUIStyle.SelectionFill);
-                Widgets.DrawBox(btnRect, 1);
-            }
-            else
-            {
-                if (Mouse.IsOver(btnRect))
-                {
-                    Widgets.DrawHighlight(btnRect);
-                }
-            }
+            RimLLMUIStyle.DrawSelectableFrame(btnRect, activeMainCategory == categoryId);
 
             if (Widgets.ButtonInvisible(btnRect))
             {
@@ -147,41 +127,8 @@ namespace RimLLM_Framework.Mod
         {
             Rect contentRect = rect.ContractedBy(8f);
             Rect titleRect = new Rect(contentRect.x, contentRect.y, contentRect.width, 24f);
-            string titleText = "";
-
-            if (activeMainCategory == "Providers")
-            {
-                string tabName = ProviderSettingsDrawer.ActiveProviderSubTab;
-                if (ProviderSettingsDrawer.ActiveProviderSubTab == "OpenAICompatible")
-                {
-                    tabName += "RimLLM_LocalCompatibleMode".Translate();
-                }
-                titleText = "RimLLM_TitleProviderSettings".Translate(tabName);
-            }
-            else if (activeMainCategory == "Fallback")
-            {
-                titleText = "RimLLM_TitleFallback".Translate();
-            }
-            else if (activeMainCategory == "GlobalConfig")
-            {
-                titleText = "RimLLM_TitleGlobalConfig".Translate();
-            }
-            else if (activeMainCategory == "Embedding")
-            {
-                titleText = "RimLLM_TitleEmbedding".Translate();
-            }
-            else if (activeMainCategory == "Budget")
-            {
-                titleText = "RimLLM_TitleBudget".Translate();
-            }
-            else if (activeMainCategory == "ChatTest")
-            {
-                titleText = "RimLLM_ChatTitle".Translate();
-            }
-            else if (activeMainCategory == "Debug")
-            {
-                titleText = "RimLLM_TitleDebug".Translate();
-            }
+            DetailPage page = FindPage(activeMainCategory);
+            string titleText = page != null ? page.Title() : string.Empty;
 
             Widgets.Label(titleRect, $"<size=14><b>{titleText}</b></size>");
             Widgets.DrawLineHorizontal(contentRect.x, titleRect.yMax + 4f, contentRect.width);
@@ -195,34 +142,7 @@ namespace RimLLM_Framework.Mod
             Listing_Standard listing = new Listing_Standard();
             listing.Begin(viewRect);
 
-            if (activeMainCategory == "Providers")
-            {
-                ProviderSettingsDrawer.DrawRightDetailContent(listing);
-            }
-            else if (activeMainCategory == "Fallback")
-            {
-                FallbackSettingsDrawer.DrawFallbackSettings(listing);
-            }
-            else if (activeMainCategory == "GlobalConfig")
-            {
-                GlobalConfigDrawer.DrawGlobalConfigSettings(listing);
-            }
-            else if (activeMainCategory == "Embedding")
-            {
-                EmbeddingSettingsDrawer.DrawEmbeddingSettings(listing);
-            }
-            else if (activeMainCategory == "Budget")
-            {
-                BudgetSettingsDrawer.DrawBudgetSettings(listing);
-            }
-            else if (activeMainCategory == "ChatTest")
-            {
-                ChatTestDrawer.DrawChatTestSettings(listing);
-            }
-            else if (activeMainCategory == "Debug")
-            {
-                DebugSettingsDrawer.DrawDebugSettings(listing);
-            }
+            page?.Draw(listing);
 
             // CurHeight 必須在 End() 之前讀取；End() 之後該值不再代表本次繪製的內容高度。
             _measuredHeights[GetDetailPageKey()] = listing.CurHeight;
@@ -261,38 +181,100 @@ namespace RimLLM_Framework.Mod
 
         private static float GetDetailViewHeight(float width)
         {
-            if (activeMainCategory == "Providers")
+            DetailPage page = FindPage(activeMainCategory);
+            return page != null ? page.EstimateHeight(width) : 280f;
+        }
+
+        /// <summary>
+        /// 一個一級分頁的完整定義：選單標籤、標題、繪製與首幀高度估計。
+        ///
+        /// 這四件事先前分散在四段各自的 if/else-if 串接中，新增或改名一個分頁得同步改四處，
+        /// 漏改任何一處都只會在執行期才顯現（標題空白、內容不繪製、捲動高度錯誤）。
+        /// </summary>
+        private sealed class DetailPage
+        {
+            public string Id;
+            public string MenuLabelKey;
+            public Func<string> Title;
+            public Action<Listing_Standard> Draw;
+            public Func<float, float> EstimateHeight;
+        }
+
+        private static readonly DetailPage[] Pages =
+        {
+            new DetailPage
             {
-                return ProviderSettingsDrawer.GetHeight(width);
-            }
-            else if (activeMainCategory == "Fallback")
+                Id = "Providers",
+                MenuLabelKey = "RimLLM_TabProviders",
+                Title = () =>
+                {
+                    string tabName = ProviderSettingsDrawer.ActiveProviderSubTab;
+                    if (tabName == ProviderIds.OpenAICompatible)
+                    {
+                        tabName += "RimLLM_LocalCompatibleMode".Translate();
+                    }
+                    return "RimLLM_TitleProviderSettings".Translate(tabName);
+                },
+                Draw = ProviderSettingsDrawer.DrawRightDetailContent,
+                EstimateHeight = ProviderSettingsDrawer.GetHeight
+            },
+            new DetailPage
             {
-                return FallbackSettingsDrawer.GetHeight(width);
-            }
-            else if (activeMainCategory == "GlobalConfig")
+                Id = "Fallback",
+                MenuLabelKey = "RimLLM_TabFallback",
+                Title = () => "RimLLM_TitleFallback".Translate(),
+                Draw = FallbackSettingsDrawer.DrawFallbackSettings,
+                EstimateHeight = FallbackSettingsDrawer.GetHeight
+            },
+            new DetailPage
             {
-                return GlobalConfigDrawer.GetHeight(width);
-            }
-            else if (activeMainCategory == "Embedding")
+                Id = "GlobalConfig",
+                MenuLabelKey = "RimLLM_TabGlobalConfig",
+                Title = () => "RimLLM_TitleGlobalConfig".Translate(),
+                Draw = GlobalConfigDrawer.DrawGlobalConfigSettings,
+                EstimateHeight = GlobalConfigDrawer.GetHeight
+            },
+            new DetailPage
             {
-                return EmbeddingSettingsDrawer.GetHeight(width);
-            }
-            else if (activeMainCategory == "Budget")
+                Id = "Embedding",
+                MenuLabelKey = "RimLLM_TabEmbedding",
+                Title = () => "RimLLM_TitleEmbedding".Translate(),
+                Draw = EmbeddingSettingsDrawer.DrawEmbeddingSettings,
+                EstimateHeight = EmbeddingSettingsDrawer.GetHeight
+            },
+            new DetailPage
             {
-                return BudgetSettingsDrawer.GetHeight(width);
-            }
-            else if (activeMainCategory == "ChatTest")
+                Id = "Budget",
+                MenuLabelKey = "RimLLM_TabBudget",
+                Title = () => "RimLLM_TitleBudget".Translate(),
+                Draw = BudgetSettingsDrawer.DrawBudgetSettings,
+                EstimateHeight = BudgetSettingsDrawer.GetHeight
+            },
+            new DetailPage
             {
-                return ChatTestDrawer.GetHeight(width);
-            }
-            else if (activeMainCategory == "Debug")
+                Id = "ChatTest",
+                MenuLabelKey = "RimLLM_TabChatTest",
+                Title = () => "RimLLM_ChatTitle".Translate(),
+                Draw = ChatTestDrawer.DrawChatTestSettings,
+                EstimateHeight = ChatTestDrawer.GetHeight
+            },
+            new DetailPage
             {
-                return DebugSettingsDrawer.GetHeight(width);
+                Id = "Debug",
+                MenuLabelKey = "RimLLM_TabDebug",
+                Title = () => "RimLLM_TitleDebug".Translate(),
+                Draw = DebugSettingsDrawer.DrawDebugSettings,
+                EstimateHeight = DebugSettingsDrawer.GetHeight
             }
-            else
+        };
+
+        private static DetailPage FindPage(string categoryId)
+        {
+            foreach (DetailPage page in Pages)
             {
-                return 280f;
+                if (page.Id == categoryId) return page;
             }
+            return null;
         }
     }
 }

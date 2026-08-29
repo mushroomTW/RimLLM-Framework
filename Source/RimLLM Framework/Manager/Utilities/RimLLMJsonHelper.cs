@@ -222,11 +222,7 @@ namespace RimLLM_Framework.Manager
         public static string ExtractJsonBlock(string input)
         {
             var match = JsonBlockRegex.Match(input);
-            if (match.Success)
-            {
-                return match.Value;
-            }
-            return input;
+            return match.Success ? match.Value : input;
         }
 
         private static object CreateDummyInstance(Type type)

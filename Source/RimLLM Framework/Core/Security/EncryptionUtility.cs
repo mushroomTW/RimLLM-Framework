@@ -18,7 +18,7 @@ namespace RimLLM_Framework.Core
         private const string VersionPrefix = "v2:";
 
         // 允許單元測試注入自訂的 Salt
-        private static string _customSalt = null;
+        private static string _customSalt;
         public static string CustomSalt
         {
             get
@@ -50,17 +50,12 @@ namespace RimLLM_Framework.Core
                 string rawKeySeed = "RimLLMSecretKeySeed2026";
                 string rawIvSeed = "RimLLMSecretIvSeed2026";
 
-                string hardwareSalt = "";
+                string hardwareSalt;
                 try
                 {
-                    if (!string.IsNullOrEmpty(_customSalt))
-                    {
-                        hardwareSalt = _customSalt;
-                    }
-                    else
-                    {
-                        hardwareSalt = UnityEngine.SystemInfo.deviceUniqueIdentifier;
-                    }
+                    hardwareSalt = !string.IsNullOrEmpty(_customSalt)
+                        ? _customSalt
+                        : UnityEngine.SystemInfo.deviceUniqueIdentifier;
                 }
                 catch
                 {

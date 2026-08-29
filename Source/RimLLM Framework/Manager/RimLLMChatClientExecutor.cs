@@ -26,7 +26,7 @@ namespace RimLLM_Framework.Manager
             {
                 systemPrompt = list[0].Text;
             }
-            var request = new RimLLMRequest
+            return new RimLLMRequest
             {
                 Messages = list,
                 SystemPrompt = systemPrompt,
@@ -34,18 +34,11 @@ namespace RimLLM_Framework.Manager
                 MaxOutputTokens = options?.MaxOutputTokens,
                 ReasoningEffort = options?.Reasoning?.Effort,
                 CancellationToken = cancellationToken,
-                PreferredModelId = model
+                PreferredModelId = model,
+                CachedContext = RimLLMChatOptions.ReadAdditional<string>(options, "rimllm_cached_context", null),
+                EnableContextCaching = RimLLMChatOptions.ReadAdditional(options, "rimllm_enable_context_caching", false),
+                DisableReasoning = RimLLMChatOptions.ReadAdditional(options, "rimllm_disable_reasoning", false)
             };
-            if (options?.AdditionalProperties != null)
-            {
-                if (options.AdditionalProperties.TryGetValue("rimllm_cached_context", out object cc) && cc is string ccStr)
-                    request.CachedContext = ccStr;
-                if (options.AdditionalProperties.TryGetValue("rimllm_enable_context_caching", out object ec) && ec is bool ecBool)
-                    request.EnableContextCaching = ecBool;
-                if (options.AdditionalProperties.TryGetValue("rimllm_disable_reasoning", out object dr) && dr is bool drBool)
-                    request.DisableReasoning = drBool;
-            }
-            return request;
         }
         /// <summary>
         /// 非串流請求：以 <paramref name="timeoutSeconds"/> 建立整體逾時，並與呼叫端的取消 Token 連動。
@@ -249,21 +242,10 @@ namespace RimLLM_Framework.Manager
         {
             var messages = new List<ChatMessage>(request.Messages ?? new List<ChatMessage>());
             string systemPrompt = request.GetEffectiveSystemPrompt();
-            if (!string.IsNullOrEmpty(systemPrompt))
+            if (!string.IsNullOrEmpty(systemPrompt) &&
+                !messages.Exists(m => m != null && m.Role == ChatRole.System))
             {
-                bool hasSystem = false;
-                foreach (var m in messages)
-                {
-                    if (m != null && m.Role == ChatRole.System)
-                    {
-                        hasSystem = true;
-                        break;
-                    }
-                }
-                if (!hasSystem)
-                {
-                    messages.Insert(0, new ChatMessage(ChatRole.System, systemPrompt));
-                }
+                messages.Insert(0, new ChatMessage(ChatRole.System, systemPrompt));
             }
             if (messages.Count == 0)
             {

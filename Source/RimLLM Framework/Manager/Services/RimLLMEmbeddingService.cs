@@ -209,14 +209,25 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private static async Task<List<string>> FetchOpenAiCompatibleModelsAsync(
-            string apiKey, string endpoint, string defaultEndpoint)
+        /// <summary>
+        /// 建立 OpenAI 相容端點的連線參數。模型清單與 embedding 兩條路徑共用，
+        /// 否則端點正規化與佔位金鑰的規則會在兩處各自漂移。
+        /// </summary>
+        private static void BuildOpenAiCompatibleClientArgs(
+            string apiKey, string endpoint, string defaultEndpoint,
+            out ApiKeyCredential credential, out OpenAIClientOptions options)
         {
-            var options = new OpenAIClientOptions
+            options = new OpenAIClientOptions
             {
                 Endpoint = new Uri(NormalizeEmbeddingEndpoint(endpoint) ?? defaultEndpoint, UriKind.Absolute)
             };
-            var credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
+            credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
+        }
+
+        private static async Task<List<string>> FetchOpenAiCompatibleModelsAsync(
+            string apiKey, string endpoint, string defaultEndpoint)
+        {
+            BuildOpenAiCompatibleClientArgs(apiKey, endpoint, defaultEndpoint, out var credential, out var options);
 
             OpenAIModelCollection models = await new OpenAIClient(credential, options)
                 .GetOpenAIModelClient()
@@ -239,10 +250,7 @@ namespace RimLLM_Framework.Manager
             if (supportedActions == null) return false;
             foreach (string action in supportedActions)
             {
-                if (string.Equals(action, "embedContent", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                if (string.Equals(action, "embedContent", StringComparison.OrdinalIgnoreCase)) return true;
             }
             return false;
         }
@@ -276,11 +284,7 @@ namespace RimLLM_Framework.Manager
         {
             if (string.IsNullOrEmpty(modelId)) return false;
             string lower = modelId.ToLowerInvariant();
-            foreach (string hint in EmbeddingNameHints)
-            {
-                if (lower.IndexOf(hint, StringComparison.Ordinal) >= 0) return true;
-            }
-            return false;
+            return Array.Exists(EmbeddingNameHints, hint => lower.IndexOf(hint, StringComparison.Ordinal) >= 0);
         }
 
         /// <summary>
@@ -331,11 +335,7 @@ namespace RimLLM_Framework.Manager
         private static async Task<float[]> ComputeOpenAiCompatibleEmbeddingAsync(
             string text, string model, string apiKey, string endpoint, string defaultEndpoint, CancellationToken cancellationToken)
         {
-            var options = new OpenAIClientOptions
-            {
-                Endpoint = new Uri(NormalizeEmbeddingEndpoint(endpoint) ?? defaultEndpoint, UriKind.Absolute)
-            };
-            var credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
+            BuildOpenAiCompatibleClientArgs(apiKey, endpoint, defaultEndpoint, out var credential, out var options);
             var client = new EmbeddingClient(model, credential, options);
 
             OpenAIEmbedding embedding = await client
@@ -371,9 +371,12 @@ namespace RimLLM_Framework.Manager
 
         private static string GetMainProviderIdForEmbedding(string embeddingProvider)
         {
-            if (embeddingProvider == "Google") return ProviderIds.Gemini;
-            if (embeddingProvider == "LocalAPI_OpenAI") return ProviderIds.OpenAICompatible;
-            return ProviderIds.OpenAI;
+            switch (embeddingProvider)
+            {
+                case "Google": return ProviderIds.Gemini;
+                case "LocalAPI_OpenAI": return ProviderIds.OpenAICompatible;
+                default: return ProviderIds.OpenAI;
+            }
         }
 
         /// <summary>
@@ -449,14 +452,7 @@ namespace RimLLM_Framework.Manager
             for (int i = 0; i <= normalized.Length - 3; i++)
             {
                 string gram = normalized.Substring(i, 3);
-                if (result.TryGetValue(gram, out int count))
-                {
-                    result[gram] = count + 1;
-                }
-                else
-                {
-                    result[gram] = 1;
-                }
+                result[gram] = result.TryGetValue(gram, out int count) ? count + 1 : 1;
             }
 
             return result;

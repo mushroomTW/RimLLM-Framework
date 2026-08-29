@@ -47,20 +47,22 @@ namespace RimLLM_Framework.Mod
             Rect policyLabelRect = new Rect(policyRect.x, policyRect.y, 250f, policyRect.height);
             Rect policyBtnRect = new Rect(policyRect.x + 260f, policyRect.y, 280f, policyRect.height);
             
-            Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(policyLabelRect, "RimLLM_BudgetPolicyLabel".Translate());
-            Text.Anchor = TextAnchor.UpperLeft;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(policyLabelRect, "RimLLM_BudgetPolicyLabel".Translate());
+            }
 
-            string policyLabelKey = $"RimLLM_BudgetPolicy_{GetPolicyEnumName(Settings.BudgetPolicy)}";
+            string policyLabelKey = PolicyLabelKey(Settings.BudgetPolicy);
             if (Widgets.ButtonText(policyBtnRect, policyLabelKey.Translate()))
             {
-                List<FloatMenuOption> options = new List<FloatMenuOption>
+                var options = new List<FloatMenuOption>();
+                for (int policy = 0; policy < PolicyNames.Length; policy++)
                 {
-                    new FloatMenuOption("RimLLM_BudgetPolicy_HardBlock".Translate(), () => { Settings.BudgetPolicy = 0; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_BudgetPolicy_SilentMocking".Translate(), () => { Settings.BudgetPolicy = 1; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_BudgetPolicy_FallbackToFree".Translate(), () => { Settings.BudgetPolicy = 2; Settings.Write(); }),
-                    new FloatMenuOption("RimLLM_BudgetPolicy_DialogPrompt".Translate(), () => { Settings.BudgetPolicy = 3; Settings.Write(); })
-                };
+                    int captured = policy;
+                    options.Add(new FloatMenuOption(
+                        PolicyLabelKey(captured).Translate(),
+                        () => { Settings.BudgetPolicy = captured; Settings.Write(); }));
+                }
                 Find.WindowStack.Add(new FloatMenu(options));
             }
             listing.Gap(12f);
@@ -120,16 +122,16 @@ namespace RimLLM_Framework.Mod
             }
         }
 
-        private static string GetPolicyEnumName(int policy)
+        /// <summary>
+        /// 預算政策的名稱，索引即為 <see cref="RimLLMFrameworkSettings.BudgetPolicy"/> 的值。
+        /// 目前選項的顯示與下拉選單共用這份清單，不需要另外維護一份 switch 對照。
+        /// </summary>
+        private static readonly string[] PolicyNames = { "HardBlock", "SilentMocking", "FallbackToFree", "DialogPrompt" };
+
+        private static string PolicyLabelKey(int policy)
         {
-            switch (policy)
-            {
-                case 0: return "HardBlock";
-                case 1: return "SilentMocking";
-                case 2: return "FallbackToFree";
-                case 3: return "DialogPrompt";
-                default: return "HardBlock";
-            }
+            string name = policy >= 0 && policy < PolicyNames.Length ? PolicyNames[policy] : PolicyNames[0];
+            return "RimLLM_BudgetPolicy_" + name;
         }
     }
 }

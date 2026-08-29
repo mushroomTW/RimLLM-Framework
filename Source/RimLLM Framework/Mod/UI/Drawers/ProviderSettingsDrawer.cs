@@ -110,19 +110,7 @@ namespace RimLLM_Framework.Mod
         private static void DrawProviderSubButton(Listing_Standard listing, string label, string providerId)
         {
             Rect btnRect = listing.GetRect(SubButtonHeight);
-
-            if (ActiveProviderSubTab == providerId)
-            {
-                Widgets.DrawBoxSolid(btnRect, RimLLMUIStyle.SelectionFill);
-                Widgets.DrawBox(btnRect, 1);
-            }
-            else
-            {
-                if (Mouse.IsOver(btnRect))
-                {
-                    Widgets.DrawHighlight(btnRect);
-                }
-            }
+            RimLLMUIStyle.DrawSelectableFrame(btnRect, ActiveProviderSubTab == providerId);
 
             if (Widgets.ButtonInvisible(btnRect))
             {

@@ -123,8 +123,8 @@ namespace RimLLM_Framework
         /// </summary>
         public static bool LooksLikeSchemaRejection(string message)
         {
+            // "json_schema" 是 "schema" 的子字串，不需要另外列。
             return ContainsIgnoreCase(message, "response_format") ||
-                   ContainsIgnoreCase(message, "json_schema") ||
                    ContainsIgnoreCase(message, "schema");
         }
 
@@ -135,10 +135,9 @@ namespace RimLLM_Framework
         /// </summary>
         public static bool LooksLikeReasoningRejection(string message)
         {
-            return ContainsIgnoreCase(message, "reasoning_effort") ||
-                   ContainsIgnoreCase(message, "reasoning") ||
-                   ContainsIgnoreCase(message, "enable_thinking") ||
-                   ContainsIgnoreCase(message, "thinking_budget") ||
+            // reasoning_effort / enable_thinking / thinking_budget 都含有下列兩個子字串之一，
+            // 逐一列出只是重複比對，不會多命中任何訊息。
+            return ContainsIgnoreCase(message, "reasoning") ||
                    ContainsIgnoreCase(message, "thinking");
         }
 

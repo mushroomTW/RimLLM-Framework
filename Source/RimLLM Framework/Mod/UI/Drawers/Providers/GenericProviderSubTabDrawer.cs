@@ -110,34 +110,8 @@ namespace RimLLM_Framework.Mod
                 string revealKey = providerId + ":" + i;
                 bool revealed = RevealedKeys.TryGetValue(revealKey, out bool r) && r;
 
-                if (revealed)
-                {
-                    string oldVal = keys[i];
-                    string newVal = Widgets.TextField(inputRect, oldVal);
-                    if (newVal != oldVal)
-                    {
-                        keys[i] = newVal;
-                    }
-                }
-                else
-                {
-                    // 遮罩時刻意不畫 TextField：TextField 會把畫面上的字串當成使用者輸入寫回，
-                    // 那會讓遮罩字串直接覆蓋掉真正的金鑰。改畫唯讀外觀的標籤。
-                    Widgets.DrawBoxSolid(inputRect, RimLLMUIStyle.ChipFill);
-                    Widgets.DrawBox(inputRect, 1);
-                    using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, wordWrap: false))
-                    {
-                        Widgets.Label(inputRect.ContractedBy(4f), RimLLMUIStyle.MaskApiKey(keys[i]));
-                    }
-                }
-
-                if (Widgets.ButtonText(revealRect, revealed ? "abc" : "•••"))
-                {
-                    RevealedKeys[revealKey] = !revealed;
-                }
-                TooltipHandler.TipRegion(
-                    revealRect,
-                    (revealed ? "RimLLM_HideApiKey" : "RimLLM_RevealApiKey").Translate());
+                keys[i] = RimLLMUIStyle.DrawMaskableKeyField(inputRect, revealRect, keys[i], ref revealed);
+                RevealedKeys[revealKey] = revealed;
 
                 if (canDelete)
                 {
@@ -289,25 +263,38 @@ namespace RimLLM_Framework.Mod
 
         public static void DrawFetchModelsButton(Listing_Standard listing, string providerId)
         {
-            bool isFetching = Fetching.TryGetValue(providerId, out bool f) && f;
-            string fetchMsg = FetchStatus.TryGetValue(providerId, out string m) ? m : "RimLLM_FetchStatusNotRun".Translate().ToString();
-            Rect fetchRect = listing.GetRect(60f);
-            Rect fetchBtnRect = new Rect(fetchRect.x, fetchRect.y + 15f, 180f, 30f);
-            Rect fetchMsgRect = new Rect(fetchRect.x + 190f, fetchRect.y, fetchRect.width - 190f, 60f);
-            if (isFetching)
+            DrawBusyActionRow(
+                listing,
+                Fetching.TryGetValue(providerId, out bool f) && f,
+                "RimLLM_Fetching".Translate(),
+                "RimLLM_FetchModelsBtn".Translate(),
+                FetchStatus.TryGetValue(providerId, out string m) ? m : "RimLLM_FetchStatusNotRun".Translate().ToString(),
+                () => StartFetchModels(providerId));
+        }
+
+        /// <summary>
+        /// 「按鈕 + 右側狀態訊息」的共用列。忙碌時按鈕換成靜態標籤，避免重複觸發。
+        /// 抓模型清單與連線測試的版面完全相同，共用同一份實作以免兩處的間距各自漂移。
+        /// </summary>
+        private static void DrawBusyActionRow(
+            Listing_Standard listing, bool busy, string busyLabel, string buttonLabel, string statusText, Action onClick)
+        {
+            Rect rowRect = listing.GetRect(60f);
+            Rect btnRect = new Rect(rowRect.x, rowRect.y + 15f, 180f, 30f);
+            Rect msgRect = new Rect(rowRect.x + 190f, rowRect.y, rowRect.width - 190f, 60f);
+
+            if (busy)
             {
-                Widgets.Label(fetchBtnRect, "RimLLM_Fetching".Translate());
+                Widgets.Label(btnRect, busyLabel);
             }
-            else
+            else if (Widgets.ButtonText(btnRect, buttonLabel))
             {
-                if (Widgets.ButtonText(fetchBtnRect, "RimLLM_FetchModelsBtn".Translate()))
-                {
-                    StartFetchModels(providerId);
-                }
+                onClick();
             }
+
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
             {
-                Widgets.Label(fetchMsgRect, fetchMsg);
+                Widgets.Label(msgRect, statusText);
             }
         }
 
@@ -333,27 +320,12 @@ namespace RimLLM_Framework.Mod
             listing.Label("RimLLM_ProviderSuccessCallsLabel".Translate(successCount, failureCount));
             listing.Label("RimLLM_ProviderSuccessRateLabel".Translate(successRate.ToString("F1")));
 
-            Rect successBarRect = listing.GetRect(20f);
-            Widgets.DrawBoxSolid(successBarRect, RimLLMUIStyle.BarTrackDanger);
-            if (totalCalls > 0)
-            {
-                float fillPercent = (float)successCount / totalCalls;
-                if (fillPercent > 0f)
-                {
-                    Rect fillRect = new Rect(successBarRect.x, successBarRect.y, successBarRect.width * fillPercent, successBarRect.height);
-                    Widgets.DrawBoxSolid(fillRect, RimLLMUIStyle.BarFillSuccess);
-                }
-            }
-            else
-            {
-                Widgets.DrawBoxSolid(successBarRect, RimLLMUIStyle.BarTrack);
-            }
-            Widgets.DrawBox(successBarRect, 1);
-
-            using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny))
-            {
-                Widgets.Label(successBarRect, totalCalls > 0 ? $"{successRate:F1}%" : "100.0% (N/A)");
-            }
+            RimLLMUIStyle.DrawRatioBar(
+                listing.GetRect(20f),
+                totalCalls > 0 ? (float)successCount / totalCalls : 0f,
+                totalCalls > 0 ? RimLLMUIStyle.BarTrackDanger : RimLLMUIStyle.BarTrack,
+                RimLLMUIStyle.BarFillSuccess,
+                totalCalls > 0 ? $"{successRate:F1}%" : "100.0% (N/A)");
             listing.Gap(12f);
 
             if (apiTotalTokens > 0)
@@ -361,20 +333,12 @@ namespace RimLLM_Framework.Mod
                 float apiCacheRate = (apiCachedTokens * 100f) / apiTotalTokens;
                 listing.Label("RimLLM_ProviderApiCacheRateLabel".Translate(apiCacheRate.ToString("F1"), apiCachedTokens, apiTotalTokens));
 
-                Rect apiCacheBarRect = listing.GetRect(20f);
-                Widgets.DrawBoxSolid(apiCacheBarRect, RimLLMUIStyle.BarTrack);
-                float fillPercent = (float)apiCachedTokens / apiTotalTokens;
-                if (fillPercent > 0f)
-                {
-                    Rect fillRect = new Rect(apiCacheBarRect.x, apiCacheBarRect.y, apiCacheBarRect.width * fillPercent, apiCacheBarRect.height);
-                    Widgets.DrawBoxSolid(fillRect, RimLLMUIStyle.BarFillCache);
-                }
-                Widgets.DrawBox(apiCacheBarRect, 1);
-
-                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny))
-                {
-                    Widgets.Label(apiCacheBarRect, $"{apiCacheRate:F1}%");
-                }
+                RimLLMUIStyle.DrawRatioBar(
+                    listing.GetRect(20f),
+                    (float)apiCachedTokens / apiTotalTokens,
+                    RimLLMUIStyle.BarTrack,
+                    RimLLMUIStyle.BarFillCache,
+                    $"{apiCacheRate:F1}%");
                 listing.Gap(12f);
             }
         }
@@ -382,26 +346,14 @@ namespace RimLLM_Framework.Mod
         public static void DrawConnectionTest(Listing_Standard listing, string providerId)
         {
             listing.Label("RimLLM_ConnectionTestTitle".Translate());
-            bool isTesting = Testing.TryGetValue(providerId, out bool val) && val;
             string status = TestStatus.TryGetValue(providerId, out string s) ? s : "RimLLM_TestStatusNotRun".Translate().ToString();
-            Rect btnRect = listing.GetRect(60f);
-            Rect leftRect = new Rect(btnRect.x, btnRect.y + 15f, 180f, 30f);
-            Rect rightRect = new Rect(btnRect.x + 190f, btnRect.y, btnRect.width - 190f, 60f);
-            if (isTesting)
-            {
-                Widgets.Label(leftRect, "RimLLM_Testing".Translate());
-            }
-            else
-            {
-                if (Widgets.ButtonText(leftRect, "RimLLM_TestConnectionBtn".Translate()))
-                {
-                    StartTest(providerId);
-                }
-            }
-            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-            {
-                Widgets.Label(rightRect, "RimLLM_TestResult".Translate(status));
-            }
+            DrawBusyActionRow(
+                listing,
+                Testing.TryGetValue(providerId, out bool val) && val,
+                "RimLLM_Testing".Translate(),
+                "RimLLM_TestConnectionBtn".Translate(),
+                "RimLLM_TestResult".Translate(status),
+                () => StartTest(providerId));
         }
 
         public static void StartFetchModels(string providerId)

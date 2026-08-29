@@ -408,5 +408,46 @@ namespace RimLLM_Framework.Tests
             tracker.ClearLogs();
             Assert.AreEqual(0, tracker.ProviderStatistics.Count);
         }
+
+        /// <summary>
+        /// 上一個 session 的請求歷史必須在重啟後回到記憶體佇列裡。
+        /// 沒有這條，Debug 面板重開遊戲就一片空白，而且第一次 RecordLog 會把舊紀錄整份蓋掉。
+        /// </summary>
+        [Test]
+        public void TestUsageTrackerRestoresPersistedRequestLogs()
+        {
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RimLLMTelemetryTest_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "telemetry.json");
+
+            var previousResolver = RimLLMTelemetryStore.FilePathResolver;
+            RimLLMTelemetryStore.FilePathResolver = () => path;
+            try
+            {
+                var seed = new RimLLMTelemetryStore();
+                seed.RequestLogs.Add(new RimLLMManager.RequestLogEntry
+                {
+                    Timestamp = DateTime.Now,
+                    ModId = "seed.mod",
+                    Provider = "OpenRouter",
+                    Model = "model-a",
+                    Success = true,
+                    LatencyMs = 1234
+                });
+                seed.Save();
+
+                var settings = new RimLLMFrameworkSettings();
+                Assert.AreEqual(1, settings.RequestLogs.Count, "設定應從遙測檔載回既有請求歷史");
+
+                var tracker = new RimLLMUsageTracker(settings);
+                Assert.AreEqual(1, tracker.RequestLogs.Count, "UsageTracker 應把已保存的請求歷史放回記憶體佇列");
+            }
+            finally
+            {
+                RimLLMTelemetryStore.FilePathResolver = previousResolver;
+                try { System.IO.Directory.Delete(dir, true); } catch { }
+            }
+        }
+
     }
 }

@@ -51,11 +51,9 @@ namespace RimLLM_Framework.Providers
                 var modelsArray = new List<string>();
                 foreach (string m in model.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                 {
+                    // 只有全是空白的條目會在 Trim 後變空，那種條目不該進 models 陣列。
                     string trimmed = m.Trim();
-                    if (!string.IsNullOrEmpty(trimmed))
-                    {
-                        modelsArray.Add(trimmed);
-                    }
+                    if (trimmed.Length > 0) modelsArray.Add(trimmed);
                 }
                 chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.models"), JsonSerializer.SerializeToUtf8Bytes(modelsArray));
                 return chatCompletionOptions;
