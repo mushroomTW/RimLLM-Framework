@@ -139,7 +139,10 @@ namespace RimLLM_Framework.Providers
 
             // schema 是直接拼進送出的 JSON 的，不合法就會毀掉整個 request body。
             // 先在本地解析一次，讓錯誤停在組裝階段，而不是換成服務端一句沒有線索的 400。
-            using (JsonDocument.Parse(schemaJson)) { }
+#pragma warning disable S108 // reason: 僅為驗證 JSON 合法性，解析成功即表示合法，無需額外操作
+            using (JsonDocument.Parse(schemaJson)) { // 刻意空區塊：僅驗證 schemaJson 為合法 JSON
+            }
+#pragma warning restore S108
 
             return "{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"custom_type\"," +
                    "\"description\":\"RimLLM structured response\"," +

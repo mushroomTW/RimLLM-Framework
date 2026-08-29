@@ -15,6 +15,7 @@ namespace RimLLM_Framework.Mod
     {
         private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
+#pragma warning disable S2386, S3887 // reason: UI 狀態跨實例共享，刻意使用可變靜態集合並於存取處受控，維持現狀
         public static readonly Dictionary<string, string> FetchStatus = new Dictionary<string, string>();
         public static readonly Dictionary<string, bool> Fetching = new Dictionary<string, bool>();
         public static readonly Dictionary<string, string> TestStatus = new Dictionary<string, string>();
@@ -26,6 +27,7 @@ namespace RimLLM_Framework.Mod
 
         /// <summary>哪幾把金鑰目前是明文顯示。鍵為 providerId + ":" + 索引；預設全部遮罩。</summary>
         public static readonly Dictionary<string, bool> RevealedKeys = new Dictionary<string, bool>();
+#pragma warning restore S2386, S3887
 
         /// <summary>金鑰顯示切換鈕的寬度。</summary>
         private const float RevealButtonWidth = 40f;
@@ -37,6 +39,7 @@ namespace RimLLM_Framework.Mod
         private static void ResetRevealedKeys(string providerId)
         {
             var stale = new List<string>();
+#pragma warning disable S3267 // reason: 需同時篩選並收集鍵，Where 改寫可讀性未提升，維持現狀
             foreach (var pair in RevealedKeys)
             {
                 if (pair.Key.StartsWith(providerId + ":", StringComparison.Ordinal))
@@ -44,6 +47,7 @@ namespace RimLLM_Framework.Mod
                     stale.Add(pair.Key);
                 }
             }
+#pragma warning restore S3267
             foreach (string key in stale)
             {
                 RevealedKeys.Remove(key);
@@ -114,12 +118,9 @@ namespace RimLLM_Framework.Mod
                 keys[i] = RimLLMUIStyle.DrawMaskableKeyField(inputRect, revealRect, keys[i], ref revealed);
                 RevealedKeys[revealKey] = revealed;
 
-                if (canDelete)
+                if (canDelete && Widgets.ButtonText(deleteRect, "-"))
                 {
-                    if (Widgets.ButtonText(deleteRect, "-"))
-                    {
-                        keyToDelete = i;
-                    }
+                    keyToDelete = i;
                 }
                 listing.Gap(4f);
             }

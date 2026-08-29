@@ -13,8 +13,10 @@ namespace RimLLM_Framework.Mod
     /// </summary>
     public static class RimLLMSettingsUI
     {
+        private const string ProvidersCategoryId = "Providers";
+
         // 全域選單狀態
-        private static string activeMainCategory = "Providers";
+        private static string activeMainCategory = ProvidersCategoryId;
         private static Vector2 _detailScrollPosition = Vector2.zero;
 
         /// <summary>RimWorld 捲軸的固定寬度。</summary>
@@ -71,7 +73,7 @@ namespace RimLLM_Framework.Mod
             DrawLeftCategoryMenu(leftColRect);
 
             // 2. 根據選中項目決定中欄與右欄佈局
-            if (activeMainCategory == "Providers")
+            if (activeMainCategory == ProvidersCategoryId)
             {
                 Rect midColRect = new Rect(leftColRect.xMax + gap, inRect.y, midWidth, height);
                 Widgets.DrawMenuSection(midColRect);
@@ -176,8 +178,8 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static string GetDetailPageKey()
         {
-            return activeMainCategory == "Providers"
-                ? "Providers/" + ProviderSettingsDrawer.ActiveProviderSubTab
+            return activeMainCategory == ProvidersCategoryId
+                ? ProvidersCategoryId + "/" + ProviderSettingsDrawer.ActiveProviderSubTab
                 : activeMainCategory;
         }
 
@@ -206,7 +208,7 @@ namespace RimLLM_Framework.Mod
         {
             new DetailPage
             {
-                Id = "Providers",
+                Id = ProvidersCategoryId,
                 MenuLabelKey = "RimLLM_TabProviders",
                 Title = () =>
                 {

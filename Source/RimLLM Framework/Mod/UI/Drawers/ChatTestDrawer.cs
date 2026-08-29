@@ -47,8 +47,12 @@ namespace RimLLM_Framework.Mod
             chatCts = null;
             if (cts == null) return;
 
-            try { cts.Cancel(); } catch { }
-            try { cts.Dispose(); } catch { }
+#pragma warning disable S108, S2486 // reason: 取消/釋放已釋放的 CTS 在 Unity 主線程屬預期競爭，刻意忽略不影響主流程
+            try { cts.Cancel(); } catch { // 刻意忽略：CTS 可能已取消或已釋放，不影響主流程
+            }
+            try { cts.Dispose(); } catch { // 刻意忽略：重複釋放屬預期競爭，不影響主流程
+            }
+#pragma warning restore S108, S2486
             chatLoading = false;
         }
 

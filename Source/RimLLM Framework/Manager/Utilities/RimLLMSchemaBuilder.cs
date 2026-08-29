@@ -10,7 +10,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.Core;
-#pragma warning disable S1192, S3267, S3878 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
+#pragma warning disable S1168, S1192, S3267, S3878 // reason: S1168 null 表示不可表達節點/未找到，與空集合語意不同，呼叫端需區分；其餘批次抑制語意保留，維持現狀
 
 namespace RimLLM_Framework.Manager
 {
@@ -1047,5 +1047,5 @@ namespace RimLLM_Framework.Manager
         }
     }
 #pragma warning restore S101, S2342
-#pragma warning restore S1192, S3267, S3878
+#pragma warning restore S1168, S1192, S3267, S3878
 }

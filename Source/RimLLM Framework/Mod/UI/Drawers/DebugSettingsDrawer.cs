@@ -29,6 +29,7 @@ namespace RimLLM_Framework.Mod
         /// 刻意包含 <c>Nullable&lt;T&gt;</c>、清單與列舉：這三者正是各供應商 schema 方言差異最大的地方，
         /// 只用純量成員的話兩種方言會產出相同的 schema，測不出方言接線是否正確。
         /// </summary>
+#pragma warning disable S1144, S3459 // reason: 供序列化/反射與 Schema 自我檢查使用，未賦值與未使用屬預期，維持現狀
         private sealed class SchemaSelfTestPayload
         {
             public string Summary { get; set; }
@@ -36,6 +37,7 @@ namespace RimLLM_Framework.Mod
             public int? OptionalScore { get; set; }
             public List<string> Tags { get; set; }
         }
+#pragma warning restore S1144, S3459
 
         /// <summary>
         /// 獲取偵錯分頁詳細內容的滾動高度。
@@ -43,9 +45,19 @@ namespace RimLLM_Framework.Mod
         public static float GetHeight(float width)
         {
             // 自我檢查按鈕，加上狀態列 —— 失敗時會多帶一段展平後的例外鏈，需要更多空間。
-            float statusHeight = string.IsNullOrEmpty(schemaSelfTestStatus)
-                ? 0f
-                : (schemaSelfTestStatus.Contains("\n") ? 150f : 48f);
+            float statusHeight;
+            if (string.IsNullOrEmpty(schemaSelfTestStatus))
+            {
+                statusHeight = 0f;
+            }
+            else if (schemaSelfTestStatus.Contains("\n"))
+            {
+                statusHeight = 150f;
+            }
+            else
+            {
+                statusHeight = 48f;
+            }
             return 690f + 42f + statusHeight;
         }
 

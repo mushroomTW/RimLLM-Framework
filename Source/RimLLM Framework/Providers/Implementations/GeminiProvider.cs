@@ -19,7 +19,7 @@ namespace RimLLM_Framework.Providers
     {
         public override string ProviderId => ProviderIds.Gemini;
 
-        private class GeminiCacheEntry
+        private sealed class GeminiCacheEntry
         {
             public string CacheId { get; set; }
             public DateTime ExpireTime { get; set; }
@@ -303,10 +303,12 @@ namespace RimLLM_Framework.Providers
                         int promptChars = 0;
                         if (messages != null)
                         {
+#pragma warning disable S3267 // reason: 累加字元長度需條件累積，Where 可讀性未提升，維持現狀
                             foreach (var m in messages)
                             {
                                 if (m != null && !string.IsNullOrEmpty(m.Text)) promptChars += m.Text.Length;
                             }
+#pragma warning restore S3267
                         }
                         RimLLMProvider.Manager.RecordUsage(
                             ProviderId,

@@ -120,7 +120,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 串流請求：採「閒置逾時」語意 —— 每收到一個 chunk 就重設計時器。
         /// 對長回應而言整體逾時並不合理，因此 ApiTimeout 在此代表「多久沒有新內容就視為斷線」。
-        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
+        #pragma warning disable S107, S3776 // reason: S107 內部轉接器協調 IChatClient、逾時與回呼，參數物件會使呼叫端可讀性下降且無重用，維持窄範圍抑制；S3776 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         /// </summary>
         public static async Task<RimLLMGenerationResult> StreamAsync(
             IChatClient client,
@@ -234,7 +234,7 @@ namespace RimLLM_Framework.Manager
                 onChunkReceived?.Invoke(chunk);
             }
         }
-        #pragma warning restore S3776
+        #pragma warning restore S107, S3776
 
         private static TimeSpan ResolveTimeout(float timeoutSeconds)
         {
