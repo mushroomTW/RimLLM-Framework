@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 
 namespace RimLLM_Framework.Manager
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>SDK facade 與 Manager 之間的內部轉譯請求物件（取代 LLMRequest 角色）。</summary>
     internal sealed class RimLLMRequest
     {
@@ -53,4 +54,5 @@ namespace RimLLM_Framework.Manager
             };
         }
     }
+#pragma warning restore S101, S2342
 }

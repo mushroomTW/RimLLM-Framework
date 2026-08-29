@@ -9,6 +9,7 @@ namespace RimLLM_Framework.Core
     /// 在 RimWorld 遊戲環境中，呼叫 Verse.Log 輸出至遊戲日誌與控制台；
     /// 在無 Unity 引擎的單元測試環境中，自動 Fallback 使用 System.Console 輸出，防範 ECall 崩潰。
     /// </summary>
+#pragma warning disable S101 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     public static class RimLLMLog
     {
         public static bool Enabled { get; set; } = true;
@@ -34,7 +35,8 @@ namespace RimLLM_Framework.Core
             @"|xai-[A-Za-z0-9]{20,}" +
             @"|nvapi-[A-Za-z0-9\-_]{20,}" +
             @")",
-            RegexOptions.Compiled);
+            RegexOptions.Compiled,
+            TimeSpan.FromSeconds(1));
 
         public static string SanitizeForLog(string value, int maxLength = 500)
         {
@@ -118,5 +120,6 @@ namespace RimLLM_Framework.Core
                 Console.ForegroundColor = original;
             }
         }
+#pragma warning restore S101
     }
 }

@@ -332,17 +332,17 @@ namespace RimLLM_Framework.Mod
             // 長期留存於 Player.log。已移除（稽核 SEC-002）。
 
             // 1. 處理已閉合的 <think>...</think> 或 <thought>...</thought> -> 標記為灰色
-            string result = Regex.Replace(text, @"<(think|thought)>([\s\S]*?)</\1>", m => WrapClosedThought(m.Groups[2].Value));
+            string result = Regex.Replace(text, @"<(think|thought)>([\s\S]*?)</\1>", m => WrapClosedThought(m.Groups[2].Value), RegexOptions.None, TimeSpan.FromSeconds(1));
 
             // 2. 處理未閉合的 <think> 或 <thought>（串流中常遇到） -> 將後續全部標記為灰色
-            var matchUnclosedXml = Regex.Match(result, @"<(think|thought)>(?![\s\S]*</\1>)");
+            var matchUnclosedXml = Regex.Match(result, @"<(think|thought)>(?![\s\S]*</\1>)", RegexOptions.None, TimeSpan.FromSeconds(1));
             if (matchUnclosedXml.Success)
             {
                 result = WrapTrailingThought(result, matchUnclosedXml.Index, matchUnclosedXml.Length);
             }
 
             // 3. 處理已閉合的 markdown 思考區塊 ```thought...``` -> 標記為灰色
-            result = Regex.Replace(result, @"```thought([\s\S]*?)```", m => WrapClosedThought(m.Groups[1].Value));
+            result = Regex.Replace(result, @"```thought([\s\S]*?)```", m => WrapClosedThought(m.Groups[1].Value), RegexOptions.None, TimeSpan.FromSeconds(1));
 
             // 4. 處理未閉合的 markdown 思考區塊 ```thought （串流中常遇到）-> 將後續全部標記為灰色
             int markdownMarker = result.IndexOf(MarkdownThoughtMarker, StringComparison.Ordinal);

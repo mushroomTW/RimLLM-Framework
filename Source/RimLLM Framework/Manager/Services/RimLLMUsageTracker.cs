@@ -6,6 +6,7 @@ using RimLLM_Framework.Mod;
 
 namespace RimLLM_Framework.Manager
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 管理並統計 API 呼叫量、Token 使用度、連線日誌記錄以及 API 計費預估。
     /// 支援對設定檔的磁碟存檔寫入實施節流（防震）保護。
@@ -313,4 +314,5 @@ namespace RimLLM_Framework.Manager
             return model;
         }
     }
+#pragma warning restore S101, S2342
 }

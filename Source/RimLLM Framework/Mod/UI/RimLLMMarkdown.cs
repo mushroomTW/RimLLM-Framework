@@ -1,9 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 
 namespace RimLLM_Framework.Mod
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 把模型輸出的 Markdown 轉成 Unity 舊版 IMGUI 能顯示的 rich text。
     ///
@@ -33,23 +35,23 @@ namespace RimLLM_Framework.Mod
         private static readonly int[] HeadingSizes = { 20, 17, 15 };
 
         // 佔位符使用控制字元，避免與模型輸出的內容碰撞。
-        private const string PlaceholderOpen = "";
-        private const string PlaceholderClose = "";
+        private const string PlaceholderOpen = "\u0001";
+        private const string PlaceholderClose = "\u0002";
 
-        private static readonly Regex FenceRegex = new Regex(@"^\s*(`{3,}|~{3,})");
-        private static readonly Regex HorizontalRuleRegex = new Regex(@"^\s*([-*_])\s*(\1\s*){2,}$");
-        private static readonly Regex HeadingRegex = new Regex(@"^\s*(#{1,6})\s+(.*)$");
-        private static readonly Regex BlockQuoteRegex = new Regex(@"^\s*>\s?(.*)$");
-        private static readonly Regex UnorderedItemRegex = new Regex(@"^(\s*)[-*+]\s+(.*)$");
-        private static readonly Regex OrderedItemRegex = new Regex(@"^(\s*)(\d{1,3})[.)]\s+(.*)$");
-        private static readonly Regex TableSeparatorRegex = new Regex(@"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$");
+        private static readonly Regex FenceRegex = new Regex(@"^\s*(`{3,}|~{3,})", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex HorizontalRuleRegex = new Regex(@"^\s*([-*_])\s*(\1\s*){2,}$", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex HeadingRegex = new Regex(@"^\s*(#{1,6})\s+(.*)$", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex BlockQuoteRegex = new Regex(@"^\s*>\s?(.*)$", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex UnorderedItemRegex = new Regex(@"^(\s*)[-*+]\s+(.*)$", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex OrderedItemRegex = new Regex(@"^(\s*)(\d{1,3})[.)]\s+(.*)$", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex TableSeparatorRegex = new Regex(@"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$", RegexOptions.None, TimeSpan.FromSeconds(1));
 
-        private static readonly Regex InlineCodeRegex = new Regex(@"`([^`\n]+)`");
-        private static readonly Regex LinkRegex = new Regex(@"\[([^\]\n]*)\]\(([^)\s]+)(?:\s+""[^""]*"")?\)");
-        private static readonly Regex BoldRegex = new Regex(@"\*\*(?=\S)(.+?)(?<=\S)\*\*", RegexOptions.Singleline);
-        private static readonly Regex ItalicRegex = new Regex(@"(?<!\*)\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)");
-        private static readonly Regex StrikeRegex = new Regex(@"~~(?=\S)(.+?)(?<=\S)~~", RegexOptions.Singleline);
-        private static readonly Regex PlaceholderRegex = new Regex("(\\d+)");
+        private static readonly Regex InlineCodeRegex = new Regex(@"`([^`\n]+)`", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex LinkRegex = new Regex(@"\[([^\]\n]*)\]\(([^)\s]+)(?:\s+""[^""]*"")?\)", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex BoldRegex = new Regex(@"\*\*(?=\S)(.+?)(?<=\S)\*\*", RegexOptions.Singleline, TimeSpan.FromSeconds(1));
+        private static readonly Regex ItalicRegex = new Regex(@"(?<!\*)\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly Regex StrikeRegex = new Regex(@"~~(?=\S)(.+?)(?<=\S)~~", RegexOptions.Singleline, TimeSpan.FromSeconds(1));
+        private static readonly Regex PlaceholderRegex = new Regex("\u0001(\\d+)\u0002", RegexOptions.None, TimeSpan.FromSeconds(1));
 
         /// <summary>
         /// 轉換整段文字。已經存在的 rich text 標籤（例如思考過程的灰色包裝）會原樣通過。
@@ -200,4 +202,5 @@ namespace RimLLM_Framework.Mod
             builder.Append(line);
         }
     }
+#pragma warning restore S101, S2342
 }

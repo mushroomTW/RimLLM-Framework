@@ -3,6 +3,7 @@ using Verse;
 
 namespace RimLLM_Framework.Mod
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 預算超限詢問對話框。
     /// 相較於直接使用 <see cref="Dialog_MessageBox"/>，此類別額外保證：
@@ -49,4 +50,5 @@ namespace RimLLM_Framework.Mod
             }
         }
     }
+#pragma warning restore S101, S2342
 }

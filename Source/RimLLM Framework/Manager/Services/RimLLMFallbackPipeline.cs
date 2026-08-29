@@ -12,6 +12,7 @@ namespace RimLLM_Framework.Manager
     /// 負責備用鏈（Fallback Chain）維護、Provider 失敗後自動嘗試下一個備用 Provider、
     /// 備用管道執行與熔斷器 (Circuit Breaker) 連動等邏輯的服務元件。
     /// </summary>
+#pragma warning disable S101 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     public class RimLLMFallbackPipeline
     {
         private readonly IRimLLMSettings _settings;
@@ -62,6 +63,7 @@ namespace RimLLM_Framework.Manager
         /// 依序遍歷符合資格的供應商條目，對每個條目套用相同的重試策略，
         /// 並統一處理取消檢查、熔斷記錄與用量統計。
         /// </summary>
+#pragma warning disable S3776 // reason: 單一線性敘事含 fallback 解析、路由策略、重試迴圈，拆分反而增加重組成本
         internal async Task<RimLLMGenerationResult> ExecuteWithFallbackAsync(
             RimLLMRequest request,
             Func<ILLMProvider, string, Task<RimLLMGenerationResult>> attemptAsync,
@@ -134,7 +136,9 @@ namespace RimLLM_Framework.Manager
             }
             else if (strategy == 2) // RoundRobin / Random (隨機輪詢負載均衡)
             {
+#pragma warning disable S2245 // reason: 僅用於負載均衡隨機輪詢，非安全相關隨機，無需密碼學強度
                 var rnd = new Random();
+#pragma warning restore S2245
                 for (int i = activeCandidates.Count - 1; i > 0; i--)
                 {
                     int j = rnd.Next(i + 1);
@@ -241,6 +245,7 @@ namespace RimLLM_Framework.Manager
             _usageTracker.RecordLog(startTime, request.ModId, "FallbackChain", "None", false, lastException?.Message ?? "All fallbacks failed", totalStopwatch.ElapsedMilliseconds);
             throw new RimLLMException(exhaustedError, $"{exhaustedMessage} Last error: {lastException?.Message}", lastException);
         }
+#pragma warning restore S3776
 
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
         {
@@ -304,7 +309,9 @@ namespace RimLLM_Framework.Manager
         private List<string> GetFallbackChainSnapshot()
         {
             var chain = _settings.FallbackChain;
+#pragma warning disable S1168 // reason: null 表示未配置 fallback 鏈，與空集合語意不同，呼叫端需區分
             return chain != null ? new List<string>(chain) : null;
+#pragma warning restore S1168
         }
 
         private bool IsProviderUsable(string providerId, ILLMProvider provider)
@@ -348,17 +355,15 @@ namespace RimLLM_Framework.Manager
             }
 
             // Circuit Breaker 健康狀態檢查
-            if (_circuitBreaker.IsCooldown(providerId, out DateTime cdTime, out int failures))
-            {
-                if (!_circuitBreaker.AreAllEligibleProvidersInCooldown(fallbackChain, id =>
+            if (_circuitBreaker.IsCooldown(providerId, out DateTime cdTime, out int failures)
+                && !_circuitBreaker.AreAllEligibleProvidersInCooldown(fallbackChain, id =>
                     {
                         var p = _providerResolver(id);
                         return p != null && IsProviderUsable(id, p);
                     }))
-                {
-                    RimLLMLog.Message($"[RimLLM] Skipping provider {providerId} because it is in cooldown until {cdTime.ToLocalTime()} due to {failures} continuous failures.");
-                    return false;
-                }
+            {
+                RimLLMLog.Message($"[RimLLM] Skipping provider {providerId} because it is in cooldown until {cdTime.ToLocalTime()} due to {failures} continuous failures.");
+                return false;
             }
 
             return true;
@@ -383,7 +388,7 @@ namespace RimLLM_Framework.Manager
             return 1;
         }
 
-        private int ParseMinFallbackLevel(string levelStr)
+        private static int ParseMinFallbackLevel(string levelStr)
         {
             switch ((levelStr ?? string.Empty).ToLower())
             {
@@ -397,7 +402,7 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private bool IsRetryableException(Exception ex)
+        private static bool IsRetryableException(Exception ex)
         {
             if (ex is OperationCanceledException)
             {
@@ -432,4 +437,5 @@ namespace RimLLM_Framework.Manager
             return true;
         }
     }
+#pragma warning restore S101
 }

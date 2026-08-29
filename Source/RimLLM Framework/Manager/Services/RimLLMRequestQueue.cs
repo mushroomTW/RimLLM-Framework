@@ -6,6 +6,7 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 管理 API 請求的優先權佇列與並行限流。
     /// 依據 RimLLMRequest 的優先級（Priority）與先進先出（FIFO）規則調度執行。
@@ -146,4 +147,5 @@ namespace RimLLM_Framework.Manager
             }
         }
     }
+#pragma warning restore S101, S2342
 }

@@ -8,6 +8,7 @@ using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 遙測資料儲存（對話測試歷史、請求日誌、Token 用量統計）。
     /// 與 ModSettings 設定本體分離，獨立存放於 Config 資料夾的 JSON 檔案，
@@ -265,4 +266,5 @@ namespace RimLLM_Framework.Mod
             }
         }
     }
+#pragma warning restore S101, S2342
 }

@@ -75,10 +75,12 @@ namespace RimLLM_Framework.Core
                     Key = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawKeySeed));
                 }
  
+#pragma warning disable S4790 // reason: 設備指紋衍生的 IV 派生，非密碼儲存，已有 SHA256 主金鑰，MD5 僅用於產生 16-byte IV 長度需求
                 using (MD5 md5 = MD5.Create())
                 {
                     Iv = md5.ComputeHash(Encoding.UTF8.GetBytes(rawIvSeed));
                 }
+#pragma warning restore S4790
 
                 using (SHA256 sha256 = SHA256.Create())
                 {

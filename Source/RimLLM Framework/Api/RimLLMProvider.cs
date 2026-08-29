@@ -6,6 +6,7 @@ using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// RimLLM SDK 全域靜態入口。第三方 Mod 以 CreateChatClient /
     /// CreateEmbeddingGenerator 取得標準 MEAI client 使用框架，無須事先註冊。
@@ -83,4 +84,5 @@ namespace RimLLM_Framework
             return Manager.GetRegisteredProviderIds();
         }
     }
+#pragma warning restore S101, S2342
 }

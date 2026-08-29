@@ -9,6 +9,8 @@ using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
+#pragma warning disable S3881 // reason: IChatClient 門面，Dispose 僅標記已釋放無實質資源，現有模式已足夠無需完整處置模式
     /// <summary>
     /// 綁定單一 Mod 的 IChatClient facade。框架核心功能（fallback、預算、佇列、
     /// 防濫用、用量統計）全部保留在此 client 內部，不允許繞過。
@@ -293,4 +295,6 @@ namespace RimLLM_Framework
             _disposed = true;
         }
     }
+#pragma warning restore S3881
+#pragma warning restore S101, S2342
 }

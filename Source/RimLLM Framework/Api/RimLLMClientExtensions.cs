@@ -8,6 +8,7 @@ using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>RimLLM SDK 對 IChatClient 的擴充方法。</summary>
     public static class RimLLMClientExtensions
     {
@@ -67,4 +68,5 @@ namespace RimLLM_Framework
             }
         }
     }
+#pragma warning restore S101, S2342
 }

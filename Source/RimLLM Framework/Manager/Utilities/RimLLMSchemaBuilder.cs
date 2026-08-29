@@ -13,6 +13,7 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 送往 provider 的 JSON Schema 方言。
     /// 兩家對「可為 null 的成員」要求不同的寫法，其餘形狀相同。
@@ -1024,4 +1025,5 @@ namespace RimLLM_Framework.Manager
             };
         }
     }
+#pragma warning restore S101, S2342
 }

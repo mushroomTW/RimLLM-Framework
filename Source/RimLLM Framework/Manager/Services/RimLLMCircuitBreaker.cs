@@ -5,6 +5,7 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 管理 API 供應商的 Circuit Breaker 健康狀態與熔斷冷卻機制。
     /// 當供應商連續失敗達一定次數時，會使該供應商進入冷卻狀態，暫時跳過輪詢。
@@ -96,4 +97,5 @@ namespace RimLLM_Framework.Manager
             return true;
         }
     }
+#pragma warning restore S101, S2342
 }

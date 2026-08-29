@@ -20,6 +20,7 @@ namespace RimLLM_Framework.Manager
     /// 統一調度 API 供應商、執行雙重 Fallback 容錯、校驗調用者來源。
     /// 內部邏輯委託給排隊佇列 (RequestQueue)、熔斷器 (CircuitBreaker)、JSON 輔助 (JsonHelper)、使用統計器 (UsageTracker) 與備用管道 (FallbackPipeline)。
     /// </summary>
+#pragma warning disable S101 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     public class RimLLMManager
     {
         private readonly IRimLLMSettings _settings;
@@ -362,6 +363,7 @@ namespace RimLLM_Framework.Manager
             ValidateRequiredMembers(result, typeof(T), new HashSet<Type>());
         }
 
+#pragma warning disable S3776 // reason: 單一線性敘事含遞迴與多型分支，拆分反而增加重組成本
         private static void ValidateRequiredMembers(object value, Type type, HashSet<Type> visitedTypes)
         {
             if (value == null || type == typeof(string) || type.IsPrimitive || type.IsEnum || type == typeof(decimal))
@@ -422,6 +424,7 @@ namespace RimLLM_Framework.Manager
                 }
             }
         }
+#pragma warning restore S3776
 
         /// <summary>
         /// 成員是否為必填。與 schema 的判定一致：只有 <c>Nullable&lt;T&gt;</c> 算選填。
@@ -827,13 +830,13 @@ namespace RimLLM_Framework.Manager
             return clone;
         }
 
-        private void DispatchChunk(Action<string> callback, string chunk)
+        private static void DispatchChunk(Action<string> callback, string chunk)
         {
             if (callback == null) return;
             RimLLMDispatcher.EnqueueOnMainThread(() => callback(chunk));
         }
 
-        private void DispatchRestart(Action callback)
+        private static void DispatchRestart(Action callback)
         {
             if (callback == null) return;
             RimLLMDispatcher.EnqueueOnMainThread(callback);
@@ -875,10 +878,12 @@ namespace RimLLM_Framework.Manager
             }
         }
 
+#pragma warning disable S2325 // reason: 實例方法維持外部呼叫一致性，雖可 static 但保留實例語意
         internal string GetSampleJson(Type type)
         {
             return RimLLMJsonHelper.GetSampleJson(type);
         }
+#pragma warning restore S2325
 
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
         {
@@ -960,6 +965,7 @@ namespace RimLLM_Framework.Manager
             }
         }
 
+#pragma warning disable S3776 // reason: 單一線性敘事含多階預算策略分支，拆分反而增加重組成本
         private async Task<bool> CheckBudgetLimitAsync(RimLLMRequest request)
         {
             _usageTracker.CheckDailyReset();
@@ -1054,6 +1060,7 @@ namespace RimLLM_Framework.Manager
 
             return false;
         }
+#pragma warning restore S3776
 
         internal static async Task<bool> AwaitBudgetApprovalAsync(
             Task<bool> sharedPromptTask,
@@ -1118,4 +1125,5 @@ namespace RimLLM_Framework.Manager
 
         #endregion
     }
+#pragma warning restore S101
 }

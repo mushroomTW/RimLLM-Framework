@@ -8,6 +8,7 @@ using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// RimWorld Mod 設定檔。
     /// 將複雜的字典結構序列化為單一 JSON 字串儲存，並在序列化時調用 EncryptionUtility 加解密 API 金鑰。
@@ -553,4 +554,5 @@ namespace RimLLM_Framework.Mod
             }
         }
     }
+#pragma warning restore S101, S2342
 }

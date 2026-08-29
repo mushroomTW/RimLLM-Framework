@@ -6,6 +6,7 @@ using RimWorld;
 
 namespace RimLLM_Framework.Mod
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 負責 RimLLM Framework 的設定畫面進入點與框架布局。
     /// 將具體的分頁渲染與交互狀態委託給各個 Drawer 類別。
@@ -277,4 +278,5 @@ namespace RimLLM_Framework.Mod
             return null;
         }
     }
+#pragma warning restore S101, S2342
 }

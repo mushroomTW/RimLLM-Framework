@@ -11,6 +11,7 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>將內部 RimLLMRequest 轉換為 MEAI IChatClient 呼叫。</summary>
     internal static class RimLLMChatClientExecutor
     {
@@ -454,4 +455,5 @@ namespace RimLLM_Framework.Manager
             return value.Value > int.MaxValue ? int.MaxValue : (int)value.Value;
         }
     }
+#pragma warning restore S101, S2342
 }

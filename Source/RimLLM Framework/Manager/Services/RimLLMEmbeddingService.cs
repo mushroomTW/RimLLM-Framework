@@ -12,6 +12,7 @@ using RimLLM_Framework.Providers;
 
 namespace RimLLM_Framework.Manager
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// Embedding 向量運算服務。線上供應商一律透過官方 SDK 呼叫
     /// （Google 走 Google.GenAI，Ollama 與自架服務走 OpenAI 相容的 EmbeddingClient），
@@ -458,4 +459,5 @@ namespace RimLLM_Framework.Manager
             return result;
         }
     }
+#pragma warning restore S101, S2342
 }

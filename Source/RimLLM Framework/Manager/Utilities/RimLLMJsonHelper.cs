@@ -8,15 +8,16 @@ using Newtonsoft.Json.Linq;
 
 namespace RimLLM_Framework.Manager
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// JSON 的靜態處理與格式修復輔助工具。
     /// 包含結構化資料的 JSON 補齊、Regex 修復以及 Dummy 物件生成（用於產生 schema 快取）。
     /// </summary>
     public static class RimLLMJsonHelper
     {
-        private static readonly Regex TrailingCommaRegex = new Regex(@",\s*([\]}])", RegexOptions.Compiled);
-        private static readonly Regex JsonBlockRegex = new Regex(@"(\{.*\}|\[.*\])", RegexOptions.Compiled | RegexOptions.Singleline);
-        private static readonly Regex ThinkTagRegex = new Regex(@"<think>.*?</think>", RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly Regex TrailingCommaRegex = new Regex(@",\s*([\]}])", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+        private static readonly Regex JsonBlockRegex = new Regex(@"(\{.*\}|\[.*\])", RegexOptions.Compiled | RegexOptions.Singleline, TimeSpan.FromSeconds(1));
+        private static readonly Regex ThinkTagRegex = new Regex(@"<think>.*?</think>", RegexOptions.Compiled | RegexOptions.Singleline, TimeSpan.FromSeconds(1));
         private static readonly ConcurrentDictionary<Type, string> SampleJsonCache = new ConcurrentDictionary<Type, string>();
 
         /// <summary>
@@ -329,4 +330,5 @@ namespace RimLLM_Framework.Manager
             }
         }
     }
+#pragma warning restore S101, S2342
 }

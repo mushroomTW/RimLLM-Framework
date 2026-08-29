@@ -2,6 +2,7 @@ using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 描述 LLM 供應商可使用的原生功能，讓共用服務層不必依賴 provider-specific SDK。
     /// </summary>
@@ -23,4 +24,5 @@ namespace RimLLM_Framework
         /// <summary>是否會回傳可用的 Token 使用量 metadata。</summary>
         public bool SupportsUsageMetadata { get; set; }
     }
+#pragma warning restore S101, S2342
 }

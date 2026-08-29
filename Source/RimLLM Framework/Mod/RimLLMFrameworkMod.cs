@@ -6,6 +6,7 @@ using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
 {
+#pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// RimLLM Framework Mod 本體進入點。
     /// 初始化 SDK、掛載 Dispatcher 並委託設定 GUI 的渲染。
@@ -72,4 +73,5 @@ namespace RimLLM_Framework.Mod
             RimLLMSettingsUI.DoSettingsWindowContents(inRect);
         }
     }
+#pragma warning restore S101, S2342
 }
