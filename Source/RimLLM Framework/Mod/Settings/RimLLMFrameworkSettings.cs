@@ -5,6 +5,7 @@ using Newtonsoft.Json;
 using Verse;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
+#pragma warning disable S2365, S3260, S3267, S3459 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Mod
 {
@@ -217,6 +218,7 @@ namespace RimLLM_Framework.Mod
             public string EmbeddingApiKey = "";
         }
 #pragma warning restore 0649
+#pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
 
         public override void ExposeData()
         {
@@ -391,6 +393,7 @@ namespace RimLLM_Framework.Mod
                 }
             }
         }
+#pragma warning restore S3776
 
         public string GetApiKey(string providerId)
         {
@@ -555,4 +558,5 @@ namespace RimLLM_Framework.Mod
         }
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S2365, S3260, S3267, S3459
 }

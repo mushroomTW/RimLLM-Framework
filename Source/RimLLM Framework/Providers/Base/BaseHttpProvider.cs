@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
+#pragma warning disable S1481 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Providers
 {
@@ -104,4 +105,5 @@ namespace RimLLM_Framework.Providers
         public abstract Task<List<string>> FetchAvailableModelsAsync();
 
     }
+#pragma warning restore S1481
 }

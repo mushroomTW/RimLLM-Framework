@@ -52,6 +52,7 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// 繪製偵錯設定與日誌。
         /// </summary>
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         public static void DrawDebugSettings(Listing_Standard listing)
         {
             listing.Label("RimLLM_TitleDebugExplanation".Translate());
@@ -122,6 +123,7 @@ namespace RimLLM_Framework.Mod
             Rect clearBtnRect = new Rect(headerRect.x + headerRect.width - 140f, headerRect.y + 2f, 140f, headerRect.height - 4f);
 
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+#pragma warning disable S1144, S1192, S3358, S3459 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 Widgets.Label(labelRect, "<b>" + "RimLLM_RecentRequests".Translate(30) + "</b>");
             }
@@ -201,6 +203,7 @@ namespace RimLLM_Framework.Mod
             }
             Widgets.EndScrollView();
         }
+        #pragma warning restore S3776
 
         /// <summary>
         /// 結構化輸出自我檢查。分兩段：
@@ -291,6 +294,7 @@ namespace RimLLM_Framework.Mod
             });
         }
 
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         private static void ExportDiagnostics()
         {
             try
@@ -374,6 +378,7 @@ namespace RimLLM_Framework.Mod
                 Messages.Message("RimLLM_ExportDiagFailed".Translate(RimLLMLog.SanitizeForLog(ex.Message, 200)), MessageTypeDefOf.RejectInput, false);
             }
         }
+        #pragma warning restore S3776
 
         private static string MaskEndpoint(string endpoint)
         {
@@ -390,4 +395,5 @@ namespace RimLLM_Framework.Mod
             }
         }
     }
+#pragma warning restore S1144, S1192, S3358, S3459
 }

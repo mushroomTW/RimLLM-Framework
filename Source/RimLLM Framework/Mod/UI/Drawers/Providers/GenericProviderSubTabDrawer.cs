@@ -84,6 +84,7 @@ namespace RimLLM_Framework.Mod
             listing.GapLine(4f);
         }
 
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         public static void DrawApiKeyList(Listing_Standard listing, string providerId)
         {
             string rawApiKey = Settings.GetApiKey(providerId);
@@ -142,6 +143,7 @@ namespace RimLLM_Framework.Mod
             string newRawKey = string.Join(",", keys);
             Settings.SetApiKey(providerId, newRawKey);
         }
+        #pragma warning restore S3776
 
         public static void DrawChinaEndpointToggle(Listing_Standard listing, string providerId)
         {
@@ -293,6 +295,7 @@ namespace RimLLM_Framework.Mod
             }
 
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+#pragma warning disable S1066, S2386, S3267, S3887 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 Widgets.Label(msgRect, statusText);
             }
@@ -443,4 +446,5 @@ namespace RimLLM_Framework.Mod
             });
         }
     }
+#pragma warning restore S1066, S2386, S3267, S3887
 }

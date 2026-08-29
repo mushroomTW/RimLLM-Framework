@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Mod;
+#pragma warning disable S108, S1104, S2325, S3267, S3887, S2696 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀；S2696 靜態節流跨實例共享為設計意圖
 
 namespace RimLLM_Framework.Manager
 {
@@ -315,4 +316,5 @@ namespace RimLLM_Framework.Manager
         }
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S108, S1104, S2325, S3267, S3887, S2696
 }

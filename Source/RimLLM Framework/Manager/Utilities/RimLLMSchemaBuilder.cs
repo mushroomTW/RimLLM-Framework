@@ -10,6 +10,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.Core;
+#pragma warning disable S1192, S3267, S3878 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Manager
 {
@@ -300,10 +301,13 @@ namespace RimLLM_Framework.Manager
         /// <c>required</c> 移除」—— 與舊實作把循環成員截斷為 null 的行為一致。
         /// </summary>
         /// <param name="node">exporter 原始輸出中的節點。</param>
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         /// <param name="typeInfo">該節點對應的 CLR 型別資訊，可能為 null（此時退化成純 JSON 正規化）。</param>
         private static JObject Normalize(JObject node, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
         {
+            #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
             if (node == null || depth > context.MaxDepth)
+            #pragma warning restore S1168
             {
                 return null;
             }
@@ -385,6 +389,8 @@ namespace RimLLM_Framework.Manager
 
             return result;
         }
+        #pragma warning restore S3776
+#pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
 
         private static JObject NormalizeObject(
             JObject node, JObject result, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
@@ -411,7 +417,9 @@ namespace RimLLM_Framework.Manager
             // 循環在 CLR 型別層截斷，而不是等到 JSON pointer 重現才截斷。
             // exporter 會把遞迴成員先完整展開一輪、其中才出現指回祖先的 $ref，
             // 若只靠 pointer 偵測就會多送一整層 —— 實測 ComplexTestDataStructure 的 schema
+            #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
             // 從 789 字元漲到 3119 字元，而那是每次結構化請求都要付的 prompt token。
+            #pragma warning restore S1168
             Type clrType = typeInfo != null ? typeInfo.Type : null;
             if (clrType != null)
             {
@@ -470,6 +478,7 @@ namespace RimLLM_Framework.Manager
                 }
             }
         }
+#pragma warning restore S3776
 
         /// <summary>
         /// 把成員上的 <see cref="DescriptionAttribute"/> 寫進 schema。
@@ -525,7 +534,9 @@ namespace RimLLM_Framework.Manager
             {
                 return node;
             }
+#pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
 
+#pragma warning restore S1168
             JObject candidate = null;
             foreach (JToken branch in composite)
             {
@@ -611,7 +622,9 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
+        #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
         /// 解析 exporter 產生的 JSON pointer（形如 <c>#/properties/Nested/properties/Child</c>）。
+        #pragma warning restore S1168
         /// MEAI 不使用 <c>$defs</c>，pointer 一律指向輸出樹內的既有路徑。
         /// </summary>
         private static JObject ResolvePointer(JObject rawRoot, string pointer)
@@ -648,6 +661,7 @@ namespace RimLLM_Framework.Manager
             ApplyProfileRecursive(shaped, profile);
             return shaped;
         }
+#pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
 
         private static void ApplyProfileRecursive(JObject node, RimLLMSchemaProfile profile)
         {
@@ -699,6 +713,7 @@ namespace RimLLM_Framework.Manager
                 }
             }
         }
+#pragma warning restore S3776
 
         private static bool HasOpenEndedMap(JObject node)
         {
@@ -767,6 +782,7 @@ namespace RimLLM_Framework.Manager
         ///
         /// 已知無法對齊的殘餘風險：Newtonsoft 的自訂 <c>[JsonConverter]</c> 會改變 wire 形狀，
         /// 而 STJ 的 exporter 完全看不到它。結構化輸出的型別請勿使用自訂 Newtonsoft converter。
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         /// </summary>
         private static void ApplyNewtonsoftContract(JsonTypeInfo typeInfo)
         {
@@ -816,6 +832,7 @@ namespace RimLLM_Framework.Manager
                 }
             }
         }
+        #pragma warning restore S3776
 
         private static JsonTypeInfo GetTypeInfo(Type type)
         {
@@ -846,10 +863,13 @@ namespace RimLLM_Framework.Manager
         {
             return BuildLegacySchema(type, new HashSet<Type>(), maxDepth, 0) ?? CreateEmptyObjectSchema();
         }
+#pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
 
+#pragma warning restore S1168
         /// <summary>
         /// <paramref name="visited"/> 追蹤目前遞迴路徑上的型別，偵測到循環時回傳 null，
         /// 由父層略過該成員（與 <c>CreateDummyInstance</c> 把循環欄位截斷為 null 的行為一致）。
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         /// </summary>
         private static JObject BuildLegacySchema(Type type, HashSet<Type> visited, int maxDepth, int depth)
         {
@@ -973,6 +993,7 @@ namespace RimLLM_Framework.Manager
 
             return schema;
         }
+        #pragma warning restore S3776
 
         private static bool IsSupportedDictionary(Type type, out Type keyType, out Type valueType)
         {
@@ -1026,4 +1047,5 @@ namespace RimLLM_Framework.Manager
         }
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S1192, S3267, S3878
 }

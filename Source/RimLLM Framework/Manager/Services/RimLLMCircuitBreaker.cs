@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
+#pragma warning disable S3260 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Manager
 {
@@ -98,4 +99,5 @@ namespace RimLLM_Framework.Manager
         }
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S3260
 }

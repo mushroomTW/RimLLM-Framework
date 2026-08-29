@@ -5,6 +5,7 @@ using Newtonsoft.Json;
 using Verse;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
+#pragma warning disable S108, S2223, S2486, S3260 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Mod
 {
@@ -267,4 +268,5 @@ namespace RimLLM_Framework.Mod
         }
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S108, S2223, S2486, S3260
 }

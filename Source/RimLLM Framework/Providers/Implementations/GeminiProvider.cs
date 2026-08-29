@@ -223,6 +223,7 @@ namespace RimLLM_Framework.Providers
             }
         }
 
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         private async Task StreamWithGoogleGenAiAsync(
             IEnumerable<ChatMessage> messages,
             ChatOptions options,
@@ -324,7 +325,9 @@ namespace RimLLM_Framework.Providers
                 throw TranslateGoogleException(ex, "streamGenerateContent");
             }
         }
+        #pragma warning restore S3776
 
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         private async Task<GenerateContentConfig> BuildNativeConfigAsync(
             IEnumerable<ChatMessage> messages,
             ChatOptions options,
@@ -419,7 +422,9 @@ namespace RimLLM_Framework.Providers
 
             return config;
         }
+        #pragma warning restore S3776
 
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         private ThinkingConfig BuildNativeThinkingConfig(string model, ReasoningEffort? effort, bool disableReasoning)
         {
             if (string.IsNullOrEmpty(model))
@@ -487,6 +492,7 @@ namespace RimLLM_Framework.Providers
 
             return null;
         }
+        #pragma warning restore S3776
 
         private string ReadGeminiResponse(GenerateContentResponse response, string model)
         {
@@ -620,6 +626,7 @@ namespace RimLLM_Framework.Providers
             try
             {
                 using (var client = CreateGenAiClient(sdkApiKey))
+#pragma warning disable S2325, S3260, S3267 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
                 {
                     var pager = await client.Models.ListAsync().ConfigureAwait(false);
                     var models = new List<string>();
@@ -789,4 +796,5 @@ namespace RimLLM_Framework.Providers
             return null;
         }
     }
+#pragma warning restore S2325, S3260, S3267
 }

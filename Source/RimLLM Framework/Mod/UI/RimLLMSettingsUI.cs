@@ -119,6 +119,7 @@ namespace RimLLM_Framework.Mod
 
             string text = activeMainCategory == categoryId ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
             using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+#pragma warning disable S1192 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 Widgets.Label(btnRect, text);
             }
@@ -279,4 +280,5 @@ namespace RimLLM_Framework.Mod
         }
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S1192
 }

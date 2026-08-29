@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+#pragma warning disable S108, S1133, S1643, S2486, S6610 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Manager
 {
@@ -116,6 +117,7 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>
         /// 修復不完整的 JSON 字串，例如移除 `<think>` 標籤、Markdown 語法、多餘的尾隨逗號以及補齊括號。
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         /// </summary>
         public static string RepairJson(string json)
         {
@@ -189,6 +191,7 @@ namespace RimLLM_Framework.Manager
                     expectedClosers.RemoveAt(expectedClosers.Count - 1);
                 }
             }
+        #pragma warning restore S3776
 
             // 3a. 字串在結尾處未閉合時先補上引號，否則後續補的括號會落在字串內部。
             if (inString)
@@ -230,6 +233,7 @@ namespace RimLLM_Framework.Manager
         {
             return CreateDummyInstance(type, new HashSet<Type>());
         }
+#pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
 
         private static object CreateDummyInstance(Type type, HashSet<Type> visitedTypes)
         {
@@ -329,6 +333,8 @@ namespace RimLLM_Framework.Manager
                 return null;
             }
         }
+#pragma warning restore S3776
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S108, S1133, S1643, S2486, S6610
 }

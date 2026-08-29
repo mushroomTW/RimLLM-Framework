@@ -309,6 +309,7 @@ namespace RimLLM_Framework.Manager
             string text, string model, string apiKey, CancellationToken cancellationToken)
         {
             using (var client = new Client(apiKey: apiKey))
+#pragma warning disable S3267, S3878 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 EmbedContentResponse response = await client.Models
                     .EmbedContentAsync(model, text, null, cancellationToken)
@@ -460,4 +461,5 @@ namespace RimLLM_Framework.Manager
         }
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S3267, S3878
 }

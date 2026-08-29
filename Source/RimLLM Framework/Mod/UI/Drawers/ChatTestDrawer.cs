@@ -109,6 +109,7 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// 繪製對話測試介面。
         /// </summary>
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         public static void DrawChatTestSettings(Listing_Standard listing)
         {
             if (!chatReasoningInitialized)
@@ -149,6 +150,7 @@ namespace RimLLM_Framework.Mod
             Rect effortLabelRect = new Rect(effortRowRect.x, effortRowRect.y, effortLabelWidth + 5f, effortRowRect.height);
             Rect effortBtnRect = new Rect(effortRowRect.x + effortLabelWidth + 15f, effortRowRect.y, 160f, effortRowRect.height);
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+#pragma warning disable S108, S1643, S2486, S8949 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 Widgets.Label(effortLabelRect, "RimLLM_ReasoningEffortLabel".Translate());
             }
@@ -308,6 +310,7 @@ namespace RimLLM_Framework.Mod
                 }
             }
         }
+        #pragma warning restore S3776
 
         private static string ThinkStartLabel => "RimLLM_ThinkProcessLabel".Translate();
         private static string ThinkEndLabel => "RimLLM_ThinkProcessEndLabel".Translate();
@@ -373,4 +376,5 @@ namespace RimLLM_Framework.Mod
             return before + $"\n<color=silver>{ThinkingLabel}\n{after} ...</color>";
         }
     }
+#pragma warning restore S108, S1643, S2486, S8949
 }

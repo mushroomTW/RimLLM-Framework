@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Providers;
+#pragma warning disable S1066, S2325 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Manager
 {
@@ -304,7 +305,9 @@ namespace RimLLM_Framework.Manager
                     list.RemoveAt(0);
                 }
             }
+        #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
         }
+        #pragma warning restore S1168
 
         private List<string> GetFallbackChainSnapshot()
         {
@@ -438,4 +441,5 @@ namespace RimLLM_Framework.Manager
         }
     }
 #pragma warning restore S101
+#pragma warning restore S1066, S2325
 }

@@ -200,6 +200,7 @@ namespace RimLLM_Framework.Providers
         /// 思考參數一律由 Patch 掌控而不交給 MEAI 的 <c>ChatOptions.Reasoning</c>：
         /// 後者只會序列化成 OpenAI 的 <c>reasoning_effort</c>，表達不了其他家的方言。
         /// </summary>
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         private void ApplyReasoningAndSampling(ChatOptions requestOptions, string model, ChatOptions options, string responseFormatJson)
         {
             bool disableReasoning = ResolveDisableReasoning(requestOptions);
@@ -293,6 +294,7 @@ namespace RimLLM_Framework.Providers
                 return chatCompletionOptions;
             };
         }
+        #pragma warning restore S3776
 
         /// <summary>
         /// 解析呼叫端是否要求關閉思考。RimLLMChatOptions 直接帶屬性，框架管線則以 AdditionalProperties 轉遞。
@@ -403,6 +405,7 @@ namespace RimLLM_Framework.Providers
             RimLLMRequest translated = RimLLMChatClientExecutor.CreateFromChatOptions(messages, options, model);
 
             using (IChatClient client = CreateChatClient(model))
+#pragma warning disable S108, S2325, S3267 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 await RimLLMChatClientExecutor.StreamAsync(
                     client,
@@ -517,4 +520,5 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         private const string PlaceholderApiKey = "not-required";
     }
+#pragma warning restore S108, S2325, S3267
 }

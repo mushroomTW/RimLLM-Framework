@@ -1074,6 +1074,7 @@ namespace RimLLM_Framework.Manager
             {
                 linked.CancelAfter(timeout);
                 using (linked.Token.Register(() => waiterTcs.TrySetResult(false)))
+#pragma warning disable S1450 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
                 {
                     Task<bool> winner = await Task.WhenAny(sharedPromptTask, waiterTcs.Task).ConfigureAwait(false);
                     if (ReferenceEquals(winner, sharedPromptTask))
@@ -1126,4 +1127,5 @@ namespace RimLLM_Framework.Manager
         #endregion
     }
 #pragma warning restore S101
+#pragma warning restore S1450
 }

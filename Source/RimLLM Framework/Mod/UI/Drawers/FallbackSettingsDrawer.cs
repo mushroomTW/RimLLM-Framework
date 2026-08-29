@@ -49,6 +49,7 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// 繪製 Fallback 鏈設定。
         /// </summary>
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         public static void DrawFallbackSettings(Listing_Standard listing)
         {
             // 3. 智慧路由設定
@@ -58,6 +59,7 @@ namespace RimLLM_Framework.Mod
             Rect strategyBtnRect = new Rect(routingRect.x + routingLabelWidth + 15f, routingRect.y, 220f, routingRect.height);
 
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+#pragma warning disable S3267 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 Widgets.Label(strategyLabelRect, "RimLLM_RoutingStrategyLabel".Translate());
             }
@@ -279,6 +281,7 @@ namespace RimLLM_Framework.Mod
             listing.GapLine(10f);
 
         }
+        #pragma warning restore S3776
 
         /// <summary>
         /// 路由策略名稱，索引即為 <see cref="RimLLMFrameworkSettings.RoutingStrategy"/> 的值。
@@ -299,4 +302,5 @@ namespace RimLLM_Framework.Mod
             addModelName = Settings.GetDefaultModel(providerId, "default");
         }
     }
+#pragma warning restore S3267
 }

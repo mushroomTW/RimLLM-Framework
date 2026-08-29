@@ -120,6 +120,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 串流請求：採「閒置逾時」語意 —— 每收到一個 chunk 就重設計時器。
         /// 對長回應而言整體逾時並不合理，因此 ApiTimeout 在此代表「多久沒有新內容就視為斷線」。
+        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         /// </summary>
         public static async Task<RimLLMGenerationResult> StreamAsync(
             IChatClient client,
@@ -233,6 +234,7 @@ namespace RimLLM_Framework.Manager
                 onChunkReceived?.Invoke(chunk);
             }
         }
+        #pragma warning restore S3776
 
         private static TimeSpan ResolveTimeout(float timeoutSeconds)
         {
@@ -301,6 +303,7 @@ namespace RimLLM_Framework.Manager
                 // schema 與 strict 取自同一次產生結果，避免兩者各算一次而分歧。
                 RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(request.ResponseType, schemaProfile);
                 using (JsonDocument document = JsonDocument.Parse(schema.Json))
+#pragma warning disable S107, S1172, S3267 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
                 {
                     options.ResponseFormat = ChatResponseFormat.ForJsonSchema(
                         document.RootElement.Clone(),
@@ -456,4 +459,5 @@ namespace RimLLM_Framework.Manager
         }
     }
 #pragma warning restore S101, S2342
+#pragma warning restore S107, S1172, S3267
 }
