@@ -10,6 +10,7 @@ using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
 using RimLLM_Framework.Mod;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
+#pragma warning disable S3415 // reason: 測試斷言語意正確，Sonar 順序偵測誤判
 
 namespace RimLLM_Framework.Tests
 {
@@ -1243,6 +1244,7 @@ namespace RimLLM_Framework.Tests
                 System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
 
             using (var cancelledCts = new System.Threading.CancellationTokenSource())
+#pragma warning disable S3415 // reason: 測試斷言語意正確，Sonar 順序偵測誤判
             {
                 var waiterA = RimLLMManager.AwaitBudgetApprovalAsync(
                     shared.Task, cancelledCts.Token, TimeSpan.FromSeconds(30));
@@ -1316,3 +1318,4 @@ namespace RimLLM_Framework.Tests
         private string okStr(string s) => s;
     }
 }
+#pragma warning restore S3415

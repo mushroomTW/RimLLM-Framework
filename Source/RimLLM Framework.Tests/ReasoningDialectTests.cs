@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using Newtonsoft.Json.Linq;
 using RimLLM_Framework.Providers;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
+#pragma warning disable S2701 // reason: 測試斷言語意保留，Sonar 規則誤判
 
 namespace RimLLM_Framework.Tests
 {
@@ -449,3 +450,4 @@ namespace RimLLM_Framework.Tests
         }
     }
 }
+#pragma warning restore S2701
