@@ -7,7 +7,7 @@
           <Format>opencover</Format>
           <Include>[RimLLM*]*</Include>
           <Exclude>[*Tests]*</Exclude>
-          <ExcludeByFile>**/obj/**,**/bin/**</ExcludeByFile>
+          <ExcludeByFile>**/obj/**,**/bin/**,**/Mod/UI/**,**/Mod/RimLLMFrameworkMod.cs</ExcludeByFile>
           <SingleHit>false</SingleHit>
           <UseSourceLink>false</UseSourceLink>
         </Configuration>
