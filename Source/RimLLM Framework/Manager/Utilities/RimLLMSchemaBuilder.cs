@@ -307,9 +307,7 @@ namespace RimLLM_Framework.Manager
         [SuppressMessage("csharpsquid", "S1168", Justification = "null 表示不可表達節點，與空集合語意不同，呼叫端需區分")]
         private static JObject Normalize(JObject node, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
         {
-            #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
             if (node == null || depth > context.MaxDepth)
-            #pragma warning restore S1168
             {
                 return null; // NOSONAR
             }
@@ -419,9 +417,7 @@ namespace RimLLM_Framework.Manager
             // 循環在 CLR 型別層截斷，而不是等到 JSON pointer 重現才截斷。
             // exporter 會把遞迴成員先完整展開一輪、其中才出現指回祖先的 $ref，
             // 若只靠 pointer 偵測就會多送一整層 —— 實測 ComplexTestDataStructure 的 schema
-            #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
             // 從 789 字元漲到 3119 字元，而那是每次結構化請求都要付的 prompt token。
-            #pragma warning restore S1168
             Type clrType = typeInfo != null ? typeInfo.Type : null;
             if (clrType != null)
             {
@@ -536,9 +532,7 @@ namespace RimLLM_Framework.Manager
             {
                 return node;
             }
-#pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
 
-#pragma warning restore S1168
             JObject candidate = null;
             foreach (JToken branch in composite)
             {
@@ -624,9 +618,7 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
         /// 解析 exporter 產生的 JSON pointer（形如 <c>#/properties/Nested/properties/Child</c>）。
-        #pragma warning restore S1168
         /// MEAI 不使用 <c>$defs</c>，pointer 一律指向輸出樹內的既有路徑。
         /// </summary>
         private static JObject ResolvePointer(JObject rawRoot, string pointer)
@@ -865,9 +857,7 @@ namespace RimLLM_Framework.Manager
         {
             return BuildLegacySchema(type, new HashSet<Type>(), maxDepth, 0) ?? CreateEmptyObjectSchema();
         }
-#pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
 
-#pragma warning restore S1168
         /// <summary>
         /// <paramref name="visited"/> 追蹤目前遞迴路徑上的型別，偵測到循環時回傳 null，
         /// 由父層略過該成員（與 <c>CreateDummyInstance</c> 把循環欄位截斷為 null 的行為一致）。
