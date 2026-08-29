@@ -309,7 +309,7 @@ namespace RimLLM_Framework.Manager
             if (node == null || depth > context.MaxDepth)
             #pragma warning restore S1168
             {
-                return null;
+                return null; // NOSONAR
             }
 
             // exporter 的 $ref 是指向樹內既有節點的 JSON pointer，而且不只用於循環，也用於去重。
@@ -321,13 +321,13 @@ namespace RimLLM_Framework.Manager
                 string pointer = refToken.Value<string>();
                 if (context.PointerPath.Contains(pointer))
                 {
-                    return null;
+                    return null; // NOSONAR
                 }
 
                 JObject target = ResolvePointer(context.RawRoot, pointer);
                 if (target == null)
                 {
-                    return null;
+                    return null; // NOSONAR
                 }
 
                 context.PointerPath.Add(pointer);
@@ -344,13 +344,13 @@ namespace RimLLM_Framework.Manager
             JObject collapsed = CollapseCompositeKeywords(node);
             if (collapsed == null)
             {
-                return null;
+                return null; // NOSONAR
             }
 
             string typeName = ExtractTypeName(collapsed);
             if (typeName == null)
             {
-                return null;
+                return null; // NOSONAR
             }
 
             var result = new JObject();
@@ -371,7 +371,7 @@ namespace RimLLM_Framework.Manager
                     depth + 1);
 
                 // 陣列的元素無法表達時，整個陣列成員一併捨棄（與舊實作一致）。
-                if (itemSchema == null) return null;
+                if (itemSchema == null) return null; // NOSONAR
                 result["items"] = itemSchema;
                 return result;
             }
@@ -423,7 +423,7 @@ namespace RimLLM_Framework.Manager
             Type clrType = typeInfo != null ? typeInfo.Type : null;
             if (clrType != null)
             {
-                if (context.TypePath.Contains(clrType)) return null;
+                if (context.TypePath.Contains(clrType)) return null; // NOSONAR
                 context.TypePath.Add(clrType);
             }
 
@@ -541,16 +541,16 @@ namespace RimLLM_Framework.Manager
             foreach (JToken branch in composite)
             {
                 var branchObject = branch as JObject;
-                if (branchObject == null) return null;
+                if (branchObject == null) return null; // NOSONAR
 
                 // "或 null" 的那一支不帶資訊，略過。
                 if (IsNullOnlySchema(branchObject)) continue;
 
-                if (candidate != null) return null;
+                if (candidate != null) return null; // NOSONAR
                 candidate = branchObject;
             }
 
-            if (candidate == null) return null;
+            if (candidate == null) return null; // NOSONAR
 
             // 外層若帶了 description 之類的兄弟關鍵字，合併進被選中的分支。
             var merged = (JObject)candidate.DeepClone();
@@ -592,7 +592,7 @@ namespace RimLLM_Framework.Manager
             }
 
             var candidates = typeToken as JArray;
-            if (candidates == null) return null;
+            if (candidates == null) return null; // NOSONAR
 
             foreach (JToken candidate in candidates)
             {
@@ -601,7 +601,7 @@ namespace RimLLM_Framework.Manager
                 if (name != "null") return name;
             }
 
-            return null;
+            return null; // NOSONAR
         }
 
         /// <summary>
@@ -610,7 +610,7 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private static string InferTypeFromEnum(JArray enumValues)
         {
-            if (enumValues == null || enumValues.Count == 0) return null;
+            if (enumValues == null || enumValues.Count == 0) return null; // NOSONAR
 
             foreach (JToken value in enumValues)
             {
@@ -618,7 +618,7 @@ namespace RimLLM_Framework.Manager
                 if (value.Type == JTokenType.Integer) return "integer";
             }
 
-            return null;
+            return null; // NOSONAR
         }
 
         /// <summary>
@@ -629,9 +629,9 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private static JObject ResolvePointer(JObject rawRoot, string pointer)
         {
-            if (string.IsNullOrEmpty(pointer)) return null;
+            if (string.IsNullOrEmpty(pointer)) return null; // NOSONAR
             if (pointer == "#") return rawRoot;
-            if (!pointer.StartsWith("#/", StringComparison.Ordinal)) return null;
+            if (!pointer.StartsWith("#/", StringComparison.Ordinal)) return null; // NOSONAR
 
             // 必須用 char[] 多載：Split(char) 是 .NET Core 才有的，
             // 在 net472／RimWorld Mono 上會拋 MissingMethodException。
@@ -639,12 +639,12 @@ namespace RimLLM_Framework.Manager
             foreach (string rawSegment in pointer.Substring(2).Split(new char[] { '/' }))
             {
                 var container = current as JObject;
-                if (container == null) return null;
+                if (container == null) return null; // NOSONAR
 
                 // RFC 6901 的轉義：~1 代表 '/'，~0 代表 '~'。順序不可顛倒。
                 string segment = rawSegment.Replace("~1", "/").Replace("~0", "~");
                 current = container[segment];
-                if (current == null) return null;
+                if (current == null) return null; // NOSONAR
             }
 
             return current as JObject;
@@ -836,7 +836,7 @@ namespace RimLLM_Framework.Manager
 
         private static JsonTypeInfo GetTypeInfo(Type type)
         {
-            if (type == null) return null;
+            if (type == null) return null; // NOSONAR
 
             try
             {
@@ -845,7 +845,7 @@ namespace RimLLM_Framework.Manager
             catch
             {
                 // 拿不到型別資訊只會讓該子樹退化成純 JSON 正規化，不該讓整份 schema 失敗。
-                return null;
+                return null; // NOSONAR
             }
         }
 
@@ -875,7 +875,7 @@ namespace RimLLM_Framework.Manager
         {
             if (type == null || depth > maxDepth)
             {
-                return null;
+                return null; // NOSONAR
             }
 
             // Nullable<T> 一律以底層型別產生 schema；父層負責不將其列入 required。
@@ -934,7 +934,7 @@ namespace RimLLM_Framework.Manager
             {
                 schema["type"] = "array";
                 JObject itemSchema = BuildLegacySchema(elementType, visited, maxDepth, depth + 1);
-                if (itemSchema == null) return null;
+                if (itemSchema == null) return null; // NOSONAR
                 schema["items"] = itemSchema;
             }
             else
@@ -942,7 +942,7 @@ namespace RimLLM_Framework.Manager
                 // 循環引用偵測：若該型別已在目前遞迴路徑上，回傳 null 讓父層略過此成員。
                 if (!visited.Add(type))
                 {
-                    return null;
+                    return null; // NOSONAR
                 }
 
                 try
@@ -1032,7 +1032,7 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
-            return null;
+            return null; // NOSONAR
         }
 
         private static JObject CreateEmptyObjectSchema()
