@@ -394,9 +394,11 @@ namespace RimLLM_Framework.Manager
 
             for (int i = 0; i < v1.Length; i++)
             {
-                dotProduct += v1[i] * v2[i];
-                mag1 += v1[i] * v1[i];
-                mag2 += v2[i] * v2[i];
+                float a = v1[i];
+                float b = v2[i];
+                dotProduct += (double)a * b;
+                mag1 += (double)a * a;
+                mag2 += (double)b * b;
             }
 
             if (mag1 == 0 || mag2 == 0) return 0f;
@@ -419,24 +421,32 @@ namespace RimLLM_Framework.Manager
 
             if (grams1.Count == 0 || grams2.Count == 0) return 0f;
 
-            var allGrams = new HashSet<string>(grams1.Keys);
-            foreach (var key in grams2.Keys) allGrams.Add(key);
-
-            double dotProduct = 0;
             double mag1 = 0;
-            double mag2 = 0;
-
-            foreach (var gram in allGrams)
+            foreach (int count in grams1.Values)
             {
-                double val1 = grams1.TryGetValue(gram, out int count1) ? count1 : 0;
-                double val2 = grams2.TryGetValue(gram, out int count2) ? count2 : 0;
+                mag1 += (double)count * count;
+            }
 
-                dotProduct += val1 * val2;
-                mag1 += val1 * val1;
-                mag2 += val2 * val2;
+            double mag2 = 0;
+            foreach (int count in grams2.Values)
+            {
+                mag2 += (double)count * count;
             }
 
             if (mag1 == 0 || mag2 == 0) return 0f;
+
+            double dotProduct = 0;
+            var smaller = grams1.Count <= grams2.Count ? grams1 : grams2;
+            var larger = grams1.Count <= grams2.Count ? grams2 : grams1;
+
+            foreach (var pair in smaller)
+            {
+                if (larger.TryGetValue(pair.Key, out int otherCount))
+                {
+                    dotProduct += (double)pair.Value * otherCount;
+                }
+            }
+
             return (float)(dotProduct / (Math.Sqrt(mag1) * Math.Sqrt(mag2)));
         }
 

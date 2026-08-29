@@ -6,15 +6,6 @@ using Microsoft.Extensions.AI;
 namespace RimLLM_Framework
 {
 #pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
-    internal interface IOpenAIChatClientFactory
-    {
-        IChatClient Create(string apiKey, string model, string endpoint = null);
-    }
-
-    internal interface IGeminiChatClientFactory
-    {
-        IChatClient Create(string apiKey, string model);
-    }
 
     public interface IChatClientProvider
     {

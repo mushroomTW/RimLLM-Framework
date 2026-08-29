@@ -97,6 +97,14 @@ namespace RimLLM_Framework.Manager
             }
             return true;
         }
+
+        /// <summary>
+        /// 清除所有供應商的熔斷記錄與冷卻時間。
+        /// </summary>
+        public void Clear()
+        {
+            _providerHealth.Clear();
+        }
     }
 #pragma warning restore S101, S2342
 #pragma warning restore S3260

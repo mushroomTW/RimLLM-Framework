@@ -21,7 +21,7 @@ namespace RimLLM_Framework.Manager
             string model,
             CancellationToken cancellationToken = default)
         {
-            var list = new List<ChatMessage>(messages ?? new List<ChatMessage>());
+            var list = messages != null ? new List<ChatMessage>(messages) : new List<ChatMessage>();
             string systemPrompt = null;
             if (list.Count > 0 && list[0]?.Role == ChatRole.System)
             {
@@ -243,7 +243,7 @@ namespace RimLLM_Framework.Manager
 
         internal static IList<ChatMessage> BuildMessages(RimLLMRequest request)
         {
-            var messages = new List<ChatMessage>(request.Messages ?? new List<ChatMessage>());
+            var messages = request.Messages != null ? new List<ChatMessage>(request.Messages) : new List<ChatMessage>();
             string systemPrompt = request.GetEffectiveSystemPrompt();
             if (!string.IsNullOrEmpty(systemPrompt) &&
                 !messages.Exists(m => m != null && m.Role == ChatRole.System))

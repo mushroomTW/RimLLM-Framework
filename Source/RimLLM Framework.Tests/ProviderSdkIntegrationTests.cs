@@ -78,10 +78,9 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void OfficialFactoriesCreateAdaptersWithoutSendingRequests()
+        public void OfficialProvidersCreateAdaptersWithoutSendingRequests()
         {
-            var openAiFactory = new OpenAIChatClientFactory();
-            using (IChatClient openAiClient = openAiFactory.Create(
+            using (IChatClient openAiClient = OpenAIProvider.CreateOpenAiChatClient(
                 "unit-test-key",
                 "unit-test-model",
                 "https://example.invalid/v1/chat/completions"))
@@ -89,23 +88,20 @@ namespace RimLLM_Framework.Tests
                 Assert.IsNotNull(openAiClient);
             }
 
-            var geminiFactory = new GeminiChatClientFactory();
-            using (IChatClient geminiClient = geminiFactory.Create("unit-test-key", "gemini-2.5-flash"))
+            using (IChatClient geminiClient = GeminiProvider.CreateGeminiChatClient("unit-test-key", "gemini-2.5-flash"))
             {
                 Assert.IsNotNull(geminiClient);
             }
         }
 
         [Test]
-        public void FactoriesRejectMissingCredentialsAndModels()
+        public void ProvidersRejectMissingCredentialsAndModels()
         {
-            var openAiFactory = new OpenAIChatClientFactory();
-            Assert.Throws<ArgumentException>(() => openAiFactory.Create("", "model"));
-            Assert.Throws<ArgumentException>(() => openAiFactory.Create("key", ""));
+            Assert.Throws<ArgumentException>(() => OpenAIProvider.CreateOpenAiChatClient("", "model"));
+            Assert.Throws<ArgumentException>(() => OpenAIProvider.CreateOpenAiChatClient("key", ""));
 
-            var geminiFactory = new GeminiChatClientFactory();
-            Assert.Throws<ArgumentException>(() => geminiFactory.Create("", "model"));
-            Assert.Throws<ArgumentException>(() => geminiFactory.Create("key", ""));
+            Assert.Throws<ArgumentException>(() => GeminiProvider.CreateGeminiChatClient("", "model"));
+            Assert.Throws<ArgumentException>(() => GeminiProvider.CreateGeminiChatClient("key", ""));
         }
 
         [Test]
@@ -160,8 +156,8 @@ namespace RimLLM_Framework.Tests
         {
             Assert.AreEqual(
                 "https://example.invalid/v1",
-                OpenAIChatClientFactory.NormalizeEndpoint(" https://example.invalid/v1/chat/completions/ "));
-            Assert.IsNull(OpenAIChatClientFactory.NormalizeEndpoint(null));
+                OpenAIProvider.NormalizeEndpoint(" https://example.invalid/v1/chat/completions/ "));
+            Assert.IsNull(OpenAIProvider.NormalizeEndpoint(null));
         }
 
         [Test]

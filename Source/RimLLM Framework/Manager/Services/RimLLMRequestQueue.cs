@@ -84,8 +84,12 @@ namespace RimLLM_Framework.Manager
 
             lock (_queueLock)
             {
-                _waitingQueue.Add(entry);
-                _waitingQueue.Sort();
+                int index = _waitingQueue.BinarySearch(entry);
+                if (index < 0)
+                {
+                    index = ~index;
+                }
+                _waitingQueue.Insert(index, entry);
             }
 
             ProcessQueue();

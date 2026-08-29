@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -65,11 +65,20 @@ namespace RimLLM_Framework.Mod
             // 2. API 金鑰列表
             DrawApiKeyList(listing, providerId);
 
-            // 3. Endpoint 清除
-            Settings.SetEndpoint(providerId, null);
-
-            // 3.1 支援中國端點切換 (僅 Kimi, MiniMax, Qwen)
-            DrawChinaEndpointToggle(listing, providerId);
+            // 3. Endpoint 設定（OpenAICompatible 模式顯示自訂端點與本地偵測；其他供應商若有中國端點則顯示切換）
+            if (providerId == ProviderIds.OpenAICompatible)
+            {
+                string endpoint = Settings.GetEndpoint(providerId, "http://localhost:1234/v1");
+                listing.Label("RimLLM_ApiEndpoint".Translate());
+                endpoint = listing.TextEntry(endpoint);
+                Settings.SetEndpoint(providerId, endpoint?.Trim());
+                LocalProviderSubTabDrawer.DrawLocalDetectionControls(listing, providerId);
+                listing.Gap(8f);
+            }
+            else
+            {
+                DrawChinaEndpointToggle(listing, providerId);
+            }
 
             // 4. 動態獲取模型列表與展示
             DrawModelListSection(listing, providerId);

@@ -1,4 +1,4 @@
-﻿extern alias bclasync;
+extern alias bclasync;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -32,8 +32,6 @@ namespace RimLLM_Framework.Providers
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.SemaphoreSlim> _cacheCreationLocks =
             new System.Collections.Concurrent.ConcurrentDictionary<string, System.Threading.SemaphoreSlim>();
 
-        private readonly IGeminiChatClientFactory _chatClientFactory;
-
         /// <summary>
         /// Gemini 原生安全設定。維持空集合時使用 Gemini API 預設安全策略。
         /// 這是 provider-specific 設定，不會洩漏到共用 SDK facade。
@@ -54,18 +52,28 @@ namespace RimLLM_Framework.Providers
             PreferredSchemaProfile = RimLLMSchemaProfile.Gemini
         };
 
-        public GeminiProvider(IRimLLMSettings settings) : this(settings, new GeminiChatClientFactory())
+        public GeminiProvider(IRimLLMSettings settings) : base(settings)
         {
         }
 
-        private protected GeminiProvider(IRimLLMSettings settings, IGeminiChatClientFactory chatClientFactory) : base(settings)
+        public virtual IChatClient CreateChatClient(string model)
         {
-            _chatClientFactory = chatClientFactory ?? throw new ArgumentNullException(nameof(chatClientFactory));
+            return CreateGeminiChatClient(Settings.GetActiveApiKey(ProviderId), model);
         }
 
-        public IChatClient CreateChatClient(string model)
+        public static IChatClient CreateGeminiChatClient(string apiKey, string model)
         {
-            return _chatClientFactory.Create(Settings.GetActiveApiKey(ProviderId), model);
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new ArgumentException("Gemini API key 不得為空。", nameof(apiKey));
+            }
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                throw new ArgumentException("Gemini model 不得為空。", nameof(model));
+            }
+
+            var client = new Client(apiKey: apiKey);
+            return client.AsIChatClient(model);
         }
 
         public Task<string> GenerateStructuredAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)

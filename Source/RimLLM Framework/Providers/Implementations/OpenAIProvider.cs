@@ -22,7 +22,6 @@ namespace RimLLM_Framework.Providers
         private readonly string _providerId;
         private readonly string _defaultEndpoint;
         private readonly string _defaultTestModel;
-        private readonly IOpenAIChatClientFactory _chatClientFactory;
 
         public override string ProviderId => _providerId;
         protected virtual string DefaultEndpoint => _defaultEndpoint;
@@ -47,34 +46,55 @@ namespace RimLLM_Framework.Providers
         };
 
         public OpenAIProvider(IRimLLMSettings settings)
-            : this(settings, ProviderIds.OpenAI, "https://api.openai.com/v1/chat/completions", "gpt-4o-mini", new OpenAIChatClientFactory())
+            : this(settings, ProviderIds.OpenAI, "https://api.openai.com/v1/chat/completions", "gpt-4o-mini")
         {
         }
 
         protected OpenAIProvider(IRimLLMSettings settings, string providerId, string defaultEndpoint, string defaultTestModel)
-            : this(settings, providerId, defaultEndpoint, defaultTestModel, new OpenAIChatClientFactory())
-        {
-        }
-
-        private protected OpenAIProvider(
-            IRimLLMSettings settings,
-            string providerId,
-            string defaultEndpoint,
-            string defaultTestModel,
-            IOpenAIChatClientFactory chatClientFactory)
             : base(settings)
         {
             _providerId = providerId;
             _defaultEndpoint = defaultEndpoint;
             _defaultTestModel = defaultTestModel;
-            _chatClientFactory = chatClientFactory ?? throw new ArgumentNullException(nameof(chatClientFactory));
         }
 
         public virtual IChatClient CreateChatClient(string model)
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
-            return _chatClientFactory.Create(apiKey, model, endpoint);
+            return CreateOpenAiChatClient(apiKey, model, endpoint);
+        }
+
+        public static IChatClient CreateOpenAiChatClient(string apiKey, string model, string endpoint = null)
+        {
+            if (string.IsNullOrWhiteSpace(apiKey))
+                throw new ArgumentException("OpenAI API key 不得為空。", nameof(apiKey));
+            if (string.IsNullOrWhiteSpace(model))
+                throw new ArgumentException("OpenAI model 不得為空。", nameof(model));
+
+            var options = new OpenAIClientOptions();
+            string normalizedEndpoint = NormalizeEndpoint(endpoint);
+            if (!string.IsNullOrEmpty(normalizedEndpoint))
+            {
+                options.Endpoint = new Uri(normalizedEndpoint, UriKind.Absolute);
+            }
+
+            var client = new ChatClient(model, new ApiKeyCredential(apiKey), options);
+            return client.AsIChatClient();
+        }
+
+        private static readonly char[] SlashChars = new char[] { '/' };
+
+        public static string NormalizeEndpoint(string endpoint)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint)) return null;
+            string normalized = endpoint.Trim().TrimEnd(SlashChars);
+            const string suffix = "/chat/completions";
+            if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd(SlashChars);
+            }
+            return normalized;
         }
 
         /// <summary>
@@ -473,7 +493,7 @@ namespace RimLLM_Framework.Providers
         public override async Task<List<string>> FetchAvailableModelsAsync()
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
-            string endpoint = OpenAIChatClientFactory.NormalizeEndpoint(
+            string endpoint = NormalizeEndpoint(
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint));
 
             var options = new OpenAIClientOptions();

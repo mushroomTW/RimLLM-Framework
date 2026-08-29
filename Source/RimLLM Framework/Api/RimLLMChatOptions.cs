@@ -1,6 +1,4 @@
 using System;
-using System.Linq;
-using System.Reflection;
 using Microsoft.Extensions.AI;
 
 namespace RimLLM_Framework
@@ -52,15 +50,6 @@ namespace RimLLM_Framework
         }
 
         /// <summary>
-        /// ChatOptions 的可寫入公開屬性。以反射列舉而非硬編清單，
-        /// 未來 MEAI 新增欄位時不需同步修改此處。
-        /// </summary>
-        private static readonly PropertyInfo[] BaseProperties = typeof(ChatOptions)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanRead && p.CanWrite)
-            .ToArray();
-
-        /// <summary>
         /// 覆寫 MEAI 的 <see cref="ChatOptions.Clone"/>，讓複製結果保留框架專屬欄位。
         /// MEAI 的 base.Clone() 是 <c>new ChatOptions()</c> 而非 MemberwiseClone，
         /// 因此不能直接轉型；此處先用它取得正確複製的基底值，再搬到新的衍生實例上。
@@ -72,8 +61,24 @@ namespace RimLLM_Framework
             // 交給 base 處理基底欄位的複製語意（AdditionalProperties、StopSequences、Tools 等集合）。
             ChatOptions baseClone = base.Clone();
 
-            var clone = new RimLLMChatOptions
+            return new RimLLMChatOptions
             {
+                ModelId = baseClone.ModelId,
+                Temperature = baseClone.Temperature,
+                MaxOutputTokens = baseClone.MaxOutputTokens,
+                TopP = baseClone.TopP,
+                TopK = baseClone.TopK,
+                FrequencyPenalty = baseClone.FrequencyPenalty,
+                PresencePenalty = baseClone.PresencePenalty,
+                Seed = baseClone.Seed,
+                StopSequences = baseClone.StopSequences,
+                Tools = baseClone.Tools,
+                ToolMode = baseClone.ToolMode,
+                ResponseFormat = baseClone.ResponseFormat,
+                Reasoning = baseClone.Reasoning,
+                AdditionalProperties = baseClone.AdditionalProperties,
+                RawRepresentationFactory = baseClone.RawRepresentationFactory,
+
                 Priority = Priority,
                 MinFallbackLevel = MinFallbackLevel,
                 CachedContext = CachedContext,
@@ -81,12 +86,6 @@ namespace RimLLM_Framework
                 OnStreamRestart = OnStreamRestart,
                 DisableReasoning = DisableReasoning
             };
-
-            foreach (PropertyInfo property in BaseProperties)
-            {
-                property.SetValue(clone, property.GetValue(baseClone));
-            }
-            return clone;
         }
     }
 #pragma warning restore S101, S2342

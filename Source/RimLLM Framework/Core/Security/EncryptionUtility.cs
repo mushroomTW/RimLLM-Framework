@@ -89,6 +89,20 @@ namespace RimLLM_Framework.Core
             }
         }
  
+        private static void GetKeySnapshot(out byte[] key, out byte[] iv, out byte[] macKey)
+        {
+            lock (CryptLock)
+            {
+                if (Key == null || Iv == null || MacKey == null)
+                {
+                    InitializeKeyAndIv();
+                }
+                key = Key;
+                iv = Iv;
+                macKey = MacKey;
+            }
+        }
+
         /// <summary>
         /// 加密字串，回傳 Base64 加密密文。
         /// </summary>
@@ -96,41 +110,40 @@ namespace RimLLM_Framework.Core
         {
             if (string.IsNullOrEmpty(plainText))
                 return string.Empty;
- 
-            lock (CryptLock)
-            {
-                try
-                {
-                    using (Aes aes = Aes.Create())
-                    {
-                        aes.Key = Key;
-                        aes.GenerateIV();
 
-                        using (ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
-                        using (MemoryStream ms = new MemoryStream())
+            GetKeySnapshot(out byte[] key, out _, out byte[] macKey);
+
+            try
+            {
+                using (Aes aes = Aes.Create())
+                {
+                    aes.Key = key;
+                    aes.GenerateIV();
+
+                    using (ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        using (CryptoStream cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
                         {
-                            using (CryptoStream cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+                            using (StreamWriter sw = new StreamWriter(cs))
                             {
-                                using (StreamWriter sw = new StreamWriter(cs))
-                                {
-                                    sw.Write(plainText);
-                                }
+                                sw.Write(plainText);
                             }
-                            byte[] cipherBytes = ms.ToArray();
-                            byte[] payload = Combine(aes.IV, cipherBytes);
-                            byte[] mac = ComputeMac(payload);
-                            return VersionPrefix + Convert.ToBase64String(Combine(payload, mac));
                         }
+                        byte[] cipherBytes = ms.ToArray();
+                        byte[] payload = Combine(aes.IV, cipherBytes);
+                        byte[] mac = ComputeMac(payload, macKey);
+                        return VersionPrefix + Convert.ToBase64String(Combine(payload, mac));
                     }
                 }
-                catch (Exception ex)
-                {
-                    RimLLMLog.Error($"[RimLLM] 加密金鑰時發生異常: {ex.Message}");
-                    throw new RimLLMException(LLMError.Unknown, $"Encryption failed: {ex.Message}", ex);
-                }
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Error($"[RimLLM] 加密金鑰時發生異常: {ex.Message}");
+                throw new RimLLMException(LLMError.Unknown, $"Encryption failed: {ex.Message}", ex);
             }
         }
- 
+
         /// <summary>
         /// 解密 Base64 密文，回傳原始字串。
         /// </summary>
@@ -144,45 +157,44 @@ namespace RimLLM_Framework.Core
         {
             if (string.IsNullOrEmpty(cipherText))
                 return string.Empty;
- 
-            lock (CryptLock)
-            {
-                try
-                {
-                    if (cipherText.StartsWith(VersionPrefix, StringComparison.Ordinal))
-                    {
-                        return DecryptV2(cipherText.Substring(VersionPrefix.Length));
-                    }
 
-                    byte[] buffer = Convert.FromBase64String(cipherText);
- 
-                    using (Aes aes = Aes.Create())
+            GetKeySnapshot(out byte[] key, out byte[] defaultIv, out byte[] macKey);
+
+            try
+            {
+                if (cipherText.StartsWith(VersionPrefix, StringComparison.Ordinal))
+                {
+                    return DecryptV2(cipherText.Substring(VersionPrefix.Length), key, macKey);
+                }
+
+                byte[] buffer = Convert.FromBase64String(cipherText);
+
+                using (Aes aes = Aes.Create())
+                {
+                    aes.Key = key;
+                    aes.IV = defaultIv;
+
+                    using (ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
+                    using (MemoryStream ms = new MemoryStream(buffer))
                     {
-                        aes.Key = Key;
-                        aes.IV = Iv;
- 
-                        using (ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
-                        using (MemoryStream ms = new MemoryStream(buffer))
+                        using (CryptoStream cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
                         {
-                            using (CryptoStream cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
+                            using (StreamReader sr = new StreamReader(cs))
                             {
-                                using (StreamReader sr = new StreamReader(cs))
-                                {
-                                    return sr.ReadToEnd();
-                                }
+                                return sr.ReadToEnd();
                             }
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    RimLLMLog.Warning($"[RimLLM] 解密金鑰失敗 (可能格式錯誤或金鑰受損): {ex.Message}");
-                    return null;
-                }
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Warning($"[RimLLM] 解密金鑰失敗 (可能格式錯誤或金鑰受損): {ex.Message}");
+                return null;
             }
         }
 
-        private static string DecryptV2(string encodedPayload)
+        private static string DecryptV2(string encodedPayload, byte[] key, byte[] macKey)
         {
             byte[] allBytes = Convert.FromBase64String(encodedPayload);
             const int ivLength = 16;
@@ -203,7 +215,7 @@ namespace RimLLM_Framework.Core
             Buffer.BlockCopy(allBytes, ivLength + cipherLength, expectedMac, 0, macLength);
 
             byte[] payload = Combine(iv, cipherBytes);
-            byte[] actualMac = ComputeMac(payload);
+            byte[] actualMac = ComputeMac(payload, macKey);
             if (!FixedTimeEquals(expectedMac, actualMac))
             {
                 throw new CryptographicException("Encrypted payload authentication failed.");
@@ -211,7 +223,7 @@ namespace RimLLM_Framework.Core
 
             using (Aes aes = Aes.Create())
             {
-                aes.Key = Key;
+                aes.Key = key;
                 aes.IV = iv;
 
                 using (ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
@@ -224,9 +236,9 @@ namespace RimLLM_Framework.Core
             }
         }
 
-        private static byte[] ComputeMac(byte[] payload)
+        private static byte[] ComputeMac(byte[] payload, byte[] macKey)
         {
-            using (var hmac = new HMACSHA256(MacKey))
+            using (var hmac = new HMACSHA256(macKey))
             {
                 return hmac.ComputeHash(payload);
             }

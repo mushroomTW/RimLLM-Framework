@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
@@ -293,7 +293,6 @@ namespace RimLLM_Framework.Manager
         {
             switch (NormalizeProvider(providerId))
             {
-                case "anthropic": return 0.1f;  // Anthropic cache read 約為輸入價的 0.1x
                 case "gemini": return 0.25f;     // Gemini cachedContent 約為輸入價的 0.25x
                 case "deepseek": return 0.02f;
                 default: return 0.25f;

@@ -142,19 +142,10 @@ namespace RimLLM_Framework.Mod
 
         /// <summary>
         /// 根據目前的供應商，調度右側的詳細配置渲染。
-        /// 除了本地相容介面需要自訂 Endpoint 之外，其餘供應商共用同一組通用面板。
         /// </summary>
         public static void DrawRightDetailContent(Listing_Standard listing)
         {
-            if (ActiveProviderSubTab == ProviderIds.OpenAICompatible)
-            {
-                OpenAICompatibleSubTabDrawer.DrawOpenAICompatibleSettings(
-                    listing, ProviderIds.OpenAICompatible, "http://localhost:1234/v1");
-            }
-            else
-            {
-                GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, ActiveProviderSubTab);
-            }
+            GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, ActiveProviderSubTab);
         }
     }
 }

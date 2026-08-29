@@ -98,8 +98,68 @@ namespace RimLLM_Framework.Manager
             "type", "enum", "properties", "required", "items", "additionalProperties", "description", OptionalMarker
         };
 
-        private static readonly ConcurrentDictionary<string, JObject> CanonicalCache = new ConcurrentDictionary<string, JObject>();
-        private static readonly ConcurrentDictionary<string, RimLLMSchemaResult> ResultCache = new ConcurrentDictionary<string, RimLLMSchemaResult>();
+        private readonly struct CanonicalCacheKey : IEquatable<CanonicalCacheKey>
+        {
+            public readonly Type Type;
+            public readonly int MaxDepth;
+
+            public CanonicalCacheKey(Type type, int maxDepth)
+            {
+                Type = type;
+                MaxDepth = maxDepth;
+            }
+
+            public bool Equals(CanonicalCacheKey other)
+            {
+                return Type == other.Type && MaxDepth == other.MaxDepth;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is CanonicalCacheKey other && Equals(other);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    return ((Type != null ? Type.GetHashCode() : 0) * 397) ^ MaxDepth;
+                }
+            }
+        }
+
+        private readonly struct ResultCacheKey : IEquatable<ResultCacheKey>
+        {
+            public readonly Type Type;
+            public readonly RimLLMSchemaProfile Profile;
+
+            public ResultCacheKey(Type type, RimLLMSchemaProfile profile)
+            {
+                Type = type;
+                Profile = profile;
+            }
+
+            public bool Equals(ResultCacheKey other)
+            {
+                return Type == other.Type && Profile == other.Profile;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is ResultCacheKey other && Equals(other);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    return ((Type != null ? Type.GetHashCode() : 0) * 397) ^ (int)Profile;
+                }
+            }
+        }
+
+        private static readonly ConcurrentDictionary<CanonicalCacheKey, JObject> CanonicalCache = new ConcurrentDictionary<CanonicalCacheKey, JObject>();
+        private static readonly ConcurrentDictionary<ResultCacheKey, RimLLMSchemaResult> ResultCache = new ConcurrentDictionary<ResultCacheKey, RimLLMSchemaResult>();
 
         private static readonly object OptionsLock = new object();
         private static JsonSerializerOptions _serializerOptions;
@@ -139,7 +199,7 @@ namespace RimLLM_Framework.Manager
         {
             if (type == null) throw new ArgumentNullException(nameof(type));
 
-            string cacheKey = type.AssemblyQualifiedName + "|" + (int)profile;
+            var cacheKey = new ResultCacheKey(type, profile);
             if (ResultCache.TryGetValue(cacheKey, out RimLLMSchemaResult cached))
             {
                 return cached;
@@ -190,7 +250,7 @@ namespace RimLLM_Framework.Manager
         private static JObject GetCanonical(Type type, int maxDepth, out bool usedLegacyFallback)
         {
             // 深度上限依方言而異，因此必須進 cache key —— 否則 Gemini 會拿到被 OpenAI 上限截斷過的樹。
-            string cacheKey = type.AssemblyQualifiedName + "|d" + maxDepth;
+            var cacheKey = new CanonicalCacheKey(type, maxDepth);
             if (CanonicalCache.TryGetValue(cacheKey, out JObject cached))
             {
                 usedLegacyFallback = cached[LegacyMarker] != null;
