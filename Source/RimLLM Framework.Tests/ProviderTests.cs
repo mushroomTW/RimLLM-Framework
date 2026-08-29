@@ -642,7 +642,7 @@ namespace RimLLM_Framework.Tests
             var payload = JObject.Parse(provider.CapturedPayload);
             Assert.IsNotNull(payload["response_format"], "已驗證支援的衍生供應商應收到 response_format");
             Assert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());
-            Assert.AreEqual(true, payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>(),
+            Assert.IsTrue(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == true,
                 "不含 Dictionary 的型別應維持 strict 模式");
         }
 
@@ -668,7 +668,7 @@ namespace RimLLM_Framework.Tests
             provider.GenerateStructuredAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
-            Assert.AreEqual(false, payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>(),
+            Assert.IsTrue(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == false,
                 "含 Dictionary 的型別必須關閉 strict，否則服務端會拒絕開放式 map");
         }
 

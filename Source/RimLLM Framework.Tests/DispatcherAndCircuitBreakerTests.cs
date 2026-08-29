@@ -1000,7 +1000,7 @@ namespace RimLLM_Framework.Tests
             var res = manager.DeserializeStructured<TestDataStructure>(rawRepaired, mockSettings, request);
             Assert.IsNotNull(res);
             Assert.AreEqual(42, res.Value);
-            Assert.AreEqual(okStr(res.Message), "ok");
+            Assert.AreEqual("ok", okStr(res.Message));
         }
 
         [Test]

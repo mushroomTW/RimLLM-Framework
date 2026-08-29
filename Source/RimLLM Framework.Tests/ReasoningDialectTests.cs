@@ -205,7 +205,7 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "qwen-plus").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual(true, (bool)payload["enable_thinking"]);
+            Assert.IsTrue((bool)payload["enable_thinking"]);
             Assert.AreEqual(2048, (int)payload["thinking_budget"]);
             Assert.IsNull(payload["reasoning_effort"], "Qwen 不認得 reasoning_effort，送出只會是雜訊。");
         }
@@ -219,7 +219,7 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "qwen-plus").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual(false, (bool)payload["enable_thinking"]);
+            Assert.IsFalse((bool)payload["enable_thinking"]);
             Assert.IsNull(payload["thinking_budget"]);
         }
 
