@@ -23,12 +23,39 @@ namespace RimLLM_Framework.Manager
         private static readonly object LogLock = new object();
         private static readonly object UsageLock = new object();
 
-        // Budget Dialog state
-        private string _budgetApprovalDate = "";
-        private string _budgetDeclineDate = "";
-        private readonly object _budgetPromptLock = new object();
-        private TaskCompletionSource<bool> _activePromptTcs;
-        private const int BudgetPromptTimeoutSeconds = 120;
+        public const int ModelLevelHigh = 3;
+        public const int ModelLevelMedium = 2;
+        public const int ModelLevelLow = 1;
+
+        private const float HighTierCompletionCostThreshold = 3.00f;
+        private const float MediumTierCompletionCostThreshold = 0.50f;
+
+        /// <summary>
+        /// 依據模型的 API 費率（每百萬 Token 輸出費率）判定其等級：
+        /// Level 3 (High): 輸出費率 >= $3.00 / 1M Tokens (如 GPT-4o, Gemini Pro, Grok, Qwen-Max)
+        /// Level 2 (Medium): 輸出費率 >= $0.50 / 1M Tokens (如 Gemini Flash, DeepSeek-V4-Pro, Qwen-Plus)
+        /// Level 1 (Low): 輸出費率 < $0.50 / 1M Tokens 或本地免費模型 ($0)
+        /// </summary>
+        public int GetModelLevel(string providerId, string modelName)
+        {
+            string normProvider = NormalizeProvider(providerId);
+            if (normProvider == "openaicompatible" ||
+                normProvider == "openai-compatible" ||
+                normProvider == "local" ||
+                string.IsNullOrEmpty(modelName))
+            {
+                return ModelLevelLow;
+            }
+
+            if (FindModelRate(providerId, modelName, out CostRate rate))
+            {
+                if (rate.CompletionPerMillion >= HighTierCompletionCostThreshold) return ModelLevelHigh;
+                if (rate.CompletionPerMillion >= MediumTierCompletionCostThreshold) return ModelLevelMedium;
+                return ModelLevelLow;
+            }
+
+            return ModelLevelMedium; // 未知雲端模型預設給予 Medium 評級
+        }
 
         private static readonly Dictionary<string, CostRate> KnownModelRates = new Dictionary<string, CostRate>(StringComparer.OrdinalIgnoreCase)
         {
@@ -419,90 +446,14 @@ namespace RimLLM_Framework.Manager
                 return true;
             }
 
-            string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
-
-            if (_budgetApprovalDate == todayStr)
-            {
-                return true;
-            }
-            if (_budgetDeclineDate == todayStr)
-            {
-                return false;
-            }
-
-            // 0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt
+            // 0=HardBlock, 1=SilentMocking, 2=FallbackToFree
             if (_settings.BudgetPolicy == 1 || _settings.BudgetPolicy == 2)
             {
                 return true;
             }
 
-            if (_settings.BudgetPolicy == 3)
-            {
-                if (Find.WindowStack == null)
-                {
-                    return false;
-                }
-
-                TaskCompletionSource<bool> tcs;
-                lock (_budgetPromptLock)
-                {
-                    if (_activePromptTcs != null)
-                    {
-                        tcs = _activePromptTcs;
-                    }
-                    else
-                    {
-                        tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                        _activePromptTcs = tcs;
-
-                        RimLLMDispatcher.EnqueueOnMainThread(() =>
-                        {
-                            var dialog = new Dialog_BudgetPrompt(
-                                "RimLLM_BudgetExceededPrompt".Translate(_settings.DailyAccumulatedCost.ToString("F4"), _settings.DailyBudgetLimit.ToString("F2")),
-                                "RimLLM_BudgetExceededPrompt_Approve".Translate(), () =>
-                                {
-                                    lock (_budgetPromptLock)
-                                    {
-                                        _budgetApprovalDate = todayStr;
-                                        _activePromptTcs = null;
-                                    }
-                                    tcs.TrySetResult(true);
-                                },
-                                "RimLLM_BudgetExceededPrompt_Decline".Translate(), () =>
-                                {
-                                    lock (_budgetPromptLock)
-                                    {
-                                        _budgetDeclineDate = todayStr;
-                                        _activePromptTcs = null;
-                                    }
-                                    tcs.TrySetResult(false);
-                                },
-                                () =>
-                                {
-                                    lock (_budgetPromptLock)
-                                    {
-                                        if (ReferenceEquals(_activePromptTcs, tcs))
-                                        {
-                                            _activePromptTcs = null;
-                                        }
-                                    }
-                                    tcs.TrySetResult(false);
-                                }
-                            );
-                            Find.WindowStack.Add(dialog);
-                        });
-                    }
-                }
-
-                return await AwaitBudgetApprovalAsync(
-                    tcs.Task,
-                    request?.CancellationToken ?? CancellationToken.None,
-                    TimeSpan.FromSeconds(BudgetPromptTimeoutSeconds)).ConfigureAwait(false);
-            }
-
             return false;
         }
-#pragma warning restore S3776
 
         /// <summary>
         /// 判斷請求是否處於靜默模擬模式並產出模擬字串。
@@ -536,45 +487,6 @@ namespace RimLLM_Framework.Manager
                 mockResult = fallbackMock;
             }
             return true;
-        }
-
-        public void ClearBudgetApprovals()
-        {
-            lock (_budgetPromptLock)
-            {
-                _budgetApprovalDate = "";
-                _budgetDeclineDate = "";
-                _activePromptTcs = null;
-            }
-        }
-
-        public static async Task<bool> AwaitBudgetApprovalAsync(
-            Task<bool> sharedPromptTask,
-            CancellationToken requestToken,
-            TimeSpan timeout)
-        {
-            if (sharedPromptTask == null) throw new ArgumentNullException(nameof(sharedPromptTask));
-
-            var waiterTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(requestToken))
-            {
-                linked.CancelAfter(timeout);
-                using (linked.Token.Register(() => waiterTcs.TrySetResult(false)))
-                {
-                    Task<bool> winner = await Task.WhenAny(sharedPromptTask, waiterTcs.Task).ConfigureAwait(false);
-                    if (ReferenceEquals(winner, sharedPromptTask))
-                    {
-                        return await sharedPromptTask.ConfigureAwait(false);
-                    }
-
-                    if (requestToken.IsCancellationRequested)
-                    {
-                        throw new OperationCanceledException(requestToken);
-                    }
-
-                    return false;
-                }
-            }
         }
 
         #endregion

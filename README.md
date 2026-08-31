@@ -189,12 +189,7 @@ GeneratedEmbeddings<Embedding<float>> result =
 ReadOnlyMemory<float> vector = result[0].Vector;
 ```
 
-The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws. For a fallback that never needs an API, use the standalone trigram helper — a plain string-similarity function, unaffected by the provider setting:
-
-```csharp
-float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity(
-    "colonist mental break", "pawn had a breakdown");
-```
+The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws `RimLLMException`.
 
 ### Error handling
 
@@ -293,7 +288,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
    * All settings dictionaries are guarded by locks against concurrent read/write from multiple threads.
    * Scribe writes triggered by `RecordLog` are dispatched back to the Unity main thread through `RimLLMDispatcher` with a 15-second write throttle, preventing crashes and TPS spikes caused by background saves.
 8. **Reasoning models and chain-of-thought tagging**
-   * Native support for reasoning models such as **DeepSeek-R1**, **Gemini 2.0/2.5 Thinking** and **OpenAI o1/o3**.
+   * Native support for modern reasoning and thinking models such as **Gemini 3.7 Flash / 3.1 Pro (Thinking)**, **OpenAI GPT-5.6 Sol / GPT-5.5**, **DeepSeek-V4-Pro / Flash**, **Grok 4.6**, **Qwen3.8-Max**, **Kimi K3** and **GLM-5.3-Flash**.
    * The framework extracts the chain of thought returned by the API (`reasoning_content` in the OpenAI protocol, the `thought` field in Gemini) and wraps it uniformly in `<think>...</think>` tags.
    * The GUI chat test page parses these tags and renders the reasoning as grey italic text. Calling mods can easily strip or keep the chain of thought with a regular expression.
    * **Reasoning effort control**: the default is "Auto", which lets each provider run its own adaptive or dynamic thinking configuration (Gemini's `thinkingBudget = -1`, OpenAI's dynamic `reasoning_effort`, and so on). You can also disable reasoning entirely or set it manually to low / medium / high.
@@ -305,10 +300,9 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
    * **Cost guard**: Gemini explicit caching has a minimum size threshold. When the content is too small the framework skips the cache and uses `systemInstruction` instead, avoiding the case where the creation fee is never recouped. Cache creation for the same context is also serialized by a lock to prevent duplicate resources.
    * **Quantified savings**: usage tracking parses the cache-hit tokens returned by the API (OpenAI `cached_tokens`, Gemini `cachedContentTokenCount`) and applies a discounted rate to the cost estimate, so the cost panel reflects the real saving.
 10. **Embedding SDK**
-    * The framework exposes public embedding functionality backed by Google, Ollama or an OpenAI-compatible endpoint, plus a cosine similarity helper. Other mods obtain a standard `IEmbeddingGenerator` through `RimLLMProvider.CreateEmbeddingGenerator` for semantic search, clustering or similarity comparison.
+    * The framework exposes public embedding functionality backed by Google, Ollama or an OpenAI-compatible endpoint. Other mods obtain a standard `IEmbeddingGenerator` through `RimLLMProvider.CreateEmbeddingGenerator` for semantic search and clustering.
     * All three online sources go through official SDKs: Google uses `EmbedContentAsync` from `Google.GenAI`; Ollama and self-hosted services use the OpenAI SDK's `EmbeddingClient` (Ollama via its OpenAI-compatible `/v1` endpoint). The *Embedding endpoint* field therefore takes a **service root address** such as `http://localhost:11434/v1`; a full `/embeddings` path is normalized automatically.
     * The settings page can fetch the available model list instead of requiring the name to be typed from memory. For Google the list is filtered by each model's own `supportedActions` containing `embedContent`, so only genuine embedding models are offered. OpenAI-compatible `/v1/models` reports no capability information, so that list is **ordered** (embedding-looking names first) rather than filtered — a local server's model names are user-defined, and filtering would hide valid choices. Manual entry always remains available for servers with no `/v1/models` endpoint.
-    * `CalculateTrigramSimilarity` is a **separate**, API-free string-similarity utility — not an embedding provider. It produces no vectors and is callable regardless of which provider (or none) is selected.
     * Embeddings are a billed API, so they share the same anti-abuse checks as ordinary generation requests. Their keys use the same AES encryption as provider keys.
 
 ---

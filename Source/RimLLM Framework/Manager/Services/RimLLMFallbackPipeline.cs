@@ -29,16 +29,6 @@ namespace RimLLM_Framework.Manager
             public string ModelName;
         }
 
-        private static readonly List<string> HighLevelKeywords = new List<string>
-        {
-            "pro", "opus"
-        };
-
-        private static readonly List<string> MediumLevelKeywords = new List<string>
-        {
-            "mini", "flash", "sonnet", "deepseek", "kimi", "minimax", "qwen"
-        };
-
         public RimLLMFallbackPipeline(
             IRimLLMSettings settings,
             RimLLMHealthLedger healthLedger,
@@ -313,7 +303,7 @@ namespace RimLLM_Framework.Manager
             int minLevel = ParseMinFallbackLevel(request.MinFallbackLevel);
             if (minLevel > 0)
             {
-                int currentModelLevel = GetModelLevel(modelName);
+                int currentModelLevel = GetModelLevel(entry, providerId, modelName);
                 if (currentModelLevel < minLevel)
                 {
                     RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
@@ -324,23 +314,19 @@ namespace RimLLM_Framework.Manager
             return true;
         }
 
-        private int GetModelLevel(string modelName)
+        private int GetModelLevel(string entry, string providerId, string modelName)
         {
             if (string.IsNullOrEmpty(modelName)) return 1;
 
-            // 使用者明確設定的分級覆寫優先於關鍵字啟發式判斷
-            int overrideLevel = _settings.GetModelLevelOverride(modelName);
-            if (overrideLevel >= 1 && overrideLevel <= 3)
+            // 使用者明確設定的分級覆寫優先於 API 費率判定
+            int overrideLevel = _settings.GetModelLevelOverride(entry ?? modelName);
+            if (overrideLevel >= RimLLMUsageTracker.ModelLevelLow && overrideLevel <= RimLLMUsageTracker.ModelLevelHigh)
             {
                 return overrideLevel;
             }
 
-            string lower = modelName.ToLower();
-
-            // High 關鍵字優先判定為 Tier 3，其次 Medium 為 Tier 2，其餘 Tier 1。
-            if (HighLevelKeywords.Exists(lower.Contains)) return 3;
-            if (MediumLevelKeywords.Exists(lower.Contains)) return 2;
-            return 1;
+            // 依據 UsageTracker 中的真實 API 費率客觀判定等級
+            return _usageTracker.GetModelLevel(providerId, modelName);
         }
 
         private static int ParseMinFallbackLevel(string levelStr)

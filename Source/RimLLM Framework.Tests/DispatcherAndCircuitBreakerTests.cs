@@ -572,11 +572,12 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestDoubleRepair()
+        public void TestStaticRepairOnStructuredOutput()
         {
             var mockSettings = new MockSettings
             {
-                FallbackChain = new List<string> { "MockProv:model-z" }
+                FallbackChain = new List<string> { "MockProv:m" },
+                RoutingStrategy = 0
             };
             mockSettings.EnabledProviders["MockProv"] = true;
             mockSettings.ApiKeys["MockProv"] = "key";
@@ -590,19 +591,13 @@ namespace RimLLM_Framework.Tests
                 GenerateHandler = (msgs, opts, model) =>
                 {
                     callCount++;
-                    if (callCount == 1)
-                    {
-                        return System.Threading.Tasks.Task.FromResult("{{ Value: 100");
-                    }
-                    else
-                    {
-                        return System.Threading.Tasks.Task.FromResult("{\"Value\": 99, \"Message\": \"repaired\"}");
-                    }
+                    // 模擬帶有 markdown 區塊與缺少結尾括號的 JSON
+                    return System.Threading.Tasks.Task.FromResult("```json\n{\"Value\": 99, \"Message\": \"repaired\"");
                 }
             };
             manager.RegisterProvider(mockProv);
 
-            const string modId = "mod.doublerepair";
+            const string modId = "mod.staticrepair";
             RimLLMProvider.Initialize(manager);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
@@ -612,7 +607,7 @@ namespace RimLLM_Framework.Tests
             Assert.IsNotNull(res);
             Assert.AreEqual(99, res.Value);
             Assert.AreEqual("repaired", res.Message);
-            Assert.AreEqual(2, callCount); // 總共呼叫了 2 次 (首次失敗 + 二次修復)
+            Assert.AreEqual(1, callCount); // 本地靜態修復完成，僅呼叫 1 次
         }
 
         [Test]
@@ -689,35 +684,30 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual("model-mini", calledModels[0]);
         }
 
-        // 以下幾個測試刻意呼叫已標記 [Obsolete] 的 RimLLMJsonHelper schema API。
-        // RimLLM 是給其他 Mod 使用的框架，這些是仍在對外提供的 public 介面，
-        // 直接刪除會讓第三方 Mod 在遊戲中拋 MissingMethodException（Mono 沒有編譯期警告），
-        // 因此保留一版並在此驗證它們仍正確轉呼叫新管線。
-#pragma warning disable CS0618
 
         [Test]
         public void TestJsonSchemaGenerator()
         {
-            // test lowercase (OpenAI style)
-            var openaiSchema = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure), uppercaseTypes: false);
+            // test OpenAI style
+            var openaiSchema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI));
             Assert.AreEqual("object", openaiSchema["type"]?.ToString());
             Assert.IsNotNull(openaiSchema["properties"]);
             Assert.AreEqual("integer", openaiSchema["properties"]?["Value"]?["type"]?.ToString());
             Assert.AreEqual("string", openaiSchema["properties"]?["Message"]?["type"]?.ToString());
             Assert.IsFalse((bool)openaiSchema["additionalProperties"]);
 
-            // test uppercase (Gemini style)
-            var geminiSchema = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure), uppercaseTypes: true);
-            Assert.AreEqual("OBJECT", geminiSchema["type"]?.ToString());
-            Assert.AreEqual("INTEGER", geminiSchema["properties"]?["Value"]?["type"]?.ToString());
-            Assert.AreEqual("STRING", geminiSchema["properties"]?["Message"]?["type"]?.ToString());
+            // test Gemini style
+            var geminiSchema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure), RimLLMSchemaProfile.Gemini));
+            Assert.AreEqual("object", geminiSchema["type"]?.ToString());
+            Assert.AreEqual("integer", geminiSchema["properties"]?["Value"]?["type"]?.ToString());
+            Assert.AreEqual("string", geminiSchema["properties"]?["Message"]?["type"]?.ToString());
         }
 
         [Test]
         public void TestJsonSchemaRecursiveTypeDoesNotStackOverflow()
         {
             // NestedData.SelfRef 指回 ComplexTestDataStructure，形成循環。
-            var schema = RimLLMJsonHelper.GenerateJsonSchema(typeof(ComplexTestDataStructure));
+            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI));
 
             Assert.IsNotNull(schema, "循環型別仍應產生可用的 schema，不得遞迴爆棧");
 
@@ -726,7 +716,6 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual("number", nested["properties"]?["Weight"]?["type"]?.ToString());
 
             // 循環的截斷點與收斂性由 SchemaBuilderTests 詳測，此處只確認整體有限且合法。
-            // （新管線在 JSON pointer 層截斷，會比舊的型別層截斷多展開一輪。）
             Assert.Less(
                 schema.ToString().Length,
                 200000,
@@ -736,7 +725,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaDictionaryBecomesOpenMap()
         {
-            var schema = RimLLMJsonHelper.GenerateJsonSchema(typeof(ComplexTestDataStructure));
+            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI));
             var mapping = schema["properties"]?["Mapping"];
 
             Assert.IsNotNull(mapping, "Dictionary 成員應出現在 schema 中");
@@ -745,22 +734,16 @@ namespace RimLLM_Framework.Tests
                 "Dictionary 應產生開放式 map schema 而非空物件");
             Assert.IsNull(mapping["properties"], "開放式 map 不應帶有固定的 properties 清單");
 
-            Assert.IsTrue(RimLLMJsonHelper.ContainsOpenEndedMap(typeof(ComplexTestDataStructure)),
+            Assert.IsTrue(RimLLMSchemaBuilder.ContainsOpenEndedMap(typeof(ComplexTestDataStructure)),
                 "含 Dictionary 的型別必須被偵測為開放式 map，以便關閉 strict 模式");
-            Assert.IsFalse(RimLLMJsonHelper.ContainsOpenEndedMap(typeof(TestDataStructure)),
+            Assert.IsFalse(RimLLMSchemaBuilder.ContainsOpenEndedMap(typeof(TestDataStructure)),
                 "不含 Dictionary 的型別不應被誤判為開放式 map");
         }
 
-        /// <summary>
-        /// required 語意在改走 MEAI 管線後刻意翻轉：所有成員一律列入 required，選填性改由型別表達。
-        /// 原因是 OpenAI 的 strict structured output 規格要求 required 涵蓋每一個 property，
-        /// 舊行為（Nullable 不列入 required 卻仍送 strict=true）在服務端會被 400，
-        /// 只是被 IsNativeSchemaRejected 的降級路徑靜默吞掉，表現為「莫名其妙失去原生 schema」。
-        /// </summary>
         [Test]
         public void TestJsonSchemaNullableIsRequiredButTypedAsUnion()
         {
-            var schema = RimLLMJsonHelper.GenerateJsonSchema(typeof(NullableTestDataStructure));
+            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(NullableTestDataStructure), RimLLMSchemaProfile.OpenAI));
 
             var optionalType = (JArray)schema["properties"]["OptionalCount"]["type"];
             CollectionAssert.AreEquivalent(
@@ -778,18 +761,11 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaGeneratorCacheReturnsIndependentInstances()
         {
-            var first = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure));
-            first["type"] = "polluted";
-            ((JObject)first["properties"]).Remove("Value");
+            var first = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
+            var second = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
 
-            var second = RimLLMJsonHelper.GenerateJsonSchema(typeof(TestDataStructure));
-
-            Assert.AreEqual("object", second["type"]?.ToString(),
-                "schema 快取必須回傳深拷貝，避免呼叫端汙染");
-            Assert.IsNotNull(second["properties"]?["Value"], "快取內容不得被前一次呼叫端的修改影響");
+            Assert.AreEqual(first.Json, second.Json, "schema 快取應提供一致的不可變結果");
         }
-
-#pragma warning restore CS0618
 
         [Test]
         public void TestRepairJsonClosesInterleavedBracketsInOrder()
@@ -1027,32 +1003,7 @@ namespace RimLLM_Framework.Tests
             Assert.IsNull(LLMErrorMapper.ParseRetryAfter((string)null));
         }
 
-        [Test]
-        public void TestTrigramSimilarityOnEmbeddingService()
-        {
-            // 1. 相同字串相似度為 1.0
-            float simSelf = RimLLMEmbeddingService.CalculateTrigramSimilarity("Colony status is good", "Colony status is good");
-            Assert.AreEqual(1.0f, simSelf, 0.001f, "完全相同的字串相似度必須為 1.0");
 
-            // 2. 完全無關字串相似度接近 0.0
-            float simDiff = RimLLMEmbeddingService.CalculateTrigramSimilarity("Colony status is good", "Starve event happened");
-            Assert.IsTrue(simDiff < 0.2f, "無關字串的相似度應該偏低");
-
-            // 3. 相似字串相似度較高
-            float simClose = RimLLMEmbeddingService.CalculateTrigramSimilarity("We have 10 colonists", "We have 11 colonists");
-            Assert.IsTrue(simClose > 0.75f, "僅有些微差異的字串相似度應該偏高");
-        }
-
-        [Test]
-        public void TestCosineSimilarityHandlesMismatchedLength()
-        {
-            float[] a = new float[] { 1f, 0f, 0f };
-            float[] b = new float[] { 1f, 0f };
-
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(a, b), 0.0001f, "長度不一致的向量應回傳 0 而非拋出例外");
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(a, null), 0.0001f, "任一向量為 null 時應回傳 0");
-            Assert.AreEqual(1f, RimLLMEmbeddingService.CalculateCosineSimilarity(a, a), 0.0001f, "相同向量的餘弦相似度必須為 1");
-        }
 
         [Test]
         public void TestEmbeddingEndpointNormalizesToServiceRoot()
@@ -1211,58 +1162,7 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual(1, calls, "僅標記為 schema 拒絕的錯誤才可觸發降級重打");
         }
 
-        [Test]
-        public void TestBudgetPromptWaiterRespectsCancellation()
-        {
-            var neverCompletes = new System.Threading.Tasks.TaskCompletionSource<bool>();
-            using (var cts = new System.Threading.CancellationTokenSource())
-            {
-                cts.Cancel();
 
-                Assert.Throws<OperationCanceledException>(() =>
-                    RimLLMManager.AwaitBudgetApprovalAsync(
-                        neverCompletes.Task, cts.Token, TimeSpan.FromSeconds(30))
-                        .GetAwaiter().GetResult(),
-                    "預算詢問等待必須響應請求的取消 Token");
-            }
-        }
-
-        [Test]
-        public void TestBudgetPromptWaiterTimesOutAsDecline()
-        {
-            var neverCompletes = new System.Threading.Tasks.TaskCompletionSource<bool>();
-
-            bool approved = RimLLMManager.AwaitBudgetApprovalAsync(
-                neverCompletes.Task,
-                System.Threading.CancellationToken.None,
-                TimeSpan.FromMilliseconds(50)).GetAwaiter().GetResult();
-
-            Assert.IsFalse(approved, "逾時應視為拒絕而非無限期等待或拋出例外");
-        }
-
-        [Test]
-        public void TestBudgetPromptWaiterCancellationDoesNotAffectOtherWaiters()
-        {
-            var shared = new System.Threading.Tasks.TaskCompletionSource<bool>(
-                System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
-
-            using (var cancelledCts = new System.Threading.CancellationTokenSource())
-#pragma warning disable S3415 // reason: 測試斷言語意正確，Sonar 順序偵測誤判
-            {
-                var waiterA = RimLLMManager.AwaitBudgetApprovalAsync(
-                    shared.Task, cancelledCts.Token, TimeSpan.FromSeconds(30));
-
-                var waiterB = RimLLMManager.AwaitBudgetApprovalAsync(
-                    shared.Task, System.Threading.CancellationToken.None, TimeSpan.FromSeconds(30));
-
-                cancelledCts.Cancel();
-                Assert.Throws<OperationCanceledException>(() => waiterA.GetAwaiter().GetResult());
-
-                shared.TrySetResult(true);
-                Assert.IsTrue(waiterB.GetAwaiter().GetResult(),
-                    "單一等待者取消不得影響其他共用同一對話框的請求");
-            }
-        }
 
         [Test]
         public void TestChatInputWhitespaceOnlyIsRejected()

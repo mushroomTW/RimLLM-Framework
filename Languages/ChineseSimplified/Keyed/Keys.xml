@@ -119,7 +119,7 @@
   <RimLLM_UsageInfo>输入: {0} | 输出: {1} | 估计花费: ${2} USD</RimLLM_UsageInfo>
   <RimLLM_MsgUsageReset>Token 与费用累计统计已重置。</RimLLM_MsgUsageReset>
   <RimLLM_ModelLevelOverrideTitle>模型分级覆写</RimLLM_ModelLevelOverrideTitle>
-  <RimLLM_ModelLevelOverrideExplanation>手动指定模型分级 (Lv.1=低, Lv.2=中, Lv.3=高)，供 MinFallbackLevel 过滤使用；覆写优先于内置关键字判断。</RimLLM_ModelLevelOverrideExplanation>
+  <RimLLM_ModelLevelOverrideExplanation>手动指定模型分级 (Lv.1=低, Lv.2=中, Lv.3=高)，供 MinFallbackLevel 过滤使用；默认依模型 API 输出费率客观自动分级。</RimLLM_ModelLevelOverrideExplanation>
   
   <RimLLM_TabBudget>预算与防护</RimLLM_TabBudget>
   <RimLLM_TitleBudget>预算与防护安全设置</RimLLM_TitleBudget>
@@ -128,7 +128,6 @@
   <RimLLM_BudgetPolicy_HardBlock>直接阻断并警告</RimLLM_BudgetPolicy_HardBlock>
   <RimLLM_BudgetPolicy_SilentMocking>静默回传沉思字样</RimLLM_BudgetPolicy_SilentMocking>
   <RimLLM_BudgetPolicy_FallbackToFree>自动降级至免费/本地模型</RimLLM_BudgetPolicy_FallbackToFree>
-  <RimLLM_BudgetPolicy_DialogPrompt>游戏内弹窗确认</RimLLM_BudgetPolicy_DialogPrompt>
   <RimLLM_EnableAntiAbuseLabel>启用防爆限制 (防止 Mod Bug 死循环)</RimLLM_EnableAntiAbuseLabel>
   <RimLLM_MaxRequestsPerWindowLabel>时间窗口内最大请求次数: {0} 次</RimLLM_MaxRequestsPerWindowLabel>
   <RimLLM_ThrottlingWindowSecondsLabel>防护监测时间窗口: {0} 秒</RimLLM_ThrottlingWindowSecondsLabel>
@@ -136,9 +135,6 @@
   <RimLLM_DailyAccumulatedCostLabel>当日已累计消耗: ${0} USD (重置基准日: {1})</RimLLM_DailyAccumulatedCostLabel>
   <RimLLM_ResetDailyCostBtn>手动重置今日花费</RimLLM_ResetDailyCostBtn>
   <RimLLM_MsgDailyCostReset>今日花费累计已重置。</RimLLM_MsgDailyCostReset>
-  <RimLLM_BudgetExceededPrompt>您的 RimLLM 当日花费已达 ${0} USD，超过设定的每日预算 ${1} USD！\n是否同意临时增加今日预算以维持 AI 功能运作？</RimLLM_BudgetExceededPrompt>
-  <RimLLM_BudgetExceededPrompt_Approve>同意 (预算提高 50%)</RimLLM_BudgetExceededPrompt_Approve>
-  <RimLLM_BudgetExceededPrompt_Decline>不同意 (阻断请求)</RimLLM_BudgetExceededPrompt_Decline>
   <RimLLM_SilentMockResponse>*说书人因当日预算上限限制陷入沉思...*</RimLLM_SilentMockResponse>
   <RimLLM_RoutingStrategyLabel>智慧路由与动态负载均衡策略: </RimLLM_RoutingStrategyLabel>
   <RimLLM_RoutingStrategy_PriorityFailover>优先顺序自动容错</RimLLM_RoutingStrategy_PriorityFailover>
@@ -160,7 +156,7 @@
 
   <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
   <RimLLM_TitleEmbedding>Embedding 向量设置</RimLLM_TitleEmbedding>
-  <RimLLM_EmbeddingExplanation>Embedding 会把文字转换成数值向量，可用于语意检索与相似度比对，其他 Mod 能通过 RimLLM SDK 调用。选「停用」时不会产生向量；此时仍可使用不需 API 的 RimLLMEmbeddingService.CalculateTrigramSimilarity 做本机字串比对。</RimLLM_EmbeddingExplanation>
+  <RimLLM_EmbeddingExplanation>Embedding 会把文字转换成数值向量，可用于语意检索与分群比对，其他 Mod 能通过 RimLLM SDK 调用。选「停用」时不会产生向量。</RimLLM_EmbeddingExplanation>
   <RimLLM_EmbeddingProviderLabel>Embedding 供应商: </RimLLM_EmbeddingProviderLabel>
   <RimLLM_EmbeddingModelLabel>Embedding 模型名称: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>自定义服务端点: </RimLLM_EmbeddingEndpointLabel>

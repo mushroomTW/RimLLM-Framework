@@ -34,12 +34,12 @@ namespace RimLLM_Framework.Tests
             RimLLMProvider.Initialize(manager);
             var generator = RimLLMProvider.CreateEmbeddingGenerator("test.embed.antiabuse.mod");
 
-            // 第一次呼叫：因為離線 Provider 拋出 Trigram 相關例外（說明已通過防濫用檢查）
+            // 第一次呼叫：因為未設定 Provider 拋出例外（說明已通過防濫用檢查）
             var ex1 = Assert.ThrowsAsync<RimLLMException>(async () =>
             {
                 await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
             });
-            Assert.IsTrue(ex1.Message.Contains("Trigram"));
+            Assert.IsTrue(ex1.Message.Contains("Embedding 尚未設定供應商"));
 
             // 第二次呼叫：超出 MaxRequestsPerWindow (1)，預期直接拋出 RateLimit 防濫用例外
             var ex2 = Assert.ThrowsAsync<RimLLMException>(async () =>

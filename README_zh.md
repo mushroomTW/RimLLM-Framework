@@ -188,12 +188,7 @@ GeneratedEmbeddings<Embedding<float>> result =
 ReadOnlyMemory<float> vector = result[0].Vector;
 ```
 
-Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出例外。若需要完全不必 API 的替代方案，可用獨立的 Trigram 工具 —— 它是單純的字串相似度函式，不受供應商設定影響：
-
-```csharp
-float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity(
-    "殖民者精神崩潰", "小人情緒失控了");
-```
+Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出 `RimLLMException`。
 
 ### 錯誤處理
 
@@ -292,7 +287,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 所有設定字典皆以鎖保護，防止多執行緒並發讀寫。
    * `RecordLog` 觸發的 Scribe 寫入會透過 `RimLLMDispatcher` 派送回 Unity 主執行緒，並套用 15 秒寫入節流，避免背景存檔造成崩潰或 TPS 掉幀。
 8. **推理模型與思維鏈標記**
-   * 原生支援 **DeepSeek-R1**、**Gemini 2.0/2.5 Thinking**、**OpenAI o1/o3** 等推理模型。
+   * 原生支援 **Gemini 3.7 Flash / 3.1 Pro (Thinking)**、**OpenAI GPT-5.6 Sol / GPT-5.5**、**DeepSeek-V4-Pro / Flash**、**Grok 4.6**、**Qwen3.8-Max**、**Kimi K3**、**GLM-5.3-Flash** 等現代深度推理與思考模型。
    * 框架會擷取 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位），並統一以 `<think>...</think>` 標籤包裹。
    * GUI 對話測試頁會解析這些標籤，將思維鏈以灰色斜體呈現。呼叫端 Mod 可用正規表示式輕易剝除或保留思維鏈。
    * **推理強度控制**：預設為「自動」，讓各供應商執行自己的自適應或動態思考設定（Gemini 的 `thinkingBudget = -1`、OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
@@ -304,10 +299,9 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * **成本防呆**：Gemini 顯式快取有最小尺寸門檻，內容過小時框架會跳過快取改用 `systemInstruction`，避免建立費永遠回收不了。同一份上下文的快取建立也以鎖序列化，防止產生重複資源。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`）並套用折扣費率估算成本，讓成本面板反映真實節省。
 10. **Embedding SDK**
-    * 框架公開由 Google、Ollama 或 OpenAI 相容端點支援的 embedding 功能，並附餘弦相似度工具。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索、分群或相似度比對。
+    * 框架公開由 Google、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
     * 三種線上來源全走官方 SDK：Google 使用 `Google.GenAI` 的 `EmbedContentAsync`；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。
     * 設定頁可直接抓取可用模型清單，不必憑記憶輸入名稱。Google 依模型自己宣告的 `supportedActions` 是否包含 `embedContent` 精確篩選，只列出真正的 embedding 模型。OpenAI 相容端點的 `/v1/models` 不回傳能力資訊，因此該清單只**排序**（把像 embedding 的名稱排前面）而不過濾 —— 本地伺服器的模型名由使用者自訂，過濾會把合法選項藏起來。沒有 `/v1/models` 的伺服器仍可手動輸入。
-    * `CalculateTrigramSimilarity` 是**獨立的**、不需 API 的字串相似度工具，**不是** Embedding 供應商。它不產生向量，且無論選擇哪個供應商（或不選）都能呼叫。
     * Embedding 屬計費 API，因此與一般生成請求共用同一套防濫用檢查；其金鑰採用與供應商金鑰相同的 AES 加密。
 
 ---

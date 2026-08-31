@@ -119,26 +119,22 @@
   <RimLLM_UsageInfo>Prompt: {0} | Completion: {1} | Est. Cost: ${2} USD</RimLLM_UsageInfo>
   <RimLLM_MsgUsageReset>Usage statistics have been reset.</RimLLM_MsgUsageReset>
   <RimLLM_ModelLevelOverrideTitle>Model Tier Overrides</RimLLM_ModelLevelOverrideTitle>
-  <RimLLM_ModelLevelOverrideExplanation>Manually assign model tiers (Lv.1=Low, Lv.2=Medium, Lv.3=High) used by MinFallbackLevel filtering. Overrides take priority over built-in keyword detection.</RimLLM_ModelLevelOverrideExplanation>
+  <RimLLM_ModelLevelOverrideExplanation>Manually assign model tiers (Lv.1=Low, Lv.2=Medium, Lv.3=High) used by MinFallbackLevel filtering. Defaults to objective auto-tiering based on model API output cost rates.</RimLLM_ModelLevelOverrideExplanation>
   
   <RimLLM_TabBudget>Budget &amp; Safety</RimLLM_TabBudget>
   <RimLLM_TitleBudget>Budget &amp; Safety Configuration</RimLLM_TitleBudget>
-  <RimLLM_DailyBudgetLimitLabel>Daily Budget Limit: {0} USD (0.0 for Unlimited)</RimLLM_DailyBudgetLimitLabel>
+  <RimLLM_DailyBudgetLimitLabel>Daily Budget Limit: {0} USD (0.0 for unlimited)</RimLLM_DailyBudgetLimitLabel>
   <RimLLM_BudgetPolicyLabel>Budget Exceeded Policy: </RimLLM_BudgetPolicyLabel>
   <RimLLM_BudgetPolicy_HardBlock>Block requests and warn (HardBlock)</RimLLM_BudgetPolicy_HardBlock>
   <RimLLM_BudgetPolicy_SilentMocking>Return canned silent message (SilentMocking)</RimLLM_BudgetPolicy_SilentMocking>
   <RimLLM_BudgetPolicy_FallbackToFree>Fallback to free/local models (FallbackToFree)</RimLLM_BudgetPolicy_FallbackToFree>
-  <RimLLM_BudgetPolicy_DialogPrompt>Prompt in-game confirmation (DialogPrompt)</RimLLM_BudgetPolicy_DialogPrompt>
-  <RimLLM_EnableAntiAbuseLabel>Enable anti-abuse limits (prevent Mod loop bugs)</RimLLM_EnableAntiAbuseLabel>
-  <RimLLM_MaxRequestsPerWindowLabel>Max requests in window: {0} times</RimLLM_MaxRequestsPerWindowLabel>
-  <RimLLM_ThrottlingWindowSecondsLabel>Throttling monitor window: {0} seconds</RimLLM_ThrottlingWindowSecondsLabel>
-  <RimLLM_CoolDownDurationSecondsLabel>Cooldown duration on abuse: {0} seconds</RimLLM_CoolDownDurationSecondsLabel>
-  <RimLLM_DailyAccumulatedCostLabel>Daily cost accumulated: ${0} USD (Base Date: {1})</RimLLM_DailyAccumulatedCostLabel>
+  <RimLLM_EnableAntiAbuseLabel>Enable Anti-Abuse Throttling</RimLLM_EnableAntiAbuseLabel>
+  <RimLLM_MaxRequestsPerWindowLabel>Max Requests in Window: {0}</RimLLM_MaxRequestsPerWindowLabel>
+  <RimLLM_ThrottlingWindowSecondsLabel>Window Duration: {0}s</RimLLM_ThrottlingWindowSecondsLabel>
+  <RimLLM_CoolDownDurationSecondsLabel>Cooldown Duration: {0}s</RimLLM_CoolDownDurationSecondsLabel>
+  <RimLLM_DailyAccumulatedCostLabel>Daily Accumulated Cost: ${0} USD (Reset base: {1})</RimLLM_DailyAccumulatedCostLabel>
   <RimLLM_ResetDailyCostBtn>Reset Daily Cost</RimLLM_ResetDailyCostBtn>
-  <RimLLM_MsgDailyCostReset>Daily cost accumulated has been reset.</RimLLM_MsgDailyCostReset>
-  <RimLLM_BudgetExceededPrompt>Your RimLLM daily cost has reached ${0} USD, exceeding the limit of ${1} USD!\nWould you like to temporarily increase your budget to keep AI functions running?</RimLLM_BudgetExceededPrompt>
-  <RimLLM_BudgetExceededPrompt_Approve>Approve (Increase budget by 50%)</RimLLM_BudgetExceededPrompt_Approve>
-  <RimLLM_BudgetExceededPrompt_Decline>Decline (Block requests)</RimLLM_BudgetExceededPrompt_Decline>
+  <RimLLM_MsgDailyCostReset>Daily accumulated cost has been reset.</RimLLM_MsgDailyCostReset>
   <RimLLM_SilentMockResponse>*AI is temporarily resting due to daily budget limits...*</RimLLM_SilentMockResponse>
   <RimLLM_RoutingStrategyLabel>Smart Routing &amp; Load Balancing Strategy: </RimLLM_RoutingStrategyLabel>
   <RimLLM_RoutingStrategy_PriorityFailover>Priority Failover with Cooldowns (PriorityFailover)</RimLLM_RoutingStrategy_PriorityFailover>
@@ -160,7 +156,7 @@
 
   <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
   <RimLLM_TitleEmbedding>Embedding Vector Settings</RimLLM_TitleEmbedding>
-  <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and similarity comparison. Other mods can call them through the RimLLM SDK. When set to Disabled no vectors are produced; RimLLMEmbeddingService.CalculateTrigramSimilarity is still available for local string matching without any API.</RimLLM_EmbeddingExplanation>
+  <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and clustering. Other mods can call them through the RimLLM SDK. When set to Disabled, no vectors are produced.</RimLLM_EmbeddingExplanation>
   <RimLLM_EmbeddingProviderLabel>Embedding Provider: </RimLLM_EmbeddingProviderLabel>
   <RimLLM_EmbeddingModelLabel>Embedding Model Name: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>Custom Endpoint URL: </RimLLM_EmbeddingEndpointLabel>

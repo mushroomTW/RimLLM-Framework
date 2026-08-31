@@ -16,15 +16,12 @@ namespace RimLLM_Framework.Manager
 #pragma warning disable S3267 // reason: foreach+if 在此可讀性高於 Where，刻意保留現狀
     /// <summary>
     /// Embedding 向量運算服務。線上供應商一律透過官方 SDK 呼叫
-    /// （Google 走 Google.GenAI，Ollama 與自架服務走 OpenAI 相容的 EmbeddingClient），
-    /// 並提供餘弦與 Trigram 相似度計算工具供其他 Mod 直接使用。
+    /// （Google 走 Google.GenAI，Ollama 與自架服務走 OpenAI 相容的 EmbeddingClient）。
     /// </summary>
     public class RimLLMEmbeddingService
     {
         /// <summary>
         /// 代表「尚未設定 Embedding 供應商」的代號，選用時向量運算一律擲回例外。
-        /// 這不是一種離線演算法：<see cref="CalculateTrigramSimilarity"/> 是獨立的靜態工具，
-        /// 與本設定無關，任何供應商設定下都能呼叫。
         /// </summary>
         public const string DisabledProviderId = "Disabled";
 
@@ -59,7 +56,7 @@ namespace RimLLM_Framework.Manager
             {
                 throw new RimLLMException(
                     LLMError.Unknown,
-                    "Embedding 尚未設定供應商，無法產生向量。請先在設定中選擇 Embedding 供應商；若只需要本機字串比對，可改用 RimLLMEmbeddingService.CalculateTrigramSimilarity。");
+                    "Embedding 尚未設定供應商，無法產生向量。請先在設定中選擇 Embedding 供應商。");
             }
 
             string model = _settings.EmbeddingModel;
@@ -380,95 +377,6 @@ namespace RimLLM_Framework.Manager
                 case "LocalAPI_OpenAI": return ProviderIds.OpenAICompatible;
                 default: return ProviderIds.OpenAI;
             }
-        }
-
-        /// <summary>
-        /// 計算兩個向量的餘弦相似度。長度不一致或任一為 null 時回傳 0。
-        /// </summary>
-        public static float CalculateCosineSimilarity(float[] v1, float[] v2)
-        {
-            if (v1 == null || v2 == null || v1.Length != v2.Length) return 0f;
-            double dotProduct = 0;
-            double mag1 = 0;
-            double mag2 = 0;
-
-            for (int i = 0; i < v1.Length; i++)
-            {
-                float a = v1[i];
-                float b = v2[i];
-                dotProduct += (double)a * b;
-                mag1 += (double)a * a;
-                mag2 += (double)b * b;
-            }
-
-            if (mag1 == 0 || mag2 == 0) return 0f;
-            return (float)(dotProduct / (Math.Sqrt(mag1) * Math.Sqrt(mag2)));
-        }
-
-        /// <summary>
-        /// 以 Trigram 詞袋計算兩段文字的餘弦相似度，回傳 0~1。
-        /// 這是獨立的字串相似度工具，<b>不是</b> Embedding 供應商：它不產生向量、
-        /// 不受 EmbeddingProvider 設定影響，任何設定下都可直接呼叫。
-        /// 適合在沒有 Embedding 服務時做模糊比對的替代方案。
-        /// </summary>
-        public static float CalculateTrigramSimilarity(string s1, string s2)
-        {
-            if (string.IsNullOrEmpty(s1) || string.IsNullOrEmpty(s2)) return 0f;
-            if (s1 == s2) return 1f;
-
-            var grams1 = GetTrigrams(s1);
-            var grams2 = GetTrigrams(s2);
-
-            if (grams1.Count == 0 || grams2.Count == 0) return 0f;
-
-            double mag1 = 0;
-            foreach (int count in grams1.Values)
-            {
-                mag1 += (double)count * count;
-            }
-
-            double mag2 = 0;
-            foreach (int count in grams2.Values)
-            {
-                mag2 += (double)count * count;
-            }
-
-            if (mag1 == 0 || mag2 == 0) return 0f;
-
-            double dotProduct = 0;
-            var smaller = grams1.Count <= grams2.Count ? grams1 : grams2;
-            var larger = grams1.Count <= grams2.Count ? grams2 : grams1;
-
-            foreach (var pair in smaller)
-            {
-                if (larger.TryGetValue(pair.Key, out int otherCount))
-                {
-                    dotProduct += (double)pair.Value * otherCount;
-                }
-            }
-
-            return (float)(dotProduct / (Math.Sqrt(mag1) * Math.Sqrt(mag2)));
-        }
-
-        private static Dictionary<string, int> GetTrigrams(string str)
-        {
-            var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrEmpty(str)) return result;
-
-            string normalized = str.ToLowerInvariant();
-            if (normalized.Length <= 3)
-            {
-                result[normalized] = 1;
-                return result;
-            }
-
-            for (int i = 0; i <= normalized.Length - 3; i++)
-            {
-                string gram = normalized.Substring(i, 3);
-                result[gram] = result.TryGetValue(gram, out int count) ? count + 1 : 1;
-            }
-
-            return result;
         }
     }
 #pragma warning restore S3267, S3878

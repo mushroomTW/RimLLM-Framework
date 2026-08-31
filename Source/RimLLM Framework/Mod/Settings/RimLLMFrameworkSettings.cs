@@ -534,7 +534,20 @@ namespace RimLLM_Framework.Mod
             if (string.IsNullOrEmpty(modelName)) return 0;
             lock (_settingsLock)
             {
-                return _modelLevelOverrides.TryGetValue(modelName, out int level) ? level : 0;
+                if (_modelLevelOverrides.TryGetValue(modelName, out int level))
+                {
+                    return level;
+                }
+                int colonIndex = modelName.IndexOf(':');
+                if (colonIndex >= 0 && colonIndex < modelName.Length - 1)
+                {
+                    string stripped = modelName.Substring(colonIndex + 1);
+                    if (_modelLevelOverrides.TryGetValue(stripped, out level))
+                    {
+                        return level;
+                    }
+                }
+                return 0;
             }
         }
 

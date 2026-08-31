@@ -331,36 +331,33 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestGetResponseObjectAsync_FacadeFullPath_DoubleRepair()
+        public void TestGetResponseObjectAsync_FacadeFullPath_StaticRepair()
         {
-            var settings = new MockSettings { FallbackChain = new List<string> { "DoubleRepairMock:model-dr" } };
-            settings.EnabledProviders["DoubleRepairMock"] = true;
-            settings.ApiKeys["DoubleRepairMock"] = "key";
+            var settings = new MockSettings { FallbackChain = new List<string> { "StaticRepairMock:model-sr" } };
+            settings.EnabledProviders["StaticRepairMock"] = true;
+            settings.ApiKeys["StaticRepairMock"] = "key";
 
             var manager = new RimLLMManager(settings);
             int callCount = 0;
             manager.RegisterProvider(new MockTestProvider
             {
-                ProviderId = "DoubleRepairMock",
+                ProviderId = "StaticRepairMock",
                 GenerateHandler = (messages, options, model) =>
                 {
                     callCount++;
-                    if (callCount == 1)
-                    {
-                        return System.Threading.Tasks.Task.FromResult("{{ Value: 100");
-                    }
-                    return System.Threading.Tasks.Task.FromResult("{\"Value\":99,\"Message\":\"repaired\"}");
+                    // 模擬含 markdown 與尾隨逗號的 JSON
+                    return System.Threading.Tasks.Task.FromResult("```json\n{\"Value\":99,\"Message\":\"repaired\",}\n```");
                 }
             });
 
-            var client = CreateClient(manager, "test.doublerepair.mod");
+            var client = CreateClient(manager, "test.staticrepair.mod");
             var result = client.GetResponseObjectAsync<TestDataStructure>(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "get repaired data") }).GetAwaiter().GetResult();
 
             Assert.IsNotNull(result);
             Assert.AreEqual(99, result.Value);
             Assert.AreEqual("repaired", result.Message);
-            Assert.AreEqual(2, callCount);
+            Assert.AreEqual(1, callCount);
         }
 
         [Test]

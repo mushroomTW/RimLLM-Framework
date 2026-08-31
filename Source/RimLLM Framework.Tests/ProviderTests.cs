@@ -959,8 +959,17 @@ namespace RimLLM_Framework.Tests
         public void SetModelList(string providerId, List<string> models) => ModelLists[providerId] = models;
 
         public Dictionary<string, int> ModelLevelOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        public int GetModelLevelOverride(string modelName) =>
-            !string.IsNullOrEmpty(modelName) && ModelLevelOverrides.TryGetValue(modelName, out var level) ? level : 0;
+        public int GetModelLevelOverride(string modelName)
+        {
+            if (string.IsNullOrEmpty(modelName)) return 0;
+            if (ModelLevelOverrides.TryGetValue(modelName, out var level)) return level;
+            int colonIndex = modelName.IndexOf(':');
+            if (colonIndex >= 0 && colonIndex < modelName.Length - 1)
+            {
+                if (ModelLevelOverrides.TryGetValue(modelName.Substring(colonIndex + 1), out level)) return level;
+            }
+            return 0;
+        }
 
         public void Write() {}
     }

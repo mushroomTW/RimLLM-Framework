@@ -272,28 +272,18 @@ namespace RimLLM_Framework.Manager
                 }
 
                 string repairedJson = RimLLMJsonHelper.RepairJson(rawResponse);
-                RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting fallback repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting static repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
                 try
                 {
                     string fallbackExtracted = RimLLMJsonHelper.ExtractJsonBlock(repairedJson);
                     return RimLLMJsonHelper.DeserializeAndValidate<T>(fallbackExtracted);
                 }
-                catch
+                catch (Exception repairEx)
                 {
-                    RimLLMLog.Message($"[RimLLM] Static JSON repair failed. Initiating Double-Repair (LLM-assisted repair)...");
-                    try
-                    {
-                        T repairedObj = PerformDoubleRepairAsync<T>(request, rawResponse, ex.Message).GetAwaiter().GetResult();
-                        RimLLMJsonHelper.ValidateStructuredObject(repairedObj);
-                        return repairedObj;
-                    }
-                    catch (Exception repairEx)
-                    {
-                        throw new RimLLMException(
-                            LLMError.InvalidResponse,
-                            $"Unable to parse LLM response to target object {typeof(T).Name}. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}. Parse error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}. LLM-assisted repair error: {RimLLMLog.SanitizeForLog(repairEx.Message, 200)}",
-                            repairEx);
-                    }
+                    throw new RimLLMException(
+                        LLMError.InvalidResponse,
+                        $"Unable to parse LLM response to target object {typeof(T).Name}. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}. Parse error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}. Static repair error: {RimLLMLog.SanitizeForLog(repairEx.Message, 200)}",
+                        repairEx);
                 }
             }
         }
@@ -301,28 +291,6 @@ namespace RimLLM_Framework.Manager
         internal static T DeserializeAndValidate<T>(string json)
         {
             return RimLLMJsonHelper.DeserializeAndValidate<T>(json);
-        }
-
-        internal async Task<T> PerformDoubleRepairAsync<T>(RimLLMRequest originalRequest, string failedResponse, string errorMessage)
-        {
-            var repairRequest = new RimLLMRequest
-            {
-                ModId = originalRequest?.ModId,
-                Temperature = 0.1f,
-                MaxOutputTokens = originalRequest?.MaxOutputTokens,
-                CancellationToken = originalRequest?.CancellationToken ?? CancellationToken.None,
-                DisableReasoning = true,
-                Messages = new List<ChatMessage>
-                {
-                    new ChatMessage(ChatRole.System, "You are a JSON repair assistant. The user will provide a JSON string that failed to parse, along with the parser error message. Your task is to output ONLY the corrected JSON string that is syntactically valid and contains all fields. Do NOT include markdown code blocks (like ```json), explanations, or any other text."),
-                    new ChatMessage(ChatRole.User, $"Failed JSON:\n{failedResponse}\n\nParser Error:\n{errorMessage}\n\nTarget Structure Sample:\n{RimLLMJsonHelper.GetSampleJson<T>()}\n\nPlease output the repaired JSON string:")
-                }
-            };
-
-            string repairResponse = (await GenerateDirectAsync(repairRequest).ConfigureAwait(false)).Text;
-            string repairedJson = RimLLMJsonHelper.RepairJson(repairResponse);
-
-            return JsonConvert.DeserializeObject<T>(repairedJson);
         }
 
         private async Task<string> RunAdmissionChecksAsync(RimLLMRequest request)

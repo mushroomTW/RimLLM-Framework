@@ -126,38 +126,7 @@ namespace RimLLM_Framework.Tests
             public int Value { get; set; }
         }
 
-        [Test]
-        public void TestEmbeddingServiceSimilarityCalculations()
-        {
-            // CalculateCosineSimilarity
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(null, null));
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(new float[] { 1f }, null));
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(null, new float[] { 1f }));
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(new float[] { 1f }, new float[] { 1f, 2f }));
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(new float[] { 0f, 0f }, new float[] { 0f, 0f }));
 
-            float[] v1 = new float[] { 1f, 2f, 3f };
-            float[] v2 = new float[] { 1f, 2f, 3f };
-            Assert.AreEqual(1f, RimLLMEmbeddingService.CalculateCosineSimilarity(v1, v2), 0.0001f);
-
-            float[] v3 = new float[] { 1f, 0f };
-            float[] v4 = new float[] { 0f, 1f };
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateCosineSimilarity(v3, v4), 0.0001f);
-
-            // CalculateTrigramSimilarity
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateTrigramSimilarity(null, "test"));
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateTrigramSimilarity("test", null));
-            Assert.AreEqual(0f, RimLLMEmbeddingService.CalculateTrigramSimilarity("", "test"));
-            Assert.AreEqual(1f, RimLLMEmbeddingService.CalculateTrigramSimilarity("identical", "identical"));
-            Assert.AreEqual(1f, RimLLMEmbeddingService.CalculateTrigramSimilarity("a", "a"));
-            Assert.AreEqual(1f, RimLLMEmbeddingService.CalculateTrigramSimilarity("abc", "abc"));
-
-            float similarity = RimLLMEmbeddingService.CalculateTrigramSimilarity("colonist mood bad", "colonist mood is very bad");
-            Assert.Greater(similarity, 0.4f);
-
-            float disjoint = RimLLMEmbeddingService.CalculateTrigramSimilarity("abcdef", "uvwxyz");
-            Assert.AreEqual(0f, disjoint, 0.0001f);
-        }
 
         [Test]
         public void TestEmbeddingServiceParameterValidation()
@@ -482,17 +451,24 @@ namespace RimLLM_Framework.Tests
             }, LLMError.Unknown, "err");
             Assert.AreEqual("P1:preferred-m", firstAttempted);
 
-            // 5. MinFallbackLevel 分級過濾
+            // 5. MinFallbackLevel 分級過濾與 API 價格分級
+            Assert.AreEqual(3, tracker.GetModelLevel("openai", "gpt-4o")); // Completion $10.00 >= $3.00 -> High (3)
+            Assert.AreEqual(2, tracker.GetModelLevel("openai", "gpt-4o-mini")); // Completion $0.60 >= $0.50 -> Medium (2)
+            Assert.AreEqual(1, tracker.GetModelLevel("gemini", "gemini-2.0-flash-lite")); // Completion $0.30 < $0.50 -> Low (1)
+            Assert.AreEqual(1, tracker.GetModelLevel("deepseek", "deepseek-chat")); // Completion $0.28 < $0.50 -> Low (1)
+            Assert.AreEqual(1, tracker.GetModelLevel("openai-compatible", "local-llama")); // 本地免費 -> Low (1)
+
             req.PreferredModelId = null;
             req.MinFallbackLevel = "high"; // 等級 3
-            settings.FallbackChain = new List<string> { "P1:mini-model", "P2:pro-model" }; // P1 為 tier 2, P2 為 tier 3
+            settings.ModelLevelOverrides["P2:pro-model"] = 3;
+            settings.FallbackChain = new List<string> { "P1:mini-model", "P2:pro-model" }; // P1 預設為 tier 2, P2 覆寫為 tier 3
             firstAttempted = null;
             await pipeline.ExecuteWithFallbackAsync(req, (p, m) =>
             {
                 if (firstAttempted == null) firstAttempted = p.ProviderId;
                 return Task.FromResult(new RimLLMGenerationResult { Text = "tier-ok" });
             }, LLMError.Unknown, "err");
-            Assert.AreEqual("P2", firstAttempted); // P1 (mini) 被跳過，只執行 P2 (pro)
+            Assert.AreEqual("P2", firstAttempted); // P1 (tier 2) 被跳過，只執行 P2 (tier 3)
 
             // 6. RoundRobin 路由策略 (Strategy = 2)
             settings.RoutingStrategy = 2;
@@ -633,23 +609,7 @@ namespace RimLLM_Framework.Tests
             Assert.IsNotNull(res);
             Assert.IsTrue(res.Text.Contains("fallback-success"));
 
-            // 2. 模擬 Double-Repair 輔助修復流程
-            var repairResult = await pipeline.PerformDoubleRepairAsync<NullableTestDataStructure>(
-                req,
-                "{\"Name\":\"broken-repair\"}",
-                "Parser error");
-            Assert.IsNotNull(repairResult);
-
-            // 3. Double-Repair 失敗拋出 RimLLMException
-            var brokenRepairProvider = new MockTestProvider
-            {
-                ProviderId = "BrokenRepairMock",
-                GenerateHandler = (msgs, opts, m) => Task.FromResult("still invalid json after repair")
-            };
-            settings.EnabledProviders["BrokenRepairMock"] = true;
-            settings.ApiKeys["BrokenRepairMock"] = "k";
-            settings.FallbackChain = new List<string> { "BrokenRepairMock:m1" };
-            manager.RegisterProvider(brokenRepairProvider);
+            // 2. 結構化修復失敗時拋出 RimLLMException
             Assert.Throws<RimLLMException>(() => pipeline.DeserializeStructured<NullableTestDataStructure>("totally broken no json anywhere", req));
 
             // 4. 結構化欄位驗證 (Field 必填為 null 拋出 InvalidOperationException)
@@ -738,13 +698,7 @@ namespace RimLLM_Framework.Tests
             ok = await tracker.CheckBudgetLimitAsync(new RimLLMRequest { ModId = "t" });
             Assert.IsTrue(ok);
 
-            // Policy 3 = DialogPrompt (無視窗環境回傳 false)
-            settings.BudgetPolicy = 3;
-            ok = await tracker.CheckBudgetLimitAsync(new RimLLMRequest { ModId = "t" });
-            Assert.IsFalse(ok);
-
-            // 5. 跨天重置與清除審查
-            tracker.ClearBudgetApprovals();
+            // 5. 跨天重置
             settings.DailyBudgetResetDate = "2000-01-01";
             tracker.CheckDailyReset();
             Assert.AreEqual(0f, settings.DailyAccumulatedCost);

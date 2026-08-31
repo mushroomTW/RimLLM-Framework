@@ -52,58 +52,7 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        /// <summary>
-        /// 將 C# 型別轉換為 JObject 代表的 JSON Schema。
-        /// </summary>
-        [Obsolete("改用 RimLLMSchemaBuilder.Build(type, profile)。此多載將於下一版移除。", false)]
-        public static JObject GenerateJsonSchema(Type type, bool uppercaseTypes = false)
-        {
-            return JObject.Parse(GenerateJsonSchemaString(type, uppercaseTypes));
-        }
 
-        /// <summary>
-        /// 取得 JSON Schema 的字串形式。
-        /// </summary>
-        [Obsolete("改用 RimLLMSchemaBuilder.BuildJson(type, profile)。此多載將於下一版移除。", false)]
-        public static string GenerateJsonSchemaString(Type type, bool uppercaseTypes = false)
-        {
-            if (type == null) throw new ArgumentNullException(nameof(type));
-
-            // uppercaseTypes 原本是為了 Gemini REST 的大寫 type 關鍵字而存在，但生產路徑從未使用它
-            // （小寫同樣被 Schema.FromJson 接受）。這裡仍對映到 Gemini 方言以維持對外相容。
-            RimLLMSchemaProfile profile = uppercaseTypes ? RimLLMSchemaProfile.Gemini : RimLLMSchemaProfile.OpenAI;
-            string json = RimLLMSchemaBuilder.BuildJson(type, profile);
-            if (!uppercaseTypes)
-            {
-                return json;
-            }
-
-            JObject schema = JObject.Parse(json);
-            UppercaseTypeKeywords(schema);
-            return schema.ToString();
-        }
-
-        private static void UppercaseTypeKeywords(JObject node)
-        {
-            if (node == null) return;
-
-            JToken type = node["type"];
-            if (type != null && type.Type == JTokenType.String)
-            {
-                node["type"] = type.Value<string>().ToUpperInvariant();
-            }
-
-            UppercaseTypeKeywords(node["items"] as JObject);
-            UppercaseTypeKeywords(node["additionalProperties"] as JObject);
-
-            var properties = node["properties"] as JObject;
-            if (properties == null) return;
-
-            foreach (KeyValuePair<string, JToken> property in properties)
-            {
-                UppercaseTypeKeywords(property.Value as JObject);
-            }
-        }
 
         /// <summary>
         /// 判斷型別是否會產生開放式 map（由 Dictionary 產生的 additionalProperties schema）。

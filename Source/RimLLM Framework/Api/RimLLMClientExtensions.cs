@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
@@ -15,7 +15,7 @@ namespace RimLLM_Framework
         /// <summary>
         /// 結構化輸出：以目標型別 T 產生 JSON Schema 送出，並回傳反序列化結果。
         /// client 為 RimLLMProvider.CreateChatClient 回傳的 facade 時走完整路徑
-        /// （含 JSON repair 與 LLM-assisted double-repair）；其他 IChatClient 走簡化路徑（schema + repair）。
+        /// （含 JSON repair）；其他 IChatClient 走簡化路徑（schema + repair）。
         /// </summary>
         public static Task<T> GetResponseObjectAsync<T>(
             this IChatClient client,

@@ -286,11 +286,6 @@ namespace RimLLM_Framework.Manager
             return _fallbackPipeline.ResolveFallbackEntry(entry, out providerId, out modelName);
         }
 
-        internal Task<T> PerformDoubleRepairAsync<T>(RimLLMRequest originalRequest, string failedResponse, string errorMessage)
-        {
-            return _chatPipeline.PerformDoubleRepairAsync<T>(originalRequest, failedResponse, errorMessage);
-        }
-
         public void ClearLogs()
         {
             _usageTracker.ClearLogs();
@@ -310,14 +305,6 @@ namespace RimLLM_Framework.Manager
         public void ResetUsage()
         {
             _usageTracker.ResetUsage();
-        }
-
-        internal static Task<bool> AwaitBudgetApprovalAsync(
-            Task<bool> sharedPromptTask,
-            CancellationToken requestToken,
-            TimeSpan timeout)
-        {
-            return RimLLMUsageTracker.AwaitBudgetApprovalAsync(sharedPromptTask, requestToken, timeout);
         }
     }
 #pragma warning restore S101

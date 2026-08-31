@@ -194,7 +194,7 @@ namespace RimLLM_Framework
 
         /// <summary>
         /// 結構化輸出完整路徑（供 RimLLMClientExtensions 使用）：走 manager 核心流程
-        /// （schema、JSON repair、LLM-assisted double-repair），框架功能不繞過。
+        /// （schema、JSON repair），框架功能不繞過。
         /// </summary>
         internal async Task<T> GenerateObjectAsync<T>(
             IEnumerable<ChatMessage> messages,
