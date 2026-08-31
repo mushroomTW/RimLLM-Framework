@@ -36,9 +36,13 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         public virtual bool RequiresApiKey => true;
 
-        public abstract Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model);
+        public virtual LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
+        {
+            SupportsStreaming = true,
+            SupportsUsageMetadata = true
+        };
 
-        public abstract Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived);
+        public abstract IChatClient CreateChatClient(string model);
 
         public virtual async Task<TestResult> TestConnectionAsync()
         {
@@ -70,12 +74,15 @@ namespace RimLLM_Framework.Providers
                     testModel = Settings.GetDefaultModel(ProviderId, DefaultTestModel);
                 }
 
-                string content = await GenerateAsync(messages, options, testModel).ConfigureAwait(false);
-                stopwatch.Stop();
+                using (IChatClient client = CreateChatClient(testModel))
+                {
+                    ChatResponse response = await client.GetResponseAsync(messages, options).ConfigureAwait(false);
+                    stopwatch.Stop();
 
-                result.Success = true;
-                result.Model = testModel;
-                result.LatencyMs = stopwatch.ElapsedMilliseconds;
+                    result.Success = true;
+                    result.Model = testModel;
+                    result.LatencyMs = stopwatch.ElapsedMilliseconds;
+                }
             }
             catch (RimLLMException ex)
             {

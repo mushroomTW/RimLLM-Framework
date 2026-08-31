@@ -322,14 +322,16 @@ namespace RimLLM_Framework.Tests
             Assert.IsFalse(unknown.SupportsNativeStructuredOutput);
             Assert.IsFalse(unknown.SupportsStreaming);
 
-            // 任務 6 之後所有內建 provider 一律走官方 SDK（OpenAI / Google.GenAI）+ MEAI，
+            // 所有內建 provider 一律走官方 SDK（OpenAI / Google.GenAI）+ MEAI，
             // 不再保留 raw HTTP 對話路徑。
+            settings.ApiKeys["OpenAI"] = "mock-key";
+            settings.ApiKeys["Gemini"] = "mock-key";
             var sdkOpenAi = new TestOpenAIProvider(settings);
-            Assert.IsTrue(sdkOpenAi.UsesIChatClient);
+            Assert.IsNotNull(sdkOpenAi.CreateChatClient("gpt-4o"));
             Assert.IsTrue(sdkOpenAi.Capabilities.SupportsNativeStructuredOutput);
 
             var sdkGemini = new TestGeminiProvider(settings);
-            Assert.IsTrue(sdkGemini.UsesIChatClient);
+            Assert.IsNotNull(sdkGemini.CreateChatClient("gemini-1.5-pro"));
             Assert.IsTrue(sdkGemini.Capabilities.SupportsNativeStructuredOutput);
         }
 

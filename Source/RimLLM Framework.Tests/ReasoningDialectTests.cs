@@ -400,8 +400,9 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings, ProviderId, Settings.GetEndpoint(ProviderId, DefaultEndpoint), model, WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -415,8 +416,9 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings, ProviderId, Settings.GetEndpoint(ProviderId, DefaultEndpoint), model, WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -430,8 +432,9 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings, ProviderId, Settings.GetEndpoint(ProviderId, DefaultEndpoint), model, WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -445,8 +448,9 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings, ProviderId, "https://localhost:1234/v1", model, WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 }

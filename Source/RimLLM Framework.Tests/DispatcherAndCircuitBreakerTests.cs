@@ -500,7 +500,10 @@ namespace RimLLM_Framework.Tests
             for (int i = 0; i < 3; i++)
             {
                 try { client.GetResponseAsync(messages, options).GetAwaiter().GetResult(); } catch {}
-                manager.ClearCooldowns();
+                if (i < 2)
+                {
+                    manager.ClearCooldowns();
+                }
             }
             Assert.AreEqual(3, failCount);
             Assert.AreEqual(3, successCount);

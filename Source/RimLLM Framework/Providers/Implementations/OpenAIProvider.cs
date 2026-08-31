@@ -1,3 +1,4 @@
+extern alias bclasync;
 using System;
 using System.ClientModel;
 using System.Collections.Generic;
@@ -17,7 +18,7 @@ namespace RimLLM_Framework.Providers
     /// <summary>
     /// OpenAI API 供應商，支援 Chat Completion 與 SSE 串流。
     /// </summary>
-    public class OpenAIProvider : BaseHttpProvider, IChatClientProvider, INativeStructuredOutputProvider, IChatOptionsCustomizer
+    public class OpenAIProvider : BaseHttpProvider
     {
         private readonly string _providerId;
         private readonly string _defaultEndpoint;
@@ -27,18 +28,13 @@ namespace RimLLM_Framework.Providers
         protected virtual string DefaultEndpoint => _defaultEndpoint;
 
         /// <summary>
-        /// OpenAI 系列一律走官方 SDK + MEAI，不保留 raw HTTP 對話路徑。
-        /// </summary>
-        public bool UsesIChatClient => true;
-
-        /// <summary>
         /// 衍生 provider 是否支援 OpenAI 相容的 <c>response_format: json_schema</c> 欄位。
         /// 預設為 true：OpenAI 官方支援 strict JSON Schema；不支援的服務端（Grok/Kimi/MiniMax/
         /// Nvidia/Qwen/Zai/OpenAICompatible）應覆寫為 false，讓框架改走提示式 JSON fallback。
         /// </summary>
         protected virtual bool SupportsNativeJsonSchemaPayload => true;
 
-        public LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
+        public override LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
         {
             SupportsNativeStructuredOutput = SupportsNativeJsonSchemaPayload,
             SupportsStreaming = true,
@@ -58,11 +54,12 @@ namespace RimLLM_Framework.Providers
             _defaultTestModel = defaultTestModel;
         }
 
-        public virtual IChatClient CreateChatClient(string model)
+        public override IChatClient CreateChatClient(string model)
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
-            return CreateOpenAiChatClient(apiKey, model, endpoint);
+            IChatClient rawClient = CreateOpenAiChatClient(apiKey, model, endpoint);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
 
         public static IChatClient CreateOpenAiChatClient(string apiKey, string model, string endpoint = null)
@@ -95,14 +92,6 @@ namespace RimLLM_Framework.Providers
                 normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd(SlashChars);
             }
             return normalized;
-        }
-
-        /// <summary>
-        /// 供應商專屬 options 客製化鉤子：交由 <see cref="BuildChatOptions"/> 實作。
-        /// </summary>
-        public Action<ChatOptions> CreateChatOptionsCustomizer(ChatOptions options, string model)
-        {
-            return o => BuildChatOptions(options, model, o);
         }
 
         /// <summary>
@@ -349,96 +338,86 @@ namespace RimLLM_Framework.Providers
             return 4096;
         }
 
-        public Task<string> GenerateStructuredAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
+        protected sealed class OpenAIChatClientAdapter : DelegatingChatClient
         {
-            return GenerateWithChatClientAsync(messages, options, model, true);
-        }
+            private readonly OpenAIProvider _provider;
+            private readonly string _model;
 
-        public override Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
-        {
-            return GenerateWithChatClientAsync(messages, options, model, options?.ResponseFormat != null && Settings.EnableNativeSchema);
-        }
-
-        public override Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
-        {
-            return StreamWithChatClientAsync(messages, options, model, onChunkReceived);
-        }
-
-        private async Task<string> GenerateWithChatClientAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, bool useNativeSchema)
-        {
-            // 供應商不支援原生 JSON Schema（如 Kimi/Grok）時，
-            // 即使呼叫端要求 structured output 也改走提示式 JSON fallback，
-            // 與 raw 路徑 BuildRequestPayloadAsync 的判斷一致。
-            bool effectiveNativeSchema = useNativeSchema && SupportsNativeJsonSchemaPayload;
-
-            try
+            public OpenAIChatClientAdapter(IChatClient innerClient, OpenAIProvider provider, string model)
+                : base(innerClient)
             {
-                return await ExecuteGenerateAsync(messages, options, model, effectiveNativeSchema).ConfigureAwait(false);
+                _provider = provider;
+                _model = model;
             }
-            catch (RimLLMException ex)
+
+            public override async Task<ChatResponse> GetResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                System.Threading.CancellationToken cancellationToken = default)
             {
-                if (!MarkUnsupportedParameters(model, ex)) throw;
-                // 參數已從記憶中排除，重新組裝一次不含該參數的請求。
-                return await ExecuteGenerateAsync(messages, options, model, effectiveNativeSchema).ConfigureAwait(false);
+                var targetOptions = options?.Clone() ?? new ChatOptions();
+                _provider.BuildChatOptions(options, _model, targetOptions);
+
+                ChatResponse response;
+                try
+                {
+                    response = await base.GetResponseAsync(messages, targetOptions, cancellationToken).ConfigureAwait(false);
+                }
+                catch (ClientResultException ex)
+                {
+                    var mapped = LLMErrorMapper.CreateException(ex.Status, ex.Message, innerException: ex);
+                    if (_provider.MarkUnsupportedParameters(_model, mapped))
+                    {
+                        var retryOptions = options?.Clone() ?? new ChatOptions();
+                        _provider.BuildChatOptions(options, _model, retryOptions);
+                        response = await base.GetResponseAsync(messages, retryOptions, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        throw mapped;
+                    }
+                }
+
+                if (response?.Usage != null)
+                {
+                    try
+                    {
+                        var manager = RimLLMProvider.Manager;
+                        if (manager != null)
+                        {
+                            int promptTokens = (int)(response.Usage.InputTokenCount ?? 0);
+                            int completionTokens = (int)(response.Usage.OutputTokenCount ?? 0);
+                            int cachedTokens = (int)(response.Usage.CachedInputTokenCount ?? 0);
+                            manager.RecordUsage(_provider.ProviderId, _model, promptTokens, completionTokens, cachedTokens);
+                        }
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Manager not initialized
+                    }
+                }
+
+                return response;
             }
-        }
 
-        private async Task<string> ExecuteGenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, bool effectiveNativeSchema)
-        {
-            RimLLMRequest translated = RimLLMChatClientExecutor.CreateFromChatOptions(messages, options, model);
-
-            using (IChatClient client = CreateChatClient(model))
+            public override bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                System.Threading.CancellationToken cancellationToken = default)
             {
-                var result = await RimLLMChatClientExecutor.GenerateAsync(
-                    client,
-                    translated,
-                    model,
-                    effectiveNativeSchema,
-                    ProviderId,
-                    Settings?.ApiTimeout ?? 30f,
-                    o => BuildChatOptions(options, model, o)).ConfigureAwait(false);
-                return result.Text;
-            }
-        }
+                var targetOptions = options?.Clone() ?? new ChatOptions();
+                _provider.BuildChatOptions(options, _model, targetOptions);
 
-        private async Task StreamWithChatClientAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
-        {
-            // 只有「一個 chunk 都還沒送出」時才允許重打，否則畫面會出現前後兩段混接的內容。
-            // 參數被拒是在服務端解析請求時就發生，正常情況下不會有任何 chunk 先送出。
-            bool emitted = false;
-            Action<string> trackingCallback = chunk =>
-            {
-                emitted = true;
-                onChunkReceived?.Invoke(chunk);
-            };
-
-            try
-            {
-                await ExecuteStreamAsync(messages, options, model, trackingCallback).ConfigureAwait(false);
-            }
-            catch (RimLLMException ex)
-            {
-                if (emitted || !MarkUnsupportedParameters(model, ex)) throw;
-                await ExecuteStreamAsync(messages, options, model, trackingCallback).ConfigureAwait(false);
-            }
-        }
-
-        private async Task ExecuteStreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
-        {
-            RimLLMRequest translated = RimLLMChatClientExecutor.CreateFromChatOptions(messages, options, model);
-
-            using (IChatClient client = CreateChatClient(model))
-#pragma warning disable S108, S2325, S3267 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
-            {
-                await RimLLMChatClientExecutor.StreamAsync(
-                    client,
-                    translated,
-                    model,
-                    options?.ResponseFormat != null && Settings.EnableNativeSchema,
-                    ProviderId,
-                    onChunkReceived,
-                    Settings?.ApiTimeout ?? 30f,
-                    o => BuildChatOptions(options, model, o)).ConfigureAwait(false);
+                try
+                {
+                    return base.GetStreamingResponseAsync(messages, targetOptions, cancellationToken);
+                }
+                catch (ClientResultException ex)
+                {
+                    var mapped = LLMErrorMapper.CreateException(ex.Status, ex.Message, innerException: ex);
+                    _provider.MarkUnsupportedParameters(_model, mapped);
+                    throw mapped;
+                }
             }
         }
 
@@ -477,7 +456,7 @@ namespace RimLLM_Framework.Providers
         /// 這份清單漏掉新模型時，第一次請求會收到 temperature 相關的 400，
         /// 框架會記下來並自動重打，因此漏列的代價是一次重試而不是永久失敗。
         /// </summary>
-        protected bool IsOpenAiReasoningModel(string modelName)
+        protected static bool IsOpenAiReasoningModel(string modelName)
         {
             string name = NormalizeModelName(modelName);
             return name.StartsWith("o1") || name.StartsWith("o3") || name.StartsWith("o4") ||
@@ -514,12 +493,9 @@ namespace RimLLM_Framework.Providers
                     .GetModelsAsync()
                     .ConfigureAwait(false);
 
-                foreach (OpenAIModel model in models)
+                foreach (OpenAIModel model in System.Linq.Enumerable.Where(models, m => !string.IsNullOrEmpty(m?.Id)))
                 {
-                    if (!string.IsNullOrEmpty(model?.Id))
-                    {
-                        list.Add(model.Id);
-                    }
+                    list.Add(model.Id);
                 }
             }
             catch (ClientResultException ex)

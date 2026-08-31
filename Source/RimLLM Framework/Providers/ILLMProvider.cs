@@ -7,7 +7,7 @@ namespace RimLLM_Framework.Providers
 {
 #pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
-    /// LLM 供應商對接介面（MEAI 慣例：messages + options）。
+    /// LLM 供應商對接介面（標準 MEAI IChatClient 產出、能力宣告與診斷）。
     /// </summary>
     public interface ILLMProvider
     {
@@ -23,22 +23,16 @@ namespace RimLLM_Framework.Providers
         bool RequiresApiKey { get; }
 
         /// <summary>
-        /// 向該供應商發送非同步生成請求。
+        /// 供應商支援的能力宣告（如原生結構化輸出、Schema 方言偏好等）。
         /// </summary>
-        /// <param name="messages">對話訊息清單</param>
-        /// <param name="options">生成選項</param>
-        /// <param name="model">要使用的模型名稱</param>
-        /// <returns>生成結果文字</returns>
-        Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model);
+        LLMProviderCapabilities Capabilities { get; }
 
         /// <summary>
-        /// 向該供應商發送非同步串流請求。
+        /// 建立已預先配置好協定補丁、選項客製化與錯誤對映的 MEAI <see cref="IChatClient"/>。
         /// </summary>
-        /// <param name="messages">對話訊息清單</param>
-        /// <param name="options">生成選項</param>
         /// <param name="model">要使用的模型名稱</param>
-        /// <param name="onChunkReceived">收到字串片段時的回呼函式</param>
-        Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived);
+        /// <returns>已配置的 IChatClient 執行個體</returns>
+        IChatClient CreateChatClient(string model);
 
         /// <summary>
         /// 測試此供應商的 API 金鑰與連線狀態。

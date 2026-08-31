@@ -261,7 +261,7 @@ This is the point of the framework. All of the following already happens behind 
 | Tier | Types | Needed when |
 |---|---|---|
 | **Calling a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError`, `RimLLMClientExtensions` | Always — this is the whole consumer API |
-| **Supplying a provider** | `IChatClientProvider`, `IChatOptionsCustomizer`, `INativeStructuredOutputProvider`, `LLMProviderCapabilities`, `IRimLLMSettings` | Only if you register your own LLM backend via `RimLLMProvider.RegisterProvider` (`ILLMProvider` lives in `RimLLM_Framework.Providers`) |
+| **Supplying a provider** | `ILLMProvider`, `LLMProviderCapabilities`, `IRimLLMSettings` | Only if you register your own LLM backend via `RimLLMProvider.RegisterProvider` (`ILLMProvider` produces standard `Microsoft.Extensions.AI.IChatClient`) |
 | **Diagnostics** | `TestResult`, `ProviderIds`, `LLMErrorMapper` | Connection tests, built-in provider id constants, HTTP-status mapping |
 
 Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseUpdate`, `IEmbeddingGenerator` — is `Microsoft.Extensions.AI`. The concrete client classes are `internal`, so there is deliberately no RimLLM client type to program against.

@@ -67,14 +67,14 @@ namespace RimLLM_Framework.Tests
             Assert.AreEqual(0, mockSettings.TotalCompletionTokens);
             Assert.AreEqual(0f, mockSettings.TotalEstimatedCost);
 
-            // 2. 未知或未維護精確費率的模型只累計 tokens，不再用 provider 類別粗估金額。
-            manager.RecordUsage("OpenAI", "gpt-4o", 100000, 50000);
+            // 2. 未知或未維護精確費率的模型只累計 tokens，金額估算為 0。
+            manager.RecordUsage("CustomProvider", "custom-unlisted-model", 100000, 50000);
 
             Assert.AreEqual(100000, mockSettings.TotalPromptTokens);
             Assert.AreEqual(50000, mockSettings.TotalCompletionTokens);
             Assert.AreEqual(0f, mockSettings.TotalEstimatedCost);
 
-            // 3. 已知精確費率模型才累計估算金額。
+            // 3. 已知精確費率模型累計估算金額。
             manager.RecordUsage("Gemini", "gemini-2.5-flash", 1000000, 1000000);
 
             Assert.AreEqual(1100000, mockSettings.TotalPromptTokens);

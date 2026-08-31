@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -11,21 +10,16 @@ namespace RimLLM_Framework.Manager
 {
     /// <summary>
     /// 負責備用鏈（Fallback Chain）維護、Provider 失敗後自動嘗試下一個備用 Provider、
-    /// 備用管道執行與熔斷器 (Circuit Breaker) 連動等邏輯的服務元件。
+    /// 備用管道執行與健康帳本 (Health Ledger) 連動等邏輯的服務元件。
     /// </summary>
 #pragma warning disable S101 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     public class RimLLMFallbackPipeline
     {
         private readonly IRimLLMSettings _settings;
-        private readonly RimLLMCircuitBreaker _circuitBreaker;
+        private readonly RimLLMHealthLedger _healthLedger;
         private readonly RimLLMUsageTracker _usageTracker;
         private readonly Func<string, ILLMProvider> _providerResolver;
         private readonly Func<string, bool> _isProviderEnabledFunc;
-
-        private readonly ConcurrentDictionary<string, List<long>> ProviderLatencies =
-            new ConcurrentDictionary<string, List<long>>(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, DateTime> ProviderFailCooldowns =
-            new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         private struct ResolvedCandidate
         {
@@ -47,13 +41,13 @@ namespace RimLLM_Framework.Manager
 
         public RimLLMFallbackPipeline(
             IRimLLMSettings settings,
-            RimLLMCircuitBreaker circuitBreaker,
+            RimLLMHealthLedger healthLedger,
             RimLLMUsageTracker usageTracker,
             Func<string, ILLMProvider> providerResolver,
             Func<string, bool> isProviderEnabledFunc)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-            _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
+            _healthLedger = healthLedger ?? throw new ArgumentNullException(nameof(healthLedger));
             _usageTracker = usageTracker ?? throw new ArgumentNullException(nameof(usageTracker));
             _providerResolver = providerResolver ?? throw new ArgumentNullException(nameof(providerResolver));
             _isProviderEnabledFunc = isProviderEnabledFunc ?? throw new ArgumentNullException(nameof(isProviderEnabledFunc));
@@ -62,7 +56,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 共用的 Fallback Chain 執行核心。
         /// 依序遍歷符合資格的供應商條目，對每個條目套用相同的重試策略，
-        /// 並統一處理取消檢查、熔斷記錄與用量統計。
+        /// 並統一處理取消檢查、健康帳本記錄與用量統計。
         /// </summary>
 #pragma warning disable S3776 // reason: 單一線性敘事含 fallback 解析、路由策略、重試迴圈，拆分反而增加重組成本
         internal async Task<RimLLMGenerationResult> ExecuteWithFallbackAsync(
@@ -104,7 +98,7 @@ namespace RimLLM_Framework.Manager
             var candidates = new List<ResolvedCandidate>();
             foreach (string entry in effectiveChain)
             {
-                if (TryGetEligibleCandidate(entry, effectiveChain, request, out string pId, out ILLMProvider p, out string mName))
+                if (TryGetEligibleCandidate(entry, request, out string pId, out ILLMProvider p, out string mName))
                 {
                     candidates.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
                 }
@@ -116,7 +110,7 @@ namespace RimLLM_Framework.Manager
             }
 
             // 2. 過濾處於故障冷卻期的供應商（若全部都在冷卻中，則破例放行）
-            var activeCandidates = candidates.FindAll(c => !IsInCooldown(c.ProviderId));
+            var activeCandidates = candidates.FindAll(c => !_healthLedger.IsInCooldown(c.ProviderId));
             if (activeCandidates.Count == 0)
             {
                 activeCandidates = candidates;
@@ -128,8 +122,8 @@ namespace RimLLM_Framework.Manager
             {
                 activeCandidates.Sort((a, b) =>
                 {
-                    float latA = GetAverageLatency(a.ProviderId);
-                    float latB = GetAverageLatency(b.ProviderId);
+                    float latA = _healthLedger.GetAverageLatency(a.ProviderId);
+                    float latB = _healthLedger.GetAverageLatency(b.ProviderId);
                     if (latA == 0f && latB != 0f) return -1;
                     if (latA != 0f && latB == 0f) return 1;
                     return latA.CompareTo(latB);
@@ -159,7 +153,6 @@ namespace RimLLM_Framework.Manager
                 string providerId = candidate.ProviderId;
                 ILLMProvider provider = candidate.Provider;
                 string modelName = candidate.ModelName;
-                bool isRetryableFailure = false;
 
                 for (int attempt = 0; attempt <= maxRetries; attempt++)
                 {
@@ -183,8 +176,7 @@ namespace RimLLM_Framework.Manager
                         requestStopwatch.Stop();
 
                         // 成功後重設健康狀態與記錄延遲
-                        _circuitBreaker.RecordSuccess(providerId);
-                        RecordLatency(providerId, requestStopwatch.ElapsedMilliseconds);
+                        _healthLedger.RecordSuccess(providerId, requestStopwatch.ElapsedMilliseconds);
 
                         _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
                         return attemptResult;
@@ -198,11 +190,10 @@ namespace RimLLM_Framework.Manager
                         lastException = ex;
                         bool retryable = IsRetryableException(ex);
 
-                        // 可重試類錯誤（網路、超時、限流等）同時視為健康度失敗，納入熔斷統計
+                        // 可重試類錯誤（網路、超時、限流等）計入健康度失敗與冷卻
                         if (retryable)
                         {
-                            _circuitBreaker.RecordFailure(providerId);
-                            isRetryableFailure = true;
+                            _healthLedger.RecordFailure(providerId, isRetryable: true);
                         }
 
                         if (retryable && attempt < maxRetries)
@@ -234,12 +225,6 @@ namespace RimLLM_Framework.Manager
                         }
                     }
                 }
-
-                if (isRetryableFailure)
-                {
-                    // 只有在因為網路或暫時性錯誤（可重試錯誤）導致失敗時，才置入冷卻阻斷期
-                    ProviderFailCooldowns[providerId] = DateTime.UtcNow.AddSeconds(60);
-                }
             }
 
             totalStopwatch.Stop();
@@ -270,44 +255,23 @@ namespace RimLLM_Framework.Manager
 
         public void ClearCooldowns()
         {
-            ProviderFailCooldowns.Clear();
-            ProviderLatencies.Clear();
+            _healthLedger.Clear();
         }
 
         public bool IsInCooldown(string providerId)
         {
-            return ProviderFailCooldowns.TryGetValue(providerId, out DateTime cdUntil) && DateTime.UtcNow < cdUntil;
+            return _healthLedger.IsInCooldown(providerId);
         }
 
         public float GetAverageLatency(string providerId)
         {
-            if (ProviderLatencies.TryGetValue(providerId, out var list) && list.Count > 0)
-            {
-                lock (list)
-                {
-                    if (list.Count == 0) return 0f;
-                    long sum = 0;
-                    foreach (long val in list) sum += val;
-                    return (float)sum / list.Count;
-                }
-            }
-            return 0f;
+            return _healthLedger.GetAverageLatency(providerId);
         }
 
         public void RecordLatency(string providerId, long ms)
         {
-            var list = ProviderLatencies.GetOrAdd(providerId, _ => new List<long>());
-            lock (list)
-            {
-                list.Add(ms);
-                if (list.Count > 5)
-                {
-                    list.RemoveAt(0);
-                }
-            }
-        #pragma warning disable S1168 // reason: null 表示未找到或未配置，與空集合語意不同，呼叫端需區分
+            _healthLedger.RecordSuccess(providerId, ms);
         }
-        #pragma warning restore S1168
 
         private List<string> GetFallbackChainSnapshot()
         {
@@ -323,7 +287,7 @@ namespace RimLLM_Framework.Manager
                    (!provider.RequiresApiKey || !string.IsNullOrEmpty(_settings.GetApiKey(providerId)));
         }
 
-        private bool TryGetEligibleCandidate(string entry, List<string> fallbackChain, RimLLMRequest request, out string providerId, out ILLMProvider provider, out string modelName)
+        private bool TryGetEligibleCandidate(string entry, RimLLMRequest request, out string providerId, out ILLMProvider provider, out string modelName)
         {
             provider = null;
 
@@ -355,18 +319,6 @@ namespace RimLLM_Framework.Manager
                     RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
                     return false;
                 }
-            }
-
-            // Circuit Breaker 健康狀態檢查
-            if (_circuitBreaker.IsCooldown(providerId, out DateTime cdTime, out int failures)
-                && !_circuitBreaker.AreAllEligibleProvidersInCooldown(fallbackChain, id =>
-                    {
-                        var p = _providerResolver(id);
-                        return p != null && IsProviderUsable(id, p);
-                    }))
-            {
-                RimLLMLog.Message($"[RimLLM] Skipping provider {providerId} because it is in cooldown until {cdTime.ToLocalTime()} due to {failures} continuous failures.");
-                return false;
             }
 
             return true;

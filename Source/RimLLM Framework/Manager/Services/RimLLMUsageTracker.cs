@@ -1,15 +1,19 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Mod;
+using RimWorld;
+using Verse;
 #pragma warning disable S108, S1104, S2325, S3267, S3887, S2696 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀；S2696 靜態節流跨實例共享為設計意圖
 
 namespace RimLLM_Framework.Manager
 {
 #pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
-    /// 管理並統計 API 呼叫量、Token 使用度、連線日誌記錄以及 API 計費預估。
+    /// 管理並統計 API 呼叫量、Token 使用度、連線日誌記錄、API 計費預估與每日預算審查。
     /// 支援對設定檔的磁碟存檔寫入實施節流（防震）保護。
     /// </summary>
     public class RimLLMUsageTracker
@@ -18,20 +22,69 @@ namespace RimLLM_Framework.Manager
         private static DateTime _lastLogWriteTime = DateTime.MinValue;
         private static readonly object LogLock = new object();
         private static readonly object UsageLock = new object();
+
+        // Budget Dialog state
+        private string _budgetApprovalDate = "";
+        private string _budgetDeclineDate = "";
+        private readonly object _budgetPromptLock = new object();
+        private TaskCompletionSource<bool> _activePromptTcs;
+        private const int BudgetPromptTimeoutSeconds = 120;
+
         private static readonly Dictionary<string, CostRate> KnownModelRates = new Dictionary<string, CostRate>(StringComparer.OrdinalIgnoreCase)
         {
-            { "deepseek:deepseek-v4-flash", new CostRate(0.14f, 0.28f) },
-            { "deepseek:deepseek-v4-pro", new CostRate(0.435f, 0.87f) },
-            { "deepseek:deepseek-chat", new CostRate(0.14f, 0.28f) },
-            { "deepseek:deepseek-reasoner", new CostRate(0.14f, 0.28f) },
-            { "gemini:gemini-3.1-pro-preview", new CostRate(2.00f, 12.00f) },
-            { "gemini:gemini-3.1-flash-lite", new CostRate(0.25f, 1.50f) },
-            { "gemini:gemini-3.5-flash", new CostRate(1.50f, 9.00f) },
+            // OpenAI
+            { "openai:gpt-4o", new CostRate(2.50f, 10.00f) },
+            { "openai:gpt-4o-mini", new CostRate(0.15f, 0.60f) },
+            { "openai:o1", new CostRate(15.00f, 60.00f) },
+            { "openai:o1-mini", new CostRate(1.10f, 4.40f) },
+            { "openai:o3-mini", new CostRate(1.10f, 4.40f) },
+            { "openai:gpt-4-turbo", new CostRate(10.00f, 30.00f) },
+            { "openai:gpt-4", new CostRate(30.00f, 60.00f) },
+            { "openai:gpt-3.5-turbo", new CostRate(0.50f, 1.50f) },
+
+            // Google Gemini
+            { "gemini:gemini-2.0-flash", new CostRate(0.10f, 0.40f) },
+            { "gemini:gemini-2.0-flash-lite", new CostRate(0.075f, 0.30f) },
+            { "gemini:gemini-1.5-flash", new CostRate(0.075f, 0.30f) },
+            { "gemini:gemini-1.5-pro", new CostRate(1.25f, 5.00f) },
             { "gemini:gemini-2.5-pro", new CostRate(1.25f, 10.00f) },
             { "gemini:gemini-2.5-flash", new CostRate(0.30f, 2.50f) },
             { "gemini:gemini-2.5-flash-lite", new CostRate(0.10f, 0.40f) },
+            { "gemini:gemini-3.1-pro-preview", new CostRate(2.00f, 12.00f) },
+            { "gemini:gemini-3.1-flash-lite", new CostRate(0.25f, 1.50f) },
+            { "gemini:gemini-3.5-flash", new CostRate(1.50f, 9.00f) },
+
+            // DeepSeek
+            { "deepseek:deepseek-chat", new CostRate(0.14f, 0.28f) },
+            { "deepseek:deepseek-reasoner", new CostRate(0.14f, 0.28f) },
+            { "deepseek:deepseek-v3", new CostRate(0.14f, 0.28f) },
+            { "deepseek:deepseek-r1", new CostRate(0.14f, 0.28f) },
+            { "deepseek:deepseek-v4-flash", new CostRate(0.14f, 0.28f) },
+            { "deepseek:deepseek-v4-pro", new CostRate(0.435f, 0.87f) },
+
+            // Groq
             { "groq:llama-3.3-70b-versatile", new CostRate(0.59f, 0.79f) },
-            { "minimax:minimax-m3", new CostRate(0.30f, 1.20f) }
+            { "groq:llama-3.1-8b-instant", new CostRate(0.05f, 0.08f) },
+            { "groq:mixtral-8x7b-32768", new CostRate(0.24f, 0.24f) },
+            { "groq:gemma2-9b-it", new CostRate(0.20f, 0.20f) },
+
+            // Qwen
+            { "qwen:qwen-max", new CostRate(2.80f, 8.40f) },
+            { "qwen:qwen-plus", new CostRate(0.40f, 1.20f) },
+            { "qwen:qwen-turbo", new CostRate(0.10f, 0.20f) },
+
+            // Moonshot / Kimi
+            { "kimi:moonshot-v1-8k", new CostRate(1.68f, 1.68f) },
+            { "kimi:moonshot-v1-32k", new CostRate(3.36f, 3.36f) },
+            { "kimi:moonshot-v1-128k", new CostRate(8.40f, 8.40f) },
+
+            // MiniMax
+            { "minimax:minimax-m3", new CostRate(0.30f, 1.20f) },
+            { "minimax:abab6.5s", new CostRate(0.14f, 0.28f) },
+
+            // Grok (xAI)
+            { "grok:grok-2", new CostRate(2.00f, 10.00f) },
+            { "grok:grok-beta", new CostRate(5.00f, 15.00f) }
         };
 
         private struct CostRate
@@ -268,15 +321,13 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 估算單次呼叫的美元成本。<paramref name="cachedPromptTokens"/> 由呼叫端保證已落在 [0, promptTokens] 範圍內。
         /// </summary>
-        private float EstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens)
+        public float EstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens)
         {
-            string key = $"{NormalizeProvider(providerId)}:{NormalizeModel(modelName)}";
-            if (!KnownModelRates.TryGetValue(key, out var rate))
+            if (!FindModelRate(providerId, modelName, out CostRate rate))
             {
                 return 0f;
             }
 
-            // 快取命中的 Token 以折扣費率計價，其餘輸入 Token 走原價，藉此讓成本面板反映 Context Caching 的節省。
             int fullRatePromptTokens = promptTokens - cachedPromptTokens;
             float cacheDiscount = GetCacheReadDiscount(providerId);
 
@@ -284,6 +335,45 @@ namespace RimLLM_Framework.Manager
                                + (cachedPromptTokens / 1000000f) * rate.PromptPerMillion * cacheDiscount;
             float completionCost = (completionTokens / 1000000f) * rate.CompletionPerMillion;
             return promptCost + completionCost;
+        }
+
+        private bool FindModelRate(string providerId, string modelName, out CostRate rate)
+        {
+            string normProvider = NormalizeProvider(providerId);
+            string normModel = NormalizeModel(modelName);
+            string exactKey = $"{normProvider}:{normModel}";
+
+            if (KnownModelRates.TryGetValue(exactKey, out rate))
+            {
+                return true;
+            }
+
+            // 前綴模糊匹配（例如 gpt-4o-2024-08-06 匹配 gpt-4o, gemini-2.0-flash-001 匹配 gemini-2.0-flash）
+            string bestPrefixMatchKey = null;
+            int bestPrefixLen = 0;
+
+            string providerPrefix = normProvider + ":";
+            foreach (var kvp in KnownModelRates)
+            {
+                if (kvp.Key.StartsWith(providerPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    string candidateModel = kvp.Key.Substring(providerPrefix.Length);
+                    if (normModel.StartsWith(candidateModel, StringComparison.OrdinalIgnoreCase) &&
+                        candidateModel.Length > bestPrefixLen)
+                    {
+                        bestPrefixLen = candidateModel.Length;
+                        bestPrefixMatchKey = kvp.Key;
+                    }
+                }
+            }
+
+            if (bestPrefixMatchKey != null && KnownModelRates.TryGetValue(bestPrefixMatchKey, out rate))
+            {
+                return true;
+            }
+
+            rate = default;
+            return false;
         }
 
         /// <summary>
@@ -313,6 +403,181 @@ namespace RimLLM_Framework.Manager
             }
             return model;
         }
+
+        #region Budget Ledger & Policy Gatekeeping
+
+#pragma warning disable S3776 // reason: 預算政策分支處理（HardBlock, SilentMocking, FallbackToFree, DialogPrompt）
+        /// <summary>
+        /// 審查每日預算限額。
+        /// </summary>
+        internal async Task<bool> CheckBudgetLimitAsync(RimLLMRequest request)
+        {
+            CheckDailyReset();
+
+            if (_settings.DailyBudgetLimit <= 0f || _settings.DailyAccumulatedCost < _settings.DailyBudgetLimit)
+            {
+                return true;
+            }
+
+            string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+
+            if (_budgetApprovalDate == todayStr)
+            {
+                return true;
+            }
+            if (_budgetDeclineDate == todayStr)
+            {
+                return false;
+            }
+
+            // 0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt
+            if (_settings.BudgetPolicy == 1 || _settings.BudgetPolicy == 2)
+            {
+                return true;
+            }
+
+            if (_settings.BudgetPolicy == 3)
+            {
+                if (Find.WindowStack == null)
+                {
+                    return false;
+                }
+
+                TaskCompletionSource<bool> tcs;
+                lock (_budgetPromptLock)
+                {
+                    if (_activePromptTcs != null)
+                    {
+                        tcs = _activePromptTcs;
+                    }
+                    else
+                    {
+                        tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        _activePromptTcs = tcs;
+
+                        RimLLMDispatcher.EnqueueOnMainThread(() =>
+                        {
+                            var dialog = new Dialog_BudgetPrompt(
+                                "RimLLM_BudgetExceededPrompt".Translate(_settings.DailyAccumulatedCost.ToString("F4"), _settings.DailyBudgetLimit.ToString("F2")),
+                                "RimLLM_BudgetExceededPrompt_Approve".Translate(), () =>
+                                {
+                                    lock (_budgetPromptLock)
+                                    {
+                                        _budgetApprovalDate = todayStr;
+                                        _activePromptTcs = null;
+                                    }
+                                    tcs.TrySetResult(true);
+                                },
+                                "RimLLM_BudgetExceededPrompt_Decline".Translate(), () =>
+                                {
+                                    lock (_budgetPromptLock)
+                                    {
+                                        _budgetDeclineDate = todayStr;
+                                        _activePromptTcs = null;
+                                    }
+                                    tcs.TrySetResult(false);
+                                },
+                                () =>
+                                {
+                                    lock (_budgetPromptLock)
+                                    {
+                                        if (ReferenceEquals(_activePromptTcs, tcs))
+                                        {
+                                            _activePromptTcs = null;
+                                        }
+                                    }
+                                    tcs.TrySetResult(false);
+                                }
+                            );
+                            Find.WindowStack.Add(dialog);
+                        });
+                    }
+                }
+
+                return await AwaitBudgetApprovalAsync(
+                    tcs.Task,
+                    request?.CancellationToken ?? CancellationToken.None,
+                    TimeSpan.FromSeconds(BudgetPromptTimeoutSeconds)).ConfigureAwait(false);
+            }
+
+            return false;
+        }
+#pragma warning restore S3776
+
+        /// <summary>
+        /// 判斷請求是否處於靜默模擬模式並產出模擬字串。
+        /// </summary>
+        internal bool IsBudgetMocked(RimLLMRequest request, out string mockResult)
+        {
+            mockResult = null;
+
+            if (_settings.BudgetPolicy != 1 ||
+                _settings.DailyBudgetLimit <= 0f ||
+                _settings.DailyAccumulatedCost < _settings.DailyBudgetLimit)
+            {
+                return false;
+            }
+
+            if (request?.ResponseType != null)
+            {
+                mockResult = "{}";
+                return true;
+            }
+
+            const string fallbackMock = "*AI is temporarily resting due to daily budget limits...*";
+            try
+            {
+                mockResult = LanguageDatabase.activeLanguage != null
+                    ? "RimLLM_SilentMockResponse".Translate().ToString()
+                    : fallbackMock;
+            }
+            catch
+            {
+                mockResult = fallbackMock;
+            }
+            return true;
+        }
+
+        public void ClearBudgetApprovals()
+        {
+            lock (_budgetPromptLock)
+            {
+                _budgetApprovalDate = "";
+                _budgetDeclineDate = "";
+                _activePromptTcs = null;
+            }
+        }
+
+        public static async Task<bool> AwaitBudgetApprovalAsync(
+            Task<bool> sharedPromptTask,
+            CancellationToken requestToken,
+            TimeSpan timeout)
+        {
+            if (sharedPromptTask == null) throw new ArgumentNullException(nameof(sharedPromptTask));
+
+            var waiterTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (var linked = CancellationTokenSource.CreateLinkedTokenSource(requestToken))
+            {
+                linked.CancelAfter(timeout);
+                using (linked.Token.Register(() => waiterTcs.TrySetResult(false)))
+                {
+                    Task<bool> winner = await Task.WhenAny(sharedPromptTask, waiterTcs.Task).ConfigureAwait(false);
+                    if (ReferenceEquals(winner, sharedPromptTask))
+                    {
+                        return await sharedPromptTask.ConfigureAwait(false);
+                    }
+
+                    if (requestToken.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException(requestToken);
+                    }
+
+                    return false;
+                }
+            }
+        }
+
+        #endregion
     }
 #pragma warning restore S101, S2342
 #pragma warning restore S108, S1104, S2325, S3267, S3887, S2696

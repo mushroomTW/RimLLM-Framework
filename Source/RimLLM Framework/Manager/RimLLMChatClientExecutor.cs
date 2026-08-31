@@ -110,9 +110,9 @@ namespace RimLLM_Framework.Manager
                     Text = result,
                     ProviderId = providerId,
                     ModelName = model,
-                    PromptTokens = Math.Max(1, promptTokens),
-                    CompletionTokens = Math.Max(1, completionTokens),
-                    CachedPromptTokens = Math.Max(0, cachedPromptTokens)
+                    PromptTokens = promptTokens,
+                    CompletionTokens = completionTokens,
+                    CachedPromptTokens = cachedPromptTokens
                 };
             }
         }
@@ -223,9 +223,9 @@ namespace RimLLM_Framework.Manager
                 Text = responseBuilder.ToString(),
                 ProviderId = providerId,
                 ModelName = model,
-                PromptTokens = Math.Max(1, promptTokens),
-                CompletionTokens = Math.Max(1, completionTokens),
-                CachedPromptTokens = Math.Max(0, cachedPromptTokens)
+                PromptTokens = promptTokens,
+                CompletionTokens = completionTokens,
+                CachedPromptTokens = cachedPromptTokens
             };
 
             void Emit(string chunk)

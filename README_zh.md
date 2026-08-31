@@ -260,7 +260,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 分層 | 型別 | 什麼時候需要 |
 | --- | --- | --- |
 | **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError`、`RimLLMClientExtensions` | 一定會用到 —— 這就是全部的使用端 API |
-| **提供供應商** | `IChatClientProvider`、`IChatOptionsCustomizer`、`INativeStructuredOutputProvider`、`LLMProviderCapabilities`、`IRimLLMSettings` | 只有要用 `RimLLMProvider.RegisterProvider` 註冊自己的 LLM 後端時（`ILLMProvider` 在 `RimLLM_Framework.Providers`） |
+| **提供供應商** | `ILLMProvider`、`LLMProviderCapabilities`、`IRimLLMSettings` | 只有要用 `RimLLMProvider.RegisterProvider` 註冊自己的 LLM 後端時（`ILLMProvider` 直接產出標準 `Microsoft.Extensions.AI.IChatClient`） |
 | **診斷** | `TestResult`、`ProviderIds`、`LLMErrorMapper` | 連線測試、內建供應商 ID 常數、HTTP 狀態碼對照 |
 
 其餘的 `IChatClient`、`ChatMessage`、`ChatResponse`、`ChatResponseUpdate`、`IEmbeddingGenerator` 全都是 `Microsoft.Extensions.AI`。具體的 client 類別刻意設為 `internal`，所以沒有任何 RimLLM 的 client 型別需要你對接。

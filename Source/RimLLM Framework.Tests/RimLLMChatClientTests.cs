@@ -21,6 +21,7 @@ namespace RimLLM_Framework.Tests
             manager.RegisterProvider(new MockTestProvider
             {
                 ProviderId = "TestMock",
+                Capabilities = new LLMProviderCapabilities { SupportsStreaming = true, SupportsNativeStructuredOutput = true, SupportsUsageMetadata = true },
                 GenerateHandler = (messages, options, model) =>
                     System.Threading.Tasks.Task.FromResult(
                         (options != null && (options.ResponseFormat != null || (options.AdditionalProperties != null && options.AdditionalProperties.ContainsKey("rimllm_response_schema"))))

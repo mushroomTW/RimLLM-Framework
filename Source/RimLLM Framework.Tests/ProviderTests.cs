@@ -1,4 +1,5 @@
 extern alias bclasync;
+extern alias ste;
 using NUnit.Framework;
 using System;
 using System.Reflection;
@@ -637,7 +638,7 @@ namespace RimLLM_Framework.Tests
             RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
             options.AdditionalProperties["rimllm_response_schema"] = schema.Json;
             options.AdditionalProperties["strict"] = schema.StrictCompatible;
-            provider.GenerateStructuredAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
+            provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
             Assert.IsNotNull(payload["response_format"], "已驗證支援的衍生供應商應收到 response_format");
@@ -665,7 +666,7 @@ namespace RimLLM_Framework.Tests
             RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI);
             options.AdditionalProperties["rimllm_response_schema"] = schema.Json;
             options.AdditionalProperties["strict"] = schema.StrictCompatible;
-            provider.GenerateStructuredAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
+            provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
             Assert.IsFalse(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == true,
@@ -696,18 +697,11 @@ namespace RimLLM_Framework.Tests
             requestOptions.AdditionalProperties["rimllm_response_schema"] = schema.Json;
             requestOptions.AdditionalProperties["strict"] = schema.StrictCompatible;
 
-            // 模擬 executor 已先設好 MEAI 的 ResponseFormat：客製化後必須被清掉。
-            var produced = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
-            using (System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(schema.Json))
-            {
-                produced.ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(
-                    document.RootElement.Clone(), "custom_type", "RimLLM structured response");
-            }
-            provider.CreateChatOptionsCustomizer(requestOptions, "deepseek-chat")(produced);
-            Assert.IsNull(produced.ResponseFormat, "MEAI 這一側不得再帶 ResponseFormat 物件");
-
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
-            provider.GenerateStructuredAsync(messages, requestOptions, "deepseek-chat").GetAwaiter().GetResult();
+            using (var client = provider.CreateChatClient("deepseek-chat"))
+            {
+                client.GetResponseAsync(messages, requestOptions).GetAwaiter().GetResult();
+            }
 
             var payload = JObject.Parse(provider.CapturedPayload);
             Assert.IsNotNull(payload["response_format"]?["json_schema"]?["schema"],
@@ -975,17 +969,33 @@ namespace RimLLM_Framework.Tests
     {
         public string ProviderId { get; set; }
         public bool RequiresApiKey { get; set; } = true;
+        public LLMProviderCapabilities Capabilities { get; set; } = new LLMProviderCapabilities { SupportsStreaming = true, SupportsNativeStructuredOutput = false, SupportsUsageMetadata = true };
 
         public Func<IEnumerable<ChatMessage>, ChatOptions, string, System.Threading.Tasks.Task<string>> GenerateHandler { get; set; }
+        public Func<IEnumerable<ChatMessage>, ChatOptions, string, Action<string>, System.Threading.Tasks.Task> StreamHandler { get; set; }
 
-        public System.Threading.Tasks.Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
+        public IChatClient CreateChatClient(string model)
         {
-            return GenerateHandler != null ? GenerateHandler(messages, options, model) : System.Threading.Tasks.Task.FromResult("");
-        }
-
-        public System.Threading.Tasks.Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
-        {
-            return System.Threading.Tasks.Task.CompletedTask;
+            return new MockCustomChatClient
+            {
+                GetResponseHandler = async (msgs, opts) =>
+                {
+                    string text = GenerateHandler != null ? await GenerateHandler(msgs, opts, model) : "";
+                    return new ChatResponse(new ChatMessage(ChatRole.Assistant, text));
+                },
+                StreamHandler = async (msgs, opts, cb) =>
+                {
+                    if (StreamHandler != null)
+                    {
+                        await StreamHandler(msgs, opts, model, cb);
+                    }
+                    else
+                    {
+                        string text = GenerateHandler != null ? await GenerateHandler(msgs, opts, model) : "mock-text";
+                        cb(text);
+                    }
+                }
+            };
         }
 
         public System.Threading.Tasks.Task<TestResult> TestConnectionAsync()
@@ -1044,6 +1054,21 @@ namespace RimLLM_Framework.Tests
             LastConfig = config;
             LastModel = model;
             return System.Threading.Tasks.Task.FromResult(MockResponse);
+        }
+
+        protected override bclasync::System.Collections.Generic.IAsyncEnumerable<GenerateContentResponse> GenerateContentStreamNativeAsync(
+            Client client,
+            string model,
+            List<Content> contents,
+            GenerateContentConfig config,
+            System.Threading.CancellationToken cancellationToken)
+        {
+            LastConfig = config;
+            LastModel = model;
+            var channel = System.Threading.Channels.Channel.CreateUnbounded<GenerateContentResponse>();
+            channel.Writer.TryWrite(MockResponse);
+            channel.Writer.TryComplete();
+            return channel.Reader.ReadAllAsync(cancellationToken);
         }
 
         protected override System.Threading.Tasks.Task<CachedContent> CreateCachedContentNativeAsync(
@@ -1165,6 +1190,111 @@ namespace RimLLM_Framework.Tests
         }
     }
 
+    public class MockCustomChatClient : IChatClient
+    {
+        public Func<IEnumerable<ChatMessage>, ChatOptions, System.Threading.Tasks.Task<ChatResponse>> GetResponseHandler { get; set; }
+        public Func<IEnumerable<ChatMessage>, ChatOptions, Action<string>, System.Threading.Tasks.Task> StreamHandler { get; set; }
+
+        public ChatClientMetadata Metadata => new ChatClientMetadata("MockCustomClient");
+
+        public void Dispose() {}
+
+        public System.Threading.Tasks.Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions options = null,
+            System.Threading.CancellationToken cancellationToken = default)
+        {
+            if (GetResponseHandler != null) return GetResponseHandler(messages, options);
+            return System.Threading.Tasks.Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "mock-text")));
+        }
+
+        public bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions options = null,
+            System.Threading.CancellationToken cancellationToken = default)
+        {
+            return new MockStreamEnumerable(this, messages, options, cancellationToken);
+        }
+
+        private sealed class MockStreamEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
+        {
+            private readonly MockCustomChatClient _client;
+            private readonly IEnumerable<ChatMessage> _messages;
+            private readonly ChatOptions _options;
+            private readonly System.Threading.CancellationToken _cancellationToken;
+
+            public MockStreamEnumerable(MockCustomChatClient client, IEnumerable<ChatMessage> messages, ChatOptions options, System.Threading.CancellationToken cancellationToken)
+            {
+                _client = client;
+                _messages = messages;
+                _options = options;
+                _cancellationToken = cancellationToken;
+            }
+
+            public bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(System.Threading.CancellationToken cancellationToken = default)
+            {
+                var linkedCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken, cancellationToken);
+                var channel = System.Threading.Channels.Channel.CreateUnbounded<ChatResponseUpdate>();
+                System.Threading.Tasks.Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (_client.StreamHandler != null)
+                        {
+                            await _client.StreamHandler(_messages, _options, chunk => channel.Writer.TryWrite(new ChatResponseUpdate(ChatRole.Assistant, chunk)));
+                        }
+                        else
+                        {
+                            channel.Writer.TryWrite(new ChatResponseUpdate(ChatRole.Assistant, "mock-stream-text"));
+                        }
+                        channel.Writer.TryComplete();
+                    }
+                    catch (Exception ex)
+                    {
+                        channel.Writer.TryComplete(ex);
+                    }
+                }, linkedCts.Token);
+
+                return new MockStreamEnumerator(channel.Reader.ReadAllAsync(linkedCts.Token).GetAsyncEnumerator(linkedCts.Token), linkedCts);
+            }
+        }
+
+        private sealed class MockStreamEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
+        {
+            private readonly bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> _inner;
+            private readonly System.Threading.CancellationTokenSource _linkedCts;
+
+            public MockStreamEnumerator(bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> inner, System.Threading.CancellationTokenSource linkedCts)
+            {
+                _inner = inner;
+                _linkedCts = linkedCts;
+            }
+
+            public ChatResponseUpdate Current => _inner.Current;
+
+            public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
+            {
+                try
+                {
+                    return await _inner.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (System.Threading.Channels.ChannelClosedException ex) when (ex.InnerException != null)
+                {
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                    throw;
+                }
+            }
+
+            public ste::System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                _linkedCts.Dispose();
+                return _inner.DisposeAsync();
+            }
+        }
+
+        public object GetService(System.Type serviceType, object key = null) => null;
+    }
+
     public class TestOpenAIProvider : OpenAIProvider
     {
         public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
@@ -1175,12 +1305,13 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings,
                 ProviderId,
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint),
                 model,
                 WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -1194,12 +1325,13 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings,
                 ProviderId,
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint),
                 model,
                 WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -1215,12 +1347,13 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings,
                 ProviderId,
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint),
                 model,
                 WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -1228,16 +1361,15 @@ namespace RimLLM_Framework.Tests
     {
         public string ProviderId { get; set; }
         public bool RequiresApiKey { get; set; } = true;
+        public LLMProviderCapabilities Capabilities => new LLMProviderCapabilities { SupportsStreaming = true };
         public Func<IEnumerable<ChatMessage>, ChatOptions, string, Action<string>, System.Threading.Tasks.Task> StreamHandler { get; set; }
 
-        public System.Threading.Tasks.Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
+        public IChatClient CreateChatClient(string model)
         {
-            return System.Threading.Tasks.Task.FromResult("");
-        }
-
-        public System.Threading.Tasks.Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
-        {
-            return StreamHandler != null ? StreamHandler(messages, options, model, onChunkReceived) : System.Threading.Tasks.Task.CompletedTask;
+            return new MockCustomChatClient
+            {
+                StreamHandler = (msgs, opts, onChunk) => StreamHandler != null ? StreamHandler(msgs, opts, model, onChunk) : System.Threading.Tasks.Task.CompletedTask
+            };
         }
 
         public System.Threading.Tasks.Task<TestResult> TestConnectionAsync()
@@ -1285,12 +1417,13 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings,
                 ProviderId,
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint),
                 model,
                 WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -1308,12 +1441,13 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings,
                 ProviderId,
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint),
                 model,
                 WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -1348,12 +1482,13 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings,
                 ProviderId,
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint),
                 model,
                 WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 
@@ -1367,12 +1502,13 @@ namespace RimLLM_Framework.Tests
 
         public override IChatClient CreateChatClient(string model)
         {
-            return WireChatClientFactory.Create(
+            var rawClient = WireChatClientFactory.Create(
                 Settings,
                 ProviderId,
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint),
                 model,
                 WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 }

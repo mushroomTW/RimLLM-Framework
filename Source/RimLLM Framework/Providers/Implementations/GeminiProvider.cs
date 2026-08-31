@@ -1,4 +1,5 @@
 extern alias bclasync;
+extern alias ste;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -15,7 +16,7 @@ namespace RimLLM_Framework.Providers
     /// <summary>
     /// Google Gemini API 供應商，支援 generateContent 與 streamGenerateContent。
     /// </summary>
-    public class GeminiProvider : BaseHttpProvider, IChatClientProvider, INativeStructuredOutputProvider
+    public class GeminiProvider : BaseHttpProvider
     {
         public override string ProviderId => ProviderIds.Gemini;
 
@@ -38,12 +39,7 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         public IList<SafetySetting> SafetySettings { get; } = new List<SafetySetting>();
 
-        /// <summary>
-        /// Gemini 一律走官方 Google.GenAI SDK，不保留 raw HTTP 對話路徑。
-        /// </summary>
-        public bool UsesIChatClient => true;
-
-        public LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
+        public override LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
         {
             SupportsNativeStructuredOutput = true,
             SupportsStreaming = true,
@@ -56,9 +52,9 @@ namespace RimLLM_Framework.Providers
         {
         }
 
-        public virtual IChatClient CreateChatClient(string model)
+        public override IChatClient CreateChatClient(string model)
         {
-            return CreateGeminiChatClient(Settings.GetActiveApiKey(ProviderId), model);
+            return new GeminiChatClientAdapter(this, model);
         }
 
         public static IChatClient CreateGeminiChatClient(string apiKey, string model)
@@ -76,42 +72,193 @@ namespace RimLLM_Framework.Providers
             return client.AsIChatClient(model);
         }
 
-        public Task<string> GenerateStructuredAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
+        private sealed class GeminiChatClientAdapter : IChatClient
         {
-            return GenerateWithGoogleGenAiAsync(messages, options, model);
+            private readonly GeminiProvider _provider;
+            private readonly string _model;
+
+            public GeminiChatClientAdapter(GeminiProvider provider, string model)
+            {
+                _provider = provider;
+                _model = model;
+            }
+
+            public void Dispose()
+            {
+                // No unmanaged resources
+            }
+
+            public async Task<ChatResponse> GetResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                System.Threading.CancellationToken cancellationToken = default)
+            {
+                try
+                {
+                    string text = await _provider.GenerateWithGoogleGenAiAsync(messages, options, _model).ConfigureAwait(false);
+                    return new ChatResponse(new ChatMessage(ChatRole.Assistant, text))
+                    {
+                        ModelId = _model
+                    };
+                }
+                catch (RimLLMException ex)
+                {
+                    if (_provider.MarkReasoningUnsupported(_model, ex))
+                    {
+                        string text = await _provider.GenerateWithGoogleGenAiAsync(messages, options, _model).ConfigureAwait(false);
+                        return new ChatResponse(new ChatMessage(ChatRole.Assistant, text))
+                        {
+                            ModelId = _model
+                        };
+                    }
+                    throw;
+                }
+            }
+
+            public bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                System.Threading.CancellationToken cancellationToken = default)
+            {
+                return new GeminiStreamEnumerable(_provider, messages, options, _model, cancellationToken);
+            }
+
+            public object GetService(System.Type serviceType, object serviceKey = null)
+            {
+                if (serviceType == typeof(ChatClientMetadata))
+                {
+                    return new ChatClientMetadata("Gemini", null, _model);
+                }
+                return null;
+            }
         }
 
-        public async override Task<string> GenerateAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
+        private sealed class GeminiStreamEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
         {
-            try
+            private readonly GeminiProvider _provider;
+            private readonly IEnumerable<ChatMessage> _messages;
+            private readonly ChatOptions _options;
+            private readonly string _model;
+            private readonly System.Threading.CancellationToken _cancellationToken;
+
+            public GeminiStreamEnumerable(
+                GeminiProvider provider,
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options,
+                string model,
+                System.Threading.CancellationToken cancellationToken)
             {
-                return await GenerateWithGoogleGenAiAsync(messages, options, model).ConfigureAwait(false);
+                _provider = provider;
+                _messages = messages;
+                _options = options;
+                _model = model;
+                _cancellationToken = cancellationToken;
             }
-            catch (RimLLMException ex)
+
+            public bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
+                System.Threading.CancellationToken cancellationToken = default)
             {
-                if (!MarkReasoningUnsupported(model, ex)) throw;
-                return await GenerateWithGoogleGenAiAsync(messages, options, model).ConfigureAwait(false);
+                var linkedCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken, cancellationToken);
+                var channel = System.Threading.Channels.Channel.CreateUnbounded<ChatResponseUpdate>(
+                    new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+
+                StartProducer(channel.Writer, linkedCts.Token);
+
+                return new GeminiStreamEnumerator(
+                    channel.Reader.ReadAllAsync(linkedCts.Token).GetAsyncEnumerator(linkedCts.Token),
+                    linkedCts);
+            }
+
+#pragma warning disable S3776 // reason: 串流生產者之重試與通道完成處理，維持內聚
+            private void StartProducer(
+                System.Threading.Channels.ChannelWriter<ChatResponseUpdate> writer,
+                System.Threading.CancellationToken cancellationToken)
+            {
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _provider.StreamWithGoogleGenAiAsync(
+                            _messages,
+                            _options,
+                            _model,
+                            chunk =>
+                            {
+                                if (!string.IsNullOrEmpty(chunk))
+                                {
+                                    writer.TryWrite(new ChatResponseUpdate(ChatRole.Assistant, chunk));
+                                }
+                            }).ConfigureAwait(false);
+                        writer.TryComplete();
+                    }
+                    catch (RimLLMException ex)
+                    {
+                        if (_provider.MarkReasoningUnsupported(_model, ex))
+                        {
+                            try
+                            {
+                                await _provider.StreamWithGoogleGenAiAsync(
+                                    _messages,
+                                    _options,
+                                    _model,
+                                    chunk =>
+                                    {
+                                        if (!string.IsNullOrEmpty(chunk))
+                                        {
+                                            writer.TryWrite(new ChatResponseUpdate(ChatRole.Assistant, chunk));
+                                        }
+                                    }).ConfigureAwait(false);
+                                writer.TryComplete();
+                                return;
+                            }
+                            catch (Exception retryEx)
+                            {
+                                writer.TryComplete(retryEx);
+                                return;
+                            }
+                        }
+                        writer.TryComplete(ex);
+                    }
+                    catch (Exception ex)
+                    {
+                        writer.TryComplete(ex);
+                    }
+                }, cancellationToken);
             }
         }
 
-        public async override Task StreamAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model, Action<string> onChunkReceived)
+        private sealed class GeminiStreamEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
         {
-            // 已經送出內容就不重打，否則畫面會出現前後兩段混接。參數被拒發生在服務端解析階段，正常不會有 chunk。
-            bool emitted = false;
-            Action<string> trackingCallback = chunk =>
-            {
-                emitted = true;
-                onChunkReceived?.Invoke(chunk);
-            };
+            private readonly bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> _inner;
+            private readonly System.Threading.CancellationTokenSource _linkedCts;
 
-            try
+            public GeminiStreamEnumerator(
+                bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> inner,
+                System.Threading.CancellationTokenSource linkedCts)
             {
-                await StreamWithGoogleGenAiAsync(messages, options, model, trackingCallback).ConfigureAwait(false);
+                _inner = inner;
+                _linkedCts = linkedCts;
             }
-            catch (RimLLMException ex)
+
+            public ChatResponseUpdate Current => _inner.Current;
+
+            public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
             {
-                if (emitted || !MarkReasoningUnsupported(model, ex)) throw;
-                await StreamWithGoogleGenAiAsync(messages, options, model, trackingCallback).ConfigureAwait(false);
+                try
+                {
+                    return await _inner.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (System.Threading.Channels.ChannelClosedException ex) when (ex.InnerException != null)
+                {
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                    throw;
+                }
+            }
+
+            public ste::System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                _linkedCts.Dispose();
+                return _inner.DisposeAsync();
             }
         }
 
@@ -302,27 +449,38 @@ namespace RimLLM_Framework.Providers
                         throw new RimLLMException(LLMError.NetworkError, $"{ProviderId} 串流未回傳任何內容。");
                     }
 
-                    if (hasUsage)
+                    try
                     {
-                        RimLLMProvider.Manager.RecordUsage(ProviderId, model, promptTokens, completionTokens, cachedTokens);
-                    }
-                    else
-                    {
-                        int promptChars = 0;
-                        if (messages != null)
+                        var manager = RimLLMProvider.Manager;
+                        if (manager != null)
                         {
-#pragma warning disable S3267 // reason: 累加字元長度需條件累積，Where 可讀性未提升，維持現狀
-                            foreach (var m in messages)
+                            if (hasUsage)
                             {
-                                if (m != null && !string.IsNullOrEmpty(m.Text)) promptChars += m.Text.Length;
+                                manager.RecordUsage(ProviderId, model, promptTokens, completionTokens, cachedTokens);
                             }
+                            else
+                            {
+                                int promptChars = 0;
+                                if (messages != null)
+                                {
+#pragma warning disable S3267 // reason: 累加字元長度需條件累積，Where 可讀性未提升，維持現狀
+                                    foreach (var m in messages)
+                                    {
+                                        if (m != null && !string.IsNullOrEmpty(m.Text)) promptChars += m.Text.Length;
+                                    }
 #pragma warning restore S3267
+                                }
+                                manager.RecordUsage(
+                                    ProviderId,
+                                    model,
+                                    Math.Max(1, (int)(promptChars * 0.8f)),
+                                    Math.Max(1, (int)(completionChars * 0.8f)));
+                            }
                         }
-                        RimLLMProvider.Manager.RecordUsage(
-                            ProviderId,
-                            model,
-                            Math.Max(1, (int)(promptChars * 0.8f)),
-                            Math.Max(1, (int)(completionChars * 0.8f)));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // SDK not initialized in standalone unit tests
                     }
                 }
             }

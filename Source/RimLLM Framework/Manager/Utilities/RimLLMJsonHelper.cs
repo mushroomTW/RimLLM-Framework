@@ -334,6 +334,96 @@ namespace RimLLM_Framework.Manager
             }
         }
 #pragma warning restore S3776
+
+        /// <summary>
+        /// 反序列化 JSON 字串為指定型別並驗證所有必填欄位。
+        /// </summary>
+        public static T DeserializeAndValidate<T>(string json)
+        {
+            T result = JsonConvert.DeserializeObject<T>(json);
+            ValidateStructuredObject(result);
+            return result;
+        }
+
+        /// <summary>
+        /// 驗證反序列化後的物件及其子屬性/欄位皆不可為 null。
+        /// </summary>
+        public static void ValidateStructuredObject<T>(T result)
+        {
+            if (ReferenceEquals(result, null))
+            {
+                throw new InvalidOperationException("Structured response deserialized to null.");
+            }
+
+            ValidateRequiredMembers(result, typeof(T), new HashSet<Type>());
+        }
+
+#pragma warning disable S3776 // reason: 遞迴驗證結構化型別屬性與欄位，拆分反而增加呼叫成本
+        public static void ValidateRequiredMembers(object value, Type type, HashSet<Type> visitedTypes)
+        {
+            if (value == null || type == typeof(string) || type.IsPrimitive || type.IsEnum || type == typeof(decimal))
+            {
+                return;
+            }
+            if (!visitedTypes.Add(type))
+            {
+                return;
+            }
+
+            if (value is System.Collections.IEnumerable enumerable && type != typeof(string))
+            {
+                foreach (object item in enumerable)
+                {
+                    if (item != null)
+                    {
+                        ValidateRequiredMembers(item, item.GetType(), visitedTypes);
+                    }
+                }
+                return;
+            }
+
+            foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!property.CanRead || !property.CanWrite || property.GetIndexParameters().Length > 0)
+                {
+                    continue;
+                }
+
+                object memberValue = property.GetValue(value, null);
+                if (memberValue == null && IsRequiredMember(property.PropertyType))
+                {
+                    throw new InvalidOperationException($"Required structured response member '{property.Name}' is null.");
+                }
+                if (memberValue != null)
+                {
+                    ValidateRequiredMembers(memberValue, property.PropertyType, visitedTypes);
+                }
+            }
+
+            foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (field.IsLiteral || field.IsInitOnly)
+                {
+                    continue;
+                }
+
+                object memberValue = field.GetValue(value);
+                if (memberValue == null && IsRequiredMember(field.FieldType))
+                {
+                    throw new InvalidOperationException($"Required structured response member '{field.Name}' is null.");
+                }
+                if (memberValue != null)
+                {
+                    ValidateRequiredMembers(memberValue, field.FieldType, visitedTypes);
+                }
+            }
+        }
+#pragma warning restore S3776
+
+        private static bool IsRequiredMember(Type type)
+        {
+            return Nullable.GetUnderlyingType(type) == null;
+        }
     }
 #pragma warning restore S101, S2342
 #pragma warning restore S108, S1133, S1643, S2486, S6610
