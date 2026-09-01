@@ -140,8 +140,11 @@
   <RimLLM_RoutingStrategy_PriorityFailover>优先顺序自动容错</RimLLM_RoutingStrategy_PriorityFailover>
   <RimLLM_RoutingStrategy_MinLatency>最小延迟优先</RimLLM_RoutingStrategy_MinLatency>
   <RimLLM_RoutingStrategy_RoundRobin>随机轮询负载均衡</RimLLM_RoutingStrategy_RoundRobin>
+  <RimLLM_RoutingStrategy_LowestCost>成本优先</RimLLM_RoutingStrategy_LowestCost>
   <RimLLM_EnableNativeSchemaLabel>启用原生 JSON Schema 强制执行 (提升结构化输出精准度)</RimLLM_EnableNativeSchemaLabel>
   <RimLLM_EnableJsonRepairLabel>启用 JSON 回传格式修复辅助 (容错非标准 JSON)</RimLLM_EnableJsonRepairLabel>
+  <RimLLM_EnableResponseCacheLabel>启用重复请求的回应缓存 (省钱，但相同输入会得到相同输出)</RimLLM_EnableResponseCacheLabel>
+  <RimLLM_ResponseCacheTtlLabel>回应缓存存活时间: {0} 分钟</RimLLM_ResponseCacheTtlLabel>
 
   <RimLLM_FallbackLevelAuto>自动</RimLLM_FallbackLevelAuto>
   <RimLLM_FallbackLevelLow>低</RimLLM_FallbackLevelLow>

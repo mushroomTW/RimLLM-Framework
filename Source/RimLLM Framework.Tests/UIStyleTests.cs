@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System.Collections.Generic;
 using RimLLM_Framework.Mod;
 
@@ -18,10 +19,10 @@ namespace RimLLM_Framework.Tests
         {
             string masked = RimLLMUIStyle.MaskApiKey("sk-or-v1-TESTKEY-TESTKEY-TESTKEY-TESTKEY-TESTKEY-TESTKEY-2e8a");
 
-            Assert.AreEqual(13, masked.Length, "頭 8 + 省略號 1 + 尾 4。");
+            ClassicAssert.AreEqual(13, masked.Length, "頭 8 + 省略號 1 + 尾 4。");
             StringAssert.StartsWith("sk-or-v1", masked);
             StringAssert.EndsWith("2e8a", masked);
-            Assert.IsFalse(masked.Contains("TESTKEY"), "中段必須完全隱藏。");
+            ClassicAssert.IsFalse(masked.Contains("TESTKEY"), "中段必須完全隱藏。");
         }
 
         [Test]
@@ -30,7 +31,7 @@ namespace RimLLM_Framework.Tests
             // 短金鑰若也保留頭尾，等於露出大半內容。
             string masked = RimLLMUIStyle.MaskApiKey("abcd1234");
 
-            Assert.AreEqual("••••••••", masked);
+            ClassicAssert.AreEqual("••••••••", masked);
         }
 
         [Test]
@@ -39,16 +40,16 @@ namespace RimLLM_Framework.Tests
             // 剛好 12 字（8 + 4）時保留頭尾就等於全部露出，因此仍應全遮。
             string masked = RimLLMUIStyle.MaskApiKey("123456789012");
 
-            Assert.AreEqual(12, masked.Length);
-            Assert.AreEqual("••••••••••••", masked);
+            ClassicAssert.AreEqual(12, masked.Length);
+            ClassicAssert.AreEqual("••••••••••••", masked);
         }
 
         [Test]
         public void EmptyKeyStaysEmpty()
         {
             // 空金鑰若顯示成圓點，畫面上會看起來像已經設定過。
-            Assert.AreEqual("", RimLLMUIStyle.MaskApiKey(""));
-            Assert.AreEqual("", RimLLMUIStyle.MaskApiKey(null));
+            ClassicAssert.AreEqual("", RimLLMUIStyle.MaskApiKey(""));
+            ClassicAssert.AreEqual("", RimLLMUIStyle.MaskApiKey(null));
         }
 
         // ---------- 模型過濾 ----------
@@ -58,9 +59,9 @@ namespace RimLLM_Framework.Tests
         {
             var models = new List<string> { "gpt-4o", "o5-preview" };
 
-            Assert.AreEqual(2, RimLLMUIStyle.FilterModels(models, "").Count);
-            Assert.AreEqual(2, RimLLMUIStyle.FilterModels(models, null).Count);
-            Assert.AreEqual(2, RimLLMUIStyle.FilterModels(models, "   ").Count);
+            ClassicAssert.AreEqual(2, RimLLMUIStyle.FilterModels(models, "").Count);
+            ClassicAssert.AreEqual(2, RimLLMUIStyle.FilterModels(models, null).Count);
+            ClassicAssert.AreEqual(2, RimLLMUIStyle.FilterModels(models, "   ").Count);
         }
 
         [Test]
@@ -70,8 +71,8 @@ namespace RimLLM_Framework.Tests
 
             var result = RimLLMUIStyle.FilterModels(models, "GEMINI");
 
-            Assert.AreEqual(1, result.Count);
-            Assert.AreEqual("google/gemini-3.5-flash-lite", result[0]);
+            ClassicAssert.AreEqual(1, result.Count);
+            ClassicAssert.AreEqual("google/gemini-3.5-flash-lite", result[0]);
         }
 
         [Test]
@@ -79,7 +80,7 @@ namespace RimLLM_Framework.Tests
         {
             var models = new List<string> { "gpt-4o" };
 
-            Assert.AreEqual(0, RimLLMUIStyle.FilterModels(models, "llama").Count);
+            ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModels(models, "llama").Count);
         }
 
         [Test]
@@ -89,14 +90,14 @@ namespace RimLLM_Framework.Tests
 
             var result = RimLLMUIStyle.FilterModels(models, "");
 
-            Assert.AreEqual(1, result.Count);
-            Assert.AreEqual("bge-m3", result[0]);
+            ClassicAssert.AreEqual(1, result.Count);
+            ClassicAssert.AreEqual("bge-m3", result[0]);
         }
 
         [Test]
         public void NullSourceIsSafe()
         {
-            Assert.AreEqual(0, RimLLMUIStyle.FilterModels(null, "anything").Count);
+            ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModels(null, "anything").Count);
         }
 
         // ---------- chip 版面 ----------
@@ -108,7 +109,7 @@ namespace RimLLM_Framework.Tests
             RimLLMUIStyle.ComputeChipLayout(700f, 8f, 220f, out int cols, out float chipWidth);
 
             float consumed = cols * chipWidth + (cols + 1) * 8f;
-            Assert.AreEqual(700f, consumed, 0.01f);
+            ClassicAssert.AreEqual(700f, consumed, 0.01f);
         }
 
         [Test]
@@ -116,8 +117,8 @@ namespace RimLLM_Framework.Tests
         {
             RimLLMUIStyle.ComputeChipLayout(700f, 8f, 220f, out int cols, out float chipWidth);
 
-            Assert.AreEqual(3, cols);
-            Assert.GreaterOrEqual(chipWidth, 220f, "反推後的寬度不該小於偏好寬度，否則欄數就算多了。");
+            ClassicAssert.AreEqual(3, cols);
+            ClassicAssert.GreaterOrEqual(chipWidth, 220f, "反推後的寬度不該小於偏好寬度，否則欄數就算多了。");
         }
 
         [Test]
@@ -126,8 +127,8 @@ namespace RimLLM_Framework.Tests
             // 欄數為 0 會導致取餘數時除以零。
             RimLLMUIStyle.ComputeChipLayout(60f, 8f, 220f, out int cols, out float chipWidth);
 
-            Assert.AreEqual(1, cols);
-            Assert.Greater(chipWidth, 0f);
+            ClassicAssert.AreEqual(1, cols);
+            ClassicAssert.Greater(chipWidth, 0f);
         }
 
         [Test]
@@ -135,8 +136,8 @@ namespace RimLLM_Framework.Tests
         {
             RimLLMUIStyle.ComputeChipLayout(4f, 8f, 220f, out int cols, out float chipWidth);
 
-            Assert.AreEqual(1, cols);
-            Assert.Greater(chipWidth, 0f);
+            ClassicAssert.AreEqual(1, cols);
+            ClassicAssert.Greater(chipWidth, 0f);
         }
     }
 }

@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System.Collections.Generic;
 using RimLLM_Framework.Manager;
 
@@ -18,37 +19,37 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void EmbedContentActionIsDetectedCaseInsensitively()
         {
-            Assert.IsTrue(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "embedContent" }));
-            Assert.IsTrue(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "generateContent", "EMBEDCONTENT" }));
+            ClassicAssert.IsTrue(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "embedContent" }));
+            ClassicAssert.IsTrue(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "generateContent", "EMBEDCONTENT" }));
         }
 
         [Test]
         public void ChatOnlyModelIsNotTreatedAsEmbedding()
         {
-            Assert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "generateContent", "countTokens" }));
+            ClassicAssert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "generateContent", "countTokens" }));
         }
 
         [Test]
         public void MissingSupportedActionsIsNotTreatedAsEmbedding()
         {
-            Assert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(null));
-            Assert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(new string[0]));
+            ClassicAssert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(null));
+            ClassicAssert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(new string[0]));
         }
 
         [Test]
         public void EmbeddingLookingNamesAreRecognised()
         {
-            Assert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("text-embedding-004"));
-            Assert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("nomic-embed-text"));
-            Assert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("bge-m3"));
-            Assert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("mxbai-embed-large"));
+            ClassicAssert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("text-embedding-004"));
+            ClassicAssert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("nomic-embed-text"));
+            ClassicAssert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("bge-m3"));
+            ClassicAssert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("mxbai-embed-large"));
         }
 
         [Test]
         public void ChatModelNamesAreNotRecognised()
         {
-            Assert.IsFalse(RimLLMEmbeddingService.LooksLikeEmbeddingModel("llama3.1:8b"));
-            Assert.IsFalse(RimLLMEmbeddingService.LooksLikeEmbeddingModel("qwen2.5-coder"));
+            ClassicAssert.IsFalse(RimLLMEmbeddingService.LooksLikeEmbeddingModel("llama3.1:8b"));
+            ClassicAssert.IsFalse(RimLLMEmbeddingService.LooksLikeEmbeddingModel("qwen2.5-coder"));
         }
 
         [Test]
@@ -58,11 +59,11 @@ namespace RimLLM_Framework.Tests
 
             List<string> ordered = RimLLMEmbeddingService.OrderEmbeddingCandidatesFirst(input);
 
-            Assert.AreEqual(4, ordered.Count, "本地模型名由使用者自訂，過濾會把合法選項藏起來。");
-            Assert.AreEqual("nomic-embed-text", ordered[0]);
-            Assert.AreEqual("bge-m3", ordered[1]);
-            Assert.AreEqual("llama3.1:8b", ordered[2], "同一組內的原始順序要保留。");
-            Assert.AreEqual("qwen2.5-coder", ordered[3]);
+            ClassicAssert.AreEqual(4, ordered.Count, "本地模型名由使用者自訂，過濾會把合法選項藏起來。");
+            ClassicAssert.AreEqual("nomic-embed-text", ordered[0]);
+            ClassicAssert.AreEqual("bge-m3", ordered[1]);
+            ClassicAssert.AreEqual("llama3.1:8b", ordered[2], "同一組內的原始順序要保留。");
+            ClassicAssert.AreEqual("qwen2.5-coder", ordered[3]);
         }
 
         [Test]
@@ -70,14 +71,14 @@ namespace RimLLM_Framework.Tests
         {
             var ordered = RimLLMEmbeddingService.OrderEmbeddingCandidatesFirst(new List<string> { null, "", "bge-m3" });
 
-            Assert.AreEqual(1, ordered.Count);
-            Assert.AreEqual("bge-m3", ordered[0]);
+            ClassicAssert.AreEqual(1, ordered.Count);
+            ClassicAssert.AreEqual("bge-m3", ordered[0]);
         }
 
         [Test]
         public void NullInputYieldsEmptyList()
         {
-            Assert.AreEqual(0, RimLLMEmbeddingService.OrderEmbeddingCandidatesFirst(null).Count);
+            ClassicAssert.AreEqual(0, RimLLMEmbeddingService.OrderEmbeddingCandidatesFirst(null).Count);
         }
 
         [Test]
@@ -86,9 +87,9 @@ namespace RimLLM_Framework.Tests
             // 與對話供應商共用同一份持久化字典，鍵必須不會與 providerId 相撞。
             string key = RimLLMEmbeddingService.GetModelListKey("Google");
 
-            Assert.AreEqual("Embedding:Google", key);
-            Assert.AreNotEqual(ProviderIds.Gemini, key);
-            Assert.AreNotEqual("Google", key);
+            ClassicAssert.AreEqual("Embedding:Google", key);
+            ClassicAssert.AreNotEqual(ProviderIds.Gemini, key);
+            ClassicAssert.AreNotEqual("Google", key);
         }
     }
 }

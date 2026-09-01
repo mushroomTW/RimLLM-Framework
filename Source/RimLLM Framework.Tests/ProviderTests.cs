@@ -1,6 +1,7 @@
 extern alias bclasync;
 extern alias ste;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
 using System.Reflection;
 using System.Collections.Generic;
@@ -36,21 +37,21 @@ namespace RimLLM_Framework.Tests
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
             provider.GenerateAsync(messages, null, "model-a").GetAwaiter().GetResult();
             var payloadSingle = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("model-a", payloadSingle["model"]?.ToString());
-            Assert.IsNull(payloadSingle["models"]);
+            ClassicAssert.AreEqual("model-a", payloadSingle["model"]?.ToString());
+            ClassicAssert.IsNull(payloadSingle["models"]);
 
             // 2. 測試多個模型 (逗號分隔)
             provider.GenerateAsync(messages, null, "model-a, model-b , model-c").GetAwaiter().GetResult();
             var payloadMultiple = JObject.Parse(provider.InterceptedPayload);
-            Assert.IsNull(payloadMultiple["model"]);
-            Assert.IsNotNull(payloadMultiple["models"]);
+            ClassicAssert.IsNull(payloadMultiple["model"]);
+            ClassicAssert.IsNotNull(payloadMultiple["models"]);
 
             var modelsArray = payloadMultiple["models"] as Newtonsoft.Json.Linq.JArray;
-            Assert.IsNotNull(modelsArray);
-            Assert.AreEqual(3, modelsArray.Count);
-            Assert.AreEqual("model-a", modelsArray[0].ToString());
-            Assert.AreEqual("model-b", modelsArray[1].ToString());
-            Assert.AreEqual("model-c", modelsArray[2].ToString());
+            ClassicAssert.IsNotNull(modelsArray);
+            ClassicAssert.AreEqual(3, modelsArray.Count);
+            ClassicAssert.AreEqual("model-a", modelsArray[0].ToString());
+            ClassicAssert.AreEqual("model-b", modelsArray[1].ToString());
+            ClassicAssert.AreEqual("model-c", modelsArray[2].ToString());
         }
 
         [Test]
@@ -80,15 +81,15 @@ namespace RimLLM_Framework.Tests
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "ping") };
             string res = provider.GenerateAsync(messages, null, "gpt-4o").GetAwaiter().GetResult();
             
-            Assert.AreEqual("hello", res);
-            Assert.AreEqual(1000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(200, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual("hello", res);
+            ClassicAssert.AreEqual(1000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(200, mockSettings.TotalCompletionTokens);
             
             // 驗證 UsageTracker 內部的統計數據
             var stats = manager.UsageTracker.ProviderStatistics["OpenAI"];
-            Assert.AreEqual(1000, stats.TotalPromptTokens);
-            Assert.AreEqual(600, stats.CachedPromptTokens);
-            Assert.AreEqual(0.6f, stats.ContextCacheHitRate, 0.0001f);
+            ClassicAssert.AreEqual(1000, stats.TotalPromptTokens);
+            ClassicAssert.AreEqual(600, stats.CachedPromptTokens);
+            ClassicAssert.AreEqual(0.6f, stats.ContextCacheHitRate, 0.0001f);
 
             // 測試 2：OpenAI 標準格式的 cached_tokens 位於 prompt_tokens_details
             mockSettings.TotalPromptTokens = 0;
@@ -108,12 +109,12 @@ namespace RimLLM_Framework.Tests
                 "}";
 
             string res2 = provider.GenerateAsync(messages, null, "gpt-4o").GetAwaiter().GetResult();
-            Assert.AreEqual("hello 2", res2);
-            Assert.AreEqual(2000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(300, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(2000, stats.TotalPromptTokens);
-            Assert.AreEqual(800, stats.CachedPromptTokens);
-            Assert.AreEqual(0.4f, stats.ContextCacheHitRate, 0.0001f);
+            ClassicAssert.AreEqual("hello 2", res2);
+            ClassicAssert.AreEqual(2000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(300, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(2000, stats.TotalPromptTokens);
+            ClassicAssert.AreEqual(800, stats.CachedPromptTokens);
+            ClassicAssert.AreEqual(0.4f, stats.ContextCacheHitRate, 0.0001f);
         }
 
         [Test]
@@ -140,26 +141,26 @@ namespace RimLLM_Framework.Tests
 
             // 1. 第一次呼叫：應觸發快取建立與快取引用
             string response1 = provider.GenerateAsync(messages, options, "gemini-1.5-pro").GetAwaiter().GetResult();
-            Assert.AreEqual("gemini-response", response1);
-            Assert.AreEqual(1, provider.CacheCreateCalls.Count);
+            ClassicAssert.AreEqual("gemini-response", response1);
+            ClassicAssert.AreEqual(1, provider.CacheCreateCalls.Count);
 
             // 驗證快取建立參數（改走官方 SDK 後為型別化物件，不再解析 JSON 字串）
             var firstCall = provider.CacheCreateCalls[0];
-            Assert.AreEqual("models/gemini-1.5-pro", firstCall.model);
-            Assert.AreEqual(expectedSystemText, firstCall.config.SystemInstruction?.Parts?[0]?.Text);
-            Assert.AreEqual("300s", firstCall.config.Ttl);
+            ClassicAssert.AreEqual("models/gemini-1.5-pro", firstCall.model);
+            ClassicAssert.AreEqual(expectedSystemText, firstCall.config.SystemInstruction?.Parts?[0]?.Text);
+            ClassicAssert.AreEqual("300s", firstCall.config.Ttl);
 
             // 驗證 SDK seam 收到 cachedContent 且未附帶 systemInstruction
-            Assert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
-            Assert.IsNull(provider.LastConfig.SystemInstruction);
+            ClassicAssert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
+            ClassicAssert.IsNull(provider.LastConfig.SystemInstruction);
 
             // 2. 第二次呼叫：快取已存在，應直接引用而不重複建立快取
             provider.CacheCreateCalls.Clear();
             string response2 = provider.GenerateAsync(messages, options, "gemini-1.5-pro").GetAwaiter().GetResult();
-            Assert.AreEqual("gemini-response", response2);
-            Assert.AreEqual(0, provider.CacheCreateCalls.Count);
-            Assert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
-            Assert.IsNull(provider.LastConfig.SystemInstruction);
+            ClassicAssert.AreEqual("gemini-response", response2);
+            ClassicAssert.AreEqual(0, provider.CacheCreateCalls.Count);
+            ClassicAssert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
+            ClassicAssert.IsNull(provider.LastConfig.SystemInstruction);
         }
 
         [Test]
@@ -181,15 +182,15 @@ namespace RimLLM_Framework.Tests
             };
 
             string response = provider.GenerateAsync(messages, options, "gemini-2.5-flash").GetAwaiter().GetResult();
-            Assert.AreEqual("gemini-response", response);
+            ClassicAssert.AreEqual("gemini-response", response);
 
             // 不應有任何建立快取的呼叫
-            Assert.AreEqual(0, provider.CacheCreateCalls.Count);
+            ClassicAssert.AreEqual(0, provider.CacheCreateCalls.Count);
 
             // SDK seam 未附 cachedContent，改以 systemInstruction 承載
-            Assert.IsNull(provider.LastConfig.CachedContent);
-            Assert.IsNotNull(provider.LastConfig.SystemInstruction);
-            Assert.AreEqual(
+            ClassicAssert.IsNull(provider.LastConfig.CachedContent);
+            ClassicAssert.IsNotNull(provider.LastConfig.SystemInstruction);
+            ClassicAssert.AreEqual(
                 "small-system\n\ntiny-context",
                 provider.LastConfig.SystemInstruction.Parts?[0]?.Text);
         }
@@ -203,10 +204,10 @@ namespace RimLLM_Framework.Tests
             var provider = new TestGeminiProvider(mockSettings);
             TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
 
-            Assert.IsTrue(result.Success);
-            Assert.AreEqual("gemini-3.5-flash", result.Model);
-            Assert.AreEqual("gemini-3.5-flash", provider.LastModel);
-            Assert.AreEqual(0, provider.CacheCreateCalls.Count);
+            ClassicAssert.IsTrue(result.Success);
+            ClassicAssert.AreEqual("gemini-3.5-flash", result.Model);
+            ClassicAssert.AreEqual("gemini-3.5-flash", provider.LastModel);
+            ClassicAssert.AreEqual(0, provider.CacheCreateCalls.Count);
         }
 
         [Test]
@@ -218,16 +219,16 @@ namespace RimLLM_Framework.Tests
             var provider = new TestOpenRouterProvider(mockSettings);
             TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
 
-            Assert.IsTrue(result.Success);
-            Assert.AreEqual("openrouter/free", result.Model);
-            Assert.IsNotNull(provider.InterceptedPayload);
+            ClassicAssert.IsTrue(result.Success);
+            ClassicAssert.AreEqual("openrouter/free", result.Model);
+            ClassicAssert.IsNotNull(provider.InterceptedPayload);
             var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("openrouter/free", payload["model"]?.ToString());
+            ClassicAssert.AreEqual("openrouter/free", payload["model"]?.ToString());
 
             // 連線測試必須留足輸出額度並關閉思考：額度太低時思考型模型會把額度全花在內部推理上，
             // content 變成空的，明明連得上卻回報「回傳空白內容」。
-            Assert.AreEqual("none", (string)payload["reasoning"]["effort"]);
-            Assert.GreaterOrEqual((int)payload["max_tokens"], 64);
+            ClassicAssert.AreEqual("none", (string)payload["reasoning"]["effort"]);
+            ClassicAssert.GreaterOrEqual((int)payload["max_tokens"], 64);
         }
 
         [Test]
@@ -239,12 +240,12 @@ namespace RimLLM_Framework.Tests
             var provider = new TestZaiProvider(mockSettings);
             TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
 
-            Assert.IsTrue(result.Success);
-            Assert.AreEqual("glm-4.5-flash", result.Model);
-            Assert.AreEqual("https://api.z.ai/api/paas/v4/chat/completions", provider.InterceptedUrl);
-            Assert.IsNotNull(provider.InterceptedPayload);
+            ClassicAssert.IsTrue(result.Success);
+            ClassicAssert.AreEqual("glm-4.5-flash", result.Model);
+            ClassicAssert.AreEqual("https://api.z.ai/api/paas/v4/chat/completions", provider.InterceptedUrl);
+            ClassicAssert.IsNotNull(provider.InterceptedPayload);
             var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("glm-4.5-flash", payload["model"]?.ToString());
+            ClassicAssert.AreEqual("glm-4.5-flash", payload["model"]?.ToString());
         }
 
         [Test]
@@ -253,7 +254,7 @@ namespace RimLLM_Framework.Tests
             var mockSettings = new MockSettings();
             var manager = new RimLLMManager(mockSettings);
 
-            Assert.Contains(ProviderIds.Zai, manager.GetRegisteredProviderIds());
+            ClassicAssert.Contains(ProviderIds.Zai, manager.GetRegisteredProviderIds());
         }
 
         [Test]
@@ -275,12 +276,12 @@ namespace RimLLM_Framework.Tests
                     MaxOutputTokens = 1500
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.InterceptedPayload);
+                ClassicAssert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.AreEqual("medium", payload["reasoning_effort"]?.ToString());
-                Assert.AreEqual(1500, (int)payload["max_completion_tokens"]);
-                Assert.IsNull(payload["temperature"]);
-                Assert.IsNull(payload["max_tokens"]);
+                ClassicAssert.AreEqual("medium", payload["reasoning_effort"]?.ToString());
+                ClassicAssert.AreEqual(1500, (int)payload["max_completion_tokens"]);
+                ClassicAssert.IsNull(payload["temperature"]);
+                ClassicAssert.IsNull(payload["max_tokens"]);
             }
 
             // 2. OpenAI: gpt-4o Model with ReasoningEffort.Medium (should NOT include reasoning_effort)
@@ -293,12 +294,12 @@ namespace RimLLM_Framework.Tests
                     MaxOutputTokens = 1000
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "gpt-4o").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.InterceptedPayload);
+                ClassicAssert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNull(payload["reasoning_effort"]);
-                Assert.AreEqual(0.7f, (float)payload["temperature"]);
-                Assert.AreEqual(1000, (int)payload["max_tokens"]);
-                Assert.IsNull(payload["max_completion_tokens"]);
+                ClassicAssert.IsNull(payload["reasoning_effort"]);
+                ClassicAssert.AreEqual(0.7f, (float)payload["temperature"]);
+                ClassicAssert.AreEqual(1000, (int)payload["max_tokens"]);
+                ClassicAssert.IsNull(payload["max_completion_tokens"]);
             }
 
             // 4. Gemini: Gemini with ReasoningEffort.Low
@@ -310,8 +311,8 @@ namespace RimLLM_Framework.Tests
                     MaxOutputTokens = 2000
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                Assert.AreEqual(1024, provider.LastConfig.ThinkingConfig.ThinkingBudget);
+                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                ClassicAssert.AreEqual(1024, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
 
             // 4b. Gemini: Gemini 1.5 Pro (non-thinking model) with ReasoningEffort.Low (should NOT include thinkingConfig)
@@ -323,7 +324,7 @@ namespace RimLLM_Framework.Tests
                     MaxOutputTokens = 2000
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "gemini-1.5-pro").GetAwaiter().GetResult();
-                Assert.IsNull(provider.LastConfig.ThinkingConfig);
+                ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig);
             }
 
             // 4c. Gemini: Gemma 4 (thinking-level model) with ReasoningEffort.Medium (should include thinkingLevel)
@@ -335,9 +336,9 @@ namespace RimLLM_Framework.Tests
                     MaxOutputTokens = 2000
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                Assert.AreEqual(Google.GenAI.Types.ThinkingLevel.Medium, provider.LastConfig.ThinkingConfig.ThinkingLevel);
-                Assert.IsNull(provider.LastConfig.ThinkingConfig.ThinkingBudget);
+                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                ClassicAssert.AreEqual(Google.GenAI.Types.ThinkingLevel.Medium, provider.LastConfig.ThinkingConfig.ThinkingLevel);
+                ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
 
             // 5. OpenRouter: DeepSeek R1 with ReasoningEffort.Medium
@@ -348,10 +349,10 @@ namespace RimLLM_Framework.Tests
                     Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium }
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.InterceptedPayload);
+                ClassicAssert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.AreEqual("medium", (string)payload["reasoning"]["effort"]);
-                Assert.IsNull(payload["reasoning_effort"], "reasoning 與 reasoning_effort 只能擇一，否則服務端會看到矛盾設定。");
+                ClassicAssert.AreEqual("medium", (string)payload["reasoning"]["effort"]);
+                ClassicAssert.IsNull(payload["reasoning_effort"], "reasoning 與 reasoning_effort 只能擇一，否則服務端會看到矛盾設定。");
             }
 
             // 5b. OpenRouter: 非 R1 的思考型模型也要送出思考強度。
@@ -364,7 +365,7 @@ namespace RimLLM_Framework.Tests
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.AreEqual("high", (string)payload["reasoning"]["effort"]);
+                ClassicAssert.AreEqual("high", (string)payload["reasoning"]["effort"]);
             }
 
             // 5c. OpenRouter: 明確關閉思考對應 effort "none"。
@@ -373,7 +374,7 @@ namespace RimLLM_Framework.Tests
                 var options = new RimLLMChatOptions { DisableReasoning = true };
                 string response = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.AreEqual("none", (string)payload["reasoning"]["effort"]);
+                ClassicAssert.AreEqual("none", (string)payload["reasoning"]["effort"]);
             }
 
             // 6. Test ReasoningEffort? = null (Auto) and DisableReasoning = true (None) payloads
@@ -383,9 +384,9 @@ namespace RimLLM_Framework.Tests
                 var provider = new TestOpenAIProvider(mockSettings);
                 var options = new ChatOptions(); // Reasoning null
                 string response = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.InterceptedPayload);
+                ClassicAssert.IsNotNull(provider.InterceptedPayload);
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNull(payload["reasoning_effort"]);
+                ClassicAssert.IsNull(payload["reasoning_effort"]);
             }
 
             // 6b. Gemini 2.0 Auto -> thinkingBudget = -1
@@ -393,8 +394,8 @@ namespace RimLLM_Framework.Tests
                 var provider = new TestGeminiProvider(mockSettings);
                 var options = new ChatOptions(); // Reasoning null
                 string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                Assert.AreEqual(-1, provider.LastConfig.ThinkingConfig.ThinkingBudget);
+                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                ClassicAssert.AreEqual(-1, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
 
             // 6c. Gemini 2.0 None -> thinkingBudget = 0
@@ -402,8 +403,8 @@ namespace RimLLM_Framework.Tests
                 var provider = new TestGeminiProvider(mockSettings);
                 var options = new RimLLMChatOptions { DisableReasoning = true };
                 string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                Assert.AreEqual(0, provider.LastConfig.ThinkingConfig.ThinkingBudget);
+                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                ClassicAssert.AreEqual(0, provider.LastConfig.ThinkingConfig.ThinkingBudget);
             }
 
             // 6d. Gemma 4 Auto -> Omit thinkingLevel
@@ -411,7 +412,7 @@ namespace RimLLM_Framework.Tests
                 var provider = new TestGeminiProvider(mockSettings);
                 var options = new ChatOptions();
                 string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                Assert.IsNull(provider.LastConfig.ThinkingConfig);
+                ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig);
             }
 
             // 6e. Gemma 4 None -> thinkingLevel = "minimal"
@@ -419,8 +420,8 @@ namespace RimLLM_Framework.Tests
                 var provider = new TestGeminiProvider(mockSettings);
                 var options = new RimLLMChatOptions { DisableReasoning = true };
                 string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                Assert.AreEqual(Google.GenAI.Types.ThinkingLevel.Minimal, provider.LastConfig.ThinkingConfig.ThinkingLevel);
+                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
+                ClassicAssert.AreEqual(Google.GenAI.Types.ThinkingLevel.Minimal, provider.LastConfig.ThinkingConfig.ThinkingLevel);
             }
 
             // 6i. OpenRouter Auto -> 不干預，完全不送 reasoning
@@ -429,7 +430,7 @@ namespace RimLLM_Framework.Tests
                 var options = new ChatOptions();
                 string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
                 var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                Assert.IsNull(payload["reasoning"]);
+                ClassicAssert.IsNull(payload["reasoning"]);
             }
         }
 
@@ -482,11 +483,11 @@ namespace RimLLM_Framework.Tests
                 enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
 
-            Assert.AreEqual("Hello World!", result);
-            Assert.AreEqual(3, chunksReceived.Count);
-            Assert.AreEqual("Hello ", chunksReceived[0]);
-            Assert.AreEqual("World", chunksReceived[1]);
-            Assert.AreEqual("!", chunksReceived[2]);
+            ClassicAssert.AreEqual("Hello World!", result);
+            ClassicAssert.AreEqual(3, chunksReceived.Count);
+            ClassicAssert.AreEqual("Hello ", chunksReceived[0]);
+            ClassicAssert.AreEqual("World", chunksReceived[1]);
+            ClassicAssert.AreEqual("!", chunksReceived[2]);
         }
 
         [Test]
@@ -505,20 +506,20 @@ namespace RimLLM_Framework.Tests
                     "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"Hello, user!\", " +
                     "\"reasoning_content\": \"Assessing the situation...\"}}]}";
                 string result = provider.GenerateAsync(userMsgs, null, "deepseek-reasoning").GetAwaiter().GetResult();
-                Assert.IsTrue(result.Contains("<think>"));
-                Assert.IsTrue(result.Contains("</think>"));
-                Assert.IsTrue(result.Contains("Assessing the situation..."));
-                Assert.IsTrue(result.Contains("Hello, user!"));
+                ClassicAssert.IsTrue(result.Contains("<think>"));
+                ClassicAssert.IsTrue(result.Contains("</think>"));
+                ClassicAssert.IsTrue(result.Contains("Assessing the situation..."));
+                ClassicAssert.IsTrue(result.Contains("Hello, user!"));
             }
 
             // 2. 測試 GeminiProvider (thought: true 欄位)
             {
                 var provider = new TestGeminiProviderWithReasoning(mockSettings);
                 string result = provider.GenerateAsync(userMsgs, null, "gemini-thinking").GetAwaiter().GetResult();
-                Assert.IsTrue(result.Contains("<think>"));
-                Assert.IsTrue(result.Contains("</think>"));
-                Assert.IsTrue(result.Contains("Thinking deeply..."));
-                Assert.IsTrue(result.Contains("Response from Gemini"));
+                ClassicAssert.IsTrue(result.Contains("<think>"));
+                ClassicAssert.IsTrue(result.Contains("</think>"));
+                ClassicAssert.IsTrue(result.Contains("Thinking deeply..."));
+                ClassicAssert.IsTrue(result.Contains("Response from Gemini"));
             }
         }
 
@@ -531,10 +532,10 @@ namespace RimLLM_Framework.Tests
             // 1. 註冊外部供應商成功，且出現在已註冊清單中
             var external = new MockTestProvider { ProviderId = "MyCustomProvider" };
             manager.RegisterProvider(external);
-            Assert.IsTrue(manager.GetRegisteredProviderIds().Contains("MyCustomProvider"));
+            ClassicAssert.IsTrue(manager.GetRegisteredProviderIds().Contains("MyCustomProvider"));
 
             // 2. 外部供應商視為註冊即啟用
-            Assert.IsTrue(manager.IsProviderEnabled("MyCustomProvider"));
+            ClassicAssert.IsTrue(manager.IsProviderEnabled("MyCustomProvider"));
 
             // 3. 重複 ProviderId 應擲出，防止覆蓋既有供應商（含內建）
             Assert.Throws<InvalidOperationException>(() =>
@@ -544,7 +545,7 @@ namespace RimLLM_Framework.Tests
 
             // 4. 內建供應商仍依設定啟用狀態
             mockSettings.EnabledProviders["OpenAI"] = false;
-            Assert.IsFalse(manager.IsProviderEnabled("OpenAI"));
+            ClassicAssert.IsFalse(manager.IsProviderEnabled("OpenAI"));
         }
 
         [Test]
@@ -554,20 +555,20 @@ namespace RimLLM_Framework.Tests
 
             var notFound = Assert.Throws<RimLLMException>(() =>
                 probe.Probe(System.Net.HttpStatusCode.NotFound, "{\"error\":{\"message\":\"model does not exist\"}}"));
-            Assert.AreEqual(LLMError.ModelNotFound, notFound.Error, "404 應對應 ModelNotFound 而非可重試的 Unknown");
+            ClassicAssert.AreEqual(LLMError.ModelNotFound, notFound.Error, "404 應對應 ModelNotFound 而非可重試的 Unknown");
 
             var badRequest = Assert.Throws<RimLLMException>(() =>
                 probe.Probe(System.Net.HttpStatusCode.BadRequest, "{\"error\":{\"message\":\"bad input\"}}"));
-            Assert.AreEqual(LLMError.InvalidResponse, badRequest.Error, "400 屬於請求本身的問題，應對應 InvalidResponse");
-            Assert.IsFalse(badRequest.IsSchemaRejection, "與 schema 無關的 400 不應標記為 schema 拒絕");
+            ClassicAssert.AreEqual(LLMError.InvalidResponse, badRequest.Error, "400 屬於請求本身的問題，應對應 InvalidResponse");
+            ClassicAssert.IsFalse(badRequest.IsSchemaRejection, "與 schema 無關的 400 不應標記為 schema 拒絕");
 
             var timeout = Assert.Throws<RimLLMException>(() =>
                 probe.Probe(System.Net.HttpStatusCode.RequestTimeout, "timeout"));
-            Assert.AreEqual(LLMError.Timeout, timeout.Error, "408 應對應 Timeout");
+            ClassicAssert.AreEqual(LLMError.Timeout, timeout.Error, "408 應對應 Timeout");
 
             var paymentRequired = Assert.Throws<RimLLMException>(() =>
                 probe.Probe((System.Net.HttpStatusCode)402, "payment required"));
-            Assert.AreEqual(LLMError.QuotaExceeded, paymentRequired.Error, "402 應對應 QuotaExceeded");
+            ClassicAssert.AreEqual(LLMError.QuotaExceeded, paymentRequired.Error, "402 應對應 QuotaExceeded");
         }
 
         [Test]
@@ -579,8 +580,8 @@ namespace RimLLM_Framework.Tests
                 probe.Probe(System.Net.HttpStatusCode.BadRequest,
                     "{\"error\":{\"message\":\"response_format json_schema is not supported\"}}"));
 
-            Assert.AreEqual(LLMError.InvalidResponse, ex.Error);
-            Assert.IsTrue(ex.IsSchemaRejection, "提及 response_format／json_schema 的 400 應標記為 schema 拒絕");
+            ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
+            ClassicAssert.IsTrue(ex.IsSchemaRejection, "提及 response_format／json_schema 的 400 應標記為 schema 拒絕");
         }
 
         [Test]
@@ -591,7 +592,7 @@ namespace RimLLM_Framework.Tests
             var ex = Assert.Throws<RimLLMException>(() =>
                 probe.Probe((System.Net.HttpStatusCode)429, "Insufficient_Quota for this account"));
 
-            Assert.AreEqual(LLMError.QuotaExceeded, ex.Error, "配額關鍵字比對必須大小寫不敏感");
+            ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex.Error, "配額關鍵字比對必須大小寫不敏感");
         }
 
         [Test]
@@ -615,7 +616,7 @@ namespace RimLLM_Framework.Tests
                 "moonshot-v1-8k").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
-            Assert.IsNull(payload["response_format"],
+            ClassicAssert.IsNull(payload["response_format"],
                 "未宣告支援原生 schema 的衍生供應商不應收到 response_format");
         }
 
@@ -641,9 +642,9 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
-            Assert.IsNotNull(payload["response_format"], "已驗證支援的衍生供應商應收到 response_format");
-            Assert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());
-            Assert.IsTrue(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == true,
+            ClassicAssert.IsNotNull(payload["response_format"], "已驗證支援的衍生供應商應收到 response_format");
+            ClassicAssert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());
+            ClassicAssert.IsTrue(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == true,
                 "不含 Dictionary 的型別應維持 strict 模式");
         }
 
@@ -669,9 +670,11 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
-            Assert.IsFalse(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == true,
+            ClassicAssert.IsFalse(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == true,
                 "含 Dictionary 的型別必須關閉 strict，否則服務端會拒絕開放式 map");
         }
+
+
 
         /// <summary>
         /// response_format 必須只由 Patch 的原始 JSON 供應，MEAI 的 ChatOptions.ResponseFormat 要保持 null。
@@ -704,9 +707,9 @@ namespace RimLLM_Framework.Tests
             }
 
             var payload = JObject.Parse(provider.CapturedPayload);
-            Assert.IsNotNull(payload["response_format"]?["json_schema"]?["schema"],
+            ClassicAssert.IsNotNull(payload["response_format"]?["json_schema"]?["schema"],
                 "response_format 仍必須完整出現在送出的 payload 中");
-            Assert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());
+            ClassicAssert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());
         }
 
         [Test]
@@ -752,7 +755,7 @@ namespace RimLLM_Framework.Tests
                 enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
 
-            Assert.AreEqual("ok", result, "單一請求不得重複計入防濫用額度");
+            ClassicAssert.AreEqual("ok", result, "單一請求不得重複計入防濫用額度");
         }
 
         [Test]
@@ -822,7 +825,7 @@ namespace RimLLM_Framework.Tests
                 enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
 
-            Assert.AreEqual("XY", result, "失敗 attempt 的部分串流內容不得混入最終結果");
+            ClassicAssert.AreEqual("XY", result, "失敗 attempt 的部分串流內容不得混入最終結果");
         }
 
         [Test]
@@ -897,9 +900,9 @@ namespace RimLLM_Framework.Tests
                 enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
 
-            Assert.AreEqual(1, restartCount, "供應商中途失敗後應恰好通知呼叫端重設一次");
-            Assert.AreEqual("final", result);
-            Assert.AreEqual("final", displayed.ToString(), "呼叫端在收到重設通知後顯示內容不應殘留前一段");
+            ClassicAssert.AreEqual(1, restartCount, "供應商中途失敗後應恰好通知呼叫端重設一次");
+            ClassicAssert.AreEqual("final", result);
+            ClassicAssert.AreEqual("final", displayed.ToString(), "呼叫端在收到重設通知後顯示內容不應殘留前一段");
         }
     }
 
@@ -933,6 +936,8 @@ namespace RimLLM_Framework.Tests
         public int RoutingStrategy { get; set; } = 0;
         public bool EnableNativeSchema { get; set; } = true;
         public bool EnableJsonRepair { get; set; } = true;
+        public bool EnableResponseCache { get; set; } = false;
+        public float ResponseCacheTtlMinutes { get; set; } = 30f;
 
         public string EmbeddingProvider { get; set; } = "Disabled";
         public string EmbeddingModel { get; set; } = "text-embedding-004";

@@ -46,15 +46,17 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 <ItemGroup>
   <!-- IChatClient / ChatMessage / ChatResponse / IEmbeddingGenerator。
        ExcludeAssets="runtime" 保留參考但不把 DLL 複製到你的 Assemblies 資料夾。 -->
-  <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.3" ExcludeAssets="runtime" />
+  <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" ExcludeAssets="runtime" />
 </ItemGroup>
 ```
 
-* [`Microsoft.Extensions.AI` 10.8.3](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.8.3) —— 使用端 Mod 只需要這一個。它會帶進 `Microsoft.Extensions.AI.Abstractions`，`IChatClient` 就在裡面。
-* [`Microsoft.Extensions.AI.OpenAI` 10.8.3](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.8.3) —— 框架另外會一併發佈這一顆。只有在你要自己建構 OpenAI SDK 用戶端時才需要參考；單純呼叫 `RimLLMProvider.CreateChatClient` 的 Mod 不需要。
+* [`Microsoft.Extensions.AI` 10.9.0](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.9.0) —— 使用端 Mod 只需要這一個。它會帶進 `Microsoft.Extensions.AI.Abstractions`，`IChatClient` 就在裡面。
+* [`Microsoft.Extensions.AI.OpenAI` 10.9.0](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.9.0) —— 框架另外會一併發佈這一顆。只有在你要自己建構 OpenAI SDK 用戶端時才需要參考；單純呼叫 `RimLLMProvider.CreateChatClient` 的 Mod 不需要。
 
 > [!IMPORTANT]
-> **版本必須釘死在 `10.8.3`。** 組件識別必須與框架載入的那一份完全一致。使用端 Mod 也不要把 `CopyLocalLockFileAssemblies` 設成 `true` —— 那正是造成上述 DLL 重複問題的原因。
+> **版本必須釘死在 `10.9.0`。** 組件識別必須與框架載入的那一份完全一致。使用端 Mod 也不要把 `CopyLocalLockFileAssemblies` 設成 `true` —— 那正是造成上述 DLL 重複問題的原因。
+>
+> **從舊版框架升上來要注意：**MEAI 的組件版本是跟著 `major.minor` 走的，`10.8.3` 產生的是 `10.8.0.0`，`10.9.0` 產生的是 `10.9.0.0`。因此對著 `10.8.3` 編譯的使用端 Mod 必須把這行的版本改掉並重新編譯 —— 這不是原始碼層的破壞性變更，但舊的二進位已經對不上框架載入的那一份。
 
 框架本身的組件不在 NuGet 上，那部分請看方案 B。
 
@@ -95,9 +97,9 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 ## 💻 SDK 使用方式
 
-**如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.8.3)，你就已經會用這套 API。**
+**如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.9.0)，你就已經會用這套 API。**
 
-RimLLM Framework 的全部工作，就是交給你一個標準的 MEAI `IChatClient`。從那一行之後全是純 Microsoft.Extensions.AI —— 與你對 [`Microsoft.Extensions.AI.OpenAI`](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.8.3)、Ollama 或任何其他 provider 套件所寫的呼叫完全相同。
+RimLLM Framework 的全部工作，就是交給你一個標準的 MEAI `IChatClient`。從那一行之後全是純 Microsoft.Extensions.AI —— 與你對 [`Microsoft.Extensions.AI.OpenAI`](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.9.0)、Ollama 或任何其他 provider 套件所寫的呼叫完全相同。
 
 ### 只有一行不一樣
 
@@ -209,7 +211,9 @@ catch (RimLLMException ex)
 }
 ```
 
-`LLMError` 的值：`Timeout`、`RateLimit`、`InvalidKey`、`ProviderOffline`、`InvalidResponse`、`NetworkError`、`ModelNotFound`、`ContentFilter`、`QuotaExceeded`、`Cancelled`、`Unknown`。
+`LLMError` 的值：`Timeout`、`RateLimit`、`InvalidKey`、`ProviderOffline`、`InvalidResponse`、`NetworkError`、`ModelNotFound`、`ContentFilter`、`QuotaExceeded`、`Cancelled`、`Unknown`、`ContextWindowExceeded`。
+
+`ContentFilter` 與 `ContextWindowExceeded` 從籠統的 4xx 拒絕中拆出來，是因為三者的處置方式完全不同：縮短提示詞、換一家供應商，還是修請求。OpenAI 協定家族對這兩種情況一律回 `400`，因此由錯誤對照表依訊息內容判定；`413` 則依定義直接對應 `ContextWindowExceeded`。Schema、reasoning 與 temperature 遭拒仍維持回報 `InvalidResponse`，不影響現有的「去掉該參數重打一次」流程。新的列舉成員一律追加在 `LLMError` 末尾，已編譯的下游 Mod 數值不變。
 
 ### 唯一多出來的型別：`RimLLMChatOptions`
 
@@ -272,6 +276,10 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * **客戶端 Fallback 鏈**：可設定由主要模型與多個精確備援模型組成的鏈。目前模型遇到逾時、速率限制（HTTP 429）或連線錯誤時，框架會無縫往下切換。UI 產生的項目為 `Provider:Model` 形式；框架仍相容只填供應商的舊項目，並使用該供應商的預設模型。
    * **OpenRouter 服務端 Fallback**：OpenRouter 的項目可以用逗號列出多個模型 —— 把 `ChatOptions.ModelId` 設為 `"OpenRouter:model-a, model-b, model-c"`（Fallback 鏈項目也接受同樣的格式）。此時供應商會改送 OpenRouter 的 `models` 陣列而非單一 `model` 欄位，把「要用哪一個」的決定交給 OpenRouter 服務端；只填一個模型名時仍送出一般的 `model`。由 `TestOpenRouterFallbackPayload` 驗證。注意設定介面是從快取模型清單一次挑一個模型來組出項目，因此這種多模型寫法來自呼叫端程式碼，而不是 Fallback 鏈編輯器。
    * `Retry-After` 在所有路徑上都支援 RFC 7231 允許的兩種格式 —— 延遲秒數與 HTTP 日期。
+   * **重試間的指數退避**：等待時間每次翻倍（`RetryDelay × 2ⁿ`）並加上 ±20% 抖動，上限 60 秒。遇到限流還用固定間隔連打，只會再一次撞上同一面牆，把重試額度白白耗光；伺服器透過 `Retry-After` 要求更長的等待時仍以其為準。
+   * **冷卻以「供應商 + 模型」為單位。**健康帳本以 `Provider:Model` 為鍵。備用鏈上常同時掛著同一個供應商的多個模型（例如三個 OpenRouter 模型），只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐。
+   * **一次請求只記一次失敗。**同一次請求的所有重試合計只計一次失敗。逐次記錄的話，單一次網路抖動（預設設定下共 4 次嘗試）就能把健康的目標推過熔斷門檻，冤枉凍結數分鐘。
+   * **路由策略**：`PriorityFailover`（依鏈順序）、`MinLatency`、`RoundRobin` 與 `LowestCost`。`LowestCost` 直接沿用框架已經依 API 費率自動判定的模型分級排序，不需要另外維護一份價格表。所有排序都是穩定的，同級的候選會保留鏈本身的順序。
 3. **AES-256 設定加密**
    * API 金鑰以 AES-256 對稱加密儲存，降低設定檔中出現明文金鑰的風險。這是混淆等級的保護 —— 詳見下方[安全性說明](#-安全性說明)。
    * 設定介面預設也會**遮罩金鑰**（只留頭尾，仍可辨認自己設定了哪一把），每一列另有切換鈕可暫時顯示以便編輯。這防的是與加密不同的外洩途徑：截圖、回報問題與直播。
@@ -298,6 +306,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 原生支援 **Gemini context caching** 與 **OpenAI prompt caching**。在 `RimLLMChatOptions` 設定 `CachedContext`，框架會提交 `SystemPrompt + CachedContext` 進行快取，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **成本防呆**：Gemini 顯式快取有最小尺寸門檻，內容過小時框架會跳過快取改用 `systemInstruction`，避免建立費永遠回收不了。同一份上下文的快取建立也以鎖序列化，防止產生重複資源。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`）並套用折扣費率估算成本，讓成本面板反映真實節省。
+   * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 訊息、系統提示詞、快取上下文、temperature、最大輸出 Token、思考強度、目標模型與結構化輸出型別 —— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰交給 `Microsoft.Extensions.Caching.Memory.MemoryCache`（版本釘 `10.0.11`，以對齊 MEAI 已經帶進來的 `Caching.Abstractions` 組件識別），框架只負責判定「什麼算同一個請求」。只存在記憶體中，不寫入存檔。
 10. **Embedding SDK**
     * 框架公開由 Google、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
     * 三種線上來源全走官方 SDK：Google 使用 `Google.GenAI` 的 `EmbedContentAsync`；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。
@@ -340,10 +349,10 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 ### 6. 官方 SDK 與供應商職責
 
-* 主專案與測試專案維持 `net472`；RimWorld Mod 不需要遷移到 .NET 8。官方 SDK 的相依 DLL 隨 Mod 發佈，並由啟動相容性檢查確認可載入。雖然 .NET Framework 將 `System.ValueTuple` 視為框架組件，建置仍明確部署其 `4.0.5.0` DLL，以避免 RimWorld 的 Mono 反射 MEAI 時發生 `ReflectionTypeLoadException`。
-* **OpenAI** 使用 `OpenAI` SDK `2.12.0` 搭配 `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.8.3`。內建的 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用 manager。只有真正實作 OpenAI Chat Completions 協定的端點（LM Studio、Ollama、vLLM…）才適合 OpenAI 相容轉接。
-* **Gemini** 使用官方 `Google.GenAI` `1.17.0`，以 API 金鑰建立 Gemini Developer API 用戶端。文字、串流、原生 Schema、思考、上下文快取與安全設定全走原生 `Google.GenAI` 路徑（在程式碼中以測試縫隔離：`CreateGenAiClient`、`GenerateContentNativeAsync`、`GenerateContentStreamNativeAsync`、`CreateCachedContentNativeAsync`）。Gemini 絕不以 `OpenAI.Chat.ChatClient` 模擬。
-* **每個內建供應商都走官方 SDK**：OpenAI 家族（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）使用 `OpenAI` SDK `2.12.0` 加 MEAI 的 `IChatClient`；Gemini 走原生 `Google.GenAI` 路徑。模型清單使用 `OpenAIModelClient.GetModelsAsync()`，而非自行拼 `/models` URL 再解析 JSON。
+* 主專案與測試專案維持 `net472`；RimWorld Mod 不需要遷移到 .NET 8。官方 SDK 的相依 DLL 隨 Mod 發佈，並由 `ProviderSdkIntegrationTests` 逐一載入並反射，讓遺漏的間接相依組件在建置階段就失敗而不是在遊戲裡。要注意這項檢查跑在真正的 .NET Framework 上，因此拓不到「在這裡存在、但 RimWorld 的 Mono BCL 沒有」的型別 ——下方的 `DataAnnotations` 就是這種失敗，只能靠實際啟動遊戲才抓得到。雖然 .NET Framework 將 `System.ValueTuple` 視為框架組件，建置仍明確部署其 `4.0.5.0` DLL，以避免 RimWorld 的 Mono 反射 MEAI 時發生 `ReflectionTypeLoadException`。
+* **OpenAI** 使用 `OpenAI` SDK `2.13.0` 搭配 `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.9.0`。針對 OpenAI SDK 2.13.0 與 `System.ClientModel` 1.15.0 在實驗性 `ChatCompletionOptions.Patch` API 內部因 `PropagateSet` 缺乏 null 防護而擲出 `NullReferenceException` 的問題，框架透過 `OpenAIPatchExtensions.DisablePatchPropagators()` 清除傳播委派，安全恢復底層 JSON Patch 寫入機制以注入 `reasoning_effort`、`response_format`、`max_tokens` 與 `models` 欄位。內建的 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用 manager。只有真正實作 OpenAI Chat Completions 協定的端點（LM Studio、Ollama、vLLM…）才適合 OpenAI 相容轉接。
+* **Gemini** 使用官方 `Google.GenAI` `1.21.0`，以 API 金鑰建立 Gemini Developer API 用戶端。文字、串流、原生 Schema、思考、上下文快取與安全設定全走原生 `Google.GenAI` 路徑（在程式碼中以測試縫隔離：`CreateGenAiClient`、`GenerateContentNativeAsync`、`GenerateContentStreamNativeAsync`、`CreateCachedContentNativeAsync`）。Gemini 絕不以 `OpenAI.Chat.ChatClient` 模擬。
+* **每個內建供應商都走官方 SDK**：OpenAI 家族（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）使用 `OpenAI` SDK `2.13.0` 加 MEAI 的 `IChatClient`；Gemini 走原生 `Google.GenAI` 路徑。模型清單使用 `OpenAIModelClient.GetModelsAsync()`，而非自行拼 `/models` URL 再解析 JSON。
 * **框架已無任何 raw HTTP 路徑。** 建立 Gemini `cachedContents` 顯式快取是最後一處，現已改走 `Client.Caches.CreateAsync`，回傳型別化的 `CachedContent`（`ExpireTime` 直接是 `DateTime?`，不需要再解析字串）。本文件先前宣稱 `Caches` 只暴露 `ListAsync` —— 那是錯的，而且從未被驗證過；對實際組件反射顯示 `CreateAsync`、`GetAsync`、`UpdateAsync`、`DeleteAsync`、`ListAsync` 全是公開成員。移除該路徑後，整個 HTTP 傳輸層與認證 Header 處理都一併刪除。
 * **JSON Schema 產生走 `System.Text.Json` 的 `JsonSchemaExporter` 加一層正規化**（`RimLLMSchemaBuilder`），分三階段。**Stage A** 由 exporter 匯出完整 JSON Schema。**Stage B** 正規化成所有供應商都接受的受限子集：解析並展開 `$ref` 指標、截斷循環與過深巢狀、把可為 null 的聯集收斂成單一 `type`、只保留關鍵字白名單。**Stage C** 套用目標供應商的方言。方言有兩種，取自 `LLMProviderCapabilities.PreferredSchemaProfile`，第三方供應商因此能宣告自己的方言：OpenAI 把選填成員寫成 `["integer","null"]` 聯集，Gemini 則寫成單一 `type` 加 `nullable: true`。
   * **直接呼叫 exporter，不經過 MEAI 的 `AIJsonUtilities.CreateJsonSchema` 包裝層。** 該包裝層出貨的是 `net462` 資產，會參考 `System.ComponentModel.DataAnnotations`（用來讀 `[EmailAddress]`、`[Range]` 之類的驗證屬性豐富 schema）。RimWorld 的 Mono BCL 沒有那個組件，所以實機上會拋 `TypeLoadException: Could not resolve type … 'EmailAddressAttribute' in assembly 'System.ComponentModel.DataAnnotations, Version=4.0.0.0'`，整份 schema 產生靜默降級成舊的反射實作 —— 而單元測試跑在有 GAC 的真 .NET Framework 上，完全看不出來。`System.Text.Json` 沒有該參考，而且它就是 MEAI 內部使用的同一個引擎，直呼不損失任何能力。MEAI 唯一多做而仍需要的 `[Description]`，改由 Stage B 自行讀取。這條限制由 `SchemaGenerationEngineHasNoDataAnnotationsDependency` 釘住。

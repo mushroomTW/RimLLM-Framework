@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using RimLLM_Framework.Mod;
 
 namespace RimLLM_Framework.Tests
@@ -13,47 +14,47 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void BoldAndItalicBecomeRichTextTags()
         {
-            Assert.AreEqual("<b>粗體</b>與<i>斜體</i>", RimLLMMarkdown.ToRichText("**粗體**與*斜體*"));
+            ClassicAssert.AreEqual("<b>粗體</b>與<i>斜體</i>", RimLLMMarkdown.ToRichText("**粗體**與*斜體*"));
         }
 
         [Test]
         public void BoldIsNotBrokenIntoNestedItalic()
         {
             // 先處理 ** 再處理 *，否則 **text** 會被拆成 <i>*text</i>*
-            Assert.AreEqual("<b>abc</b>", RimLLMMarkdown.ToRichText("**abc**"));
+            ClassicAssert.AreEqual("<b>abc</b>", RimLLMMarkdown.ToRichText("**abc**"));
         }
 
         [Test]
         public void HeadingBecomesSizedBoldLine()
         {
-            Assert.AreEqual("<size=20><b>標題</b></size>", RimLLMMarkdown.ToRichText("# 標題"));
-            Assert.AreEqual("<size=15><b>第三層</b></size>", RimLLMMarkdown.ToRichText("### 第三層"));
+            ClassicAssert.AreEqual("<size=20><b>標題</b></size>", RimLLMMarkdown.ToRichText("# 標題"));
+            ClassicAssert.AreEqual("<size=15><b>第三層</b></size>", RimLLMMarkdown.ToRichText("### 第三層"));
         }
 
         [Test]
         public void DeepHeadingFallsBackToBoldOnly()
         {
-            Assert.AreEqual("<b>第五層</b>", RimLLMMarkdown.ToRichText("##### 第五層"));
+            ClassicAssert.AreEqual("<b>第五層</b>", RimLLMMarkdown.ToRichText("##### 第五層"));
         }
 
         [Test]
         public void UnorderedListBecomesBulletWithIndent()
         {
             string result = RimLLMMarkdown.ToRichText("- 甲\n- 乙");
-            Assert.AreEqual("  • 甲\n  • 乙", result);
+            ClassicAssert.AreEqual("  • 甲\n  • 乙", result);
         }
 
         [Test]
         public void NestedListGetsDeeperIndent()
         {
             string result = RimLLMMarkdown.ToRichText("- 外層\n  - 內層");
-            Assert.AreEqual("  • 外層\n    • 內層", result);
+            ClassicAssert.AreEqual("  • 外層\n    • 內層", result);
         }
 
         [Test]
         public void OrderedListKeepsItsNumber()
         {
-            Assert.AreEqual("  1. 第一項", RimLLMMarkdown.ToRichText("1. 第一項"));
+            ClassicAssert.AreEqual("  1. 第一項", RimLLMMarkdown.ToRichText("1. 第一項"));
         }
 
         [Test]
@@ -62,7 +63,7 @@ namespace RimLLM_Framework.Tests
             // 程式碼內的星號不是語法，必須原樣保留。
             string result = RimLLMMarkdown.ToRichText("看 `a * b * c` 這段");
             StringAssert.Contains("a * b * c", result);
-            Assert.IsFalse(result.Contains("<i>"), "行內程式碼裡的星號不該被當成斜體。");
+            ClassicAssert.IsFalse(result.Contains("<i>"), "行內程式碼裡的星號不該被當成斜體。");
         }
 
         [Test]
@@ -70,8 +71,8 @@ namespace RimLLM_Framework.Tests
         {
             string result = RimLLMMarkdown.ToRichText("```csharp\nint x = 1;\n```");
             StringAssert.Contains("int x = 1;", result);
-            Assert.IsFalse(result.Contains("```"), "圍籬本身不該顯示出來。");
-            Assert.IsFalse(result.Contains("csharp"), "語言標記不該顯示出來。");
+            ClassicAssert.IsFalse(result.Contains("```"), "圍籬本身不該顯示出來。");
+            ClassicAssert.IsFalse(result.Contains("csharp"), "語言標記不該顯示出來。");
         }
 
         [Test]
@@ -87,7 +88,7 @@ namespace RimLLM_Framework.Tests
         {
             string result = RimLLMMarkdown.ToRichText("```\n# 這不是標題\n```");
             StringAssert.Contains("# 這不是標題", result);
-            Assert.IsFalse(result.Contains("<size="), "程式碼區塊內不該套用標題樣式。");
+            ClassicAssert.IsFalse(result.Contains("<size="), "程式碼區塊內不該套用標題樣式。");
         }
 
         [Test]
@@ -95,7 +96,7 @@ namespace RimLLM_Framework.Tests
         {
             string result = RimLLMMarkdown.ToRichText("[說明](https://example.com)");
             StringAssert.Contains("說明", result);
-            Assert.IsFalse(result.Contains("https://example.com"), "舊版 rich text 不能點擊，網址只是噪音。");
+            ClassicAssert.IsFalse(result.Contains("https://example.com"), "舊版 rich text 不能點擊，網址只是噪音。");
         }
 
         [Test]
@@ -104,7 +105,7 @@ namespace RimLLM_Framework.Tests
             // 刻意不支援底線斜體，就是為了避免這種誤判。
             string result = RimLLMMarkdown.ToRichText("欄位 some_field_name 保持原樣");
             StringAssert.Contains("some_field_name", result);
-            Assert.IsFalse(result.Contains("<i>"));
+            ClassicAssert.IsFalse(result.Contains("<i>"));
         }
 
         [Test]
@@ -134,7 +135,7 @@ namespace RimLLM_Framework.Tests
                 System.Text.RegularExpressions.Regex.Matches(result, @"</?([a-zA-Z]+)"))
             {
                 string tag = match.Groups[1].Value.ToLowerInvariant();
-                Assert.IsTrue(
+                ClassicAssert.IsTrue(
                     tag == "b" || tag == "i" || tag == "size" || tag == "color" || tag == "material" || tag == "quad",
                     "產生了舊版 rich text 不支援的標籤: " + tag);
             }
@@ -143,15 +144,15 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void EmptyInputIsReturnedUnchanged()
         {
-            Assert.AreEqual("", RimLLMMarkdown.ToRichText(""));
-            Assert.IsNull(RimLLMMarkdown.ToRichText(null));
+            ClassicAssert.AreEqual("", RimLLMMarkdown.ToRichText(""));
+            ClassicAssert.IsNull(RimLLMMarkdown.ToRichText(null));
         }
 
         [Test]
         public void PlainTextIsUnchanged()
         {
             const string input = "這只是一段普通文字，沒有任何標記。";
-            Assert.AreEqual(input, RimLLMMarkdown.ToRichText(input));
+            ClassicAssert.AreEqual(input, RimLLMMarkdown.ToRichText(input));
         }
     }
 }

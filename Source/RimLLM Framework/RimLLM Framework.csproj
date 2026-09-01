@@ -26,8 +26,9 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <!-- 啟用 C# 8.0 語言版本，以支援非同步資料流 (IAsyncEnumerable) -->
     <LangVersion>8.0</LangVersion>
-    <!-- ChatCompletionOptions.Patch 為實驗性 API (SCME0001)，本專案刻意使用它以補救 wire 差異。 -->
-    <NoWarn>$(NoWarn);SCME0001</NoWarn>
+    <!-- ChatCompletionOptions.Patch 為實驗性 API (SCME0001)，本專案刻意使用它以補救 wire 差異。
+         NU1608: MEAI.OpenAI 10.9.0 定義 OpenAI (< 2.13.0)，本專案升級至 2.13.0 並透過 OpenAIPatchExtensions 修復 PropagateSet NRE。 -->
+    <NoWarn>$(NoWarn);SCME0001;NU1608</NoWarn>
     <Authors>mushroomTW</Authors>
   </PropertyGroup>
 
@@ -38,10 +39,24 @@
       AI 抽象層與 provider SDK 版本刻意固定。Mod 維持 net472，這些套件必須
       持續提供 netstandard2.0 資產，才能在 RimWorld Mono 執行環境中使用。
     -->
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.3" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.3" />
-    <PackageReference Include="OpenAI" Version="2.12.0" />
-    <PackageReference Include="Google.GenAI" Version="1.17.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
+    <!--
+      OpenAI SDK 升級至 2.13.0。
+      2.13.0 內部生成的 ChatCompletionOptions.PropagateSet 存在未做 null 檢查的 bug，
+      本專案透過 OpenAIPatchExtensions.DisablePatchPropagators 清除傳播委派，
+      安全恢復底層 JsonPatch 寫入行為。
+    -->
+    <PackageReference Include="OpenAI" Version="2.13.0" />
+    <PackageReference Include="Google.GenAI" Version="1.21.0" />
+    <!--
+      回應快取的儲存層。版本刻意對齊 MEAI 已經帶進來的
+      Microsoft.Extensions.Caching.Abstractions（10.0.11）：RimWorld 把所有 Mod 載入同一個
+      AppDomain，抽象層與實作層的組件識別一旦對不上就會在遊戲內炸開。
+      其四個相依（Options、Primitives、DependencyInjection.Abstractions、Logging.Abstractions）
+      本來就已隨 MEAI 出貨，因此淨增一個 DLL。
+    -->
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
     <!--
       升級 System.Threading.Tasks.Extensions 至 4.6.3，並以 alias 隔離其 ValueTask，
       避免與 Krafs.Rimworld.Ref 附帶的 RimWorld Mono mscorlib（同樣定義 ValueTask）衝突（CS0433）。
@@ -51,7 +66,7 @@
       以 alias 隔離 Microsoft.Bcl.AsyncInterfaces 的 IAsyncEnumerable<T>，避免與
       mscorlib (net472) 提供的同名介面衝突 (CS0433)。測試專案亦採相同做法。
     -->
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.10" Aliases="bclasync" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.11" Aliases="bclasync" />
   </ItemGroup>
 
   <Target Name="CopyRimWorldMonoRuntimeDependencies" AfterTargets="Build">

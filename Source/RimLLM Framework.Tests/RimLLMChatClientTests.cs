@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -44,9 +45,9 @@ namespace RimLLM_Framework.Tests
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
                 new RimLLMChatOptions()).GetAwaiter().GetResult();
-            Assert.IsNotNull(response);
-            Assert.IsNotEmpty(response.Text);
-            Assert.AreEqual("TestMock", response.ModelId.Split(new[] { ':' }, StringSplitOptions.None)[0]);
+            ClassicAssert.IsNotNull(response);
+            ClassicAssert.IsNotEmpty(response.Text);
+            ClassicAssert.AreEqual("TestMock", response.ModelId.Split(new[] { ':' }, StringSplitOptions.None)[0]);
         }
 
         [Test]
@@ -57,9 +58,9 @@ namespace RimLLM_Framework.Tests
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
                 new ChatOptions { ModelId = "TestMock:preferred-model" }).GetAwaiter().GetResult();
-            Assert.AreEqual("TestMock", response.ModelId.Split(new[] { ':' }, StringSplitOptions.None)[0]);
-            Assert.AreEqual("preferred-model", response.ModelId.Split(new[] { ':' }, StringSplitOptions.None)[1]);
-            Assert.AreEqual("mock-reply for preferred-model", response.Text);
+            ClassicAssert.AreEqual("TestMock", response.ModelId.Split(new[] { ':' }, StringSplitOptions.None)[0]);
+            ClassicAssert.AreEqual("preferred-model", response.ModelId.Split(new[] { ':' }, StringSplitOptions.None)[1]);
+            ClassicAssert.AreEqual("mock-reply for preferred-model", response.Text);
         }
 
         [Test]
@@ -70,9 +71,9 @@ namespace RimLLM_Framework.Tests
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
                 new RimLLMChatOptions()).GetAwaiter().GetResult();
-            Assert.IsNotNull(response.Usage);
-            Assert.AreEqual(0, response.Usage.InputTokenCount ?? 0);
-            Assert.AreEqual(0, response.Usage.OutputTokenCount ?? 0);
+            ClassicAssert.IsNotNull(response.Usage);
+            ClassicAssert.AreEqual(0, response.Usage.InputTokenCount ?? 0);
+            ClassicAssert.AreEqual(0, response.Usage.OutputTokenCount ?? 0);
         }
 
         [Test]
@@ -84,7 +85,7 @@ namespace RimLLM_Framework.Tests
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
                 new RimLLMChatOptions { Priority = 5 }).GetAwaiter().GetResult();
-            Assert.IsNotEmpty(response.Text);
+            ClassicAssert.IsNotEmpty(response.Text);
         }
 
         [Test]
@@ -96,8 +97,8 @@ namespace RimLLM_Framework.Tests
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
                 new ChatOptions()).GetAwaiter().GetResult();
-            Assert.IsNotNull(response);
-            Assert.IsNotEmpty(response.Text);
+            ClassicAssert.IsNotNull(response);
+            ClassicAssert.IsNotEmpty(response.Text);
         }
 
         [Test]
@@ -113,11 +114,11 @@ namespace RimLLM_Framework.Tests
                 },
                 new RimLLMChatOptions { DisableReasoning = true, Priority = 7 },
                 CancellationToken.None);
-            Assert.AreEqual("You are a helpful assistant.", request.SystemPrompt);
-            Assert.IsTrue(request.DisableReasoning);
-            Assert.AreEqual(7, request.Priority);
-            Assert.AreEqual(2, request.Messages.Count);
-            Assert.AreEqual("test.translate.mod", request.ModId);
+            ClassicAssert.AreEqual("You are a helpful assistant.", request.SystemPrompt);
+            ClassicAssert.IsTrue(request.DisableReasoning);
+            ClassicAssert.AreEqual(7, request.Priority);
+            ClassicAssert.AreEqual(2, request.Messages.Count);
+            ClassicAssert.AreEqual("test.translate.mod", request.ModId);
         }
 
                 [Test]
@@ -136,19 +137,19 @@ namespace RimLLM_Framework.Tests
             ChatOptions cloned = original.Clone();
 
             // base.Clone() 必須回傳衍生型別，否則框架欄位會在任何 middleware clone 時被切掉。
-            Assert.IsInstanceOf<RimLLMChatOptions>(cloned, "Clone 必須保留 RimLLMChatOptions 型別");
+            ClassicAssert.IsInstanceOf<RimLLMChatOptions>(cloned, "Clone 必須保留 RimLLMChatOptions 型別");
             var typed = (RimLLMChatOptions)cloned;
-            Assert.AreEqual(0.5f, typed.Temperature);
-            Assert.AreEqual(9, typed.Priority);
-            Assert.AreEqual("Medium", typed.MinFallbackLevel);
-            Assert.AreEqual("world rules", typed.CachedContext);
-            Assert.IsTrue(typed.DisableReasoning);
-            Assert.IsTrue(typed.EnableContextCaching, "CachedContext 不為空時應沿用計算預設值");
-            Assert.IsNotNull(typed.OnStreamRestart);
+            ClassicAssert.AreEqual(0.5f, typed.Temperature);
+            ClassicAssert.AreEqual(9, typed.Priority);
+            ClassicAssert.AreEqual("Medium", typed.MinFallbackLevel);
+            ClassicAssert.AreEqual("world rules", typed.CachedContext);
+            ClassicAssert.IsTrue(typed.DisableReasoning);
+            ClassicAssert.IsTrue(typed.EnableContextCaching, "CachedContext 不為空時應沿用計算預設值");
+            ClassicAssert.IsNotNull(typed.OnStreamRestart);
 
             // 明確設定 false 時不可被 CachedContext 的計算預設值蓋掉。
             original.EnableContextCaching = false;
-            Assert.IsFalse(((RimLLMChatOptions)original.Clone()).EnableContextCaching);
+            ClassicAssert.IsFalse(((RimLLMChatOptions)original.Clone()).EnableContextCaching);
         }
 
         [Test]
@@ -189,7 +190,7 @@ namespace RimLLM_Framework.Tests
             {
                 enumerator.DisposeAsync().GetAwaiter().GetResult();
             }
-            Assert.AreEqual("mock-stream", string.Concat(chunks));
+            ClassicAssert.AreEqual("mock-stream", string.Concat(chunks));
         }
 
         [Test]
@@ -284,8 +285,8 @@ namespace RimLLM_Framework.Tests
             {
                 enumerator.DisposeAsync().GetAwaiter().GetResult();
             }
-            Assert.AreEqual(1, restartCount, "供應商中途失敗後應恰好通知呼叫端重設一次");
-            Assert.IsTrue(updates.Exists(u => u.AdditionalProperties != null
+            ClassicAssert.AreEqual(1, restartCount, "供應商中途失敗後應恰好通知呼叫端重設一次");
+            ClassicAssert.IsTrue(updates.Exists(u => u.AdditionalProperties != null
                 && u.AdditionalProperties.ContainsKey("rimllm_stream_restart")),
                 "應推送 rimllm_stream_restart marker update");
         }
@@ -295,7 +296,7 @@ namespace RimLLM_Framework.Tests
         {
             var manager = CreateManager();
             var client = CreateClient(manager, "test.metadata.mod");
-            Assert.AreEqual("RimLLM", client.Metadata.ProviderName);
+            ClassicAssert.AreEqual("RimLLM", client.Metadata.ProviderName);
         }
 
         [Test]
@@ -312,9 +313,9 @@ namespace RimLLM_Framework.Tests
                         "custom_type",
                         "RimLLM structured response")
                 }).GetAwaiter().GetResult();
-            Assert.IsNotNull(result);
-            Assert.AreEqual(42, result.Value);
-            Assert.AreEqual("mock", result.Message);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(42, result.Value);
+            ClassicAssert.AreEqual("mock", result.Message);
         }
 
         [Test]
@@ -326,8 +327,8 @@ namespace RimLLM_Framework.Tests
             };
             var result = plainClient.GetResponseObjectAsync<TestDataStructure>(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }).GetAwaiter().GetResult();
-            Assert.AreEqual(5, result.Value);
-            Assert.AreEqual("ok", result.Message);
+            ClassicAssert.AreEqual(5, result.Value);
+            ClassicAssert.AreEqual("ok", result.Message);
         }
 
         [Test]
@@ -354,10 +355,10 @@ namespace RimLLM_Framework.Tests
             var result = client.GetResponseObjectAsync<TestDataStructure>(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "get repaired data") }).GetAwaiter().GetResult();
 
-            Assert.IsNotNull(result);
-            Assert.AreEqual(99, result.Value);
-            Assert.AreEqual("repaired", result.Message);
-            Assert.AreEqual(1, callCount);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(99, result.Value);
+            ClassicAssert.AreEqual("repaired", result.Message);
+            ClassicAssert.AreEqual(1, callCount);
         }
 
         [Test]
@@ -371,10 +372,10 @@ namespace RimLLM_Framework.Tests
             var res2 = client.GetResponseObjectAsync<TestDataStructure>(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "req 2") }).GetAwaiter().GetResult();
 
-            Assert.IsNotNull(res1);
-            Assert.IsNotNull(res2);
-            Assert.AreEqual(42, res1.Value);
-            Assert.AreEqual(42, res2.Value);
+            ClassicAssert.IsNotNull(res1);
+            ClassicAssert.IsNotNull(res2);
+            ClassicAssert.AreEqual(42, res1.Value);
+            ClassicAssert.AreEqual(42, res2.Value);
         }
 
         [Test]
@@ -386,8 +387,8 @@ namespace RimLLM_Framework.Tests
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }, options).GetAwaiter().GetResult();
 
-            Assert.IsNotNull(response);
-            Assert.IsNotEmpty(response.Text);
+            ClassicAssert.IsNotNull(response);
+            ClassicAssert.IsNotEmpty(response.Text);
         }
 
         [Test]
@@ -402,8 +403,8 @@ namespace RimLLM_Framework.Tests
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }, options).GetAwaiter().GetResult();
 
-            Assert.IsNotNull(response.AdditionalProperties);
-            Assert.AreEqual("custom_val", response.AdditionalProperties["custom_key"]);
+            ClassicAssert.IsNotNull(response.AdditionalProperties);
+            ClassicAssert.AreEqual("custom_val", response.AdditionalProperties["custom_key"]);
         }
     }
 }

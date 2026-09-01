@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
 using RimLLM_Framework.Manager;
 
@@ -39,14 +40,14 @@ namespace RimLLM_Framework.Tests
             {
                 await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
             });
-            Assert.IsTrue(ex1.Message.Contains("Embedding 尚未設定供應商"));
+            ClassicAssert.IsTrue(ex1.Message.Contains("Embedding 尚未設定供應商"));
 
             // 第二次呼叫：超出 MaxRequestsPerWindow (1)，預期直接拋出 RateLimit 防濫用例外
             var ex2 = Assert.ThrowsAsync<RimLLMException>(async () =>
             {
                 await generator.GenerateAsync(new[] { "hello 2" }).ConfigureAwait(false);
             });
-            Assert.AreEqual(LLMError.RateLimit, ex2.Error);
+            ClassicAssert.AreEqual(LLMError.RateLimit, ex2.Error);
         }
     }
 }

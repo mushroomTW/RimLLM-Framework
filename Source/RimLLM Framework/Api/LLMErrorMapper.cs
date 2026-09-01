@@ -94,7 +94,7 @@ namespace RimLLM_Framework
                 case 413:
                 case 422:
                     // 請求本身有問題，以同一份 payload 重試必然再次失敗。
-                    RimLLMException rejected = Create(LLMError.InvalidResponse,
+                    RimLLMException rejected = Create(ResolveRejectionError(statusCode, probe),
                         $"The request was rejected by the provider: {friendlyMessage}", null, innerException);
                     rejected.IsSchemaRejection = LooksLikeSchemaRejection(probe);
                     rejected.IsReasoningRejection = LooksLikeReasoningRejection(probe);
@@ -149,6 +149,64 @@ namespace RimLLM_Framework
         public static bool LooksLikeTemperatureRejection(string message)
         {
             return ContainsIgnoreCase(message, "temperature");
+        }
+
+        /// <summary>
+        /// 判斷 4xx 錯誤訊息是否指向「提示詞超出模型的上下文視窗」。
+        /// 各家用詞不同，但都會提到上下文長度或 token 數量的上限。
+        /// 只列具體到不會誤傷的字串；例如單獨的 "too long" 太寬鬆，不納入。
+        /// </summary>
+        public static bool LooksLikeContextWindowRejection(string message)
+        {
+            // context_length_exceeded / context_window_exceeded 都含有 "context"，
+            // 但單獨的 "context" 會誤傷 context caching 相關訊息，因此逐項列出。
+            return ContainsIgnoreCase(message, "context_length") ||
+                   ContainsIgnoreCase(message, "context length") ||
+                   ContainsIgnoreCase(message, "context_window") ||
+                   ContainsIgnoreCase(message, "context window") ||
+                   ContainsIgnoreCase(message, "maximum context") ||
+                   ContainsIgnoreCase(message, "too many tokens") ||
+                   ContainsIgnoreCase(message, "prompt is too long");
+        }
+
+        /// <summary>
+        /// 判斷 4xx 錯誤訊息是否指向「內容被安全策略或內容過濾擋下」。
+        /// Gemini 走原生路徑時會自行擲出 <see cref="LLMError.ContentFilter"/>，
+        /// 這裡補的是 OpenAI 協定家族——它們一律以 400 回報，若不分辨就會和
+        /// 「請求組壞了」混為一談，呼叫端無從得知該換一家還是該修請求。
+        /// </summary>
+        public static bool LooksLikeContentPolicyRejection(string message)
+        {
+            return ContainsIgnoreCase(message, "content_policy") ||
+                   ContainsIgnoreCase(message, "content policy") ||
+                   ContainsIgnoreCase(message, "content_filter") ||
+                   ContainsIgnoreCase(message, "content filter") ||
+                   ContainsIgnoreCase(message, "safety") ||
+                   ContainsIgnoreCase(message, "moderation");
+        }
+
+        /// <summary>
+        /// 400／413／422 的細分。
+        /// Schema、reasoning 與 temperature 遭拒各自有旗標與「去掉參數重打一次」的流程，
+        /// 錯誤碼維持 <see cref="LLMError.InvalidResponse"/> 以免影響既有的降級路徑；
+        /// 其餘才依 413 的定義與訊息關鍵字判定為上下文超長或內容過濾。
+        /// </summary>
+        private static LLMError ResolveRejectionError(int? statusCode, string probe)
+        {
+            if (LooksLikeSchemaRejection(probe) ||
+                LooksLikeReasoningRejection(probe) ||
+                LooksLikeTemperatureRejection(probe))
+            {
+                return LLMError.InvalidResponse;
+            }
+
+            // 413 Payload Too Large 依定義就是酬載過大，不必再比對訊息。
+            if (statusCode == 413 || LooksLikeContextWindowRejection(probe))
+            {
+                return LLMError.ContextWindowExceeded;
+            }
+
+            return LooksLikeContentPolicyRejection(probe) ? LLMError.ContentFilter : LLMError.InvalidResponse;
         }
 
         public static bool ContainsIgnoreCase(string haystack, string needle)

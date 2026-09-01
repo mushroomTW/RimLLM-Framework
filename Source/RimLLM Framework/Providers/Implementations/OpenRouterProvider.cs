@@ -46,7 +46,7 @@ namespace RimLLM_Framework.Providers
             Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
             options.RawRepresentationFactory = client =>
             {
-                var chatCompletionOptions = baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
+                var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(baseFactory, client);
                 chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.model"));
                 var modelsArray = new List<string>();
                 foreach (string m in model.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))

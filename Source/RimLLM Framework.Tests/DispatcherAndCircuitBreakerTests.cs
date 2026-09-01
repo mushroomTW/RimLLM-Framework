@@ -1,5 +1,6 @@
 extern alias bclasync;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
 using System.Reflection;
 using System.Collections.Generic;
@@ -67,9 +68,9 @@ namespace RimLLM_Framework.Tests
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "test") };
             string result = client.GetResponseAsync(messages).GetAwaiter().GetResult().Text;
 
-            Assert.AreEqual("success-data", result);
-            Assert.AreEqual(1, failCalls);
-            Assert.AreEqual(1, successCalls);
+            ClassicAssert.AreEqual("success-data", result);
+            ClassicAssert.AreEqual(1, failCalls);
+            ClassicAssert.AreEqual(1, successCalls);
         }
 
         [Test]
@@ -86,13 +87,13 @@ namespace RimLLM_Framework.Tests
                 EnableContextCaching = true
             };
 
-            Assert.AreEqual("stable context", options.CachedContext);
-            Assert.AreEqual(64, options.MaxOutputTokens);
-            Assert.AreEqual(0.2f, options.Temperature);
-            Assert.AreEqual(ReasoningEffort.Low, options.Reasoning.Effort);
-            Assert.AreEqual(3, options.Priority);
-            Assert.AreEqual("High", options.MinFallbackLevel);
-            Assert.IsTrue(options.EnableContextCaching);
+            ClassicAssert.AreEqual("stable context", options.CachedContext);
+            ClassicAssert.AreEqual(64, options.MaxOutputTokens);
+            ClassicAssert.AreEqual(0.2f, options.Temperature);
+            ClassicAssert.AreEqual(ReasoningEffort.Low, options.Reasoning.Effort);
+            ClassicAssert.AreEqual(3, options.Priority);
+            ClassicAssert.AreEqual("High", options.MinFallbackLevel);
+            ClassicAssert.IsTrue(options.EnableContextCaching);
         }
 
         [Test]
@@ -138,7 +139,7 @@ namespace RimLLM_Framework.Tests
 
             string result = client.GetResponseAsync(messages, options).GetAwaiter().GetResult().Text;
 
-            Assert.AreEqual("simple-response", result);
+            ClassicAssert.AreEqual("simple-response", result);
         }
 
         [Test]
@@ -175,9 +176,9 @@ namespace RimLLM_Framework.Tests
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
             string result = client.GetResponseAsync(messages).GetAwaiter().GetResult().Text;
 
-            Assert.AreEqual("ok", result);
-            Assert.IsNotNull(capturedOptions);
-            Assert.AreEqual(ReasoningEffort.High, capturedOptions.Reasoning?.Effort);
+            ClassicAssert.AreEqual("ok", result);
+            ClassicAssert.IsNotNull(capturedOptions);
+            ClassicAssert.AreEqual(ReasoningEffort.High, capturedOptions.Reasoning?.Effort);
         }
 
         [Test]
@@ -213,9 +214,9 @@ namespace RimLLM_Framework.Tests
             var options = new RimLLMChatOptions { CachedContext = "stable schema notes" };
             var result = client.GetResponseObjectAsync<TestDataStructure>(messages, options).GetAwaiter().GetResult();
 
-            Assert.IsNotNull(result);
-            Assert.AreEqual(7, result.Value);
-            Assert.AreEqual("ok", result.Message);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(7, result.Value);
+            ClassicAssert.AreEqual("ok", result.Message);
         }
 
         [Test]
@@ -269,10 +270,10 @@ namespace RimLLM_Framework.Tests
                 enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
 
-            Assert.AreEqual("ab", result);
-            Assert.AreEqual(2, chunks.Count);
-            Assert.AreEqual("a", chunks[0]);
-            Assert.AreEqual("b", chunks[1]);
+            ClassicAssert.AreEqual("ab", result);
+            ClassicAssert.AreEqual(2, chunks.Count);
+            ClassicAssert.AreEqual("a", chunks[0]);
+            ClassicAssert.AreEqual("b", chunks[1]);
         }
 
         [Test]
@@ -317,11 +318,11 @@ namespace RimLLM_Framework.Tests
 
             var resultObject = client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult();
 
-            Assert.IsNotNull(resultObject);
-            Assert.AreEqual(42, resultObject.Value);
-            Assert.AreEqual("Hello Cache", resultObject.Message);
-            Assert.IsTrue(requestedSystemPromptReceived.Contains("Value"));
-            Assert.IsTrue(requestedSystemPromptReceived.Contains("Base System Prompt"));
+            ClassicAssert.IsNotNull(resultObject);
+            ClassicAssert.AreEqual(42, resultObject.Value);
+            ClassicAssert.AreEqual("Hello Cache", resultObject.Message);
+            ClassicAssert.IsTrue(requestedSystemPromptReceived.Contains("Value"));
+            ClassicAssert.IsTrue(requestedSystemPromptReceived.Contains("Base System Prompt"));
         }
 
         [Test]
@@ -334,21 +335,21 @@ namespace RimLLM_Framework.Tests
 
             // 1. 測試傳統 "Provider:Model" 格式
             bool res1 = manager.ResolveFallbackEntry("OpenAI:gpt-4o", out string providerId1, out string modelName1);
-            Assert.IsTrue(res1);
-            Assert.AreEqual("OpenAI", providerId1);
-            Assert.AreEqual("gpt-4o", modelName1);
+            ClassicAssert.IsTrue(res1);
+            ClassicAssert.AreEqual("OpenAI", providerId1);
+            ClassicAssert.AreEqual("gpt-4o", modelName1);
 
             // 2. 測試 OpenRouter 純供應商格式 (會自動解析為快取的第一個模型，此處為 model-1)
             bool res2 = manager.ResolveFallbackEntry("OpenRouter", out string providerId2, out string modelName2);
-            Assert.IsTrue(res2);
-            Assert.AreEqual("OpenRouter", providerId2);
-            Assert.AreEqual("model-1", modelName2);
+            ClassicAssert.IsTrue(res2);
+            ClassicAssert.AreEqual("OpenRouter", providerId2);
+            ClassicAssert.AreEqual("model-1", modelName2);
 
             // 3. 測試其他純供應商格式 (會自動回退至 defaultModel)
             bool res3 = manager.ResolveFallbackEntry("OpenAI", out string providerId3, out string modelName3);
-            Assert.IsTrue(res3);
-            Assert.AreEqual("OpenAI", providerId3);
-            Assert.AreEqual("default", modelName3);
+            ClassicAssert.IsTrue(res3);
+            ClassicAssert.AreEqual("OpenAI", providerId3);
+            ClassicAssert.AreEqual("default", modelName3);
         }
 
         [Test]
@@ -392,21 +393,21 @@ namespace RimLLM_Framework.Tests
             var task2 = client2.GetResponseAsync(messages, cancellationToken: cts.Token);
 
             // 驗證只有 1 個請求實際被調用
-            Assert.AreEqual(1, callCount);
+            ClassicAssert.AreEqual(1, callCount);
 
             // 在 req1 還在執行時，取消 req2 
             cts.Cancel();
 
             // 驗證 task2 被標記為已取消
             Assert.Throws<AggregateException>(() => task2.Wait());
-            Assert.IsTrue(task2.IsCanceled);
+            ClassicAssert.IsTrue(task2.IsCanceled);
 
             // 釋放第 1 個
             tcs1.SetResult("r1");
-            Assert.AreEqual("r1", task1.GetAwaiter().GetResult().Text);
+            ClassicAssert.AreEqual("r1", task1.GetAwaiter().GetResult().Text);
 
             // 驗證第 2 個請求因為在佇列中被取消，根本沒有被 provider 呼叫過
-            Assert.AreEqual(1, callCount);
+            ClassicAssert.AreEqual(1, callCount);
         }
 
         [Test]
@@ -444,9 +445,9 @@ namespace RimLLM_Framework.Tests
             var options = new RimLLMChatOptions { MinFallbackLevel = "High" };
             string res = client.GetResponseAsync(messages, options).GetAwaiter().GetResult().Text;
 
-            Assert.AreEqual("success", res);
-            Assert.AreEqual(1, calledModels.Count);
-            Assert.AreEqual("model-pro", calledModels[0]);
+            ClassicAssert.AreEqual("success", res);
+            ClassicAssert.AreEqual(1, calledModels.Count);
+            ClassicAssert.AreEqual("model-pro", calledModels[0]);
         }
 
         [Test]
@@ -505,14 +506,14 @@ namespace RimLLM_Framework.Tests
                     manager.ClearCooldowns();
                 }
             }
-            Assert.AreEqual(3, failCount);
-            Assert.AreEqual(3, successCount);
+            ClassicAssert.AreEqual(3, failCount);
+            ClassicAssert.AreEqual(3, successCount);
 
             // 第 4 次呼叫，因進入冷卻，MockFail 應被跳過，只呼叫 MockSuccess
             string res = client.GetResponseAsync(messages, options).GetAwaiter().GetResult().Text;
-            Assert.AreEqual("ok", res);
-            Assert.AreEqual(3, failCount); // 還是 3，被跳過了
-            Assert.AreEqual(4, successCount);
+            ClassicAssert.AreEqual("ok", res);
+            ClassicAssert.AreEqual(3, failCount); // 還是 3，被跳過了
+            ClassicAssert.AreEqual(4, successCount);
         }
 
         [Test]
@@ -564,11 +565,11 @@ namespace RimLLM_Framework.Tests
 
             for (int i = 0; i < 4; i++)
             {
-                Assert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
+                ClassicAssert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
             }
 
-            Assert.AreEqual(4, failCount, "InvalidKey should be tried once per request, not retried or cooled down.");
-            Assert.AreEqual(4, successCount);
+            ClassicAssert.AreEqual(4, failCount, "InvalidKey should be tried once per request, not retried or cooled down.");
+            ClassicAssert.AreEqual(4, successCount);
         }
 
         [Test]
@@ -604,10 +605,10 @@ namespace RimLLM_Framework.Tests
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
             var res = client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult();
 
-            Assert.IsNotNull(res);
-            Assert.AreEqual(99, res.Value);
-            Assert.AreEqual("repaired", res.Message);
-            Assert.AreEqual(1, callCount); // 本地靜態修復完成，僅呼叫 1 次
+            ClassicAssert.IsNotNull(res);
+            ClassicAssert.AreEqual(99, res.Value);
+            ClassicAssert.AreEqual("repaired", res.Message);
+            ClassicAssert.AreEqual(1, callCount); // 本地靜態修復完成，僅呼叫 1 次
         }
 
         [Test]
@@ -618,8 +619,8 @@ namespace RimLLM_Framework.Tests
                 CachedContext = "stable colony state"
             };
 
-            Assert.IsTrue(options.EnableContextCaching);
-            Assert.AreEqual("stable colony state", options.CachedContext);
+            ClassicAssert.IsTrue(options.EnableContextCaching);
+            ClassicAssert.AreEqual("stable colony state", options.CachedContext);
         }
 
         [Test]
@@ -633,15 +634,15 @@ namespace RimLLM_Framework.Tests
 
             string json = manager.GetSampleJson(typeof(ComplexTestDataStructure));
             
-            Assert.IsNotEmpty(json);
-            Assert.AreNotEqual("{}", json);
-            Assert.IsTrue(json.Contains("\"Name\":\"string\""), "應該遞迴產生 string 欄位的 dummy 資料");
-            Assert.IsTrue(json.Contains("\"Age\":0"), "應該遞迴展開 int 欄位的 dummy 資料");
-            Assert.IsTrue(json.Contains("\"IsActive\":false"), "應該遞迴展開 bool 欄位的 dummy 資料");
-            Assert.IsTrue(json.Contains("\"Skills\":[\"string\"]"), "應該產生 List 的範例陣列元素");
-            Assert.IsTrue(json.Contains("\"Mapping\":{\"string\":0}"), "應該產生 Dictionary 的範例鍵值對");
-            Assert.IsTrue(json.Contains("\"Nested\":{"), "應該遞迴展開 Nested 屬性");
-            Assert.IsTrue(json.Contains("\"SelfRef\":null"), "循環引用欄位在偵測到之後應截斷為 null，避免 StackOverflow");
+            ClassicAssert.IsNotEmpty(json);
+            ClassicAssert.AreNotEqual("{}", json);
+            ClassicAssert.IsTrue(json.Contains("\"Name\":\"string\""), "應該遞迴產生 string 欄位的 dummy 資料");
+            ClassicAssert.IsTrue(json.Contains("\"Age\":0"), "應該遞迴展開 int 欄位的 dummy 資料");
+            ClassicAssert.IsTrue(json.Contains("\"IsActive\":false"), "應該遞迴展開 bool 欄位的 dummy 資料");
+            ClassicAssert.IsTrue(json.Contains("\"Skills\":[\"string\"]"), "應該產生 List 的範例陣列元素");
+            ClassicAssert.IsTrue(json.Contains("\"Mapping\":{\"string\":0}"), "應該產生 Dictionary 的範例鍵值對");
+            ClassicAssert.IsTrue(json.Contains("\"Nested\":{"), "應該遞迴展開 Nested 屬性");
+            ClassicAssert.IsTrue(json.Contains("\"SelfRef\":null"), "循環引用欄位在偵測到之後應截斷為 null，避免 StackOverflow");
         }
 
         [Test]
@@ -679,9 +680,9 @@ namespace RimLLM_Framework.Tests
             string res = client.GetResponseAsync(userMsgs, options).GetAwaiter().GetResult().Text;
 
             // 覆寫生效：model-mini 被視為 High，不再被 MinFallbackLevel 過濾
-            Assert.AreEqual("success", res);
-            Assert.AreEqual(1, calledModels.Count);
-            Assert.AreEqual("model-mini", calledModels[0]);
+            ClassicAssert.AreEqual("success", res);
+            ClassicAssert.AreEqual(1, calledModels.Count);
+            ClassicAssert.AreEqual("model-mini", calledModels[0]);
         }
 
 
@@ -690,17 +691,17 @@ namespace RimLLM_Framework.Tests
         {
             // test OpenAI style
             var openaiSchema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI));
-            Assert.AreEqual("object", openaiSchema["type"]?.ToString());
-            Assert.IsNotNull(openaiSchema["properties"]);
-            Assert.AreEqual("integer", openaiSchema["properties"]?["Value"]?["type"]?.ToString());
-            Assert.AreEqual("string", openaiSchema["properties"]?["Message"]?["type"]?.ToString());
-            Assert.IsFalse((bool)openaiSchema["additionalProperties"]);
+            ClassicAssert.AreEqual("object", openaiSchema["type"]?.ToString());
+            ClassicAssert.IsNotNull(openaiSchema["properties"]);
+            ClassicAssert.AreEqual("integer", openaiSchema["properties"]?["Value"]?["type"]?.ToString());
+            ClassicAssert.AreEqual("string", openaiSchema["properties"]?["Message"]?["type"]?.ToString());
+            ClassicAssert.IsFalse((bool)openaiSchema["additionalProperties"]);
 
             // test Gemini style
             var geminiSchema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure), RimLLMSchemaProfile.Gemini));
-            Assert.AreEqual("object", geminiSchema["type"]?.ToString());
-            Assert.AreEqual("integer", geminiSchema["properties"]?["Value"]?["type"]?.ToString());
-            Assert.AreEqual("string", geminiSchema["properties"]?["Message"]?["type"]?.ToString());
+            ClassicAssert.AreEqual("object", geminiSchema["type"]?.ToString());
+            ClassicAssert.AreEqual("integer", geminiSchema["properties"]?["Value"]?["type"]?.ToString());
+            ClassicAssert.AreEqual("string", geminiSchema["properties"]?["Message"]?["type"]?.ToString());
         }
 
         [Test]
@@ -709,14 +710,14 @@ namespace RimLLM_Framework.Tests
             // NestedData.SelfRef 指回 ComplexTestDataStructure，形成循環。
             var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI));
 
-            Assert.IsNotNull(schema, "循環型別仍應產生可用的 schema，不得遞迴爆棧");
+            ClassicAssert.IsNotNull(schema, "循環型別仍應產生可用的 schema，不得遞迴爆棧");
 
             var nested = schema["properties"]?["Nested"];
-            Assert.IsNotNull(nested, "非循環的巢狀成員應正常展開");
-            Assert.AreEqual("number", nested["properties"]?["Weight"]?["type"]?.ToString());
+            ClassicAssert.IsNotNull(nested, "非循環的巢狀成員應正常展開");
+            ClassicAssert.AreEqual("number", nested["properties"]?["Weight"]?["type"]?.ToString());
 
             // 循環的截斷點與收斂性由 SchemaBuilderTests 詳測，此處只確認整體有限且合法。
-            Assert.Less(
+            ClassicAssert.Less(
                 schema.ToString().Length,
                 200000,
                 "循環型別的 schema 應收斂到有限大小");
@@ -728,15 +729,15 @@ namespace RimLLM_Framework.Tests
             var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI));
             var mapping = schema["properties"]?["Mapping"];
 
-            Assert.IsNotNull(mapping, "Dictionary 成員應出現在 schema 中");
-            Assert.AreEqual("object", mapping["type"]?.ToString());
-            Assert.AreEqual("integer", mapping["additionalProperties"]?["type"]?.ToString(),
+            ClassicAssert.IsNotNull(mapping, "Dictionary 成員應出現在 schema 中");
+            ClassicAssert.AreEqual("object", mapping["type"]?.ToString());
+            ClassicAssert.AreEqual("integer", mapping["additionalProperties"]?["type"]?.ToString(),
                 "Dictionary 應產生開放式 map schema 而非空物件");
-            Assert.IsNull(mapping["properties"], "開放式 map 不應帶有固定的 properties 清單");
+            ClassicAssert.IsNull(mapping["properties"], "開放式 map 不應帶有固定的 properties 清單");
 
-            Assert.IsTrue(RimLLMSchemaBuilder.ContainsOpenEndedMap(typeof(ComplexTestDataStructure)),
+            ClassicAssert.IsTrue(RimLLMSchemaBuilder.ContainsOpenEndedMap(typeof(ComplexTestDataStructure)),
                 "含 Dictionary 的型別必須被偵測為開放式 map，以便關閉 strict 模式");
-            Assert.IsFalse(RimLLMSchemaBuilder.ContainsOpenEndedMap(typeof(TestDataStructure)),
+            ClassicAssert.IsFalse(RimLLMSchemaBuilder.ContainsOpenEndedMap(typeof(TestDataStructure)),
                 "不含 Dictionary 的型別不應被誤判為開放式 map");
         }
 
@@ -764,7 +765,7 @@ namespace RimLLM_Framework.Tests
             var first = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
             var second = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
 
-            Assert.AreEqual(first.Json, second.Json, "schema 快取應提供一致的不可變結果");
+            ClassicAssert.AreEqual(first.Json, second.Json, "schema 快取應提供一致的不可變結果");
         }
 
         [Test]
@@ -772,12 +773,12 @@ namespace RimLLM_Framework.Tests
         {
             // 陣列在物件內：必須先補 ] 再補 }
             string repairedArrayInObject = RimLLMJsonHelper.RepairJson("{\"items\":[1,2");
-            Assert.AreEqual("{\"items\":[1,2]}", repairedArrayInObject, "巢狀括號必須依 LIFO 順序閉合");
+            ClassicAssert.AreEqual("{\"items\":[1,2]}", repairedArrayInObject, "巢狀括號必須依 LIFO 順序閉合");
             Assert.DoesNotThrow(() => JObject.Parse(repairedArrayInObject));
 
             // 物件在陣列內：必須先補 } 再補 ]
             string repairedObjectInArray = RimLLMJsonHelper.RepairJson("[{\"a\":1");
-            Assert.AreEqual("[{\"a\":1}]", repairedObjectInArray, "巢狀括號必須依 LIFO 順序閉合");
+            ClassicAssert.AreEqual("[{\"a\":1}]", repairedObjectInArray, "巢狀括號必須依 LIFO 順序閉合");
             Assert.DoesNotThrow(() => JArray.Parse(repairedObjectInArray));
 
             // 多層交錯
@@ -790,7 +791,7 @@ namespace RimLLM_Framework.Tests
         {
             string repaired = RimLLMJsonHelper.RepairJson("{\"message\":\"unterminated");
             Assert.DoesNotThrow(() => JObject.Parse(repaired), "未閉合的字串必須先補上引號，補的括號才不會落在字串內部");
-            Assert.AreEqual("unterminated", JObject.Parse(repaired)["message"]?.ToString());
+            ClassicAssert.AreEqual("unterminated", JObject.Parse(repaired)["message"]?.ToString());
         }
 
         [Test]
@@ -811,7 +812,7 @@ namespace RimLLM_Framework.Tests
             // 閉合符號與開啟順序不符，代表結構已損毀，不應嘗試補齊而讓結果更糟。
             const string broken = "{\"a\":]";
             string repaired = RimLLMJsonHelper.RepairJson(broken);
-            Assert.AreEqual(broken, repaired, "括號順序不符時應放棄補齊，交由後續 fallback 處理");
+            ClassicAssert.AreEqual(broken, repaired, "括號順序不符時應放棄補齊，交由後續 fallback 處理");
         }
 
         [Test]
@@ -863,15 +864,15 @@ namespace RimLLM_Framework.Tests
 
             // 第一次呼叫：兩個都沒有延遲歷史，依據 FallbackChain 順序（先 MockSlow）
             string res1 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
-            Assert.AreEqual("slow-ok", res1);
+            ClassicAssert.AreEqual("slow-ok", res1);
 
             // 第二次呼叫：因為 MockSlow 已有延遲（100ms），MockFast 尚未有歷史（視為 0 延遲），優先呼叫 MockFast
             string res2 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
-            Assert.AreEqual("fast-ok", res2);
+            ClassicAssert.AreEqual("fast-ok", res2);
 
             // 第三次呼叫：此時 MockSlow 平均 100ms，MockFast 平均 5ms，智慧路由應該優先選擇 MockFast
             string res3 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
-            Assert.AreEqual("fast-ok", res3);
+            ClassicAssert.AreEqual("fast-ok", res3);
         }
 
         [Test]
@@ -926,15 +927,15 @@ namespace RimLLM_Framework.Tests
 
             // 第一次呼叫：MockFail 失敗，然後 Fallback 到 MockSuccess 成功
             string res1 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
-            Assert.AreEqual("success-ok", res1);
-            Assert.AreEqual(1, failCalls);
-            Assert.AreEqual(1, successCalls);
+            ClassicAssert.AreEqual("success-ok", res1);
+            ClassicAssert.AreEqual(1, failCalls);
+            ClassicAssert.AreEqual(1, successCalls);
 
             // 第二次呼叫：MockFail 此時正處於 60 秒的故障冷卻期，智慧路由應直接跳過它，不進行呼叫，直接執行 MockSuccess
             string res2 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
-            Assert.AreEqual("success-ok", res2);
-            Assert.AreEqual(1, failCalls); // 呼叫次數仍為 1，說明已被跳過！
-            Assert.AreEqual(2, successCalls);
+            ClassicAssert.AreEqual("success-ok", res2);
+            ClassicAssert.AreEqual(1, failCalls); // 呼叫次數仍為 1，說明已被跳過！
+            ClassicAssert.AreEqual(2, successCalls);
         }
 
         [Test]
@@ -978,29 +979,29 @@ namespace RimLLM_Framework.Tests
             mockSettings.EnableJsonRepair = true;
             string rawRepaired = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
             var res = manager.DeserializeStructured<TestDataStructure>(rawRepaired, mockSettings, request);
-            Assert.IsNotNull(res);
-            Assert.AreEqual(42, res.Value);
-            Assert.AreEqual("ok", okStr(res.Message));
+            ClassicAssert.IsNotNull(res);
+            ClassicAssert.AreEqual(42, res.Value);
+            ClassicAssert.AreEqual("ok", okStr(res.Message));
         }
 
         [Test]
         public void TestParseRetryAfterHandlesSecondsAndHttpDate()
         {
             // 秒數格式
-            Assert.AreEqual(TimeSpan.FromSeconds(30), LLMErrorMapper.ParseRetryAfter("30"));
+            ClassicAssert.AreEqual(TimeSpan.FromSeconds(30), LLMErrorMapper.ParseRetryAfter("30"));
 
             // HTTP 日期格式（RFC 7231 允許，先前只吃秒數的路徑會整個漏掉）
             string future = DateTimeOffset.UtcNow.AddSeconds(120).ToString("r");
             TimeSpan? fromDate = LLMErrorMapper.ParseRetryAfter(future);
-            Assert.IsNotNull(fromDate, "HTTP 日期格式的 Retry-After 必須能被解析");
-            Assert.Greater(fromDate.Value.TotalSeconds, 60);
-            Assert.LessOrEqual(fromDate.Value.TotalSeconds, 121);
+            ClassicAssert.IsNotNull(fromDate, "HTTP 日期格式的 Retry-After 必須能被解析");
+            ClassicAssert.Greater(fromDate.Value.TotalSeconds, 60);
+            ClassicAssert.LessOrEqual(fromDate.Value.TotalSeconds, 121);
 
             // 已過期的日期與非正值不應產生建議延遲
-            Assert.IsNull(LLMErrorMapper.ParseRetryAfter(DateTimeOffset.UtcNow.AddSeconds(-60).ToString("r")));
-            Assert.IsNull(LLMErrorMapper.ParseRetryAfter("0"));
-            Assert.IsNull(LLMErrorMapper.ParseRetryAfter("not-a-date"));
-            Assert.IsNull(LLMErrorMapper.ParseRetryAfter((string)null));
+            ClassicAssert.IsNull(LLMErrorMapper.ParseRetryAfter(DateTimeOffset.UtcNow.AddSeconds(-60).ToString("r")));
+            ClassicAssert.IsNull(LLMErrorMapper.ParseRetryAfter("0"));
+            ClassicAssert.IsNull(LLMErrorMapper.ParseRetryAfter("not-a-date"));
+            ClassicAssert.IsNull(LLMErrorMapper.ParseRetryAfter((string)null));
         }
 
 
@@ -1009,15 +1010,15 @@ namespace RimLLM_Framework.Tests
         public void TestEmbeddingEndpointNormalizesToServiceRoot()
         {
             // OpenAI SDK 需要的是服務根位址，使用者可能貼上完整的 embeddings 路徑。
-            Assert.AreEqual("http://localhost:11434/v1",
+            ClassicAssert.AreEqual("http://localhost:11434/v1",
                 RimLLMEmbeddingService.NormalizeEmbeddingEndpoint("http://localhost:11434/v1/embeddings"));
-            Assert.AreEqual("http://localhost:1234/v1",
+            ClassicAssert.AreEqual("http://localhost:1234/v1",
                 RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(" http://localhost:1234/v1/ "));
-            Assert.AreEqual("http://localhost:11434",
+            ClassicAssert.AreEqual("http://localhost:11434",
                 RimLLMEmbeddingService.NormalizeEmbeddingEndpoint("http://localhost:11434/api/embed"));
-            Assert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(""),
+            ClassicAssert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(""),
                 "空字串應回傳 null，讓呼叫端改用預設端點");
-            Assert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(null));
+            ClassicAssert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(null));
         }
 
         [Test]
@@ -1028,7 +1029,7 @@ namespace RimLLM_Framework.Tests
 
             var ex = Assert.Throws<RimLLMException>(() =>
                 service.ComputeEmbeddingAsync("hello").GetAwaiter().GetResult());
-            Assert.IsTrue(ex.Message.Contains("尚未設定供應商"), "停用狀態下不產生向量，應明確拋出錯誤");
+            ClassicAssert.IsTrue(ex.Message.Contains("尚未設定供應商"), "停用狀態下不產生向量，應明確拋出錯誤");
         }
 
                 [Test]
@@ -1062,7 +1063,7 @@ namespace RimLLM_Framework.Tests
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             Assert.Throws<RimLLMException>(() =>
                 client.GetResponseAsync(messages).GetAwaiter().GetResult());
-            Assert.AreEqual(1, calls, "404 屬於不可重試錯誤，不應消耗重試次數");
+            ClassicAssert.AreEqual(1, calls, "404 屬於不可重試錯誤，不應消耗重試次數");
         }
 
         [Test]
@@ -1121,7 +1122,7 @@ namespace RimLLM_Framework.Tests
                 enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
 
-            Assert.AreEqual("recovered", result, "零輸出串流應視為可重試失敗並由下一個供應商接手");
+            ClassicAssert.AreEqual("recovered", result, "零輸出串流應視為可重試失敗並由下一個供應商接手");
             CollectionAssert.Contains(received, "recovered");
         }
 
@@ -1159,7 +1160,7 @@ namespace RimLLM_Framework.Tests
             Assert.Throws<RimLLMException>(() =>
                 client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult());
 
-            Assert.AreEqual(1, calls, "僅標記為 schema 拒絕的錯誤才可觸發降級重打");
+            ClassicAssert.AreEqual(1, calls, "僅標記為 schema 拒絕的錯誤才可觸發降級重打");
         }
 
 
@@ -1167,11 +1168,11 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestChatInputWhitespaceOnlyIsRejected()
         {
-            Assert.IsFalse(ChatTestDrawer.ShouldSendChatInput(null));
-            Assert.IsFalse(ChatTestDrawer.ShouldSendChatInput(""));
-            Assert.IsFalse(ChatTestDrawer.ShouldSendChatInput("   \t \n "),
+            ClassicAssert.IsFalse(ChatTestDrawer.ShouldSendChatInput(null));
+            ClassicAssert.IsFalse(ChatTestDrawer.ShouldSendChatInput(""));
+            ClassicAssert.IsFalse(ChatTestDrawer.ShouldSendChatInput("   \t \n "),
                 "僅含空白的聊天輸入不應送出請求");
-            Assert.IsTrue(ChatTestDrawer.ShouldSendChatInput(" hi "));
+            ClassicAssert.IsTrue(ChatTestDrawer.ShouldSendChatInput(" hi "));
         }
 
         [Test]
@@ -1185,7 +1186,7 @@ namespace RimLLM_Framework.Tests
                     RimLLMDispatcher.TryEnqueueBounded(() => { });
                 }
 
-                Assert.LessOrEqual(RimLLMDispatcher.QueuedCount, 4096,
+                ClassicAssert.LessOrEqual(RimLLMDispatcher.QueuedCount, 4096,
                     "派遣器佇列必須有上限，避免無限成長");
             }
             finally
@@ -1208,9 +1209,9 @@ namespace RimLLM_Framework.Tests
 
                 int processed = RimLLMDispatcher.DrainWithBudget(128, long.MaxValue);
 
-                Assert.AreEqual(128, processed, "單次清空不得超過每幀項目上限");
-                Assert.AreEqual(128, executed);
-                Assert.Greater(RimLLMDispatcher.QueuedCount, 0, "剩餘項目應留待下一幀處理");
+                ClassicAssert.AreEqual(128, processed, "單次清空不得超過每幀項目上限");
+                ClassicAssert.AreEqual(128, executed);
+                ClassicAssert.Greater(RimLLMDispatcher.QueuedCount, 0, "剩餘項目應留待下一幀處理");
             }
             finally
             {

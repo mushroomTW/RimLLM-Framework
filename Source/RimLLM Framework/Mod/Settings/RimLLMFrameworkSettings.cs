@@ -81,9 +81,18 @@ namespace RimLLM_Framework.Mod
         public int MaxRequestsPerWindow { get; set; } = 10;
         public int ThrottlingWindowSeconds { get; set; } = 10;
         public int CoolDownDurationSeconds { get; set; } = 60;
+        /// <summary>
+        /// 最大合法的路由策略值。新增策略時要同步更新這裡、
+        /// <see cref="FallbackSettingsDrawer"/> 的策略名稱清單與 RimLLMFallbackPipeline 的分派。
+        /// </summary>
+        public const int MaxRoutingStrategy = 3; // 0=PriorityFailover, 1=MinLatency, 2=RoundRobin, 3=LowestCost
+
         public int RoutingStrategy { get; set; } = 2;
         public bool EnableNativeSchema { get; set; } = true;
         public bool EnableJsonRepair { get; set; } = true;
+        // 預設關閉：命中即代表相同輸入拿到相同輸出，對敘事類文本未必是玩家要的，由玩家自行開啟。
+        public bool EnableResponseCache { get; set; } = false;
+        public float ResponseCacheTtlMinutes { get; set; } = 30f;
 
         public string EmbeddingProvider { get; set; } = "Disabled";
         public string EmbeddingModel { get; set; } = "text-embedding-004";
@@ -211,6 +220,8 @@ namespace RimLLM_Framework.Mod
             public int RoutingStrategy = 2;
             public bool EnableNativeSchema = true;
             public bool EnableJsonRepair = true;
+            public bool EnableResponseCache;
+            public float ResponseCacheTtlMinutes = 30f;
             public string EncryptedEmbeddingApiKey;
             public string EmbeddingProvider = "Disabled";
             public string EmbeddingModel = "text-embedding-004";
@@ -269,6 +280,8 @@ namespace RimLLM_Framework.Mod
                         RoutingStrategy = this.RoutingStrategy,
                         EnableNativeSchema = this.EnableNativeSchema,
                         EnableJsonRepair = this.EnableJsonRepair,
+                        EnableResponseCache = this.EnableResponseCache,
+                        ResponseCacheTtlMinutes = this.ResponseCacheTtlMinutes,
                         EmbeddingProvider = this.EmbeddingProvider,
                         EmbeddingModel = this.EmbeddingModel,
                         EmbeddingEndpoint = this.EmbeddingEndpoint,
@@ -376,9 +389,12 @@ namespace RimLLM_Framework.Mod
                                 this.MaxRequestsPerWindow = dto.MaxRequestsPerWindow <= 0 ? 10 : dto.MaxRequestsPerWindow;
                                 this.ThrottlingWindowSeconds = dto.ThrottlingWindowSeconds <= 0 ? 10 : dto.ThrottlingWindowSeconds;
                                 this.CoolDownDurationSeconds = dto.CoolDownDurationSeconds < 0 ? 60 : dto.CoolDownDurationSeconds;
-                                this.RoutingStrategy = dto.RoutingStrategy < 0 ? 0 : dto.RoutingStrategy;
+                                // 超出範圍的策略值退回 PriorityFailover，避免未知值悄悄改變路由行為
+                                this.RoutingStrategy = dto.RoutingStrategy < 0 || dto.RoutingStrategy > MaxRoutingStrategy ? 0 : dto.RoutingStrategy;
                                 this.EnableNativeSchema = dto.EnableNativeSchema;
                                 this.EnableJsonRepair = dto.EnableJsonRepair;
+                                this.EnableResponseCache = dto.EnableResponseCache;
+                                this.ResponseCacheTtlMinutes = dto.ResponseCacheTtlMinutes <= 0f ? 30f : dto.ResponseCacheTtlMinutes;
                                 this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? "Disabled" : dto.EmbeddingProvider;
                                 this.EmbeddingModel = string.IsNullOrEmpty(dto.EmbeddingModel) ? "text-embedding-004" : dto.EmbeddingModel;
                                 this.EmbeddingEndpoint = dto.EmbeddingEndpoint ?? "";

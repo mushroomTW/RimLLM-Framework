@@ -287,7 +287,7 @@ namespace RimLLM_Framework.Mod
         /// 路由策略名稱，索引即為 <see cref="RimLLMFrameworkSettings.RoutingStrategy"/> 的值。
         /// 目前選項的顯示與下拉選單共用這份清單，不需要另外維護一份 switch 對照。
         /// </summary>
-        private static readonly string[] StrategyNames = { "PriorityFailover", "MinLatency", "RoundRobin" };
+        private static readonly string[] StrategyNames = { "PriorityFailover", "MinLatency", "RoundRobin", "LowestCost" };
 
         private static string StrategyLabelKey(int strategy)
         {

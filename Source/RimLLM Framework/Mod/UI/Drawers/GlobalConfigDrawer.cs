@@ -18,7 +18,8 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         public static float GetHeight(float width)
         {
-            return 350f;
+            // 回應快取開啟時會多出一列 TTL 滑桿
+            return RimLLMFrameworkMod.Settings.EnableResponseCache ? 445f : 405f;
         }
 
         /// <summary>
@@ -32,6 +33,8 @@ namespace RimLLM_Framework.Mod
             int prevMaxConcurrent = Settings.MaxConcurrentRequests;
             bool prevNativeSchema = Settings.EnableNativeSchema;
             bool prevJsonRepair = Settings.EnableJsonRepair;
+            bool prevResponseCache = Settings.EnableResponseCache;
+            float prevCacheTtl = Settings.ResponseCacheTtlMinutes;
 
             // 1. API 逾時時間
             listing.Label("RimLLM_ApiTimeoutLabel".Translate(Mathf.RoundToInt(Settings.ApiTimeout)));
@@ -62,12 +65,25 @@ namespace RimLLM_Framework.Mod
             Settings.EnableJsonRepair = enableJsonRepair;
             listing.Gap(6f);
 
+            // 4.7. 回應快取（相同請求直接重播先前結果，不再打 API）
+            bool enableResponseCache = Settings.EnableResponseCache;
+            listing.CheckboxLabeled("RimLLM_EnableResponseCacheLabel".Translate(), ref enableResponseCache);
+            Settings.EnableResponseCache = enableResponseCache;
+            if (enableResponseCache)
+            {
+                listing.Label("RimLLM_ResponseCacheTtlLabel".Translate(Mathf.RoundToInt(Settings.ResponseCacheTtlMinutes)));
+                Settings.ResponseCacheTtlMinutes = listing.Slider(Settings.ResponseCacheTtlMinutes, 1f, 120f);
+            }
+            listing.Gap(6f);
+
             if (Math.Abs(prevTimeout - Settings.ApiTimeout) > 0.001f ||
                 prevRetries != Settings.MaxRetries ||
                 Math.Abs(prevDelay - Settings.RetryDelay) > 0.001f ||
                 prevMaxConcurrent != Settings.MaxConcurrentRequests ||
                 prevNativeSchema != Settings.EnableNativeSchema ||
-                prevJsonRepair != Settings.EnableJsonRepair)
+                prevJsonRepair != Settings.EnableJsonRepair ||
+                prevResponseCache != Settings.EnableResponseCache ||
+                Math.Abs(prevCacheTtl - Settings.ResponseCacheTtlMinutes) > 0.001f)
             {
                 Settings.Write();
             }

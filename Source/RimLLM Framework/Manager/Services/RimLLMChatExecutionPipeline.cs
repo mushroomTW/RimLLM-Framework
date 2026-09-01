@@ -26,6 +26,7 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
         private readonly RimLLMUsageTracker _usageTracker;
+        private readonly RimLLMResponseCache _responseCache;
 
         // Anti-abuse state
         private readonly ConcurrentDictionary<string, List<DateTime>> _requestTimestamps =
@@ -37,12 +38,14 @@ namespace RimLLM_Framework.Manager
             IRimLLMSettings settings,
             RimLLMRequestQueue requestQueue,
             RimLLMFallbackPipeline fallbackPipeline,
-            RimLLMUsageTracker usageTracker)
+            RimLLMUsageTracker usageTracker,
+            RimLLMResponseCache responseCache)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _requestQueue = requestQueue ?? throw new ArgumentNullException(nameof(requestQueue));
             _fallbackPipeline = fallbackPipeline ?? throw new ArgumentNullException(nameof(fallbackPipeline));
             _usageTracker = usageTracker ?? throw new ArgumentNullException(nameof(usageTracker));
+            _responseCache = responseCache ?? throw new ArgumentNullException(nameof(responseCache));
         }
 
         /// <summary>
@@ -52,14 +55,24 @@ namespace RimLLM_Framework.Manager
         {
             RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
 
+            // 快取查詢排在准入檢查之前：命中時不會發出任何 API 呼叫，
+            // 而防濫用節流與每日預算保護的都是「真的花錢的呼叫」，攔阻零成本的重播沒有意義。
+            // 正規化必須先做，否則預設思考強度沒套上就算鍵，會和實際送出的請求對不起來。
+            if (_responseCache.TryGet(normalizedRequest, out string cachedText))
+            {
+                return new RimLLMGenerationResult { Text = cachedText };
+            }
+
             // 准入檢查一律在進入佇列之前執行，且整條請求路徑只執行一次。
             if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false) is string mockResult)
             {
                 return new RimLLMGenerationResult { Text = mockResult };
             }
 
-            return await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
+            RimLLMGenerationResult result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
                 GenerateDirectAsync(normalizedRequest)).ConfigureAwait(false);
+            _responseCache.Store(normalizedRequest, result?.Text);
+            return result;
         }
 
         /// <summary>
@@ -71,6 +84,13 @@ namespace RimLLM_Framework.Manager
         {
             RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
 
+            if (_responseCache.TryGet(normalizedRequest, out string cachedText))
+            {
+                // 快取沒有保留原始的分塊邊界，整段一次送出即可。
+                DispatchChunk(onChunkReceived, cachedText);
+                return new RimLLMGenerationResult { Text = cachedText };
+            }
+
             if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false) is string mockResult)
             {
                 DispatchChunk(onChunkReceived, mockResult);
@@ -78,8 +98,10 @@ namespace RimLLM_Framework.Manager
             }
 
             Action<string> mainThreadCallback = chunk => DispatchChunk(onChunkReceived, chunk);
-            return await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
+            RimLLMGenerationResult result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
                 StreamDirectAsync(normalizedRequest, mainThreadCallback)).ConfigureAwait(false);
+            _responseCache.Store(normalizedRequest, result?.Text);
+            return result;
         }
 
         private Task<RimLLMGenerationResult> GenerateDirectAsync(RimLLMRequest request)

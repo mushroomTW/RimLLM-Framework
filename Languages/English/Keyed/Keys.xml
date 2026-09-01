@@ -140,8 +140,11 @@
   <RimLLM_RoutingStrategy_PriorityFailover>Priority Failover with Cooldowns (PriorityFailover)</RimLLM_RoutingStrategy_PriorityFailover>
   <RimLLM_RoutingStrategy_MinLatency>Minimum Latency First (MinLatency)</RimLLM_RoutingStrategy_MinLatency>
   <RimLLM_RoutingStrategy_RoundRobin>Load Balancing Round Robin (RoundRobin)</RimLLM_RoutingStrategy_RoundRobin>
+  <RimLLM_RoutingStrategy_LowestCost>Lowest Cost First (LowestCost)</RimLLM_RoutingStrategy_LowestCost>
   <RimLLM_EnableNativeSchemaLabel>Enable Native JSON Schema Enforcement (highly increases output format accuracy)</RimLLM_EnableNativeSchemaLabel>
   <RimLLM_EnableJsonRepairLabel>Enable JSON Response Structural Repair (fault-tolerant JSON parser)</RimLLM_EnableJsonRepairLabel>
+  <RimLLM_EnableResponseCacheLabel>Cache responses for repeated requests (saves cost; identical input returns identical output)</RimLLM_EnableResponseCacheLabel>
+  <RimLLM_ResponseCacheTtlLabel>Response cache lifetime: {0} minutes</RimLLM_ResponseCacheTtlLabel>
 
   <RimLLM_FallbackLevelAuto>Auto</RimLLM_FallbackLevelAuto>
   <RimLLM_FallbackLevelLow>Low</RimLLM_FallbackLevelLow>

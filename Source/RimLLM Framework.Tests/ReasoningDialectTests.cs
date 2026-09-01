@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System.Collections.Generic;
 using System.Net;
 using Microsoft.Extensions.AI;
@@ -48,7 +49,7 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "o5-preview").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("high", (string)payload["reasoning_effort"]);
+            ClassicAssert.AreEqual("high", (string)payload["reasoning_effort"]);
         }
 
         [Test]
@@ -65,8 +66,8 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "gpt-5").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("low", (string)payload["reasoning_effort"]);
-            Assert.IsNull(payload["temperature"]);
+            ClassicAssert.AreEqual("low", (string)payload["reasoning_effort"]);
+            ClassicAssert.IsNull(payload["temperature"]);
         }
 
         [Test]
@@ -79,7 +80,7 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "gpt-4o").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.IsNull(payload["reasoning_effort"]);
+            ClassicAssert.IsNull(payload["reasoning_effort"]);
         }
 
         [Test]
@@ -91,7 +92,7 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "o5-preview").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("none", (string)payload["reasoning_effort"]);
+            ClassicAssert.AreEqual("none", (string)payload["reasoning_effort"]);
         }
 
         [Test]
@@ -102,8 +103,8 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, new ChatOptions(), "o5-preview").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.IsNull(payload["reasoning_effort"]);
-            Assert.IsNull(payload["reasoning"]);
+            ClassicAssert.IsNull(payload["reasoning_effort"]);
+            ClassicAssert.IsNull(payload["reasoning"]);
         }
 
         // ---------- xAI：不能關閉思考 ----------
@@ -117,7 +118,7 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "grok-4.5").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("high", (string)payload["reasoning_effort"]);
+            ClassicAssert.AreEqual("high", (string)payload["reasoning_effort"]);
         }
 
         [Test]
@@ -130,7 +131,7 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "grok-4.5").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.IsNull(payload["reasoning_effort"]);
+            ClassicAssert.IsNull(payload["reasoning_effort"]);
         }
 
         // ---------- thinking.type 方言：DeepSeek / Z.ai / Kimi ----------
@@ -144,8 +145,8 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "deepseek-v4-pro").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
-            Assert.AreEqual("enabled", (string)payload["thinking"]["type"]);
-            Assert.AreEqual("medium", (string)payload["reasoning_effort"]);
+            ClassicAssert.AreEqual("enabled", (string)payload["thinking"]["type"]);
+            ClassicAssert.AreEqual("medium", (string)payload["reasoning_effort"]);
         }
 
         [Test]
@@ -157,8 +158,8 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "deepseek-v4-pro").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.CapturedPayload);
-            Assert.AreEqual("disabled", (string)payload["thinking"]["type"]);
-            Assert.IsNull(payload["reasoning_effort"], "關閉思考時不該再附上強度，兩者語意矛盾。");
+            ClassicAssert.AreEqual("disabled", (string)payload["thinking"]["type"]);
+            ClassicAssert.IsNull(payload["reasoning_effort"], "關閉思考時不該再附上強度，兩者語意矛盾。");
         }
 
         [Test]
@@ -170,8 +171,8 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "glm-4.6").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("enabled", (string)payload["thinking"]["type"]);
-            Assert.AreEqual("low", (string)payload["reasoning_effort"]);
+            ClassicAssert.AreEqual("enabled", (string)payload["thinking"]["type"]);
+            ClassicAssert.AreEqual("low", (string)payload["reasoning_effort"]);
         }
 
         [Test]
@@ -185,14 +186,14 @@ namespace RimLLM_Framework.Tests
                 UserMessages,
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium } },
                 "kimi-k3").GetAwaiter().GetResult();
-            Assert.AreEqual("high", (string)JObject.Parse(mediumProvider.CapturedPayload)["reasoning_effort"]);
+            ClassicAssert.AreEqual("high", (string)JObject.Parse(mediumProvider.CapturedPayload)["reasoning_effort"]);
 
             var highProvider = new TestKimiPayloadProvider(settings);
             highProvider.GenerateAsync(
                 UserMessages,
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "kimi-k3").GetAwaiter().GetResult();
-            Assert.AreEqual("max", (string)JObject.Parse(highProvider.CapturedPayload)["reasoning_effort"]);
+            ClassicAssert.AreEqual("max", (string)JObject.Parse(highProvider.CapturedPayload)["reasoning_effort"]);
         }
 
         // ---------- Qwen：enable_thinking + thinking_budget ----------
@@ -206,9 +207,9 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "qwen-plus").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.IsTrue((bool)payload["enable_thinking"]);
-            Assert.AreEqual(2048, (int)payload["thinking_budget"]);
-            Assert.IsNull(payload["reasoning_effort"], "Qwen 不認得 reasoning_effort，送出只會是雜訊。");
+            ClassicAssert.IsTrue((bool)payload["enable_thinking"]);
+            ClassicAssert.AreEqual(2048, (int)payload["thinking_budget"]);
+            ClassicAssert.IsNull(payload["reasoning_effort"], "Qwen 不認得 reasoning_effort，送出只會是雜訊。");
         }
 
         [Test]
@@ -220,8 +221,8 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "qwen-plus").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.IsFalse((bool)payload["enable_thinking"]);
-            Assert.IsNull(payload["thinking_budget"]);
+            ClassicAssert.IsFalse((bool)payload["enable_thinking"]);
+            ClassicAssert.IsNull(payload["thinking_budget"]);
         }
 
         // ---------- 其餘 OpenAI 相容供應商 ----------
@@ -236,14 +237,14 @@ namespace RimLLM_Framework.Tests
                 UserMessages,
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Low } },
                 "qwen/qwen3.6-27b").GetAwaiter().GetResult();
-            Assert.AreEqual("low", (string)JObject.Parse(groq.InterceptedPayload)["reasoning_effort"]);
+            ClassicAssert.AreEqual("low", (string)JObject.Parse(groq.InterceptedPayload)["reasoning_effort"]);
 
             var local = new TestOpenAICompatibleProvider(SettingsWithKey(ProviderIds.OpenAICompatible));
             local.GenerateAsync(
                 UserMessages,
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "my-local-model").GetAwaiter().GetResult();
-            Assert.AreEqual("high", (string)JObject.Parse(local.InterceptedPayload)["reasoning_effort"]);
+            ClassicAssert.AreEqual("high", (string)JObject.Parse(local.InterceptedPayload)["reasoning_effort"]);
         }
 
         [Test]
@@ -255,8 +256,8 @@ namespace RimLLM_Framework.Tests
             provider.GenerateAsync(UserMessages, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
 
             var payload = JObject.Parse(provider.InterceptedPayload);
-            Assert.AreEqual("high", (string)payload["reasoning"]["effort"]);
-            Assert.IsNull(payload["reasoning_effort"]);
+            ClassicAssert.AreEqual("high", (string)payload["reasoning"]["effort"]);
+            ClassicAssert.IsNull(payload["reasoning_effort"]);
         }
 
         // ---------- Gemini：thinkingConfig ----------
@@ -273,8 +274,8 @@ namespace RimLLM_Framework.Tests
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "gemini-5-flash").GetAwaiter().GetResult();
 
-            Assert.IsNotNull(provider.LastConfig.ThinkingConfig);
-            Assert.AreEqual(Google.GenAI.Types.ThinkingLevel.High, provider.LastConfig.ThinkingConfig.ThinkingLevel);
+            ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
+            ClassicAssert.AreEqual(Google.GenAI.Types.ThinkingLevel.High, provider.LastConfig.ThinkingConfig.ThinkingLevel);
         }
 
         [Test]
@@ -287,7 +288,7 @@ namespace RimLLM_Framework.Tests
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "gemini-2.0-flash").GetAwaiter().GetResult();
 
-            Assert.IsNull(provider.LastConfig.ThinkingConfig);
+            ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig);
         }
 
         [Test]
@@ -301,7 +302,7 @@ namespace RimLLM_Framework.Tests
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "gemini-5-flash").GetAwaiter().GetResult();
 
-            Assert.IsNull(provider.LastConfig.ThinkingConfig);
+            ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig);
         }
 
         // ---------- 服務端拒絕後的自動降級 ----------
@@ -319,11 +320,11 @@ namespace RimLLM_Framework.Tests
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "some-legacy-model").GetAwaiter().GetResult();
 
-            Assert.AreEqual("ok", text, "去掉不支援的參數後應該要成功，而不是把錯誤丟給使用者。");
-            Assert.AreEqual(2, provider.WireHandler.RequestBodies.Count);
-            Assert.AreEqual("high", (string)JObject.Parse(provider.WireHandler.RequestBodies[0])["reasoning_effort"]);
-            Assert.IsNull(JObject.Parse(provider.WireHandler.RequestBodies[1])["reasoning_effort"]);
-            Assert.IsTrue(RimLLMReasoningSupport.IsReasoningUnsupported("OpenAI", "some-legacy-model"));
+            ClassicAssert.AreEqual("ok", text, "去掉不支援的參數後應該要成功，而不是把錯誤丟給使用者。");
+            ClassicAssert.AreEqual(2, provider.WireHandler.RequestBodies.Count);
+            ClassicAssert.AreEqual("high", (string)JObject.Parse(provider.WireHandler.RequestBodies[0])["reasoning_effort"]);
+            ClassicAssert.IsNull(JObject.Parse(provider.WireHandler.RequestBodies[1])["reasoning_effort"]);
+            ClassicAssert.IsTrue(RimLLMReasoningSupport.IsReasoningUnsupported("OpenAI", "some-legacy-model"));
         }
 
         [Test]
@@ -338,8 +339,8 @@ namespace RimLLM_Framework.Tests
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "some-legacy-model").GetAwaiter().GetResult();
 
-            Assert.AreEqual(1, provider.WireHandler.RequestBodies.Count, "已知不支援就不該再浪費一次來回。");
-            Assert.IsNull(JObject.Parse(provider.WireHandler.RequestBodies[0])["reasoning_effort"]);
+            ClassicAssert.AreEqual(1, provider.WireHandler.RequestBodies.Count, "已知不支援就不該再浪費一次來回。");
+            ClassicAssert.IsNull(JObject.Parse(provider.WireHandler.RequestBodies[0])["reasoning_effort"]);
         }
 
         [Test]
@@ -355,11 +356,11 @@ namespace RimLLM_Framework.Tests
                 new ChatOptions { Temperature = 0.7f },
                 "some-new-reasoning-model").GetAwaiter().GetResult();
 
-            Assert.AreEqual("ok", text);
-            Assert.AreEqual(2, provider.WireHandler.RequestBodies.Count);
-            Assert.IsNotNull(JObject.Parse(provider.WireHandler.RequestBodies[0])["temperature"]);
-            Assert.IsNull(JObject.Parse(provider.WireHandler.RequestBodies[1])["temperature"]);
-            Assert.IsTrue(RimLLMReasoningSupport.IsTemperatureUnsupported("OpenAI", "some-new-reasoning-model"));
+            ClassicAssert.AreEqual("ok", text);
+            ClassicAssert.AreEqual(2, provider.WireHandler.RequestBodies.Count);
+            ClassicAssert.IsNotNull(JObject.Parse(provider.WireHandler.RequestBodies[0])["temperature"]);
+            ClassicAssert.IsNull(JObject.Parse(provider.WireHandler.RequestBodies[1])["temperature"]);
+            ClassicAssert.IsTrue(RimLLMReasoningSupport.IsTemperatureUnsupported("OpenAI", "some-new-reasoning-model"));
         }
 
         [Test]
@@ -386,7 +387,7 @@ namespace RimLLM_Framework.Tests
                 }
             });
 
-            Assert.AreEqual(1, provider.WireHandler.RequestBodies.Count);
+            ClassicAssert.AreEqual(1, provider.WireHandler.RequestBodies.Count);
         }
     }
 

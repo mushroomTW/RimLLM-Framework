@@ -241,7 +241,7 @@ namespace RimLLM_Framework.Providers
             Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
             options.RawRepresentationFactory = client =>
             {
-                var chatCompletionOptions = baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
+                var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(baseFactory, client);
 
                 if (responseFormatJson != null)
                 {

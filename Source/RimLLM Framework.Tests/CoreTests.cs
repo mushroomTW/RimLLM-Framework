@@ -1,5 +1,6 @@
 extern alias bclasync;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
 using System.Reflection;
 using System.Collections.Generic;
@@ -16,14 +17,14 @@ namespace RimLLM_Framework.Tests
         {
             string original = "sk-proj-1234567890abcdefghijklmnopqrstuvwxyz";
             string cipher = EncryptionUtility.Encrypt(original);
-            Assert.IsNotEmpty(cipher);
-            Assert.AreNotEqual(original, cipher);
+            ClassicAssert.IsNotEmpty(cipher);
+            ClassicAssert.AreNotEqual(original, cipher);
 
             string decrypted = EncryptionUtility.Decrypt(cipher);
-            Assert.AreEqual(original, decrypted);
+            ClassicAssert.AreEqual(original, decrypted);
 
-            Assert.AreEqual("", EncryptionUtility.Encrypt(""));
-            Assert.AreEqual("", EncryptionUtility.Decrypt(""));
+            ClassicAssert.AreEqual("", EncryptionUtility.Encrypt(""));
+            ClassicAssert.AreEqual("", EncryptionUtility.Decrypt(""));
         }
 
                 [Test]
@@ -41,16 +42,16 @@ namespace RimLLM_Framework.Tests
             EncryptionUtility.InitializeKeyAndIv();
             string cipherB = EncryptionUtility.Encrypt(original);
 
-            Assert.AreNotEqual(cipherA, cipherB); // 不同 Salt 加密出的結果應該不同
+            ClassicAssert.AreNotEqual(cipherA, cipherB); // 不同 Salt 加密出的結果應該不同
 
             // 3. 驗證同 Salt 可以解密，異 Salt 會解密失敗或解出空字串
             EncryptionUtility.CustomSalt = "SaltA";
             EncryptionUtility.InitializeKeyAndIv();
             string decryptedA = EncryptionUtility.Decrypt(cipherA);
-            Assert.AreEqual(original, decryptedA);
+            ClassicAssert.AreEqual(original, decryptedA);
 
             string decryptedB = EncryptionUtility.Decrypt(cipherB);
-            Assert.AreNotEqual(original, decryptedB); // 異 Salt 解密失敗
+            ClassicAssert.AreNotEqual(original, decryptedB); // 異 Salt 解密失敗
         }
 
         [Test]
@@ -69,23 +70,23 @@ namespace RimLLM_Framework.Tests
             foreach (var kvp in secrets)
             {
                 string sanitized = RimLLMLog.SanitizeForLog($"request failed with key {kvp.Value}");
-                Assert.IsFalse(sanitized.Contains(kvp.Value),
+                ClassicAssert.IsFalse(sanitized.Contains(kvp.Value),
                     $"日誌遮罩必須涵蓋全部供應商的金鑰格式（{kvp.Key} 未被遮罩）");
             }
 
             string bearer = RimLLMLog.SanitizeForLog("Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345");
-            Assert.IsFalse(bearer.Contains("abcdefghijklmnopqrstuvwxyz012345"), "Bearer token 必須被遮罩");
+            ClassicAssert.IsFalse(bearer.Contains("abcdefghijklmnopqrstuvwxyz012345"), "Bearer token 必須被遮罩");
         }
 
         [Test]
         public void TestSanitizeForLogTruncatesAndEscapesNewlines()
         {
             string sanitized = RimLLMLog.SanitizeForLog("line1\r\nline2", 500);
-            Assert.IsFalse(sanitized.Contains("\n"), "換行必須被跳脫以防日誌注入");
-            Assert.IsTrue(sanitized.Contains("\\r\\n"));
+            ClassicAssert.IsFalse(sanitized.Contains("\n"), "換行必須被跳脫以防日誌注入");
+            ClassicAssert.IsTrue(sanitized.Contains("\\r\\n"));
 
             string longText = new string('x', 600);
-            Assert.IsTrue(RimLLMLog.SanitizeForLog(longText, 100).Length <= 103, "超長內容必須被截斷");
+            ClassicAssert.IsTrue(RimLLMLog.SanitizeForLog(longText, 100).Length <= 103, "超長內容必須被截斷");
         }
 
         [Test]
@@ -94,9 +95,9 @@ namespace RimLLM_Framework.Tests
             // 無法解密的內容（既非 v2 格式也不是合法 Base64 密文）
             string result = EncryptionUtility.Decrypt("v2:bm90LWEtdmFsaWQtcGF5bG9hZA==");
 
-            Assert.IsNull(result,
+            ClassicAssert.IsNull(result,
                 "解密失敗必須回傳 null 而非空字串，呼叫端才能保留原始密文而不覆寫為空");
-            Assert.AreEqual(string.Empty, EncryptionUtility.Decrypt(""),
+            ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Decrypt(""),
                 "空輸入仍應回傳空字串，與解密失敗區分");
         }
 
@@ -113,7 +114,7 @@ namespace RimLLM_Framework.Tests
             foreach (string locale in new[] { "English", "ChineseSimplified", "ChineseTraditional" })
             {
                 string path = System.IO.Path.Combine(repoRoot, "Languages", locale, "Keyed", "Keys.xml");
-                Assert.IsTrue(System.IO.File.Exists(path), $"缺少語言檔: {path}");
+                ClassicAssert.IsTrue(System.IO.File.Exists(path), $"缺少語言檔: {path}");
 
                 var doc = System.Xml.Linq.XDocument.Load(path);
                 var keys = new List<string>();
@@ -128,7 +129,7 @@ namespace RimLLM_Framework.Tests
                 {
                     if (!seen.Add(key)) duplicates.Add(key);
                 }
-                Assert.IsEmpty(duplicates, $"{locale} 語言檔含重複鍵: {string.Join(", ", duplicates.ToArray())}");
+                ClassicAssert.IsEmpty(duplicates, $"{locale} 語言檔含重複鍵: {string.Join(", ", duplicates.ToArray())}");
 
                 keys.Sort(StringComparer.Ordinal);
                 localeKeys[locale] = keys;

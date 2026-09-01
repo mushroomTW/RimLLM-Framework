@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
 
@@ -41,7 +41,7 @@ namespace RimLLM_Framework.Providers
             System.Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
             options.RawRepresentationFactory = client =>
             {
-                var chatCompletionOptions = baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
+                var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(baseFactory, client);
                 chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.stream_options"));
                 chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.max_completion_tokens"));
                 chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_tokens"), maxTokens);

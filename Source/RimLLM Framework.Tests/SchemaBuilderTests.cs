@@ -6,6 +6,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager;
 
 // Google.GenAI.Types 也有一個 Type，會與 System.Type 撞名。
@@ -47,8 +48,8 @@ namespace RimLLM_Framework.Tests
                 string json = RimLLMSchemaBuilder.BuildJson(type, RimLLMSchemaProfile.Gemini);
                 Schema schema = Schema.FromJson(json);
 
-                Assert.IsNotNull(schema, type.Name + " 的 Gemini profile schema 應能轉成 Google.GenAI 的 Schema。輸出：" + json);
-                Assert.IsNotNull(schema.Type, type.Name + " 的 schema 應有單一 type。");
+                ClassicAssert.IsNotNull(schema, type.Name + " 的 Gemini profile schema 應能轉成 Google.GenAI 的 Schema。輸出：" + json);
+                ClassicAssert.IsNotNull(schema.Type, type.Name + " 的 schema 應有單一 type。");
             }
         }
 
@@ -62,7 +63,7 @@ namespace RimLLM_Framework.Tests
         {
             foreach (Type type in SampleTypes())
             {
-                Assert.IsFalse(
+                ClassicAssert.IsFalse(
                     RimLLMSchemaBuilder.Build(type, RimLLMSchemaProfile.OpenAI).UsedLegacyFallback,
                     type.Name + " 不應觸發降級 —— MEAI exporter 在此環境應可用。");
             }
@@ -114,7 +115,7 @@ namespace RimLLM_Framework.Tests
                 foreach (JToken requiredName in (JArray)schema["required"])
                 {
                     string name = requiredName.Value<string>();
-                    Assert.IsTrue(
+                    ClassicAssert.IsTrue(
                         sample.ContainsKey(name),
                         type.Name + " 的提示式範例 JSON 缺少 required 成員 " + name + "，兩條路徑對成員的認知已經分歧。");
                 }
@@ -139,8 +140,8 @@ namespace RimLLM_Framework.Tests
             NullableTestDataStructure parsed = RimLLMManager.DeserializeAndValidate<NullableTestDataStructure>(
                 "{\"Name\":\"Randy\",\"OptionalCount\":null}");
 
-            Assert.AreEqual("Randy", parsed.Name);
-            Assert.IsNull(parsed.OptionalCount, "Nullable<T> 成員為 null 是合法的，schema 也明確允許。");
+            ClassicAssert.AreEqual("Randy", parsed.Name);
+            ClassicAssert.IsNull(parsed.OptionalCount, "Nullable<T> 成員為 null 是合法的，schema 也明確允許。");
 
             Assert.Throws<InvalidOperationException>(
                 () => RimLLMManager.DeserializeAndValidate<NullableTestDataStructure>(
@@ -166,7 +167,7 @@ namespace RimLLM_Framework.Tests
                     {
                         foreach (string keyword in forbidden)
                         {
-                            Assert.IsNull(
+                            ClassicAssert.IsNull(
                                 node[keyword],
                                 type.Name + " / " + profile + " 的 schema 不應含 " + keyword + "。");
                         }
@@ -206,7 +207,7 @@ namespace RimLLM_Framework.Tests
             {
                 foreach (JObject node in EnumerateNodes(ParseSchema(type, RimLLMSchemaProfile.Gemini)))
                 {
-                    Assert.AreEqual(
+                    ClassicAssert.AreEqual(
                         JTokenType.String,
                         node["type"].Type,
                         type.Name + " 的 Gemini profile 每個 type 都必須是單一字串（Schema.Type 是單一列舉值）。");
@@ -221,7 +222,7 @@ namespace RimLLM_Framework.Tests
             {
                 foreach (JObject node in EnumerateNodes(ParseSchema(type, RimLLMSchemaProfile.OpenAI)))
                 {
-                    Assert.IsNull(node["nullable"], type.Name + " 的 OpenAI profile 不應使用 OpenAPI 的 nullable 關鍵字。");
+                    ClassicAssert.IsNull(node["nullable"], type.Name + " 的 OpenAI profile 不應使用 OpenAPI 的 nullable 關鍵字。");
                 }
             }
         }
@@ -271,17 +272,17 @@ namespace RimLLM_Framework.Tests
         {
             JObject openAi = ParseSchema(typeof(NullableTestDataStructure), RimLLMSchemaProfile.OpenAI);
             JToken openAiType = openAi["properties"]["OptionalCount"]["type"];
-            Assert.AreEqual(JTokenType.Array, openAiType.Type, "OpenAI profile 的 int? 應寫成聯集型別。");
+            ClassicAssert.AreEqual(JTokenType.Array, openAiType.Type, "OpenAI profile 的 int? 應寫成聯集型別。");
             CollectionAssert.AreEquivalent(new[] { "integer", "null" }, openAiType.ToObject<string[]>());
 
             JObject gemini = ParseSchema(typeof(NullableTestDataStructure), RimLLMSchemaProfile.Gemini);
             JToken geminiMember = gemini["properties"]["OptionalCount"];
-            Assert.AreEqual("integer", geminiMember["type"].Value<string>(), "Gemini profile 的 int? 應維持單一 type。");
-            Assert.IsTrue(geminiMember["nullable"].Value<bool>(), "Gemini profile 的 int? 應以 nullable 關鍵字表達選填。");
+            ClassicAssert.AreEqual("integer", geminiMember["type"].Value<string>(), "Gemini profile 的 int? 應維持單一 type。");
+            ClassicAssert.IsTrue(geminiMember["nullable"].Value<bool>(), "Gemini profile 的 int? 應以 nullable 關鍵字表達選填。");
 
             // 專案未啟用 NRT，exporter 會把所有參考型別也寫成可為 null 的聯集。
             // 只有 Nullable<T> 才算選填 —— 與舊實作的 IsOptionalMember 判定一致。
-            Assert.AreEqual(
+            ClassicAssert.AreEqual(
                 JTokenType.String,
                 openAi["properties"]["Name"]["type"].Type,
                 "參考型別成員不應被誤判為選填。");
@@ -303,18 +304,18 @@ namespace RimLLM_Framework.Tests
 
             // 去重的 $ref 必須完整展開成原本的 schema，不能只剩空殼 —— 這是「一律截斷 $ref」會踩到的坑。
             var skills = (JObject)schema["properties"]["Skills"];
-            Assert.IsNotNull(skills, "Skills 是 $ref 去重而非循環，不得被截斷。");
-            Assert.AreEqual("array", skills["type"].Value<string>());
-            Assert.AreEqual("string", skills["items"]["type"].Value<string>());
+            ClassicAssert.IsNotNull(skills, "Skills 是 $ref 去重而非循環，不得被截斷。");
+            ClassicAssert.AreEqual("array", skills["type"].Value<string>());
+            ClassicAssert.AreEqual("string", skills["items"]["type"].Value<string>());
 
             // 循環在 CLR 型別層截斷，而非等到 JSON pointer 重現。exporter 會先把遞迴成員完整
             // 展開一輪、其中才出現指回祖先的 $ref，只靠 pointer 偵測會多送一整層
             // （實測 789 → 3119 字元，而那是每次請求都要付的 prompt token）。
             var nested = (JObject)schema["properties"]["Nested"];
-            Assert.IsNotNull(nested, "非循環的巢狀成員應正常展開。");
-            Assert.AreEqual("number", nested["properties"]["Weight"]["type"].Value<string>());
+            ClassicAssert.IsNotNull(nested, "非循環的巢狀成員應正常展開。");
+            ClassicAssert.AreEqual("number", nested["properties"]["Weight"]["type"].Value<string>());
 
-            Assert.IsNull(nested["properties"]["SelfRef"], "指回祖先型別的成員應被截斷。");
+            ClassicAssert.IsNull(nested["properties"]["SelfRef"], "指回祖先型別的成員應被截斷。");
             CollectionAssert.DoesNotContain(RequiredNames(nested), "SelfRef", "被截斷的成員不得留在 required。");
         }
 
@@ -330,7 +331,7 @@ namespace RimLLM_Framework.Tests
             RimLLMSchemaBuilder.ForceLegacy = true;
             int legacy = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI).Length;
 
-            Assert.Less(
+            ClassicAssert.Less(
                 managed,
                 legacy * 2,
                 "遞迴型別的 schema 不應比舊實作大上一個量級。managed=" + managed + " legacy=" + legacy);
@@ -346,15 +347,15 @@ namespace RimLLM_Framework.Tests
             int openAiDepth = MeasureNextChainDepth(ParseSchema(typeof(DeepChainLevel0), RimLLMSchemaProfile.OpenAI));
             int geminiDepth = MeasureNextChainDepth(ParseSchema(typeof(DeepChainLevel0), RimLLMSchemaProfile.Gemini));
 
-            Assert.LessOrEqual(
+            ClassicAssert.LessOrEqual(
                 openAiDepth,
                 RimLLMSchemaBuilder.OpenAIMaxSchemaDepth,
                 "OpenAI 方言的巢狀層數不得超過服務端上限。實際：" + openAiDepth);
-            Assert.LessOrEqual(
+            ClassicAssert.LessOrEqual(
                 geminiDepth,
                 RimLLMSchemaBuilder.MaxSchemaDepth,
                 "Gemini 方言仍受整體深度上限保護。實際：" + geminiDepth);
-            Assert.Greater(
+            ClassicAssert.Greater(
                 geminiDepth,
                 openAiDepth,
                 "Gemini 沒有 5 層限制，不應被 OpenAI 的上限連累。");
@@ -371,7 +372,7 @@ namespace RimLLM_Framework.Tests
 
                 depth++;
                 current = next;
-                Assert.Less(depth, 20, "深度截斷失效，schema 無限展開。");
+                ClassicAssert.Less(depth, 20, "深度截斷失效，schema 無限展開。");
             }
 
             CollectionAssert.DoesNotContain(RequiredNames(current), "Next", "被截斷的成員不得留在 required。");
@@ -416,7 +417,7 @@ namespace RimLLM_Framework.Tests
             JObject schema = ParseSchema(typeof(EnumTestDataStructure), RimLLMSchemaProfile.OpenAI);
             var kind = (JObject)schema["properties"]["Kind"];
 
-            Assert.AreEqual("string", kind["type"].Value<string>(), "列舉應以字串名稱表達，Newtonsoft 反序列化接受名稱。");
+            ClassicAssert.AreEqual("string", kind["type"].Value<string>(), "列舉應以字串名稱表達，Newtonsoft 反序列化接受名稱。");
             CollectionAssert.AreEquivalent(
                 new[] { "Alpha", "Beta" },
                 kind["enum"].ToObject<string[]>());
@@ -427,12 +428,12 @@ namespace RimLLM_Framework.Tests
         {
             JObject schema = ParseSchema(typeof(DescribedTestDataStructure), RimLLMSchemaProfile.OpenAI);
 
-            Assert.AreEqual(
+            ClassicAssert.AreEqual(
                 "殖民者的名字",
                 schema["properties"]["Name"]["description"].Value<string>(),
                 "成員層級的 [Description] 應傳進 schema —— 這是舊反射實作沒有的能力。");
 
-            Assert.AreEqual(
+            ClassicAssert.AreEqual(
                 "一筆殖民者紀錄",
                 schema["description"].Value<string>(),
                 "類別層級的 [Description] 也應傳進 schema。");
@@ -445,15 +446,15 @@ namespace RimLLM_Framework.Tests
             var schema = JObject.Parse(result.Json);
             var mapping = (JObject)schema["properties"]["Mapping"];
 
-            Assert.AreEqual("object", mapping["type"].Value<string>());
-            Assert.AreEqual("integer", mapping["additionalProperties"]["type"].Value<string>());
+            ClassicAssert.AreEqual("object", mapping["type"].Value<string>());
+            ClassicAssert.AreEqual("integer", mapping["additionalProperties"]["type"].Value<string>());
 
-            Assert.IsTrue(result.ContainsOpenEndedMap, "含 Dictionary 的型別應被判定為開放式 map。");
-            Assert.IsFalse(result.StrictCompatible, "開放式 map 不相容於 OpenAI 的 strict structured output。");
+            ClassicAssert.IsTrue(result.ContainsOpenEndedMap, "含 Dictionary 的型別應被判定為開放式 map。");
+            ClassicAssert.IsFalse(result.StrictCompatible, "開放式 map 不相容於 OpenAI 的 strict structured output。");
 
             RimLLMSchemaResult plain = RimLLMSchemaBuilder.Build(typeof(NullableTestDataStructure), RimLLMSchemaProfile.OpenAI);
-            Assert.IsFalse(plain.ContainsOpenEndedMap);
-            Assert.IsTrue(plain.StrictCompatible);
+            ClassicAssert.IsFalse(plain.ContainsOpenEndedMap);
+            ClassicAssert.IsTrue(plain.StrictCompatible);
         }
 
         [Test]
@@ -464,7 +465,7 @@ namespace RimLLM_Framework.Tests
 #pragma warning disable CS0618
                 bool legacy = RimLLMJsonHelper.ContainsOpenEndedMap(type);
 #pragma warning restore CS0618
-                Assert.AreEqual(
+                ClassicAssert.AreEqual(
                     legacy,
                     RimLLMSchemaBuilder.ContainsOpenEndedMap(type),
                     type.Name + " 的開放式 map 判定在新舊兩條路徑上應一致。");
@@ -485,12 +486,12 @@ namespace RimLLM_Framework.Tests
                 RimLLMSchemaResult result = RimLLMSchemaBuilder.Build(type, RimLLMSchemaProfile.Gemini);
                 var schema = JObject.Parse(result.Json);
 
-                Assert.AreEqual("object", schema["type"].Value<string>(), type.Name + " 降級後仍應產生可用 schema。");
-                Assert.IsTrue(result.UsedLegacyFallback);
-                Assert.IsFalse(
+                ClassicAssert.AreEqual("object", schema["type"].Value<string>(), type.Name + " 降級後仍應產生可用 schema。");
+                ClassicAssert.IsTrue(result.UsedLegacyFallback);
+                ClassicAssert.IsFalse(
                     result.StrictCompatible,
                     "降級產物的 required 語意是舊的（Nullable 不列入），不得再宣告相容於 strict。");
-                Assert.IsNotNull(Schema.FromJson(result.Json), type.Name + " 降級產物仍應能被 Gemini 接受。");
+                ClassicAssert.IsNotNull(Schema.FromJson(result.Json), type.Name + " 降級產物仍應能被 Gemini 接受。");
             }
         }
 
@@ -499,18 +500,18 @@ namespace RimLLM_Framework.Tests
         {
             RimLLMSchemaResult first = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
             RimLLMSchemaResult second = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
-            Assert.AreSame(first, second, "結果不可變，快取應直接共用同一個實例。");
+            ClassicAssert.AreSame(first, second, "結果不可變，快取應直接共用同一個實例。");
 
             RimLLMSchemaResult gemini = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.Gemini);
-            Assert.AreNotSame(first, gemini, "不同 profile 必須是不同的快取項。");
+            ClassicAssert.AreNotSame(first, gemini, "不同 profile 必須是不同的快取項。");
         }
 
         [Test]
         public void ResolveProfileMapsGeminiById()
         {
-            Assert.AreEqual(RimLLMSchemaProfile.Gemini, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.Gemini));
-            Assert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.OpenAI));
-            Assert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(null));
+            ClassicAssert.AreEqual(RimLLMSchemaProfile.Gemini, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.Gemini));
+            ClassicAssert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.OpenAI));
+            ClassicAssert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(null));
         }
 
         // -----------------------------------------------------------------

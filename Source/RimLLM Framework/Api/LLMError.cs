@@ -64,7 +64,15 @@ namespace RimLLM_Framework
         /// <summary>
         /// 未知錯誤。
         /// </summary>
-        Unknown
+        Unknown,
+
+        /// <summary>
+        /// 提示詞長度超出模型的上下文視窗上限。
+        /// 與 <see cref="InvalidResponse"/> 分開是因為處置方式不同：
+        /// 這類錯誤要縮短提示詞或改用視窗更大的模型，重打同一份 payload 沒有意義。
+        /// 列舉值必須追加在最後，插在中間會改動既有成員的數值而破壞已編譯的下游 Mod。
+        /// </summary>
+        ContextWindowExceeded
     }
 #pragma warning restore S101, S2342
 }

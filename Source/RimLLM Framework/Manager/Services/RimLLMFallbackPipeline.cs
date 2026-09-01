@@ -99,40 +99,36 @@ namespace RimLLM_Framework.Manager
                 throw new RimLLMException(LLMError.ProviderOffline, "No eligible API providers found in the fallback chain.");
             }
 
-            // 2. 過濾處於故障冷卻期的供應商（若全部都在冷卻中，則破例放行）
-            var activeCandidates = candidates.FindAll(c => !_healthLedger.IsInCooldown(c.ProviderId));
+            // 2. 過濾處於故障冷卻期的候選（若全部都在冷卻中，則破例放行）
+            var activeCandidates = candidates.FindAll(c => !_healthLedger.IsInCooldown(HealthKey(c)));
             if (activeCandidates.Count == 0)
             {
                 activeCandidates = candidates;
             }
 
             // 3. 套用路由與負載均衡策略
-            int strategy = _settings.RoutingStrategy;
-            if (strategy == 1) // MinLatency (最小延遲優先)
+            switch (_settings.RoutingStrategy)
             {
-                activeCandidates.Sort((a, b) =>
-                {
-                    float latA = _healthLedger.GetAverageLatency(a.ProviderId);
-                    float latB = _healthLedger.GetAverageLatency(b.ProviderId);
-                    if (latA == 0f && latB != 0f) return -1;
-                    if (latA != 0f && latB == 0f) return 1;
-                    return latA.CompareTo(latB);
-                });
+                case 1: // MinLatency (最小延遲優先)
+                    // 尚無延遲記錄的候選其平均延遲為 0，會自然排到最前面——這是刻意的探索行為：
+                    // 每個候選都得先被呼叫一次才會有延遲數字，若把無記錄者排到最後，
+                    // 第一個拿到記錄的候選就會被永久鎖定，其餘候選永遠沒有機會被測量。
+                    StableSortBy(activeCandidates, c => _healthLedger.GetAverageLatency(HealthKey(c)));
+                    break;
+
+                case 2: // RoundRobin / Random (隨機輪詢負載均衡)
+                    ShuffleCandidates(activeCandidates);
+                    break;
+
+                case 3: // LowestCost (成本優先)
+                    // 直接沿用既有的模型分級（含使用者覆寫）作為成本代理值，由低到高排序。
+                    // 分級本來就是依 API 費率自動判定的，不需要另外維護一份價格表。
+                    StableSortBy(activeCandidates, c => GetModelLevel(c.Entry, c.ProviderId, c.ModelName));
+                    break;
+
+                default: // 0 = PriorityFailover：保留原始 fallbackChain 順序
+                    break;
             }
-            else if (strategy == 2) // RoundRobin / Random (隨機輪詢負載均衡)
-            {
-#pragma warning disable S2245 // reason: 僅用於負載均衡隨機輪詢，非安全相關隨機，無需密碼學強度
-                var rnd = new Random();
-#pragma warning restore S2245
-                for (int i = activeCandidates.Count - 1; i > 0; i--)
-                {
-                    int j = rnd.Next(i + 1);
-                    var temp = activeCandidates[i];
-                    activeCandidates[i] = activeCandidates[j];
-                    activeCandidates[j] = temp;
-                }
-            }
-            // strategy == 0 (PriorityFailover) 保留原始 fallbackChain 順序
 
             Exception lastException = null;
             int maxRetries = _settings.MaxRetries;
@@ -143,6 +139,8 @@ namespace RimLLM_Framework.Manager
                 string providerId = candidate.ProviderId;
                 ILLMProvider provider = candidate.Provider;
                 string modelName = candidate.ModelName;
+                string healthKey = HealthKey(candidate);
+                bool sawRetryableFailure = false;
 
                 for (int attempt = 0; attempt <= maxRetries; attempt++)
                 {
@@ -166,7 +164,7 @@ namespace RimLLM_Framework.Manager
                         requestStopwatch.Stop();
 
                         // 成功後重設健康狀態與記錄延遲
-                        _healthLedger.RecordSuccess(providerId, requestStopwatch.ElapsedMilliseconds);
+                        _healthLedger.RecordSuccess(healthKey, requestStopwatch.ElapsedMilliseconds);
 
                         _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
                         return attemptResult;
@@ -180,20 +178,14 @@ namespace RimLLM_Framework.Manager
                         lastException = ex;
                         bool retryable = IsRetryableException(ex);
 
-                        // 可重試類錯誤（網路、超時、限流等）計入健康度失敗與冷卻
-                        if (retryable)
-                        {
-                            _healthLedger.RecordFailure(providerId, isRetryable: true);
-                        }
+                        // 可重試類錯誤（網路、超時、限流等）計入健康度失敗與冷卻，但一次請求
+                        // 的所有重試合計只記一次：逐次記錄會讓單一次網路抖動就把連續失敗數
+                        // 推過熔斷門檻（預設重試 3 次即記 4 次失敗），把健康的目標冤枉冷卻數分鐘。
+                        sawRetryableFailure |= retryable;
 
                         if (retryable && attempt < maxRetries)
                         {
-                            // 若伺服器透過 Retry-After 建議等待時間，取其與使用者設定延遲的較大者
-                            float effectiveDelay = retryDelay;
-                            if (ex is RimLLMException rimEx && rimEx.RetryAfter.HasValue)
-                            {
-                                effectiveDelay = Math.Min(Math.Max(effectiveDelay, (float)rimEx.RetryAfter.Value.TotalSeconds), 60f);
-                            }
+                            float effectiveDelay = ResolveRetryDelay(retryDelay, attempt, ex);
 
                             RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) call failed: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Retrying in {effectiveDelay:F1} seconds...");
                             if (effectiveDelay > 0f)
@@ -215,6 +207,11 @@ namespace RimLLM_Framework.Manager
                         }
                     }
                 }
+
+                if (sawRetryableFailure)
+                {
+                    _healthLedger.RecordFailure(healthKey, isRetryable: true);
+                }
             }
 
             totalStopwatch.Stop();
@@ -222,6 +219,102 @@ namespace RimLLM_Framework.Manager
             throw new RimLLMException(exhaustedError, $"{exhaustedMessage} Last error: {lastException?.Message}", lastException);
         }
 #pragma warning restore S3776
+
+        /// <summary>
+        /// 健康帳本的記錄鍵。冷卻以「供應商:模型」為單位，而非只看供應商——
+        /// 同一個供應商底下常有多個模型同時掛在備用鏈上（例如三個 OpenRouter 模型），
+        /// 只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐冷卻。
+        /// </summary>
+        private static string HealthKey(ResolvedCandidate candidate)
+        {
+            return string.IsNullOrEmpty(candidate.ModelName)
+                ? candidate.ProviderId
+                : candidate.ProviderId + ":" + candidate.ModelName;
+        }
+
+        /// <summary>
+        /// 計算下一次重試前的等待秒數。
+        /// 以設定的重試間隔為基準做指數退避（第 n 次重試等待 delay × 2ⁿ）並加上 ±20% 抖動：
+        /// 限流後以固定間隔連打只會再次一起撞牆，把重試額度白白耗光。
+        /// 伺服器若透過 Retry-After 指定了更長的等待時間則以其為準；
+        /// 整體上限 60 秒，免得玩家在遊戲中枯等。
+        /// </summary>
+        private static float ResolveRetryDelay(float baseDelay, int attempt, Exception ex)
+        {
+            const float maxDelaySeconds = 60f;
+            const int maxBackoffSteps = 6;
+
+            float delay = baseDelay * (float)Math.Pow(2, Math.Min(attempt, maxBackoffSteps));
+            if (delay > 0f)
+            {
+                delay *= 1f + ((float)NextRandomDouble() * 0.4f - 0.2f);
+            }
+
+            if (ex is RimLLMException rimEx && rimEx.RetryAfter.HasValue)
+            {
+                delay = Math.Max(delay, (float)rimEx.RetryAfter.Value.TotalSeconds);
+            }
+
+            return Math.Min(delay, maxDelaySeconds);
+        }
+
+        /// <summary>
+        /// 以指定鍵值穩定排序候選清單。
+        /// <see cref="List{T}.Sort(Comparison{T})"/> 不保證穩定，鍵值相同時會打亂備用鏈原本的
+        /// 順序（成本排序時同級模型很常見），因此在此以原索引作為次要鍵。
+        /// </summary>
+        private static void StableSortBy(List<ResolvedCandidate> candidates, Func<ResolvedCandidate, float> keySelector)
+        {
+            var keyed = new List<KeyValuePair<float, int>>(candidates.Count);
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                keyed.Add(new KeyValuePair<float, int>(keySelector(candidates[i]), i));
+            }
+
+            keyed.Sort((a, b) =>
+            {
+                int comparison = a.Key.CompareTo(b.Key);
+                return comparison != 0 ? comparison : a.Value.CompareTo(b.Value);
+            });
+
+            var sorted = new List<ResolvedCandidate>(candidates.Count);
+            foreach (var pair in keyed)
+            {
+                sorted.Add(candidates[pair.Value]);
+            }
+
+            candidates.Clear();
+            candidates.AddRange(sorted);
+        }
+
+        /// <summary>Fisher-Yates 洗牌，用於隨機輪詢負載均衡。</summary>
+        private static void ShuffleCandidates(List<ResolvedCandidate> candidates)
+        {
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int j = NextRandomInt(i + 1);
+                var temp = candidates[i];
+                candidates[i] = candidates[j];
+                candidates[j] = temp;
+            }
+        }
+
+#pragma warning disable S2245 // reason: 僅用於重試抖動與負載均衡輪詢，非安全相關隨機，無需密碼學強度
+        private static readonly Random SharedRandom = new Random();
+#pragma warning restore S2245
+        private static readonly object RandomLock = new object();
+
+        // Random 非執行緒安全，而重試與洗牌都可能來自不同的背景執行緒；
+        // 共用一個加鎖實例，同時也避免每次 new Random() 在同一毫秒內產生相同序列。
+        private static double NextRandomDouble()
+        {
+            lock (RandomLock) { return SharedRandom.NextDouble(); }
+        }
+
+        private static int NextRandomInt(int maxExclusive)
+        {
+            lock (RandomLock) { return SharedRandom.Next(maxExclusive); }
+        }
 
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
         {
@@ -246,21 +339,6 @@ namespace RimLLM_Framework.Manager
         public void ClearCooldowns()
         {
             _healthLedger.Clear();
-        }
-
-        public bool IsInCooldown(string providerId)
-        {
-            return _healthLedger.IsInCooldown(providerId);
-        }
-
-        public float GetAverageLatency(string providerId)
-        {
-            return _healthLedger.GetAverageLatency(providerId);
-        }
-
-        public void RecordLatency(string providerId, long ms)
-        {
-            _healthLedger.RecordSuccess(providerId, ms);
         }
 
         private List<string> GetFallbackChainSnapshot()

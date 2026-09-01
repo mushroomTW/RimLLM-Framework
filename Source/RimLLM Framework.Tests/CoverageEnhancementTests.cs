@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
@@ -22,35 +23,35 @@ namespace RimLLM_Framework.Tests
             // Null / empty 安全性
             ledger.RecordSuccess(null);
             ledger.RecordFailure(null);
-            Assert.IsFalse(ledger.IsInCooldown(null));
-            Assert.AreEqual(0f, ledger.GetAverageLatency(null));
+            ClassicAssert.IsFalse(ledger.IsInCooldown(null));
+            ClassicAssert.AreEqual(0f, ledger.GetAverageLatency(null));
 
             // 1~2 次失敗（可重試）給予短暫冷卻以利備援切換，並累積失敗計數
             ledger.RecordFailure("p1", isRetryable: true);
-            Assert.IsTrue(ledger.IsInCooldown("p1", out DateTime cdTime, out int failures));
-            Assert.AreEqual(1, failures);
-            Assert.IsTrue(cdTime > DateTime.UtcNow);
+            ClassicAssert.IsTrue(ledger.IsInCooldown("p1", out DateTime cdTime, out int failures));
+            ClassicAssert.AreEqual(1, failures);
+            ClassicAssert.IsTrue(cdTime > DateTime.UtcNow);
 
             ledger.RecordFailure("p1", isRetryable: true);
-            Assert.IsTrue(ledger.IsInCooldown("p1", out cdTime, out failures));
-            Assert.AreEqual(2, failures);
+            ClassicAssert.IsTrue(ledger.IsInCooldown("p1", out cdTime, out failures));
+            ClassicAssert.AreEqual(2, failures);
 
             // 非可重試失敗不進入冷卻或連續失敗計數
             var ledger2 = new RimLLMHealthLedger();
             ledger2.RecordFailure("p_nonretry", isRetryable: false);
-            Assert.IsFalse(ledger2.IsInCooldown("p_nonretry"));
+            ClassicAssert.IsFalse(ledger2.IsInCooldown("p_nonretry"));
 
             // 第 3 次失敗觸發指數熔斷冷卻
             ledger.RecordFailure("p1", isRetryable: true);
-            Assert.IsTrue(ledger.IsInCooldown("p1", out cdTime, out failures));
-            Assert.AreEqual(3, failures);
-            Assert.IsTrue(cdTime > DateTime.UtcNow);
+            ClassicAssert.IsTrue(ledger.IsInCooldown("p1", out cdTime, out failures));
+            ClassicAssert.AreEqual(3, failures);
+            ClassicAssert.IsTrue(cdTime > DateTime.UtcNow);
 
             // 成功呼叫清除連續失敗與冷卻，並記錄延遲
             ledger.RecordSuccess("p1", 120);
             ledger.RecordSuccess("p1", 180);
-            Assert.IsFalse(ledger.IsInCooldown("p1"));
-            Assert.AreEqual(150f, ledger.GetAverageLatency("p1"));
+            ClassicAssert.IsFalse(ledger.IsInCooldown("p1"));
+            ClassicAssert.AreEqual(150f, ledger.GetAverageLatency("p1"));
 
             // 驗證超過 5 筆延遲的滾動平均
             for (int i = 0; i < 5; i++)
@@ -58,29 +59,29 @@ namespace RimLLM_Framework.Tests
                 ledger.RecordSuccess("p_lat", 100);
             }
             ledger.RecordSuccess("p_lat", 200); // 應踢除第一筆 100
-            Assert.AreEqual(120f, ledger.GetAverageLatency("p_lat"));
+            ClassicAssert.AreEqual(120f, ledger.GetAverageLatency("p_lat"));
 
             // AreAllInCooldown 測試
             var chain = new List<string> { "p1", "p2" };
-            Assert.IsFalse(ledger.AreAllInCooldown(chain, id => id)); // p1, p2 不在冷卻中
+            ClassicAssert.IsFalse(ledger.AreAllInCooldown(chain, id => id)); // p1, p2 不在冷卻中
 
             ledger.RecordFailure("p1", true);
             ledger.RecordFailure("p1", true);
             ledger.RecordFailure("p1", true);
-            Assert.IsFalse(ledger.AreAllInCooldown(chain, id => id)); // 只有 p1 冷卻
+            ClassicAssert.IsFalse(ledger.AreAllInCooldown(chain, id => id)); // 只有 p1 冷卻
 
             ledger.RecordFailure("p2", true);
             ledger.RecordFailure("p2", true);
             ledger.RecordFailure("p2", true);
-            Assert.IsTrue(ledger.AreAllInCooldown(chain, id => id)); // p1, p2 皆冷卻
+            ClassicAssert.IsTrue(ledger.AreAllInCooldown(chain, id => id)); // p1, p2 皆冷卻
 
-            Assert.IsFalse(ledger.AreAllInCooldown((List<string>)null, id => id));
+            ClassicAssert.IsFalse(ledger.AreAllInCooldown((List<string>)null, id => id));
 
             // Clear 測試
             ledger.Clear();
-            Assert.IsFalse(ledger.IsInCooldown("p1"));
-            Assert.IsFalse(ledger.IsInCooldown("p2"));
-            Assert.AreEqual(0f, ledger.GetAverageLatency("p1"));
+            ClassicAssert.IsFalse(ledger.IsInCooldown("p1"));
+            ClassicAssert.IsFalse(ledger.IsInCooldown("p2"));
+            ClassicAssert.AreEqual(0f, ledger.GetAverageLatency("p1"));
         }
 
         [Test]
@@ -88,31 +89,31 @@ namespace RimLLM_Framework.Tests
         {
             // Null type
             Assert.Throws<ArgumentNullException>(() => RimLLMSchemaBuilder.Build(null, RimLLMSchemaProfile.OpenAI));
-            Assert.IsFalse(RimLLMSchemaBuilder.ContainsOpenEndedMap(null));
+            ClassicAssert.IsFalse(RimLLMSchemaBuilder.ContainsOpenEndedMap(null));
 
             // Profile resolve
-            Assert.AreEqual(RimLLMSchemaProfile.Gemini, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.Gemini));
-            Assert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.OpenAI));
-            Assert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile("custom-provider"));
+            ClassicAssert.AreEqual(RimLLMSchemaProfile.Gemini, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.Gemini));
+            ClassicAssert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.OpenAI));
+            ClassicAssert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile("custom-provider"));
 
             // ForceLegacy toggle
             bool originalLegacy = RimLLMSchemaBuilder.ForceLegacy;
             try
             {
                 RimLLMSchemaBuilder.ForceLegacy = true;
-                Assert.IsTrue(RimLLMSchemaBuilder.ForceLegacy);
+                ClassicAssert.IsTrue(RimLLMSchemaBuilder.ForceLegacy);
 
                 var legacyResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure), RimLLMSchemaProfile.OpenAI);
-                Assert.IsNotNull(legacyResult);
-                Assert.IsTrue(legacyResult.UsedLegacyFallback);
+                ClassicAssert.IsNotNull(legacyResult);
+                ClassicAssert.IsTrue(legacyResult.UsedLegacyFallback);
 
                 RimLLMSchemaBuilder.ForceLegacy = false;
                 var normalResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure), RimLLMSchemaProfile.OpenAI);
-                Assert.IsNotNull(normalResult);
+                ClassicAssert.IsNotNull(normalResult);
 
                 // Cache hit check
                 var cachedResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure), RimLLMSchemaProfile.OpenAI);
-                Assert.AreSame(normalResult, cachedResult);
+                ClassicAssert.AreSame(normalResult, cachedResult);
             }
             finally
             {
@@ -153,40 +154,40 @@ namespace RimLLM_Framework.Tests
             // Batch embedding validation
             Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ComputeEmbeddingsAsync(null));
             var emptyBatch = service.ComputeEmbeddingsAsync(new List<string>()).GetAwaiter().GetResult();
-            Assert.AreEqual(0, emptyBatch.Count);
+            ClassicAssert.AreEqual(0, emptyBatch.Count);
         }
 
         [Test]
         public void TestEncryptionUtilityEdgeCasesAndLegacyV1()
         {
             // Empty / null string
-            Assert.AreEqual(string.Empty, EncryptionUtility.Encrypt(null));
-            Assert.AreEqual(string.Empty, EncryptionUtility.Encrypt(""));
-            Assert.AreEqual(string.Empty, EncryptionUtility.Decrypt(null));
-            Assert.AreEqual(string.Empty, EncryptionUtility.Decrypt(""));
+            ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Encrypt(null));
+            ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Encrypt(""));
+            ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Decrypt(null));
+            ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Decrypt(""));
 
             // Custom Salt get/set
             string oldSalt = EncryptionUtility.CustomSalt;
             try
             {
                 EncryptionUtility.CustomSalt = "UnitTestSalt2026";
-                Assert.AreEqual("UnitTestSalt2026", EncryptionUtility.CustomSalt);
+                ClassicAssert.AreEqual("UnitTestSalt2026", EncryptionUtility.CustomSalt);
                 EncryptionUtility.InitializeKeyAndIv();
 
                 string plain = "secret-api-key-value-12345";
                 string encrypted = EncryptionUtility.Encrypt(plain);
-                Assert.IsTrue(encrypted.StartsWith("v2:"));
+                ClassicAssert.IsTrue(encrypted.StartsWith("v2:"));
                 string decrypted = EncryptionUtility.Decrypt(encrypted);
-                Assert.AreEqual(plain, decrypted);
+                ClassicAssert.AreEqual(plain, decrypted);
 
                 // Corrupted ciphertext
-                Assert.IsNull(EncryptionUtility.Decrypt("v2:corrupted-base64!"));
-                Assert.IsNull(EncryptionUtility.Decrypt("invalid-base64-random-string"));
+                ClassicAssert.IsNull(EncryptionUtility.Decrypt("v2:corrupted-base64!"));
+                ClassicAssert.IsNull(EncryptionUtility.Decrypt("invalid-base64-random-string"));
 
                 // Test legacy V1 decryption fallback (AES-256 without MAC or v2 prefix)
                 string legacyV1 = EncryptLegacyV1(plain);
                 string decryptedV1 = EncryptionUtility.Decrypt(legacyV1);
-                Assert.AreEqual(plain, decryptedV1);
+                ClassicAssert.AreEqual(plain, decryptedV1);
             }
             finally
             {
@@ -272,7 +273,7 @@ namespace RimLLM_Framework.Tests
             RimLLMDispatcher.ResetQueueForTests();
 
             // TryEnqueueBounded with null
-            Assert.IsFalse(RimLLMDispatcher.TryEnqueueBounded(null));
+            ClassicAssert.IsFalse(RimLLMDispatcher.TryEnqueueBounded(null));
 
             // DrainWithBudget error recovery
             int executionCount = 0;
@@ -288,11 +289,11 @@ namespace RimLLM_Framework.Tests
             });
 
             int processed = RimLLMDispatcher.DrainWithBudget(10, 100);
-            Assert.AreEqual(2, processed);
-            Assert.AreEqual(2, executionCount);
+            ClassicAssert.AreEqual(2, processed);
+            ClassicAssert.AreEqual(2, executionCount);
 
             RimLLMDispatcher.ResetQueueForTests();
-            Assert.AreEqual(0, RimLLMDispatcher.QueuedCount);
+            ClassicAssert.AreEqual(0, RimLLMDispatcher.QueuedCount);
         }
 
         [Test]
@@ -300,13 +301,13 @@ namespace RimLLM_Framework.Tests
         {
             var manager = new RimLLMManager(new MockSettings());
             var chatClient = new RimLLMChatClient(manager, "test.mod");
-            Assert.IsNotNull(chatClient.Metadata);
-            Assert.AreSame(chatClient.Metadata, chatClient.GetService(typeof(ChatClientMetadata)));
-            Assert.IsNull(chatClient.GetService(typeof(string)));
+            ClassicAssert.IsNotNull(chatClient.Metadata);
+            ClassicAssert.AreSame(chatClient.Metadata, chatClient.GetService(typeof(ChatClientMetadata)));
+            ClassicAssert.IsNull(chatClient.GetService(typeof(string)));
             chatClient.Dispose();
 
             var embeddingClient = new RimLLMEmbeddingClient(manager, "test.mod");
-            Assert.IsNull(embeddingClient.GetService(typeof(string)));
+            ClassicAssert.IsNull(embeddingClient.GetService(typeof(string)));
             Assert.ThrowsAsync<ArgumentNullException>(async () => await embeddingClient.GenerateAsync(null));
             embeddingClient.Dispose();
         }
@@ -320,8 +321,8 @@ namespace RimLLM_Framework.Tests
                 "test-model",
                 CancellationToken.None);
 
-            Assert.IsNotNull(req.Messages);
-            Assert.AreEqual(0, req.Messages.Count);
+            ClassicAssert.IsNotNull(req.Messages);
+            ClassicAssert.AreEqual(0, req.Messages.Count);
 
             var messagesWithSys = RimLLMChatClientExecutor.BuildMessages(new RimLLMRequest
             {
@@ -329,10 +330,10 @@ namespace RimLLM_Framework.Tests
                 SystemPrompt = "System instruction"
             });
 
-            Assert.IsNotNull(messagesWithSys);
-            Assert.AreEqual(1, messagesWithSys.Count);
-            Assert.AreEqual(ChatRole.System, messagesWithSys[0].Role);
-            Assert.AreEqual("System instruction", messagesWithSys[0].Text);
+            ClassicAssert.IsNotNull(messagesWithSys);
+            ClassicAssert.AreEqual(1, messagesWithSys.Count);
+            ClassicAssert.AreEqual(ChatRole.System, messagesWithSys[0].Role);
+            ClassicAssert.AreEqual("System instruction", messagesWithSys[0].Text);
 
             var messagesEmpty = RimLLMChatClientExecutor.BuildMessages(new RimLLMRequest
             {
@@ -340,9 +341,9 @@ namespace RimLLM_Framework.Tests
                 SystemPrompt = null
             });
 
-            Assert.IsNotNull(messagesEmpty);
-            Assert.AreEqual(1, messagesEmpty.Count);
-            Assert.AreEqual(ChatRole.User, messagesEmpty[0].Role);
+            ClassicAssert.IsNotNull(messagesEmpty);
+            ClassicAssert.AreEqual(1, messagesEmpty.Count);
+            ClassicAssert.AreEqual(ChatRole.User, messagesEmpty[0].Role);
         }
 
         [Test]
@@ -358,11 +359,11 @@ namespace RimLLM_Framework.Tests
             };
 
             string res = await mock.GenerateAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }, null, "m1");
-            Assert.AreEqual("generated result", res);
+            ClassicAssert.AreEqual("generated result", res);
 
             var chunks = new List<string>();
             await mock.StreamAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }, null, "m1", c => chunks.Add(c));
-            Assert.IsTrue(chunks.Count > 0);
+            ClassicAssert.IsTrue(chunks.Count > 0);
         }
 
         [Test]
@@ -373,11 +374,11 @@ namespace RimLLM_Framework.Tests
             var provider = new TestGeminiProvider(settings);
             using (IChatClient client = provider.CreateChatClient("gemini-1.5-flash"))
             {
-                Assert.IsNotNull(client.GetService(typeof(ChatClientMetadata)));
-                Assert.IsNull(client.GetService(typeof(string)));
+                ClassicAssert.IsNotNull(client.GetService(typeof(ChatClientMetadata)));
+                ClassicAssert.IsNull(client.GetService(typeof(string)));
 
                 var resp = await client.GetResponseAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") });
-                Assert.IsNotNull(resp);
+                ClassicAssert.IsNotNull(resp);
 
                 var streamed = new List<string>();
                 await foreach (var update in client.GetStreamingResponseAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }))
@@ -387,7 +388,7 @@ namespace RimLLM_Framework.Tests
                         streamed.Add(update.Text);
                     }
                 }
-                Assert.IsTrue(streamed.Count > 0);
+                ClassicAssert.IsTrue(streamed.Count > 0);
             }
         }
 
@@ -427,9 +428,10 @@ namespace RimLLM_Framework.Tests
             settings.FallbackChain = new List<string> { "P1:m1", "P2:m2" };
             settings.RoutingStrategy = 1; // MinLatency
 
-            // 設定 P1 延遲 300ms, P2 延遲 50ms
-            ledger.RecordSuccess("P1", 300);
-            ledger.RecordSuccess("P2", 50);
+            // 設定 P1 延遲 300ms, P2 延遲 50ms。
+            // 健康帳本以「供應商:模型」為鍵，因此這裡要對應 fallback chain 的完整條目。
+            ledger.RecordSuccess("P1:m1", 300);
+            ledger.RecordSuccess("P2:m2", 50);
 
             string firstAttempted = null;
             await pipeline.ExecuteWithFallbackAsync(req, (p, m) =>
@@ -438,7 +440,7 @@ namespace RimLLM_Framework.Tests
                 return Task.FromResult(new RimLLMGenerationResult { Text = "latency-ok" });
             }, LLMError.Unknown, "err");
 
-            Assert.AreEqual("P2", firstAttempted); // P2 延遲較低應先被調用
+            ClassicAssert.AreEqual("P2", firstAttempted); // P2 延遲較低應先被調用
 
             // 4. PreferredModelId 優先插入
             req.PreferredModelId = "P1:preferred-m";
@@ -449,14 +451,14 @@ namespace RimLLM_Framework.Tests
                 if (firstAttempted == null) firstAttempted = $"{p.ProviderId}:{m}";
                 return Task.FromResult(new RimLLMGenerationResult { Text = "pref-ok" });
             }, LLMError.Unknown, "err");
-            Assert.AreEqual("P1:preferred-m", firstAttempted);
+            ClassicAssert.AreEqual("P1:preferred-m", firstAttempted);
 
             // 5. MinFallbackLevel 分級過濾與 API 價格分級
-            Assert.AreEqual(3, tracker.GetModelLevel("openai", "gpt-4o")); // Completion $10.00 >= $3.00 -> High (3)
-            Assert.AreEqual(2, tracker.GetModelLevel("openai", "gpt-4o-mini")); // Completion $0.60 >= $0.50 -> Medium (2)
-            Assert.AreEqual(1, tracker.GetModelLevel("gemini", "gemini-2.0-flash-lite")); // Completion $0.30 < $0.50 -> Low (1)
-            Assert.AreEqual(1, tracker.GetModelLevel("deepseek", "deepseek-chat")); // Completion $0.28 < $0.50 -> Low (1)
-            Assert.AreEqual(1, tracker.GetModelLevel("openai-compatible", "local-llama")); // 本地免費 -> Low (1)
+            ClassicAssert.AreEqual(3, tracker.GetModelLevel("openai", "gpt-4o")); // Completion $10.00 >= $3.00 -> High (3)
+            ClassicAssert.AreEqual(2, tracker.GetModelLevel("openai", "gpt-4o-mini")); // Completion $0.60 >= $0.50 -> Medium (2)
+            ClassicAssert.AreEqual(1, tracker.GetModelLevel("gemini", "gemini-2.0-flash-lite")); // Completion $0.30 < $0.50 -> Low (1)
+            ClassicAssert.AreEqual(1, tracker.GetModelLevel("deepseek", "deepseek-chat")); // Completion $0.28 < $0.50 -> Low (1)
+            ClassicAssert.AreEqual(1, tracker.GetModelLevel("openai-compatible", "local-llama")); // 本地免費 -> Low (1)
 
             req.PreferredModelId = null;
             req.MinFallbackLevel = "high"; // 等級 3
@@ -468,13 +470,13 @@ namespace RimLLM_Framework.Tests
                 if (firstAttempted == null) firstAttempted = p.ProviderId;
                 return Task.FromResult(new RimLLMGenerationResult { Text = "tier-ok" });
             }, LLMError.Unknown, "err");
-            Assert.AreEqual("P2", firstAttempted); // P1 (tier 2) 被跳過，只執行 P2 (tier 3)
+            ClassicAssert.AreEqual("P2", firstAttempted); // P1 (tier 2) 被跳過，只執行 P2 (tier 3)
 
             // 6. RoundRobin 路由策略 (Strategy = 2)
             settings.RoutingStrategy = 2;
             req.MinFallbackLevel = "low";
             var rrResult = await pipeline.ExecuteWithFallbackAsync(req, (p, m) => Task.FromResult(new RimLLMGenerationResult { Text = "rr-ok" }), LLMError.Unknown, "err");
-            Assert.AreEqual("rr-ok", rrResult.Text);
+            ClassicAssert.AreEqual("rr-ok", rrResult.Text);
 
             // 7. 非可重試例外直接跳往備援
             settings.RoutingStrategy = 0;
@@ -492,14 +494,17 @@ namespace RimLLM_Framework.Tests
                 p2Attempts++;
                 return Task.FromResult(new RimLLMGenerationResult { Text = "fallback-after-non-retry" });
             }, LLMError.Unknown, "err");
-            Assert.AreEqual(1, p1Attempts); // 非可重試不重試，直接中斷給下一個
-            Assert.AreEqual(1, p2Attempts);
+            ClassicAssert.AreEqual(1, p1Attempts); // 非可重試不重試，直接中斷給下一個
+            ClassicAssert.AreEqual(1, p2Attempts);
 
-            // 8. 管道輔助方法驗證
-            pipeline.RecordLatency("P1", 99);
-            Assert.IsTrue(pipeline.GetAverageLatency("P1") > 0);
+            // 8. ClearCooldowns 會清空健康帳本
+            ledger.RecordSuccess("P1:m1", 99);
+            ledger.RecordFailure("P1:m1", isRetryable: true);
+            ClassicAssert.IsTrue(ledger.IsInCooldown("P1:m1"));
+
             pipeline.ClearCooldowns();
-            Assert.IsFalse(pipeline.IsInCooldown("P1"));
+            ClassicAssert.IsFalse(ledger.IsInCooldown("P1:m1"));
+            ClassicAssert.AreEqual(0f, ledger.GetAverageLatency("P1:m1"));
         }
 
         [Test]
@@ -508,7 +513,7 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings();
             var manager = new RimLLMManager(settings);
             var pipeline = manager.ChatPipeline;
-            Assert.IsNotNull(pipeline);
+            ClassicAssert.IsNotNull(pipeline);
 
             // 1. null request throws ArgumentNullException
             Assert.ThrowsAsync<ArgumentNullException>(async () => await pipeline.GenerateAsync(null));
@@ -522,18 +527,18 @@ namespace RimLLM_Framework.Tests
 
             var mockReq = new RimLLMRequest { ModId = "test.mod" };
             var mockRes = await pipeline.GenerateAsync(mockReq);
-            Assert.IsNotNull(mockRes?.Text);
+            ClassicAssert.IsNotNull(mockRes?.Text);
 
             string streamedText = "";
             var streamRes = await pipeline.StreamAsync(mockReq, chunk => streamedText += chunk);
-            Assert.AreEqual(mockRes.Text, streamRes.Text);
-            Assert.AreEqual(mockRes.Text, streamedText);
+            ClassicAssert.AreEqual(mockRes.Text, streamRes.Text);
+            ClassicAssert.AreEqual(mockRes.Text, streamedText);
 
             // 3. ResponseType with SilentMocking returns "{}"
             settings.DailyAccumulatedCost = 2.0f;
             var objReq = new RimLLMRequest { ModId = "test.mod", ResponseType = typeof(NullableTestDataStructure) };
             var objRes = await pipeline.GenerateAsync(objReq);
-            Assert.AreEqual("{}", objRes.Text);
+            ClassicAssert.AreEqual("{}", objRes.Text);
 
             // 4. JSON Repair disabled throws RimLLMException
             settings.EnableJsonRepair = false;
@@ -543,8 +548,8 @@ namespace RimLLM_Framework.Tests
             settings.EnableJsonRepair = true;
             string markdownJson = "```json\n{\"Name\":\"repaired-str\",\"OptionalCount\":42}\n```";
             var parsed = pipeline.DeserializeStructured<NullableTestDataStructure>(markdownJson, objReq);
-            Assert.AreEqual("repaired-str", parsed.Name);
-            Assert.AreEqual(42, parsed.OptionalCount);
+            ClassicAssert.AreEqual("repaired-str", parsed.Name);
+            ClassicAssert.AreEqual(42, parsed.OptionalCount);
 
             // 6. Anti-abuse rate limiting trigger & cooldown
             settings.EnableAntiAbuse = true;
@@ -606,8 +611,8 @@ namespace RimLLM_Framework.Tests
             };
 
             var res = await pipeline.GenerateAsync(req);
-            Assert.IsNotNull(res);
-            Assert.IsTrue(res.Text.Contains("fallback-success"));
+            ClassicAssert.IsNotNull(res);
+            ClassicAssert.IsTrue(res.Text.Contains("fallback-success"));
 
             // 2. 結構化修復失敗時拋出 RimLLMException
             Assert.Throws<RimLLMException>(() => pipeline.DeserializeStructured<NullableTestDataStructure>("totally broken no json anywhere", req));
@@ -646,8 +651,8 @@ namespace RimLLM_Framework.Tests
 
             string finalStreamed = "";
             var streamGenResult = await pipeline.StreamAsync(streamRestartReq, chunk => finalStreamed += chunk);
-            Assert.AreEqual("fresh text after retry", streamGenResult.Text);
-            Assert.IsTrue(restarted);
+            ClassicAssert.AreEqual("fresh text after retry", streamGenResult.Text);
+            ClassicAssert.IsTrue(restarted);
         }
 
         [Test]
@@ -658,23 +663,23 @@ namespace RimLLM_Framework.Tests
 
             // 1. 定價精準匹配與前綴模糊匹配
             float exactCost = tracker.EstimateCost("openai", "gpt-4o", 1000000, 1000000, 0);
-            Assert.AreEqual(12.50f, exactCost, 0.01f);
+            ClassicAssert.AreEqual(12.50f, exactCost, 0.01f);
 
             float prefixCost = tracker.EstimateCost("openai", "gpt-4o-2024-11-20", 1000000, 1000000, 0);
-            Assert.AreEqual(12.50f, prefixCost, 0.01f);
+            ClassicAssert.AreEqual(12.50f, prefixCost, 0.01f);
 
             float geminiPrefixCost = tracker.EstimateCost("gemini", "gemini-2.0-flash-001", 1000000, 1000000, 0);
-            Assert.AreEqual(0.50f, geminiPrefixCost, 0.01f);
+            ClassicAssert.AreEqual(0.50f, geminiPrefixCost, 0.01f);
 
             // 2. 快取折扣計算
             float fullPromptCost = tracker.EstimateCost("gemini", "gemini-1.5-flash", 1000000, 0, 0);
             float cachedPromptCost = tracker.EstimateCost("gemini", "gemini-1.5-flash", 1000000, 0, 1000000);
-            Assert.IsTrue(cachedPromptCost < fullPromptCost);
-            Assert.AreEqual(fullPromptCost * 0.25f, cachedPromptCost, 0.001f);
+            ClassicAssert.IsTrue(cachedPromptCost < fullPromptCost);
+            ClassicAssert.AreEqual(fullPromptCost * 0.25f, cachedPromptCost, 0.001f);
 
             // 3. 未知模型回傳 0f
             float unknownCost = tracker.EstimateCost("unknown-prov", "unknown-model", 1000, 1000, 0);
-            Assert.AreEqual(0f, unknownCost);
+            ClassicAssert.AreEqual(0f, unknownCost);
 
             // 4. 預算政策審查
             settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
@@ -684,25 +689,25 @@ namespace RimLLM_Framework.Tests
             // Policy 0 = HardBlock
             settings.BudgetPolicy = 0;
             bool ok = await tracker.CheckBudgetLimitAsync(new RimLLMRequest { ModId = "t" });
-            Assert.IsFalse(ok);
+            ClassicAssert.IsFalse(ok);
 
             // Policy 1 = SilentMocking
             settings.BudgetPolicy = 1;
             ok = await tracker.CheckBudgetLimitAsync(new RimLLMRequest { ModId = "t" });
-            Assert.IsTrue(ok);
-            Assert.IsTrue(tracker.IsBudgetMocked(new RimLLMRequest { ModId = "t" }, out string mockStr));
-            Assert.IsNotNull(mockStr);
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.IsTrue(tracker.IsBudgetMocked(new RimLLMRequest { ModId = "t" }, out string mockStr));
+            ClassicAssert.IsNotNull(mockStr);
 
             // Policy 2 = FallbackToFree
             settings.BudgetPolicy = 2;
             ok = await tracker.CheckBudgetLimitAsync(new RimLLMRequest { ModId = "t" });
-            Assert.IsTrue(ok);
+            ClassicAssert.IsTrue(ok);
 
             // 5. 跨天重置
             settings.DailyBudgetResetDate = "2000-01-01";
             tracker.CheckDailyReset();
-            Assert.AreEqual(0f, settings.DailyAccumulatedCost);
-            Assert.AreEqual(DateTime.Today.ToString("yyyy-MM-dd"), settings.DailyBudgetResetDate);
+            ClassicAssert.AreEqual(0f, settings.DailyAccumulatedCost);
+            ClassicAssert.AreEqual(DateTime.Today.ToString("yyyy-MM-dd"), settings.DailyBudgetResetDate);
         }
 
 #pragma warning disable CS0649

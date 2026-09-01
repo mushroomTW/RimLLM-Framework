@@ -142,9 +142,21 @@ namespace RimLLM_Framework
         string DailyBudgetResetDate { get; set; }
 
         /// <summary>
-        /// 智慧路由與負載均衡策略 (0=PriorityFailover, 1=MinLatency, 2=RoundRobin)。
+        /// 智慧路由與負載均衡策略 (0=PriorityFailover, 1=MinLatency, 2=RoundRobin, 3=LowestCost)。
         /// </summary>
         int RoutingStrategy { get; set; }
+
+        /// <summary>
+        /// 是否啟用相同請求的回應快取。
+        /// 啟用後逐字相同的請求會直接回傳先前的結果，不發出 API 呼叫、不產生費用；
+        /// 代價是相同輸入必然得到相同輸出。
+        /// </summary>
+        bool EnableResponseCache { get; set; }
+
+        /// <summary>
+        /// 回應快取的存活時間 (分鐘)。非正值等同停用。
+        /// </summary>
+        float ResponseCacheTtlMinutes { get; set; }
 
         /// <summary>
         /// 是否啟用原生 JSON Schema 強制執行。

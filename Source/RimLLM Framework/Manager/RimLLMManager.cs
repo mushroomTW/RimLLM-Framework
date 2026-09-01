@@ -77,7 +77,8 @@ namespace RimLLM_Framework.Manager
                 settings,
                 requestQueue,
                 _fallbackPipeline,
-                _usageTracker);
+                _usageTracker,
+                new RimLLMResponseCache(settings));
 
             // 初始化並註冊內建供應商
             RegisterBuiltInProvider(new OpenAIProvider(settings));

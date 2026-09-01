@@ -1,5 +1,6 @@
 extern alias bclasync;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.AI;
@@ -30,10 +31,10 @@ namespace RimLLM_Framework.Tests
                 LatencyMs = 150
             };
             manager.RequestLogs.Enqueue(entry);
-            Assert.AreEqual(1, manager.RequestLogs.Count);
+            ClassicAssert.AreEqual(1, manager.RequestLogs.Count);
             
             manager.ClearLogs();
-            Assert.AreEqual(0, manager.RequestLogs.Count);
+            ClassicAssert.AreEqual(0, manager.RequestLogs.Count);
         }
 
         [Test]
@@ -43,17 +44,17 @@ namespace RimLLM_Framework.Tests
             settings.SetApiKey("TestProvider", "key-a, key-b; key-c");
             
             // 驗證輪詢邏輯 (多個以逗號或分號分隔的 key 會循環回傳)
-            Assert.AreEqual("key-a", settings.GetActiveApiKey("TestProvider"));
-            Assert.AreEqual("key-b", settings.GetActiveApiKey("TestProvider"));
-            Assert.AreEqual("key-c", settings.GetActiveApiKey("TestProvider"));
-            Assert.AreEqual("key-a", settings.GetActiveApiKey("TestProvider")); // 繞回第一個金鑰
+            ClassicAssert.AreEqual("key-a", settings.GetActiveApiKey("TestProvider"));
+            ClassicAssert.AreEqual("key-b", settings.GetActiveApiKey("TestProvider"));
+            ClassicAssert.AreEqual("key-c", settings.GetActiveApiKey("TestProvider"));
+            ClassicAssert.AreEqual("key-a", settings.GetActiveApiKey("TestProvider")); // 繞回第一個金鑰
         }
 
         [Test]
         public void TestSettingsDefaultRoutingStrategy()
         {
             var settings = new RimLLMFrameworkSettings();
-            Assert.AreEqual(2, settings.RoutingStrategy);
+            ClassicAssert.AreEqual(2, settings.RoutingStrategy);
         }
 
         [Test]
@@ -63,51 +64,51 @@ namespace RimLLM_Framework.Tests
             var manager = new RimLLMManager(mockSettings);
 
             // 1. 初始狀態應該是 0
-            Assert.AreEqual(0, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(0, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(0f, mockSettings.TotalEstimatedCost);
+            ClassicAssert.AreEqual(0, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(0, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(0f, mockSettings.TotalEstimatedCost);
 
             // 2. 未知或未維護精確費率的模型只累計 tokens，金額估算為 0。
             manager.RecordUsage("CustomProvider", "custom-unlisted-model", 100000, 50000);
 
-            Assert.AreEqual(100000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(50000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(0f, mockSettings.TotalEstimatedCost);
+            ClassicAssert.AreEqual(100000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(50000, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(0f, mockSettings.TotalEstimatedCost);
 
             // 3. 已知精確費率模型累計估算金額。
             manager.RecordUsage("Gemini", "gemini-2.5-flash", 1000000, 1000000);
 
-            Assert.AreEqual(1100000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(1050000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(2.80f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(1100000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(1050000, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(2.80f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             // 4. Gemini 模型若帶官方 models/ 前綴也能正規化。
             manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 1000000);
 
-            Assert.AreEqual(2100000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(2050000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(5.60f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(2100000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(2050000, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(5.60f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             manager.RecordUsage("Gemini", "gemini-3.5-flash", 1000000, 1000000);
 
-            Assert.AreEqual(3100000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(3050000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(16.10f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(3100000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(3050000, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(16.10f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             manager.RecordUsage("DeepSeek", "deepseek-v4-flash", 1000000, 1000000);
-            Assert.AreEqual(4100000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(4050000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(16.52f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(4100000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(4050000, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(16.52f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             manager.RecordUsage("Groq", "llama-3.3-70b-versatile", 1000000, 1000000);
-            Assert.AreEqual(5100000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(5050000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(17.90f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(5100000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(5050000, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(17.90f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             manager.RecordUsage("MiniMax", "MiniMax-M3", 1000000, 1000000);
-            Assert.AreEqual(6100000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(6050000, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(19.40f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(6100000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(6050000, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(19.40f, mockSettings.TotalEstimatedCost, 0.0001f);
         }
 
         [Test]
@@ -120,23 +121,23 @@ namespace RimLLM_Framework.Tests
             // Gemini：輸入價 $0.3/M，cache read 折扣 0.25x。
             // 1,000,000 輸入中有 800,000 為快取命中 → 200,000*0.3 + 800,000*0.3*0.25 = $0.06 + $0.06 = $0.12
             manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 0, 800000);
-            Assert.AreEqual(1000000, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(0.12f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(1000000, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(0.12f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             // 對照組：相同輸入但完全無快取應為 $0.30。
             mockSettings.TotalEstimatedCost = 0f;
             manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 0, 0);
-            Assert.AreEqual(0.30f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(0.30f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             // 防呆：cachedPromptTokens 超過 promptTokens 時應被夾到上限，不會出現負值或溢出。
             mockSettings.TotalEstimatedCost = 0f;
             manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 0, 5000000);
             // 全部視為快取命中：1,000,000 * 0.30/M * 0.25 = $0.075
-            Assert.AreEqual(0.075f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(0.075f, mockSettings.TotalEstimatedCost, 0.0001f);
 
             mockSettings.TotalEstimatedCost = 0f;
             manager.RecordUsage("DeepSeek", "deepseek-v4-flash", 1000000, 0, 1000000);
-            Assert.AreEqual(0.0028f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(0.0028f, mockSettings.TotalEstimatedCost, 0.0001f);
         }
 
         [Test]
@@ -154,9 +155,9 @@ namespace RimLLM_Framework.Tests
             manager.ResetUsage();
 
             // 3. 應該歸零
-            Assert.AreEqual(0, mockSettings.TotalPromptTokens);
-            Assert.AreEqual(0, mockSettings.TotalCompletionTokens);
-            Assert.AreEqual(0f, mockSettings.TotalEstimatedCost);
+            ClassicAssert.AreEqual(0, mockSettings.TotalPromptTokens);
+            ClassicAssert.AreEqual(0, mockSettings.TotalCompletionTokens);
+            ClassicAssert.AreEqual(0f, mockSettings.TotalEstimatedCost);
         }
 
         [Test]
@@ -173,8 +174,8 @@ namespace RimLLM_Framework.Tests
             tracker.CheckDailyReset();
 
             string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
-            Assert.AreEqual(todayStr, mockSettings.DailyBudgetResetDate);
-            Assert.AreEqual(0f, mockSettings.DailyAccumulatedCost);
+            ClassicAssert.AreEqual(todayStr, mockSettings.DailyBudgetResetDate);
+            ClassicAssert.AreEqual(0f, mockSettings.DailyAccumulatedCost);
         }
 
         [Test]
@@ -206,16 +207,16 @@ namespace RimLLM_Framework.Tests
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
 
             // 呼叫 3 次應該都成功
-            Assert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
-            Assert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
-            Assert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
+            ClassicAssert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
+            ClassicAssert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
+            ClassicAssert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
 
             // 第 4 次呼叫超出頻率限制，預期觸發 RateLimit 錯誤
             var ex = Assert.Throws<RimLLMException>(() =>
             {
                 client.GetResponseAsync(messages).GetAwaiter().GetResult();
             });
-            Assert.AreEqual(LLMError.RateLimit, ex.Error);
+            ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error);
         }
 
         [Test]
@@ -250,7 +251,7 @@ namespace RimLLM_Framework.Tests
             {
                 client.GetResponseAsync(messages).GetAwaiter().GetResult();
             });
-            Assert.AreEqual(LLMError.QuotaExceeded, ex.Error);
+            ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex.Error);
         }
 
         [Test]
@@ -282,13 +283,13 @@ namespace RimLLM_Framework.Tests
             // 1. 一般文字請求
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
             string resText = client.GetResponseAsync(messages).GetAwaiter().GetResult().Text;
-            Assert.IsTrue(resText.Contains("沉思") || resText.Contains("resting") || resText.Contains("thinking") || resText.Contains("REST"));
+            ClassicAssert.IsTrue(resText.Contains("沉思") || resText.Contains("resting") || resText.Contains("thinking") || resText.Contains("REST"));
 
             // 2. 結構化輸出請求，預期回傳空 JSON "{}"
             var resObj = client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult();
-            Assert.IsNotNull(resObj);
-            Assert.AreEqual(100, resObj.Value);
-            Assert.AreEqual("default", resObj.Message);
+            ClassicAssert.IsNotNull(resObj);
+            ClassicAssert.AreEqual(100, resObj.Value);
+            ClassicAssert.AreEqual("default", resObj.Message);
         }
 
         [Test]
@@ -306,11 +307,11 @@ namespace RimLLM_Framework.Tests
                 store.ChatHistory.Add("SENTINEL-CONVERSATION-CONTENT");
                 store.Save();
 
-                Assert.IsFalse(System.IO.File.Exists(path + ".tmp"),
+                ClassicAssert.IsFalse(System.IO.File.Exists(path + ".tmp"),
                     "遙測寫入必須先寫暫存檔再原子替換，不得留下 .tmp");
 
                 string raw = System.IO.File.ReadAllText(path);
-                Assert.IsFalse(raw.Contains("SENTINEL-CONVERSATION-CONTENT"),
+                ClassicAssert.IsFalse(raw.Contains("SENTINEL-CONVERSATION-CONTENT"),
                     "對話歷史不得以明文寫入遙測檔");
 
                 var reloaded = new RimLLMTelemetryStore();
@@ -345,7 +346,7 @@ namespace RimLLM_Framework.Tests
                 var reloaded = new RimLLMTelemetryStore();
                 reloaded.Load();
 
-                Assert.AreEqual(1234, reloaded.TotalPromptTokens,
+                ClassicAssert.AreEqual(1234, reloaded.TotalPromptTokens,
                     "主檔損毀時應改由備份檔還原");
             }
             finally
@@ -373,11 +374,11 @@ namespace RimLLM_Framework.Tests
                 var store = new RimLLMTelemetryStore();
                 store.Load();
                 CollectionAssert.Contains(store.ChatHistory, "LEGACY-PLAINTEXT-LINE");
-                Assert.IsTrue(store.IsDirty, "讀到舊版明文歷史後應標記為待重寫以完成加密遷移");
+                ClassicAssert.IsTrue(store.IsDirty, "讀到舊版明文歷史後應標記為待重寫以完成加密遷移");
 
                 store.Save();
                 string raw = System.IO.File.ReadAllText(path);
-                Assert.IsFalse(raw.Contains("LEGACY-PLAINTEXT-LINE"),
+                ClassicAssert.IsFalse(raw.Contains("LEGACY-PLAINTEXT-LINE"),
                     "遷移後舊版明文歷史必須從磁碟消失");
             }
             finally
@@ -398,15 +399,15 @@ namespace RimLLM_Framework.Tests
             tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", true, "", 100);
             tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", false, "Error", 100);
 
-            Assert.IsTrue(tracker.ProviderStatistics.TryGetValue("Gemini", out var stats));
-            Assert.AreEqual(3, stats.TotalCount);
-            Assert.AreEqual(2, stats.SuccessCount);
-            Assert.AreEqual(1, stats.FailureCount);
-            Assert.AreEqual(2.0f / 3.0f, stats.SuccessRate, 0.001f);
+            ClassicAssert.IsTrue(tracker.ProviderStatistics.TryGetValue("Gemini", out var stats));
+            ClassicAssert.AreEqual(3, stats.TotalCount);
+            ClassicAssert.AreEqual(2, stats.SuccessCount);
+            ClassicAssert.AreEqual(1, stats.FailureCount);
+            ClassicAssert.AreEqual(2.0f / 3.0f, stats.SuccessRate, 0.001f);
 
             // 2. 清空日誌後應清空統計
             tracker.ClearLogs();
-            Assert.AreEqual(0, tracker.ProviderStatistics.Count);
+            ClassicAssert.AreEqual(0, tracker.ProviderStatistics.Count);
         }
 
         /// <summary>
@@ -437,10 +438,10 @@ namespace RimLLM_Framework.Tests
                 seed.Save();
 
                 var settings = new RimLLMFrameworkSettings();
-                Assert.AreEqual(1, settings.RequestLogs.Count, "設定應從遙測檔載回既有請求歷史");
+                ClassicAssert.AreEqual(1, settings.RequestLogs.Count, "設定應從遙測檔載回既有請求歷史");
 
                 var tracker = new RimLLMUsageTracker(settings);
-                Assert.AreEqual(1, tracker.RequestLogs.Count, "UsageTracker 應把已保存的請求歷史放回記憶體佇列");
+                ClassicAssert.AreEqual(1, tracker.RequestLogs.Count, "UsageTracker 應把已保存的請求歷史放回記憶體佇列");
             }
             finally
             {

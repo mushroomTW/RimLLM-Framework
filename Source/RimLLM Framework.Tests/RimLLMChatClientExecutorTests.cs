@@ -2,6 +2,7 @@ extern alias bclasync;
 extern alias ste;
 
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -35,15 +36,15 @@ namespace RimLLM_Framework.Tests
             var result = RimLLMChatClientExecutor.GenerateAsync(
                 client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult();
 
-            Assert.AreEqual("hello", result.Text);
-            Assert.AreEqual(1, client.ReceivedOptions.Count);
-            Assert.AreEqual("gpt-test", client.ReceivedOptions[0].ModelId);
-            Assert.AreEqual(0.2f, client.ReceivedOptions[0].Temperature);
-            Assert.AreEqual(256, client.ReceivedOptions[0].MaxOutputTokens);
+            ClassicAssert.AreEqual("hello", result.Text);
+            ClassicAssert.AreEqual(1, client.ReceivedOptions.Count);
+            ClassicAssert.AreEqual("gpt-test", client.ReceivedOptions[0].ModelId);
+            ClassicAssert.AreEqual(0.2f, client.ReceivedOptions[0].Temperature);
+            ClassicAssert.AreEqual(256, client.ReceivedOptions[0].MaxOutputTokens);
             var messages = new List<ChatMessage>(client.ReceivedMessages[0]);
-            Assert.AreEqual(2, messages.Count);
-            Assert.AreEqual(ChatRole.System, messages[0].Role);
-            Assert.AreEqual(ChatRole.User, messages[1].Role);
+            ClassicAssert.AreEqual(2, messages.Count);
+            ClassicAssert.AreEqual(ChatRole.System, messages[0].Role);
+            ClassicAssert.AreEqual(ChatRole.User, messages[1].Role);
         }
 
         [Test]
@@ -65,8 +66,8 @@ namespace RimLLM_Framework.Tests
                 client, request, "gpt-test", useNativeSchema: true, "OpenAI", 30f).GetAwaiter().GetResult();
 
             ChatOptions options = client.ReceivedOptions[0];
-            Assert.IsNotNull(options.ResponseFormat);
-            Assert.IsTrue((bool)options.AdditionalProperties["strict"]);
+            ClassicAssert.IsNotNull(options.ResponseFormat);
+            ClassicAssert.IsTrue((bool)options.AdditionalProperties["strict"]);
         }
 
         [Test]
@@ -89,8 +90,8 @@ namespace RimLLM_Framework.Tests
 
             // 與 raw 路徑一致：含 Dictionary 的型別仍送出 response_format，
             // 但 strict 關閉，否則服務端會拒絕開放式 map。
-            Assert.IsNotNull(client.ReceivedOptions[0].ResponseFormat);
-            Assert.IsFalse((bool)client.ReceivedOptions[0].AdditionalProperties["strict"]);
+            ClassicAssert.IsNotNull(client.ReceivedOptions[0].ResponseFormat);
+            ClassicAssert.IsFalse((bool)client.ReceivedOptions[0].AdditionalProperties["strict"]);
         }
 
         [Test]
@@ -115,7 +116,7 @@ namespace RimLLM_Framework.Tests
             var result = RimLLMChatClientExecutor.GenerateAsync(
                 client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult();
 
-            Assert.AreEqual("<think>\nstep one\n</think>\n\nfinal answer", result.Text);
+            ClassicAssert.AreEqual("<think>\nstep one\n</think>\n\nfinal answer", result.Text);
         }
 
         [Test]
@@ -141,8 +142,8 @@ namespace RimLLM_Framework.Tests
                     options.Temperature = 0.9f;
                 }).GetAwaiter().GetResult();
 
-            Assert.IsTrue(invoked);
-            Assert.AreEqual(0.9f, client.ReceivedOptions[0].Temperature);
+            ClassicAssert.IsTrue(invoked);
+            ClassicAssert.AreEqual(0.9f, client.ReceivedOptions[0].Temperature);
         }
 
         [Test]
@@ -163,7 +164,7 @@ namespace RimLLM_Framework.Tests
                 RimLLMChatClientExecutor.GenerateAsync(
                     client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult());
 
-            Assert.AreEqual(LLMError.InvalidResponse, ex.Error);
+            ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
         }
 
         [Test]
@@ -184,7 +185,7 @@ namespace RimLLM_Framework.Tests
                 RimLLMChatClientExecutor.GenerateAsync(
                     client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult());
 
-            Assert.AreEqual(LLMError.RateLimit, ex.Error);
+            ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error);
         }
 
         [Test]
@@ -220,11 +221,11 @@ namespace RimLLM_Framework.Tests
                 client, request, "gpt-test", useNativeSchema: false, "OpenAI",
                 chunks.Add, 30f).GetAwaiter().GetResult();
 
-            Assert.AreEqual("<think>", chunks[0]);
-            Assert.AreEqual("think a", chunks[1]);
-            Assert.AreEqual("think b", chunks[2]);
-            Assert.AreEqual("</think>", chunks[3]);
-            Assert.AreEqual("answer", chunks[4]);
+            ClassicAssert.AreEqual("<think>", chunks[0]);
+            ClassicAssert.AreEqual("think a", chunks[1]);
+            ClassicAssert.AreEqual("think b", chunks[2]);
+            ClassicAssert.AreEqual("</think>", chunks[3]);
+            ClassicAssert.AreEqual("answer", chunks[4]);
         }
 
         [Test]
@@ -257,7 +258,7 @@ namespace RimLLM_Framework.Tests
                 client, request, "gpt-test", useNativeSchema: false, "OpenAI",
                 chunks.Add, 30f).GetAwaiter().GetResult();
 
-            Assert.AreEqual("hi", string.Concat(chunks));
+            ClassicAssert.AreEqual("hi", string.Concat(chunks));
         }
     }
 
@@ -357,14 +358,14 @@ namespace RimLLM_Framework.Tests
         public void TestEffectiveSystemPrompt_PrefersCombined()
         {
             var r = new RimLLMRequest { SystemPrompt = "sys", CachedContext = "cache" };
-            Assert.AreEqual("sys\n\ncache", r.GetEffectiveSystemPrompt());
+            ClassicAssert.AreEqual("sys\n\ncache", r.GetEffectiveSystemPrompt());
         }
 
         [Test]
         public void TestEffectiveSystemPrompt_FallsBackToCachedContext()
         {
             var r = new RimLLMRequest { CachedContext = "cache" };
-            Assert.AreEqual("cache", r.GetEffectiveSystemPrompt());
+            ClassicAssert.AreEqual("cache", r.GetEffectiveSystemPrompt());
         }
 
         [Test]
@@ -373,9 +374,9 @@ namespace RimLLM_Framework.Tests
             var r = new RimLLMRequest { ModId = "m", Temperature = 0.3f, ReasoningEffort = ReasoningEffort.High };
             var c = r.Clone();
             c.Temperature = 0.9f;
-            Assert.AreEqual(0.3f, r.Temperature);
-            Assert.AreEqual(ReasoningEffort.High, r.ReasoningEffort);
-            Assert.AreEqual("m", c.ModId);
+            ClassicAssert.AreEqual(0.3f, r.Temperature);
+            ClassicAssert.AreEqual(ReasoningEffort.High, r.ReasoningEffort);
+            ClassicAssert.AreEqual("m", c.ModId);
         }
     }
 }

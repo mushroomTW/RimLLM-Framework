@@ -5,6 +5,7 @@ using Google.GenAI;
 using Google.GenAI.Types;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using OpenAI.Chat;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
@@ -21,36 +22,69 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void OfficialProviderAssembliesCanBeLoaded()
         {
-            Assert.IsNotNull(typeof(Client).Assembly, "Google.GenAI assembly 應可載入。");
-            Assert.IsNotNull(typeof(IChatClient).Assembly, "Microsoft.Extensions.AI assembly 應可載入。");
-            Assert.IsNotNull(typeof(ChatClient).Assembly, "OpenAI assembly 應可載入。");
+            ClassicAssert.IsNotNull(typeof(Client).Assembly, "Google.GenAI assembly 應可載入。");
+            ClassicAssert.IsNotNull(typeof(IChatClient).Assembly, "Microsoft.Extensions.AI assembly 應可載入。");
+            ClassicAssert.IsNotNull(typeof(ChatClient).Assembly, "OpenAI assembly 應可載入。");
         }
 
         [Test]
         public void RimWorldAssembliesIncludeRequiredValueTupleRuntimeAssembly()
         {
             string assemblyPath = FindWorkspaceAssembly("System.ValueTuple.dll");
-            Assert.IsNotNull(assemblyPath, "RimWorld Mod Assemblies 應包含 System.ValueTuple.dll。");
+            ClassicAssert.IsNotNull(assemblyPath, "RimWorld Mod Assemblies 應包含 System.ValueTuple.dll。");
 
             AssemblyName assemblyName = AssemblyName.GetAssemblyName(assemblyPath);
-            Assert.AreEqual(new Version(4, 0, 5, 0), assemblyName.Version);
+            ClassicAssert.AreEqual(new Version(4, 0, 5, 0), assemblyName.Version);
         }
 
         [Test]
         public void MicrosoftExtensionsAiAssemblyCanBeReflectedWithoutTypeLoadFailures()
         {
             string assemblyPath = FindWorkspaceAssembly("Microsoft.Extensions.AI.dll");
-            Assert.IsNotNull(assemblyPath, "RimWorld Mod Assemblies 應包含 Microsoft.Extensions.AI.dll。");
+            ClassicAssert.IsNotNull(assemblyPath, "RimWorld Mod Assemblies 應包含 Microsoft.Extensions.AI.dll。");
 
             Assembly assembly = Assembly.LoadFrom(assemblyPath);
             try
             {
-                Assert.IsNotEmpty(assembly.GetTypes());
+                ClassicAssert.IsNotEmpty(assembly.GetTypes());
             }
             catch (ReflectionTypeLoadException exception)
             {
                 Assert.Fail(
                     "Microsoft.Extensions.AI.dll 反射載入失敗：" +
+                    string.Join(
+                        "\n",
+                        Array.ConvertAll(
+                            exception.LoaderExceptions,
+                            loaderException => loaderException?.Message ?? "未知載入例外")));
+            }
+        }
+
+        [Test]
+        public void ResponseCacheStoreAssemblyShipsWithMatchingAbstractionsVersion()
+        {
+            string implementationPath = FindWorkspaceAssembly("Microsoft.Extensions.Caching.Memory.dll");
+            ClassicAssert.IsNotNull(implementationPath, "RimWorld Mod Assemblies 應包含 Microsoft.Extensions.Caching.Memory.dll。");
+
+            string abstractionsPath = FindWorkspaceAssembly("Microsoft.Extensions.Caching.Abstractions.dll");
+            ClassicAssert.IsNotNull(abstractionsPath, "RimWorld Mod Assemblies 應包含 Microsoft.Extensions.Caching.Abstractions.dll。");
+
+            // RimWorld 把所有 Mod 載入同一個 AppDomain，抽象層與實作層的組件版本一旦漂開
+            // 就會在遊戲內炸開，而這在開發端完全看不出來。
+            ClassicAssert.AreEqual(
+                AssemblyName.GetAssemblyName(abstractionsPath).Version,
+                AssemblyName.GetAssemblyName(implementationPath).Version,
+                "Caching 抽象層與實作層的組件版本必須一致。");
+
+            Assembly assembly = Assembly.LoadFrom(implementationPath);
+            try
+            {
+                ClassicAssert.IsNotEmpty(assembly.GetTypes());
+            }
+            catch (ReflectionTypeLoadException exception)
+            {
+                Assert.Fail(
+                    "Microsoft.Extensions.Caching.Memory.dll 反射載入失敗：" +
                     string.Join(
                         "\n",
                         Array.ConvertAll(
@@ -85,12 +119,12 @@ namespace RimLLM_Framework.Tests
                 "unit-test-model",
                 "https://example.invalid/v1/chat/completions"))
             {
-                Assert.IsNotNull(openAiClient);
+                ClassicAssert.IsNotNull(openAiClient);
             }
 
             using (IChatClient geminiClient = GeminiProvider.CreateGeminiChatClient("unit-test-key", "gemini-2.5-flash"))
             {
-                Assert.IsNotNull(geminiClient);
+                ClassicAssert.IsNotNull(geminiClient);
             }
         }
 
@@ -109,7 +143,7 @@ namespace RimLLM_Framework.Tests
         {
             Schema schema = Schema.FromJson(RimLLMSchemaBuilder.BuildJson(typeof(StructuredResponse), RimLLMSchemaProfile.Gemini));
 
-            Assert.IsNotNull(schema);
+            ClassicAssert.IsNotNull(schema);
         }
 
         /// <summary>
@@ -146,7 +180,7 @@ namespace RimLLM_Framework.Tests
                 rawJson,
                 type.Name + " 的 MEAI 輸出應含可為 null 的聯集型別，這正是 Gemini 無法解析的形狀。");
 
-            Assert.IsNull(
+            ClassicAssert.IsNull(
                 Schema.FromJson(rawJson),
                 type.Name + " 的 MEAI 原始輸出不應能轉成 Google.GenAI 的 Schema（FromJson 失敗時回傳 null）。");
         }
@@ -154,10 +188,10 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void OpenAiEndpointNormalizationRemainsNet472Compatible()
         {
-            Assert.AreEqual(
+            ClassicAssert.AreEqual(
                 "https://example.invalid/v1",
                 OpenAIProvider.NormalizeEndpoint(" https://example.invalid/v1/chat/completions/ "));
-            Assert.IsNull(OpenAIProvider.NormalizeEndpoint(null));
+            ClassicAssert.IsNull(OpenAIProvider.NormalizeEndpoint(null));
         }
 
         [Test]
@@ -191,15 +225,15 @@ namespace RimLLM_Framework.Tests
             task.GetAwaiter().GetResult();
             var config = (GenerateContentConfig)task.GetType().GetProperty("Result").GetValue(task, null);
 
-            Assert.AreEqual(0.25d, config.Temperature);
-            Assert.AreEqual(321, config.MaxOutputTokens);
-            Assert.AreEqual("application/json", config.ResponseMimeType);
-            Assert.IsNotNull(config.ResponseSchema);
-            Assert.IsNotNull(config.SystemInstruction);
-            Assert.AreEqual("你是測試用助手。", config.SystemInstruction.Parts[0].Text);
-            Assert.IsNotNull(config.ThinkingConfig);
-            Assert.AreEqual(4096, config.ThinkingConfig.ThinkingBudget);
-            Assert.IsTrue(config.ThinkingConfig.IncludeThoughts);
+            ClassicAssert.AreEqual(0.25d, config.Temperature);
+            ClassicAssert.AreEqual(321, config.MaxOutputTokens);
+            ClassicAssert.AreEqual("application/json", config.ResponseMimeType);
+            ClassicAssert.IsNotNull(config.ResponseSchema);
+            ClassicAssert.IsNotNull(config.SystemInstruction);
+            ClassicAssert.AreEqual("你是測試用助手。", config.SystemInstruction.Parts[0].Text);
+            ClassicAssert.IsNotNull(config.ThinkingConfig);
+            ClassicAssert.AreEqual(4096, config.ThinkingConfig.ThinkingBudget);
+            ClassicAssert.IsTrue(config.ThinkingConfig.IncludeThoughts);
         }
 
         /// <summary>
@@ -232,7 +266,7 @@ namespace RimLLM_Framework.Tests
         private static System.Collections.Generic.List<string> ReferencedAssemblyNames(string fileName)
         {
             string assemblyPath = FindWorkspaceAssembly(fileName);
-            Assert.IsNotNull(assemblyPath, "RimWorld Mod Assemblies 應包含 " + fileName + "。");
+            ClassicAssert.IsNotNull(assemblyPath, "RimWorld Mod Assemblies 應包含 " + fileName + "。");
 
             var names = new System.Collections.Generic.List<string>();
             foreach (AssemblyName reference in Assembly.ReflectionOnlyLoadFrom(assemblyPath).GetReferencedAssemblies())
@@ -249,10 +283,10 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings();
             settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
 
-            Assert.AreEqual(
+            ClassicAssert.AreEqual(
                 RimLLMSchemaProfile.Gemini,
                 new GeminiProvider(settings).Capabilities.PreferredSchemaProfile);
-            Assert.AreEqual(
+            ClassicAssert.AreEqual(
                 RimLLMSchemaProfile.OpenAI,
                 new OpenAIProvider(settings).Capabilities.PreferredSchemaProfile,
                 "OpenAI 家族沿用預設方言。");
@@ -266,11 +300,11 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void GeminiNativeConfigAcceptsSchemaWithNullableMember()
         {
-            Assert.IsNotNull(
+            ClassicAssert.IsNotNull(
                 BuildGeminiResponseSchema(RimLLMSchemaProfile.Gemini),
                 "Gemini 方言的 schema 應能建立 ResponseSchema。");
 
-            Assert.IsNull(
+            ClassicAssert.IsNull(
                 BuildGeminiResponseSchema(RimLLMSchemaProfile.OpenAI),
                 "反向對照：OpenAI 方言的聯集型別會讓 Gemini 靜默收不到 schema —— 方言接線斷掉時就會變成這樣。");
         }
@@ -309,30 +343,30 @@ namespace RimLLM_Framework.Tests
             var manager = new RimLLMManager(settings);
 
             LLMProviderCapabilities openAi = manager.GetProviderCapabilities(ProviderIds.OpenAI);
-            Assert.IsTrue(openAi.SupportsNativeStructuredOutput);
-            Assert.IsTrue(openAi.SupportsStreaming);
-            Assert.IsTrue(openAi.SupportsUsageMetadata);
+            ClassicAssert.IsTrue(openAi.SupportsNativeStructuredOutput);
+            ClassicAssert.IsTrue(openAi.SupportsStreaming);
+            ClassicAssert.IsTrue(openAi.SupportsUsageMetadata);
 
             LLMProviderCapabilities gemini = manager.GetProviderCapabilities(ProviderIds.Gemini);
-            Assert.IsTrue(gemini.SupportsNativeStructuredOutput);
-            Assert.IsTrue(gemini.SupportsStreaming);
-            Assert.IsTrue(gemini.SupportsUsageMetadata);
+            ClassicAssert.IsTrue(gemini.SupportsNativeStructuredOutput);
+            ClassicAssert.IsTrue(gemini.SupportsStreaming);
+            ClassicAssert.IsTrue(gemini.SupportsUsageMetadata);
 
             LLMProviderCapabilities unknown = manager.GetProviderCapabilities("missing-provider");
-            Assert.IsFalse(unknown.SupportsNativeStructuredOutput);
-            Assert.IsFalse(unknown.SupportsStreaming);
+            ClassicAssert.IsFalse(unknown.SupportsNativeStructuredOutput);
+            ClassicAssert.IsFalse(unknown.SupportsStreaming);
 
             // 所有內建 provider 一律走官方 SDK（OpenAI / Google.GenAI）+ MEAI，
             // 不再保留 raw HTTP 對話路徑。
             settings.ApiKeys["OpenAI"] = "mock-key";
             settings.ApiKeys["Gemini"] = "mock-key";
             var sdkOpenAi = new TestOpenAIProvider(settings);
-            Assert.IsNotNull(sdkOpenAi.CreateChatClient("gpt-4o"));
-            Assert.IsTrue(sdkOpenAi.Capabilities.SupportsNativeStructuredOutput);
+            ClassicAssert.IsNotNull(sdkOpenAi.CreateChatClient("gpt-4o"));
+            ClassicAssert.IsTrue(sdkOpenAi.Capabilities.SupportsNativeStructuredOutput);
 
             var sdkGemini = new TestGeminiProvider(settings);
-            Assert.IsNotNull(sdkGemini.CreateChatClient("gemini-1.5-pro"));
-            Assert.IsTrue(sdkGemini.Capabilities.SupportsNativeStructuredOutput);
+            ClassicAssert.IsNotNull(sdkGemini.CreateChatClient("gemini-1.5-pro"));
+            ClassicAssert.IsTrue(sdkGemini.Capabilities.SupportsNativeStructuredOutput);
         }
 
         [Test]
@@ -342,11 +376,11 @@ namespace RimLLM_Framework.Tests
             var manager = new RimLLMManager(settings);
             RimLLMProvider.Initialize(manager);
             IChatClient client = RimLLMProvider.CreateChatClient("sdk.integration.test");
-            Assert.IsNotNull(client);
-            Assert.IsInstanceOf<RimLLMChatClient>(client);
+            ClassicAssert.IsNotNull(client);
+            ClassicAssert.IsInstanceOf<RimLLMChatClient>(client);
             ChatClientMetadata metadata = client.GetService<ChatClientMetadata>();
-            Assert.IsNotNull(metadata);
-            Assert.AreEqual("RimLLM", metadata.ProviderName);
+            ClassicAssert.IsNotNull(metadata);
+            ClassicAssert.AreEqual("RimLLM", metadata.ProviderName);
         }
 
         [Test]
@@ -357,7 +391,7 @@ namespace RimLLM_Framework.Tests
             RimLLMProvider.Initialize(manager);
 
             // 已移除呼叫者組件驗證：任何 modId 都能直接取得 client，不需事先註冊。
-            Assert.IsNotNull(RimLLMProvider.CreateChatClient("never.registered"));
+            ClassicAssert.IsNotNull(RimLLMProvider.CreateChatClient("never.registered"));
 
             // modId 仍為必填，因為防濫用節流與遙測歸屬都以它為鍵。
             Assert.Throws<ArgumentException>(() => RimLLMProvider.CreateChatClient(string.Empty));
