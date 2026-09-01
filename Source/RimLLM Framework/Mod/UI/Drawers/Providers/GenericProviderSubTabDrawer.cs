@@ -305,7 +305,7 @@ namespace RimLLM_Framework.Mod
             }
 
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-#pragma warning disable S1066, S2386, S3267, S3887 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
+#pragma warning disable S1066, S3267 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 Widgets.Label(msgRect, statusText);
             }
@@ -456,5 +456,5 @@ namespace RimLLM_Framework.Mod
             });
         }
     }
-#pragma warning restore S1066, S2386, S3267, S3887
+#pragma warning restore S1066, S3267
 }

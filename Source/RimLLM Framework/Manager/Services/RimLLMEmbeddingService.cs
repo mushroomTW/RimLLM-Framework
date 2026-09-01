@@ -307,7 +307,6 @@ namespace RimLLM_Framework.Manager
             string text, string model, string apiKey, CancellationToken cancellationToken)
         {
             using (var client = new Client(apiKey: apiKey))
-#pragma warning disable S3267, S3878 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 EmbedContentResponse response = await client.Models
                     .EmbedContentAsync(model, text, null, cancellationToken)
@@ -349,6 +348,8 @@ namespace RimLLM_Framework.Manager
             return embedding.ToFloats().ToArray();
         }
 
+        private static readonly char[] SlashTrimChars = { '/' };
+
         /// <summary>
         /// SDK 需要的是服務根位址（如 http://localhost:11434/v1），
         /// 因此把使用者可能填入的完整 embeddings 路徑收斂回根位址。
@@ -357,12 +358,12 @@ namespace RimLLM_Framework.Manager
         {
             if (string.IsNullOrWhiteSpace(endpoint)) return null;
 
-            string normalized = endpoint.Trim().TrimEnd(new char[] { '/' });
+            string normalized = endpoint.Trim().TrimEnd(SlashTrimChars);
             foreach (string suffix in new[] { "/embeddings", "/api/embed" })
             {
                 if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                 {
-                    normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd(new char[] { '/' });
+                    normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd(SlashTrimChars);
                     break;
                 }
             }
@@ -379,7 +380,6 @@ namespace RimLLM_Framework.Manager
             }
         }
     }
-#pragma warning restore S3267, S3878
 #pragma warning restore S3267
 #pragma warning restore S101, S2342
 }

@@ -433,7 +433,6 @@ namespace RimLLM_Framework.Manager
 
         #region Budget Ledger & Policy Gatekeeping
 
-#pragma warning disable S3776 // reason: 預算政策分支處理（HardBlock, SilentMocking, FallbackToFree, DialogPrompt）
         /// <summary>
         /// 審查每日預算限額。
         /// </summary>

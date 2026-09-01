@@ -72,7 +72,7 @@ namespace RimLLM_Framework.Manager
                 }
                 catch (ClientResultException ex)
                 {
-                    throw MapChatClientException(providerId, ex);
+                    throw MapChatClientException(ex);
                 }
                 catch (HttpRequestException ex)
                 {
@@ -192,7 +192,7 @@ namespace RimLLM_Framework.Manager
                 }
                 catch (ClientResultException ex)
                 {
-                    throw MapChatClientException(providerId, ex);
+                    throw MapChatClientException(ex);
                 }
                 catch (HttpRequestException ex)
                 {
@@ -303,7 +303,7 @@ namespace RimLLM_Framework.Manager
                 // schema 與 strict 取自同一次產生結果，避免兩者各算一次而分歧。
                 RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(request.ResponseType, schemaProfile);
                 using (JsonDocument document = JsonDocument.Parse(schema.Json))
-#pragma warning disable S107, S1172, S3267 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
+#pragma warning disable S3267 // reason: 迴圈遍歷在串流與用量統計具更高可讀性與效能，刻意保留 foreach
                 {
                     options.ResponseFormat = ChatResponseFormat.ForJsonSchema(
                         document.RootElement.Clone(),
@@ -347,7 +347,7 @@ namespace RimLLM_Framework.Manager
         /// 將官方 SDK 拋出的 ClientResultException 對照為既有 raw HTTP 路徑的 LLMError 語意
         /// （與 BaseHttpProvider.ThrowHttpError 的狀態碼對照一致）。
         /// </summary>
-        private static RimLLMException MapChatClientException(string providerId, ClientResultException ex)
+        private static RimLLMException MapChatClientException(ClientResultException ex)
         {
             string rawBody = SafeGetRawBody(ex);
             string message = !string.IsNullOrEmpty(rawBody) ? rawBody : ex.Message;
@@ -459,5 +459,5 @@ namespace RimLLM_Framework.Manager
         }
     }
 #pragma warning restore S101, S2342
-#pragma warning restore S107, S1172, S3267
+#pragma warning restore S3267
 }

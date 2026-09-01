@@ -1476,7 +1476,6 @@ namespace RimLLM_Framework.Tests
         public void Probe(System.Net.HttpStatusCode statusCode, string responseBody)
         {
             using (var response = new System.Net.Http.HttpResponseMessage(statusCode))
-#pragma warning disable S2701 // reason: 測試斷言語意保留，Sonar 規則誤判
             {
                 throw LLMErrorMapper.CreateException(
                     (int)statusCode,

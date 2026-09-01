@@ -385,7 +385,6 @@ namespace RimLLM_Framework.Tests
 
         [Test]
         [Explicit("診斷用：比較新舊管線的 schema 體積（每次結構化請求都要送出，直接反映 token 成本）")]
-#pragma warning disable S2699 // reason: Explicit 診斷測試僅輸出資訊，無需斷言
         public void DumpSchemaSizeComparison()
         {
             foreach (Type type in SampleTypes())
@@ -397,11 +396,9 @@ namespace RimLLM_Framework.Tests
                 TestContext.WriteLine(type.Name + ": managed=" + managed + " legacy=" + legacy);
             }
         }
-#pragma warning restore S2699
 
         [Test]
         [Explicit("診斷用：印出 Stage A 的原始輸出")]
-#pragma warning disable S2699 // reason: Explicit 診斷測試僅輸出資訊，無需斷言
         public void DumpRawExporterOutput()
         {
             foreach (Type type in SampleTypes())
@@ -409,7 +406,6 @@ namespace RimLLM_Framework.Tests
                 TestContext.WriteLine(type.Name + " => " + RimLLMSchemaBuilder.ExportRaw(type).ToString(Formatting.None));
             }
         }
-#pragma warning restore S2699
 
         [Test]
         public void EnumMemberBecomesStringEnum()

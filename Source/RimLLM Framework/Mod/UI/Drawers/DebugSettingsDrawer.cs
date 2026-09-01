@@ -135,7 +135,7 @@ namespace RimLLM_Framework.Mod
             Rect clearBtnRect = new Rect(headerRect.x + headerRect.width - 140f, headerRect.y + 2f, 140f, headerRect.height - 4f);
 
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-#pragma warning disable S1144, S1192, S3358, S3459 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
+#pragma warning disable S1192, S3358 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
             {
                 Widgets.Label(labelRect, "<b>" + "RimLLM_RecentRequests".Translate(30) + "</b>");
             }
@@ -407,5 +407,5 @@ namespace RimLLM_Framework.Mod
             }
         }
     }
-#pragma warning restore S1144, S1192, S3358, S3459
+#pragma warning restore S1192, S3358
 }
