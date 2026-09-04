@@ -176,6 +176,54 @@ PawnIncidentDecision decision = await client.GetResponseObjectAsync<PawnIncident
 > [!NOTE]
 > 請用這個而不是 MEAI 自己的 `GetResponseAsync<T>`。MEAI 的 `AIJsonUtilities.CreateJsonSchema` 在 RimWorld 的 Mono 環境根本無法執行（它會拉進該環境沒有的 `System.ComponentModel.DataAnnotations`），其原始 schema 形狀（聯集型別、`$ref`）也不被 Google Gemini 接受，而且 MEAI 沒有 JSON 修復路徑。RimLLM 驅動的是同一個底層 `JsonSchemaExporter`，但在其上加了正規化層與各供應商方言。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
 
+### 原生 Tool Calling（函式呼叫）
+
+RimLLM Framework 原生支援 Microsoft.Extensions.AI 的 Tool Calling（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`）。OpenAI 與 Google Gemini 均支援完整的雙向工具 Schema 與訊息協定轉譯。
+
+#### 1. 自動迴圈執行模式（推薦，內建 Unity 主執行緒安全調度）
+
+在 RimWorld 中，工具委派通常需要存取遊戲地圖、Pawn 或遊戲世界物件。為了避免 Unity 跨執行緒 API 違規引發遊戲崩潰，請使用 `AsMainThreadFunctionInvokingClient()` 擴充方法包裝客戶端。這能確保工具的執行委派一律透過 `RimLLMDispatcher` 安全排入 Unity 主執行緒：
+
+```csharp
+// 包裝 client 以獲得自動多輪迴圈呼叫能力與主執行緒安全
+IChatClient client = RimLLMProvider.CreateChatClient("myai.mod")
+    .AsMainThreadFunctionInvokingClient(maxIterations: 10);
+
+var weatherTool = AIFunctionFactory.Create(
+    (string colonyName) => Find.CurrentMap.weatherManager.curWeather.label,
+    "GetColonyWeather",
+    "取得殖民地當前天氣");
+
+var options = new ChatOptions
+{
+    Tools = new List<AITool> { weatherTool }
+};
+
+// 模型呼叫工具，RimLLM 在主執行緒執行該工具並將結果回傳給模型，直到產出最終回覆
+ChatResponse response = await client.GetResponseAsync(
+    new List<ChatMessage> { new ChatMessage(ChatRole.User, "目前我們殖民地的天氣如何？") },
+    options);
+
+Log.Message(response.Text);
+```
+
+#### 2. 手動單輪模式 (Raw Mode)
+
+若你的 Mod 希望手動掌控每輪工具叫用過程，可直接傳入 `ChatOptions.Tools` 至 `client.GetResponseAsync()`。模型回傳的結果將包含 `FunctionCallContent` 且 `FinishReason = ChatFinishReason.ToolCalls`：
+
+```csharp
+ChatResponse response = await client.GetResponseAsync(messages, new ChatOptions { Tools = myTools });
+
+if (response.FinishReason == ChatFinishReason.ToolCalls)
+{
+    foreach (var content in response.Messages[0].Contents.OfType<FunctionCallContent>())
+    {
+        Log.Message($"模型請求叫用函式：{content.Name}，參數：{content.Arguments}");
+        // 手動執行該工具，並在下一輪以 FunctionResultContent 回覆模型
+    }
+}
+```
+
 ### Embedding 向量
 
 同樣是標準的 MEAI 介面：
@@ -251,14 +299,15 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 推理模型的差異 | `reasoning_content` 與 Gemini 的 `thought` 統一正規化為 `<think>...</think>` |
 | 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，並具備 LLM 輔助的二次修復 |
 | 主執行緒切換 | 串流 chunk 與日誌寫入都已派送回 Unity 主執行緒 |
+| 原生 Tool Calling 與主執行緒排程 | Gemini／OpenAI 雙向工具轉譯；工具委派自動排入 Unity 主執行緒 |
 
 ### API 表面速查
 
-`using RimLLM_Framework;` 會引入 13 個公開型別。多數 Mod 只會碰到第一列：
+`using RimLLM_Framework;` 會引入 14 個公開型別。多數 Mod 只會碰到第一列：
 
 | 分層 | 型別 | 什麼時候需要 |
 | --- | --- | --- |
-| **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError`、`RimLLMClientExtensions` | 一定會用到 —— 這就是全部的使用端 API |
+| **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError`、`RimLLMClientExtensions`、`RimWorldFunctionInvoker` | 一定會用到 —— 這就是全部的使用端 API |
 | **提供供應商** | `ILLMProvider`、`LLMProviderCapabilities`、`IRimLLMSettings` | 只有要用 `RimLLMProvider.RegisterProvider` 註冊自己的 LLM 後端時（`ILLMProvider` 直接產出標準 `Microsoft.Extensions.AI.IChatClient`） |
 | **診斷** | `TestResult`、`ProviderIds`、`LLMErrorMapper` | 連線測試、內建供應商 ID 常數、HTTP 狀態碼對照 |
 
@@ -312,6 +361,11 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
     * 三種線上來源全走官方 SDK：Google 使用 `Google.GenAI` 的 `EmbedContentAsync`；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。
     * 設定頁可直接抓取可用模型清單，不必憑記憶輸入名稱。Google 依模型自己宣告的 `supportedActions` 是否包含 `embedContent` 精確篩選，只列出真正的 embedding 模型。OpenAI 相容端點的 `/v1/models` 不回傳能力資訊，因此該清單只**排序**（把像 embedding 的名稱排前面）而不過濾 —— 本地伺服器的模型名由使用者自訂，過濾會把合法選項藏起來。沒有 `/v1/models` 的伺服器仍可手動輸入。
     * Embedding 屬計費 API，因此與一般生成請求共用同一套防濫用檢查；其金鑰採用與供應商金鑰相同的 AES 加密。
+11. **原生 Tool Calling（函式呼叫）**
+    * 完整支援 Microsoft.Extensions.AI Tool Calling 標準（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`、`FunctionResultContent`）。
+    * 針對 OpenAI 與 Google Gemini 模型提供雙向工具 Schema 與訊息協定轉譯。
+    * 提供 `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`，自動將工具叫用委派排入 Unity 主執行緒執行，杜絕 RimWorld 跨執行緒崩潰風險。
+    * 當請求中包含工具時，自動繞過本地回應快取以確保狀態副作用一致性。
 
 ---
 

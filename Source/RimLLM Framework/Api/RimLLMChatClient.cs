@@ -247,7 +247,9 @@ namespace RimLLM_Framework
                 MinFallbackLevel = rimOptions?.MinFallbackLevel,
                 PreferredModelId = options?.ModelId,
                 OnStreamRestart = rimOptions?.OnStreamRestart,
-                CancellationToken = cancellationToken
+                CancellationToken = cancellationToken,
+                Tools = options?.Tools,
+                ToolMode = options?.ToolMode
             };
         }
 
@@ -259,8 +261,18 @@ namespace RimLLM_Framework
                 OutputTokenCount = result.CompletionTokens,
                 CachedInputTokenCount = result.CachedPromptTokens
             };
-            return new ChatResponse(
-                new ChatMessage(ChatRole.Assistant, result.Text))
+
+            ChatMessage assistantMessage;
+            if (result.Contents != null && result.Contents.Count > 0)
+            {
+                assistantMessage = new ChatMessage(ChatRole.Assistant, result.Contents);
+            }
+            else
+            {
+                assistantMessage = new ChatMessage(ChatRole.Assistant, result.Text);
+            }
+
+            return new ChatResponse(assistantMessage)
             {
                 Usage = usageDetails,
                 ModelId = ComposeModelId(result),

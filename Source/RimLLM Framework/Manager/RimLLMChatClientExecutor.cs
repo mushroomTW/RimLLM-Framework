@@ -98,7 +98,11 @@ namespace RimLLM_Framework.Manager
                     result = text;
                 }
 
-                if (string.IsNullOrWhiteSpace(result))
+                ChatMessage assistantMessage = response?.Messages != null && response.Messages.Count > 0 ? response.Messages[0] : null;
+                IList<AIContent> contents = assistantMessage?.Contents;
+                bool hasToolCalls = contents != null && System.Linq.Enumerable.Any(contents, c => c is FunctionCallContent);
+
+                if (string.IsNullOrWhiteSpace(result) && !hasToolCalls)
                 {
                     throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} 回傳空白內容。");
                 }
@@ -112,7 +116,8 @@ namespace RimLLM_Framework.Manager
                     ModelName = model,
                     PromptTokens = promptTokens,
                     CompletionTokens = completionTokens,
-                    CachedPromptTokens = cachedPromptTokens
+                    CachedPromptTokens = cachedPromptTokens,
+                    Contents = contents
                 };
             }
         }
@@ -309,6 +314,12 @@ namespace RimLLM_Framework.Manager
             if (request.ReasoningEffort.HasValue)
             {
                 options.Reasoning = new ReasoningOptions { Effort = request.ReasoningEffort.Value };
+            }
+
+            if (request.Tools != null && request.Tools.Count > 0)
+            {
+                options.Tools = new List<AITool>(request.Tools);
+                options.ToolMode = request.ToolMode;
             }
 
             // 與 raw 路徑一致：含 Dictionary 的開放式 map 型別仍送出 response_format，

@@ -24,6 +24,8 @@ namespace RimLLM_Framework.Manager
         public Action OnStreamRestart { get; set; }
         public CancellationToken CancellationToken { get; set; }
         public Type ResponseType { get; set; }
+        public IList<AITool> Tools { get; set; }
+        public ChatToolMode ToolMode { get; set; }
 
         public string GetEffectiveSystemPrompt()
         {
@@ -50,7 +52,9 @@ namespace RimLLM_Framework.Manager
                 PreferredModelId = PreferredModelId,
                 OnStreamRestart = OnStreamRestart,
                 CancellationToken = CancellationToken,
-                ResponseType = ResponseType
+                ResponseType = ResponseType,
+                Tools = Tools != null ? new List<AITool>(Tools) : null,
+                ToolMode = ToolMode
             };
         }
     }

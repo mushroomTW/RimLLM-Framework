@@ -44,6 +44,7 @@ namespace RimLLM_Framework.Providers
             SupportsNativeStructuredOutput = true,
             SupportsStreaming = true,
             SupportsUsageMetadata = true,
+            SupportsFunctionCalling = true,
             // Google.GenAI 的 Schema.Type 是單一列舉值，聯集型別會讓 Schema.FromJson 靜默回傳 null。
             PreferredSchemaProfile = RimLLMSchemaProfile.Gemini
         };
@@ -95,21 +96,13 @@ namespace RimLLM_Framework.Providers
             {
                 try
                 {
-                    string text = await _provider.GenerateWithGoogleGenAiAsync(messages, options, _model).ConfigureAwait(false);
-                    return new ChatResponse(new ChatMessage(ChatRole.Assistant, text))
-                    {
-                        ModelId = _model
-                    };
+                    return await _provider.ExecuteWithGoogleGenAiAsync(messages, options, _model).ConfigureAwait(false);
                 }
                 catch (RimLLMException ex)
                 {
                     if (_provider.MarkReasoningUnsupported(_model, ex))
                     {
-                        string text = await _provider.GenerateWithGoogleGenAiAsync(messages, options, _model).ConfigureAwait(false);
-                        return new ChatResponse(new ChatMessage(ChatRole.Assistant, text))
-                        {
-                            ModelId = _model
-                        };
+                        return await _provider.ExecuteWithGoogleGenAiAsync(messages, options, _model).ConfigureAwait(false);
                     }
                     throw;
                 }
@@ -348,9 +341,73 @@ namespace RimLLM_Framework.Providers
             {
                 foreach (var m in messages)
                 {
-                    if (m != null && m.Role != ChatRole.System && !string.IsNullOrEmpty(m.Text))
+                    if (m == null || m.Role == ChatRole.System) continue;
+
+                    var parts = new List<Part>();
+                    if (m.Contents != null && m.Contents.Count > 0)
                     {
-                        contents.Add(BuildTextContent(m.Text));
+                        var callIdToName = new Dictionary<string, string>();
+                        foreach (var prevMsg in messages)
+                        {
+                            if (prevMsg?.Contents == null) continue;
+                            foreach (var c in prevMsg.Contents)
+                            {
+                                if (c is FunctionCallContent fcc && !string.IsNullOrEmpty(fcc.CallId) && !string.IsNullOrEmpty(fcc.Name))
+                                {
+                                    callIdToName[fcc.CallId] = fcc.Name;
+                                }
+                            }
+                        }
+
+                        foreach (AIContent item in m.Contents)
+                        {
+                            if (item is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
+                            {
+                                parts.Add(Part.FromText(textContent.Text));
+                            }
+                            else if (item is FunctionCallContent functionCall)
+                            {
+                                var argsDict = functionCall.Arguments != null
+                                    ? new Dictionary<string, object>(functionCall.Arguments)
+                                    : null;
+                                parts.Add(Part.FromFunctionCall(functionCall.Name, argsDict));
+                            }
+                            else if (item is FunctionResultContent functionResult)
+                            {
+                                var resDict = functionResult.Result is IDictionary<string, object> d
+                                    ? new Dictionary<string, object>(d)
+                                    : new Dictionary<string, object> { ["result"] = functionResult.Result?.ToString() ?? string.Empty };
+                                string funcName = null;
+                                if (!string.IsNullOrEmpty(functionResult.CallId) && callIdToName.TryGetValue(functionResult.CallId, out var mappedName))
+                                {
+                                    funcName = mappedName;
+                                }
+                                funcName = funcName ?? functionResult.CallId ?? "function";
+                                parts.Add(new Part
+                                {
+                                    FunctionResponse = new FunctionResponse
+                                    {
+                                        Id = functionResult.CallId,
+                                        Name = funcName,
+                                        Response = resDict
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(m.Text))
+                    {
+                        parts.Add(Part.FromText(m.Text));
+                    }
+
+                    if (parts.Count > 0)
+                    {
+                        string role = m.Role == ChatRole.Assistant ? "model" : "user";
+                        contents.Add(new Content
+                        {
+                            Role = role,
+                            Parts = parts
+                        });
                     }
                 }
             }
@@ -361,7 +418,7 @@ namespace RimLLM_Framework.Providers
             return contents;
         }
 
-        private async Task<string> GenerateWithGoogleGenAiAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
+        public async Task<ChatResponse> ExecuteWithGoogleGenAiAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             try
@@ -376,7 +433,7 @@ namespace RimLLM_Framework.Providers
                         contents,
                         config,
                         default).ConfigureAwait(false);
-                    return ReadGeminiResponse(response, model);
+                    return ReadGeminiChatResponse(response, model);
                 }
             }
             catch (RimLLMException)
@@ -387,6 +444,134 @@ namespace RimLLM_Framework.Providers
             {
                 throw TranslateGoogleException(ex, "generateContent");
             }
+        }
+
+        private ChatResponse ReadGeminiChatResponse(GenerateContentResponse response, string model)
+        {
+            if (response == null)
+            {
+                return new ChatResponse(new ChatMessage(ChatRole.Assistant, string.Empty))
+                {
+                    ModelId = model
+                };
+            }
+
+            var contents = new List<AIContent>();
+            bool hasToolCall = false;
+
+            var parts = response.Parts;
+            if ((parts == null || parts.Count == 0) && response.Candidates != null && response.Candidates.Count > 0)
+            {
+                parts = response.Candidates[0]?.Content?.Parts;
+            }
+
+            if (parts != null && parts.Count > 0)
+            {
+                var textBuilder = new StringBuilder();
+                bool inReasoning = false;
+                bool hasFinishedReasoning = false;
+
+                foreach (Part part in parts)
+                {
+                    if (part == null) continue;
+
+                    if (part.FunctionCall != null)
+                    {
+                        hasToolCall = true;
+                        string callId = !string.IsNullOrEmpty(part.FunctionCall.Id)
+                            ? part.FunctionCall.Id
+                            : $"call_{Guid.NewGuid():N}";
+
+                        var args = part.FunctionCall.Args != null
+                            ? new Dictionary<string, object>(part.FunctionCall.Args)
+                            : new Dictionary<string, object>();
+
+                        contents.Add(new FunctionCallContent(callId, part.FunctionCall.Name, args));
+                    }
+                    else if (!string.IsNullOrEmpty(part.Text))
+                    {
+                        EmitGeminiPart(part, value => textBuilder.Append(value), ref inReasoning, ref hasFinishedReasoning);
+                    }
+                }
+
+                if (inReasoning)
+                {
+                    textBuilder.Append("\n</think>");
+                }
+
+                if (textBuilder.Length > 0)
+                {
+                    contents.Insert(0, new TextContent(textBuilder.ToString()));
+                }
+            }
+            else if (response.FunctionCalls != null && response.FunctionCalls.Count > 0)
+            {
+                foreach (var call in response.FunctionCalls)
+                {
+                    if (call == null) continue;
+                    hasToolCall = true;
+                    string callId = !string.IsNullOrEmpty(call.Id)
+                        ? call.Id
+                        : $"call_{Guid.NewGuid():N}";
+
+                    var args = call.Args != null
+                        ? new Dictionary<string, object>(call.Args)
+                        : new Dictionary<string, object>();
+
+                    contents.Add(new FunctionCallContent(callId, call.Name, args));
+                }
+
+                if (!string.IsNullOrEmpty(response.Text))
+                {
+                    contents.Insert(0, new TextContent(response.Text));
+                }
+            }
+            else if (!string.IsNullOrEmpty(response.Text))
+            {
+                contents.Add(new TextContent(response.Text));
+            }
+
+            var chatMessage = new ChatMessage(ChatRole.Assistant, contents);
+            var chatResponse = new ChatResponse(chatMessage)
+            {
+                ModelId = model,
+                ResponseId = response.ResponseId,
+                FinishReason = hasToolCall ? ChatFinishReason.ToolCalls : ChatFinishReason.Stop,
+                RawRepresentation = response
+            };
+
+            if (response.UsageMetadata != null)
+            {
+                int promptTokens = response.UsageMetadata.PromptTokenCount ?? 0;
+                int completionTokens = response.UsageMetadata.CandidatesTokenCount ?? 0;
+                int cachedTokens = response.UsageMetadata.CachedContentTokenCount ?? 0;
+
+                chatResponse.Usage = new UsageDetails
+                {
+                    InputTokenCount = promptTokens,
+                    OutputTokenCount = completionTokens,
+                    TotalTokenCount = response.UsageMetadata.TotalTokenCount,
+                    CachedInputTokenCount = cachedTokens
+                };
+
+                try
+                {
+                    var manager = RimLLMProvider.Manager;
+                    manager?.RecordUsage(ProviderId, model, promptTokens, completionTokens, cachedTokens);
+                }
+                catch (InvalidOperationException)
+                {
+                    // SDK not initialized in standalone unit tests
+                }
+            }
+
+            return chatResponse;
+        }
+
+        private async Task<string> GenerateWithGoogleGenAiAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
+        {
+            ChatResponse response = await ExecuteWithGoogleGenAiAsync(messages, options, model).ConfigureAwait(false);
+            return response.Text ?? string.Empty;
         }
 
         #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
@@ -597,6 +782,81 @@ namespace RimLLM_Framework.Providers
             else if (options?.ResponseFormat != null && Settings.EnableNativeSchema)
             {
                 config.ResponseMimeType = "application/json";
+            }
+
+            if (options?.Tools != null && options.Tools.Count > 0)
+            {
+                var functionDeclarations = new List<FunctionDeclaration>();
+                foreach (var tool in options.Tools)
+                {
+                    if (tool is AIFunction aiFunction)
+                    {
+                        var decl = new FunctionDeclaration
+                        {
+                            Name = aiFunction.Name,
+                            Description = aiFunction.Description
+                        };
+                        if (aiFunction.JsonSchema.ValueKind != System.Text.Json.JsonValueKind.Undefined &&
+                            aiFunction.JsonSchema.ValueKind != System.Text.Json.JsonValueKind.Null)
+                        {
+                            string rawSchema = aiFunction.JsonSchema.GetRawText();
+                            if (!string.IsNullOrWhiteSpace(rawSchema))
+                            {
+                                try
+                                {
+                                    decl.Parameters = Schema.FromJson(rawSchema);
+                                }
+                                catch (Exception ex)
+                                {
+                                    RimLLMLog.Warning($"[GeminiProvider] Failed to parse function schema for '{aiFunction.Name}': {RimLLMLog.SanitizeForLog(ex.Message, 100)}");
+                                }
+                            }
+                        }
+                        functionDeclarations.Add(decl);
+                    }
+                }
+
+                if (functionDeclarations.Count > 0)
+                {
+                    config.Tools = new List<Tool>
+                    {
+                        new Tool { FunctionDeclarations = functionDeclarations }
+                    };
+
+                    if (options.ToolMode is RequiredChatToolMode requiredMode)
+                    {
+                        config.ToolConfig = new ToolConfig
+                        {
+                            FunctionCallingConfig = new FunctionCallingConfig
+                            {
+                                Mode = FunctionCallingConfigMode.Any,
+                                AllowedFunctionNames = !string.IsNullOrEmpty(requiredMode.RequiredFunctionName)
+                                    ? new List<string> { requiredMode.RequiredFunctionName }
+                                    : null
+                            }
+                        };
+                    }
+                    else if (options.ToolMode is NoneChatToolMode)
+                    {
+                        config.ToolConfig = new ToolConfig
+                        {
+                            FunctionCallingConfig = new FunctionCallingConfig
+                            {
+                                Mode = FunctionCallingConfigMode.None
+                            }
+                        };
+                    }
+                    else if (options.ToolMode is AutoChatToolMode)
+                    {
+                        config.ToolConfig = new ToolConfig
+                        {
+                            FunctionCallingConfig = new FunctionCallingConfig
+                            {
+                                Mode = FunctionCallingConfigMode.Auto
+                            }
+                        };
+                    }
+                }
             }
 
             return config;

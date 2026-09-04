@@ -177,6 +177,54 @@ PawnIncidentDecision decision = await client.GetResponseObjectAsync<PawnIncident
 > [!NOTE]
 > Use this rather than MEAI's own `GetResponseAsync<T>`. MEAI's `AIJsonUtilities.CreateJsonSchema` cannot even run inside RimWorld's Mono runtime (it pulls in `System.ComponentModel.DataAnnotations`, which is absent there), its raw schema shape (union types, `$ref`) is not accepted by Google Gemini, and it has no JSON-repair path. RimLLM drives the same underlying `JsonSchemaExporter` but adds a normalization layer and per-provider dialects on top. See [Architecture §6](#6-official-sdks-and-provider-responsibilities).
 
+### Native Tool Calling (Function Calling)
+
+RimLLM Framework provides native support for Microsoft.Extensions.AI Tool Calling (`AIFunction`, `ChatOptions.Tools`, `FunctionCallContent`). Both OpenAI and Google Gemini are supported with bi-directional schema and message translation.
+
+#### 1. Auto-Invoking Mode with Unity Main-Thread Safety (Recommended)
+
+When invoking tools in RimWorld, mod functions typically access game maps, pawns, or World state. To prevent Unity threading crashes, wrap your client with `AsMainThreadFunctionInvokingClient()`. This ensures that tool delegates are automatically dispatched onto the Unity main thread via `RimLLMDispatcher`:
+
+```csharp
+// Wrap the client for automatic multi-turn loop with main-thread safety
+IChatClient client = RimLLMProvider.CreateChatClient("myai.mod")
+    .AsMainThreadFunctionInvokingClient(maxIterations: 10);
+
+var weatherTool = AIFunctionFactory.Create(
+    (string colonyName) => Find.CurrentMap.weatherManager.curWeather.label,
+    "GetColonyWeather",
+    "Returns current colony weather");
+
+var options = new ChatOptions
+{
+    Tools = new List<AITool> { weatherTool }
+};
+
+// The model calls the tool, RimLLM executes it on the main thread, and returns the final answer
+ChatResponse response = await client.GetResponseAsync(
+    new List<ChatMessage> { new ChatMessage(ChatRole.User, "What's our colony weather right now?") },
+    options);
+
+Log.Message(response.Text);
+```
+
+#### 2. Raw / Manual Mode
+
+If your mod wants full manual control over each turn of function execution, pass `ChatOptions.Tools` directly to `client.GetResponseAsync()`. The model's response will contain `FunctionCallContent` and `FinishReason = ChatFinishReason.ToolCalls`:
+
+```csharp
+ChatResponse response = await client.GetResponseAsync(messages, new ChatOptions { Tools = myTools });
+
+if (response.FinishReason == ChatFinishReason.ToolCalls)
+{
+    foreach (var content in response.Messages[0].Contents.OfType<FunctionCallContent>())
+    {
+        Log.Message($"Model requested function: {content.Name} with args: {content.Arguments}");
+        // Execute manually and respond with FunctionResultContent in the next turn
+    }
+}
+```
+
 ### Embeddings
 
 Also a standard MEAI interface:
@@ -252,14 +300,15 @@ This is the point of the framework. All of the following already happens behind 
 | Reasoning-model quirks | `reasoning_content` and Gemini `thought` normalized into `<think>...</think>` |
 | Malformed JSON | Markdown fences, unclosed brackets and trailing commas repaired, with LLM-assisted double repair |
 | Main-thread marshalling | Streaming chunks and log writes dispatched back to Unity's main thread |
+| Native Tool Calling & Dispatching | Bi-directional schema translation for Gemini/OpenAI; automatic dispatch onto Unity main thread |
 
 ### API surface at a glance
 
-`using RimLLM_Framework;` brings in 13 public types. Most mods only ever touch the first row:
+`using RimLLM_Framework;` brings in 14 public types. Most mods only ever touch the first row:
 
 | Tier | Types | Needed when |
 |---|---|---|
-| **Calling a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError`, `RimLLMClientExtensions` | Always — this is the whole consumer API |
+| **Calling a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError`, `RimLLMClientExtensions`, `RimWorldFunctionInvoker` | Always — this is the whole consumer API |
 | **Supplying a provider** | `ILLMProvider`, `LLMProviderCapabilities`, `IRimLLMSettings` | Only if you register your own LLM backend via `RimLLMProvider.RegisterProvider` (`ILLMProvider` produces standard `Microsoft.Extensions.AI.IChatClient`) |
 | **Diagnostics** | `TestResult`, `ProviderIds`, `LLMErrorMapper` | Connection tests, built-in provider id constants, HTTP-status mapping |
 
@@ -313,6 +362,11 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
     * All three online sources go through official SDKs: Google uses `EmbedContentAsync` from `Google.GenAI`; Ollama and self-hosted services use the OpenAI SDK's `EmbeddingClient` (Ollama via its OpenAI-compatible `/v1` endpoint). The *Embedding endpoint* field therefore takes a **service root address** such as `http://localhost:11434/v1`; a full `/embeddings` path is normalized automatically.
     * The settings page can fetch the available model list instead of requiring the name to be typed from memory. For Google the list is filtered by each model's own `supportedActions` containing `embedContent`, so only genuine embedding models are offered. OpenAI-compatible `/v1/models` reports no capability information, so that list is **ordered** (embedding-looking names first) rather than filtered — a local server's model names are user-defined, and filtering would hide valid choices. Manual entry always remains available for servers with no `/v1/models` endpoint.
     * Embeddings are a billed API, so they share the same anti-abuse checks as ordinary generation requests. Their keys use the same AES encryption as provider keys.
+10. **Native Tool Calling (Function Calling)**
+    * Full support for Microsoft.Extensions.AI Tool Calling (`AIFunction`, `ChatOptions.Tools`, `FunctionCallContent`, `FunctionResultContent`).
+    * Bi-directional schema and message translation for OpenAI and Google Gemini models.
+    * Main-thread safety scheduling via `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`, automatically dispatching tool execution onto the Unity main thread to prevent RimWorld threading crashes.
+    * Automatically bypasses local response cache when tools are present to ensure execution consistency.
 
 ---
 

@@ -71,6 +71,63 @@ namespace RimLLM_Framework.Core
         }
 
         /// <summary>
+        /// 將非同步 Func 排入佇列，並以非同步方式等待其在主線程執行後的結果。
+        /// </summary>
+        public static System.Threading.Tasks.Task<T> EnqueueOnMainThreadAsync<T>(Func<System.Threading.Tasks.Task<T>> func)
+        {
+            if (func == null) throw new ArgumentNullException(nameof(func));
+
+            var tcs = new System.Threading.Tasks.TaskCompletionSource<T>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+
+            EnqueueOnMainThread(async () =>
+            {
+                try
+                {
+                    T result = await func().ConfigureAwait(false);
+                    tcs.TrySetResult(result);
+                }
+                catch (OperationCanceledException oce)
+                {
+                    tcs.TrySetCanceled(oce.CancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            });
+
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// 將同步 Func 排入佇列，並以非同步方式等待其在主線程執行後的結果。
+        /// </summary>
+        public static System.Threading.Tasks.Task<T> EnqueueOnMainThreadAsync<T>(Func<T> func)
+        {
+            if (func == null) throw new ArgumentNullException(nameof(func));
+
+            var tcs = new System.Threading.Tasks.TaskCompletionSource<T>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+
+            EnqueueOnMainThread(() =>
+            {
+                try
+                {
+                    tcs.TrySetResult(func());
+                }
+                catch (OperationCanceledException oce)
+                {
+                    tcs.TrySetCanceled(oce.CancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            });
+
+            return tcs.Task;
+        }
+
+        /// <summary>
         /// 有界入列。超過上限時丟棄最舊項目並計數，回傳是否發生丟棄。
         /// </summary>
         /// <remarks>

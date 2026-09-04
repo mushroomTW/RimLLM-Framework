@@ -46,7 +46,8 @@ namespace RimLLM_Framework.Manager
         public bool TryGet(RimLLMRequest request, out string cachedText)
         {
             cachedText = null;
-            if (!IsEnabled || request == null) return false;
+            // 帶有 Tools 的請求通常具有副作用或即時狀態查詢需求，一律繞過快取
+            if (!IsEnabled || request == null || (request.Tools != null && request.Tools.Count > 0)) return false;
 
             if (!_cache.TryGetValue(BuildKey(request), out string text))
             {
@@ -66,7 +67,7 @@ namespace RimLLM_Framework.Manager
         /// </remarks>
         public void Store(RimLLMRequest request, string text)
         {
-            if (!IsEnabled || request == null || string.IsNullOrEmpty(text)) return;
+            if (!IsEnabled || request == null || string.IsNullOrEmpty(text) || (request.Tools != null && request.Tools.Count > 0)) return;
 
             _cache.Set(BuildKey(request), text, new MemoryCacheEntryOptions
             {
