@@ -245,10 +245,25 @@ namespace RimLLM_Framework.Manager
         {
             var messages = request.Messages != null ? new List<ChatMessage>(request.Messages) : new List<ChatMessage>();
             string systemPrompt = request.GetEffectiveSystemPrompt();
-            if (!string.IsNullOrEmpty(systemPrompt) &&
-                !messages.Exists(m => m != null && m.Role == ChatRole.System))
+            if (!string.IsNullOrEmpty(systemPrompt))
             {
-                messages.Insert(0, new ChatMessage(ChatRole.System, systemPrompt));
+                int firstSystemIndex = messages.FindIndex(m => m != null && m.Role == ChatRole.System);
+                if (firstSystemIndex >= 0)
+                {
+                    var existingSystem = messages[firstSystemIndex];
+                    if (string.IsNullOrEmpty(existingSystem.Text))
+                    {
+                        messages[firstSystemIndex] = new ChatMessage(ChatRole.System, systemPrompt);
+                    }
+                    else if (!existingSystem.Text.Contains(systemPrompt))
+                    {
+                        messages[firstSystemIndex] = new ChatMessage(ChatRole.System, systemPrompt + "\n\n" + existingSystem.Text);
+                    }
+                }
+                else
+                {
+                    messages.Insert(0, new ChatMessage(ChatRole.System, systemPrompt));
+                }
             }
             if (messages.Count == 0)
             {
@@ -289,7 +304,8 @@ namespace RimLLM_Framework.Manager
             {
                 options.AdditionalProperties = new AdditionalPropertiesDictionary();
             }
-            options.AdditionalProperties["rimllm_disable_reasoning"] = request.DisableReasoning;
+            options.AdditionalProperties[RimLLMChatOptions.DisableReasoningKey] = request.DisableReasoning;
+            options.AdditionalProperties[RimLLMChatOptions.ExecutorManagedKey] = true;
             if (request.ReasoningEffort.HasValue)
             {
                 options.Reasoning = new ReasoningOptions { Effort = request.ReasoningEffort.Value };

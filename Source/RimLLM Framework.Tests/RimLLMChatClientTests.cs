@@ -406,5 +406,262 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsNotNull(response.AdditionalProperties);
             ClassicAssert.AreEqual("custom_val", response.AdditionalProperties["custom_key"]);
         }
+
+        [Test]
+        public void TestGetStreamingResponseAsync_ResponseCacheHit_EmitsCachedChunks()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "TestMockStream:model-s" },
+                EnableResponseCache = true,
+                ResponseCacheTtlMinutes = 10f
+            };
+            mockSettings.EnabledProviders["TestMockStream"] = true;
+            mockSettings.ApiKeys["TestMockStream"] = "key";
+            var manager = new RimLLMManager(mockSettings);
+            int callCount = 0;
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "TestMockStream",
+                StreamHandler = (messages, options, model, onChunk) =>
+                {
+                    callCount++;
+                    onChunk("cached-");
+                    onChunk("content");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            });
+
+            var client = CreateClient(manager, "test.cachestream.mod");
+            var inputMessages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "query-for-cache") };
+
+            // 第一次呼叫：填充快取
+            var chunks1 = new List<string>();
+            var e1 = client.GetStreamingResponseAsync(inputMessages).GetAsyncEnumerator();
+            try
+            {
+                while (e1.MoveNextAsync().GetAwaiter().GetResult())
+                {
+                    if (!string.IsNullOrEmpty(e1.Current.Text)) chunks1.Add(e1.Current.Text);
+                }
+            }
+            finally
+            {
+                e1.DisposeAsync().GetAwaiter().GetResult();
+            }
+            ClassicAssert.AreEqual("cached-content", string.Concat(chunks1));
+            ClassicAssert.AreEqual(1, callCount);
+
+            // 第二次呼叫：命中快取，必須完整回傳快取文字且不應漏封包
+            var chunks2 = new List<string>();
+            var e2 = client.GetStreamingResponseAsync(inputMessages).GetAsyncEnumerator();
+            try
+            {
+                while (e2.MoveNextAsync().GetAwaiter().GetResult())
+                {
+                    if (!string.IsNullOrEmpty(e2.Current.Text)) chunks2.Add(e2.Current.Text);
+                }
+            }
+            finally
+            {
+                e2.DisposeAsync().GetAwaiter().GetResult();
+            }
+            ClassicAssert.AreEqual("cached-content", string.Concat(chunks2));
+            ClassicAssert.AreEqual(1, callCount, "第二次串流呼叫應直接命中快取，不應再次觸發 StreamHandler");
+        }
+
+        [Test]
+        public void TestOpenAICompatibleProvider_CreateChatClient_WithoutApiKey_Succeeds()
+        {
+            var settings = new MockSettings();
+            var provider = new Providers.OpenAICompatibleProvider(settings);
+            // 本地相容 Provider 在金鑰為空時應自動回退 PlaceholderApiKey 而非拋出 ArgumentException
+            using (var client = provider.CreateChatClient("llama3"))
+            {
+                ClassicAssert.IsNotNull(client);
+            }
+        }
+
+        [Test]
+        public void TestBuildMessages_MergesSystemPromptWhenSystemMessageAlreadyExists()
+        {
+            var request = new RimLLMRequest
+            {
+                SystemPrompt = "Framework System Instruction",
+                CachedContext = "Cached Lore",
+                Messages = new List<ChatMessage>
+                {
+                    new ChatMessage(ChatRole.System, "Caller System Message"),
+                    new ChatMessage(ChatRole.User, "Hello")
+                }
+            };
+
+            var built = RimLLMChatClientExecutor.BuildMessages(request);
+            ClassicAssert.AreEqual(2, built.Count);
+            ClassicAssert.AreEqual(ChatRole.System, built[0].Role);
+            StringAssert.Contains("Framework System Instruction", built[0].Text);
+            StringAssert.Contains("Cached Lore", built[0].Text);
+            StringAssert.Contains("Caller System Message", built[0].Text);
+        }
+
+        [Test]
+        public void TestBuildOptions_IncludesExecutorManagedFlag()
+        {
+            var request = new RimLLMRequest
+            {
+                ModId = "test.mod",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }
+            };
+
+            var options = RimLLMChatClientExecutor.BuildOptions(request, "gpt-4o", false, null, RimLLMSchemaProfile.OpenAI);
+            ClassicAssert.IsNotNull(options.AdditionalProperties);
+            ClassicAssert.IsTrue(options.AdditionalProperties.ContainsKey(RimLLMChatOptions.ExecutorManagedKey));
+            ClassicAssert.IsTrue((bool)options.AdditionalProperties[RimLLMChatOptions.ExecutorManagedKey]);
+        }
+
+        [Test]
+        public void TestGetResponseAsync_RecordUsage_NotDoubleCounted()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "TestMock:m1" }
+            };
+            mockSettings.EnabledProviders["TestMock"] = true;
+            mockSettings.ApiKeys["TestMock"] = "key";
+            var manager = new RimLLMManager(mockSettings);
+            RimLLMProvider.Initialize(manager);
+
+            manager.RegisterProvider(new MockTestProvider
+            {
+                ProviderId = "TestMock",
+                GenerateHandler = (messages, options, model) => System.Threading.Tasks.Task.FromResult("mock output text")
+            });
+
+            var client = CreateClient(manager, "test.usage.mod");
+            var response = client.GetResponseAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello world") }).GetAwaiter().GetResult();
+            ClassicAssert.IsNotNull(response);
+
+            var stats = manager.UsageTracker.ProviderStatistics["TestMock"];
+            ClassicAssert.AreEqual(1, stats.TotalCount, "經由框架管線執行時用量應僅記錄一次，不得重複記帳");
+            ClassicAssert.AreEqual(1, stats.SuccessCount);
+        }
+
+        [Test]
+        public void TestStreamEarlyDispose_CancelsBackgroundStream()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "StreamCancelMock:m1" }
+            };
+            mockSettings.EnabledProviders["StreamCancelMock"] = true;
+            mockSettings.ApiKeys["StreamCancelMock"] = "key";
+            var manager = new RimLLMManager(mockSettings);
+
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "StreamCancelMock",
+                StreamHandler = async (messages, options, model, onChunk) =>
+                {
+                    onChunk("chunk-1");
+                    for (int i = 0; i < 20; i++)
+                    {
+                        await System.Threading.Tasks.Task.Delay(50);
+                    }
+                }
+            });
+
+            var client = CreateClient(manager, "test.cancel.mod");
+            var enumerator = client.GetStreamingResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }).GetAsyncEnumerator();
+
+            bool moved = enumerator.MoveNextAsync().GetAwaiter().GetResult();
+            ClassicAssert.IsTrue(moved);
+            ClassicAssert.AreEqual("chunk-1", enumerator.Current.Text);
+            enumerator.DisposeAsync().GetAwaiter().GetResult();
+        }
+
+        [Test]
+        public void TestGetStreamingResponseAsync_DoubleDisposeAsync_SwallowsObjectDisposedException()
+        {
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockDoubleDispose:default" }
+            };
+            mockSettings.EnabledProviders["MockDoubleDispose"] = true;
+            mockSettings.ApiKeys["MockDoubleDispose"] = "key";
+            var manager = new RimLLMManager(mockSettings);
+            var provider = new MockStreamProvider
+            {
+                ProviderId = "MockDoubleDispose",
+                StreamHandler = (msgs, opts, model, onChunk) =>
+                {
+                    onChunk("test");
+                    return Task.CompletedTask;
+                }
+            };
+            manager.RegisterProvider(provider);
+            var client = CreateClient(manager, "test.double.dispose");
+            var enumerator = client.GetStreamingResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }).GetAsyncEnumerator();
+
+            bool moved = enumerator.MoveNextAsync().GetAwaiter().GetResult();
+            ClassicAssert.IsTrue(moved);
+            enumerator.DisposeAsync().GetAwaiter().GetResult();
+            // 第二次呼叫 DisposeAsync，CTS 已處於 Disposed 狀態，驗證安全忽略 ObjectDisposedException
+            Assert.DoesNotThrow(() => enumerator.DisposeAsync().GetAwaiter().GetResult());
+        }
+
+        [Test]
+        public void TestOpenAiStream_SelfHealsInPlaceOn400()
+        {
+            RimLLM_Framework.Providers.RimLLMReasoningSupport.Reset();
+            try
+            {
+                var mockSettings = new MockSettings();
+                mockSettings.ApiKeys["OpenAI"] = "test-key";
+                var provider = new TestOpenAIProvider(mockSettings);
+
+                provider.WireHandler.ScriptResponse(
+                    System.Net.HttpStatusCode.BadRequest,
+                    "{\"error\":{\"message\":\"unsupported parameter: reasoning_effort\",\"type\":\"invalid_request_error\"}}");
+                provider.WireHandler.ResponseContentType = "text/event-stream";
+                provider.WireHandler.ResponseBody = "data: {\"choices\":[{\"delta\":{\"content\":\"healed\"}}]}\n\ndata: [DONE]\n\n";
+
+                using (var client = provider.CreateChatClient("gpt-4o"))
+                {
+                    var options = new ChatOptions
+                    {
+                        Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium }
+                    };
+
+                    var chunks = new List<string>();
+                    var enumerator = client.GetStreamingResponseAsync(
+                        new List<ChatMessage> { new ChatMessage(ChatRole.User, "stream test") },
+                        options).GetAsyncEnumerator();
+
+                    try
+                    {
+                        while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                        {
+                            if (!string.IsNullOrEmpty(enumerator.Current.Text))
+                            {
+                                chunks.Add(enumerator.Current.Text);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        enumerator.DisposeAsync().GetAwaiter().GetResult();
+                    }
+
+                    ClassicAssert.AreEqual("healed", string.Concat(chunks));
+                    ClassicAssert.IsTrue(RimLLM_Framework.Providers.RimLLMReasoningSupport.IsReasoningUnsupported("OpenAI", "gpt-4o"));
+                }
+            }
+            finally
+            {
+                RimLLM_Framework.Providers.RimLLMReasoningSupport.Reset();
+            }
+        }
     }
 }

@@ -76,14 +76,16 @@ namespace RimLLM_Framework.Mod
             }
             listing.Gap(6f);
 
-            if (Math.Abs(prevTimeout - Settings.ApiTimeout) > 0.001f ||
+            bool changed = Math.Abs(prevTimeout - Settings.ApiTimeout) > 0.001f ||
                 prevRetries != Settings.MaxRetries ||
                 Math.Abs(prevDelay - Settings.RetryDelay) > 0.001f ||
                 prevMaxConcurrent != Settings.MaxConcurrentRequests ||
                 prevNativeSchema != Settings.EnableNativeSchema ||
                 prevJsonRepair != Settings.EnableJsonRepair ||
                 prevResponseCache != Settings.EnableResponseCache ||
-                Math.Abs(prevCacheTtl - Settings.ResponseCacheTtlMinutes) > 0.001f)
+                Math.Abs(prevCacheTtl - Settings.ResponseCacheTtlMinutes) > 0.001f;
+
+            if (RimLLMUIStyle.ShouldSaveSettings(changed))
             {
                 Settings.Write();
             }

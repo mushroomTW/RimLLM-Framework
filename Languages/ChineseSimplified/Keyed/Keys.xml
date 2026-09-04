@@ -18,7 +18,7 @@
   <RimLLM_ApiKey>API 密钥列表:</RimLLM_ApiKey>
   <RimLLM_AddApiKeyBtn>新增密钥 (+)</RimLLM_AddApiKeyBtn>
   <RimLLM_ApiEndpoint>API 服务端点:</RimLLM_ApiEndpoint>
-  <RimLLM_ChinaEndpointToggle>使用中国专用连接端点 (默认关闭，使用全球版端點)</RimLLM_ChinaEndpointToggle>
+  <RimLLM_ChinaEndpointToggle>使用中国专用连接端点 (默认关闭，使用全球版端点)</RimLLM_ChinaEndpointToggle>
   
   <RimLLM_AvailableModelsTitle><b>可用模型列表配置</b></RimLLM_AvailableModelsTitle>
   <RimLLM_NoCachedModels>&lt;color=gray&gt;无缓存的模型清单（请先获取）&lt;/color&gt;</RimLLM_NoCachedModels>
@@ -60,13 +60,13 @@
   <RimLLM_ClickToCopy>点击复制模型名称</RimLLM_ClickToCopy>
   <RimLLM_CopiedToClipboard>已复制模型名称：{0}</RimLLM_CopiedToClipboard>
   <RimLLM_EnterApiKey>&lt;color=red&gt;请先输入 API 密钥 (Key)&lt;/color&gt;</RimLLM_EnterApiKey>
-  <RimLLM_DetailedLogging>詳細日志</RimLLM_DetailedLogging>
-  <RimLLM_DetailedLoggingExplanation>開啟模組詳細日志，包含 API 呼叫記錄、重試與串流事件。</RimLLM_DetailedLoggingExplanation>
+  <RimLLM_DetailedLogging>详细日志</RimLLM_DetailedLogging>
+  <RimLLM_DetailedLoggingExplanation>开启模组详细日志，包含 API 调用记录、重试与流式事件。</RimLLM_DetailedLoggingExplanation>
   <RimLLM_TabChatTest>模型对话</RimLLM_TabChatTest>
   <RimLLM_TabDebug>Debug</RimLLM_TabDebug>
   <RimLLM_TitleDebug>Debug 设置</RimLLM_TitleDebug>
   <RimLLM_TitleDebugExplanation>模组侦错与诊断工具</RimLLM_TitleDebugExplanation>
-  <RimLLM_PureProviderFallback>(纯供应商 / 内建 Fallback)</RimLLM_PureProviderFallback>
+  <RimLLM_PureProviderFallback>(纯供应商 / 内置 Fallback)</RimLLM_PureProviderFallback>
   <RimLLM_ExportDiag>导出诊断信息 (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
   <RimLLM_RecentRequests>最近请求历史记录 (最近 {0} 笔)</RimLLM_RecentRequests>
   <RimLLM_NoRequests>&lt;color=gray&gt;目前无请求记录。&lt;/color&gt;</RimLLM_NoRequests>
@@ -80,7 +80,7 @@
   <RimLLM_ChatAi>&lt;b&gt;[AI]:&lt;/b&gt;</RimLLM_ChatAi>
   <RimLLM_ChatAiError>&lt;b&gt;[AI 错误]:&lt;/b&gt;</RimLLM_ChatAiError>
   <RimLLM_MaxConcurrentRequestsLabel>最大并行请求限制: {0}</RimLLM_MaxConcurrentRequestsLabel>
-  <RimLLM_LocalCompatibleMode> (本地模型 / 相容界面)</RimLLM_LocalCompatibleMode>
+  <RimLLM_LocalCompatibleMode> (本地模型 / 兼容界面)</RimLLM_LocalCompatibleMode>
   <RimLLM_ExportDiagSuccess>诊断信息已成功导出至: {0}</RimLLM_ExportDiagSuccess>
   <RimLLM_ExportDiagFailed>导出诊断失败: {0}</RimLLM_ExportDiagFailed>
 
@@ -171,11 +171,11 @@
   <RimLLM_EmbeddingProvider_Disabled>停用（不使用 Embedding）</RimLLM_EmbeddingProvider_Disabled>
   <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
   <RimLLM_EmbeddingProvider_LocalAPI_Ollama>本地 Ollama API</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
-  <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>本地 OpenAI 相容 API</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
-
-  <RimLLM_ProviderCallStatsTitle>供应商呼叫统计与成功率</RimLLM_ProviderCallStatsTitle>
-  <RimLLM_ProviderTotalCallsLabel>累计呼叫次数: {0} 次</RimLLM_ProviderTotalCallsLabel>
+  <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>本地 OpenAI 兼容 API</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
+  
+  <RimLLM_ProviderCallStatsTitle>供应商调用统计与成功率</RimLLM_ProviderCallStatsTitle>
+  <RimLLM_ProviderTotalCallsLabel>累计调用次数: {0} 次</RimLLM_ProviderTotalCallsLabel>
   <RimLLM_ProviderSuccessCallsLabel>成功: {0} 次 / 失败: {1} 次</RimLLM_ProviderSuccessCallsLabel>
-  <RimLLM_ProviderSuccessRateLabel>呼叫成功率: {0}%</RimLLM_ProviderSuccessRateLabel>
-  <RimLLM_ProviderApiCacheRateLabel>API 提示快取命中率: {0}% (已省下 {1} / {2} Tokens)</RimLLM_ProviderApiCacheRateLabel>
+  <RimLLM_ProviderSuccessRateLabel>调用成功率: {0}%</RimLLM_ProviderSuccessRateLabel>
+  <RimLLM_ProviderApiCacheRateLabel>API 提示缓存命中率: {0}% (已省下 {1} / {2} Tokens)</RimLLM_ProviderApiCacheRateLabel>
 </LanguageData>

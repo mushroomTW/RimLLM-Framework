@@ -183,6 +183,15 @@ namespace RimLLM_Framework
             {
                 try
                 {
+                    _linkedCts.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // 若 CTS 已被釋放則安全忽略，不拋出異常
+                }
+
+                try
+                {
                     await _inner.DisposeAsync().ConfigureAwait(false);
                 }
                 finally

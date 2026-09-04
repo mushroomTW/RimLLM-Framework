@@ -34,6 +34,9 @@ namespace RimLLM_Framework
         /// <summary>關閉思考（對應舊 LLMReasoningEffort.None；Auto 以不設定 Reasoning 表達）。</summary>
         public bool DisableReasoning { get; set; }
 
+        internal const string DisableReasoningKey = "rimllm_disable_reasoning";
+        internal const string ExecutorManagedKey = "rimllm_executor_managed";
+
         /// <summary>
         /// 從 <see cref="ChatOptions.AdditionalProperties"/> 取出框架私有欄位。
         /// 框架把這些欄位以 AdditionalProperties 轉遞給 provider（呼叫端未使用

@@ -30,6 +30,8 @@
          NU1608: MEAI.OpenAI 10.9.0 定義 OpenAI (< 2.13.0)，本專案升級至 2.13.0 並透過 OpenAIPatchExtensions 修復 PropagateSet NRE。 -->
     <NoWarn>$(NoWarn);SCME0001;NU1608</NoWarn>
     <Authors>mushroomTW</Authors>
+    <!-- SonarQube / Coverlet 覆蓋率排除非邏輯核心的 RimWorld UI 繪製與 Mod 進入點 -->
+    <SonarQubeCoverageExclusions>**/Mod/UI/**;**/Mod/RimLLMFrameworkMod.cs</SonarQubeCoverageExclusions>
   </PropertyGroup>
 
   <ItemGroup>

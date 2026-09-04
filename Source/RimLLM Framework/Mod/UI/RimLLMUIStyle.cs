@@ -207,6 +207,14 @@ namespace RimLLM_Framework.Mod
                 Widgets.Label(rect, label);
             }
         }
+
+        /// <summary>
+        /// 判斷當前 OnGUI 事件是否適合寫入設定至磁碟（僅在滑鼠放開或無事件時觸發，避免每幀 60 FPS 重複寫入）。
+        /// </summary>
+        public static bool ShouldSaveSettings(bool changed)
+        {
+            return changed && (Event.current == null || Event.current.type == EventType.MouseUp || Event.current.rawType == EventType.MouseUp);
+        }
     }
 #pragma warning restore S101, S2342
 }

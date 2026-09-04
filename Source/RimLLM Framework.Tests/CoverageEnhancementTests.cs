@@ -389,6 +389,12 @@ namespace RimLLM_Framework.Tests
                     }
                 }
                 ClassicAssert.IsTrue(streamed.Count > 0);
+
+                // 測試重複釋放串流列舉器時安全忽略 ObjectDisposedException
+                var streamEnumerator = client.GetStreamingResponseAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }).GetAsyncEnumerator();
+                await streamEnumerator.MoveNextAsync();
+                await streamEnumerator.DisposeAsync();
+                await streamEnumerator.DisposeAsync();
             }
         }
 

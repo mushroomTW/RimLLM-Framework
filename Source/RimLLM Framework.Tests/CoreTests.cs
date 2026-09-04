@@ -12,6 +12,13 @@ namespace RimLLM_Framework.Tests
     [TestFixture]
     public class CoreTests
     {
+        [TearDown]
+        public void TearDown()
+        {
+            EncryptionUtility.CustomSalt = null;
+            EncryptionUtility.InitializeKeyAndIv();
+        }
+
         [Test]
         public void TestEncryption()
         {

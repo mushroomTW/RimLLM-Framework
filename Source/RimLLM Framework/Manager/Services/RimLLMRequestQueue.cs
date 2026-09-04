@@ -106,6 +106,7 @@ namespace RimLLM_Framework.Manager
 
         private void ProcessQueue()
         {
+            List<QueueEntry> toExecute = null;
             lock (_queueLock)
             {
                 int limit = Math.Max(1, _settings.MaxConcurrentRequests);
@@ -114,8 +115,16 @@ namespace RimLLM_Framework.Manager
                     var entry = _waitingQueue[0];
                     _waitingQueue.RemoveAt(0);
                     _activeRequests++;
+                    if (toExecute == null) toExecute = new List<QueueEntry>();
+                    toExecute.Add(entry);
+                }
+            }
 
-                    // 啟動排程非同步執行而不進行阻塞
+            if (toExecute != null)
+            {
+                foreach (var entry in toExecute)
+                {
+                    // 於鎖外啟動排程非同步執行而不進行阻塞，大幅縮減全域鎖持有時間
                     _ = ExecuteQueuedRequestAsync(entry);
                 }
             }

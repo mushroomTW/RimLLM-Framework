@@ -110,13 +110,15 @@ namespace RimLLM_Framework.Mod
                 Messages.Message("RimLLM_MsgDailyCostReset".Translate(), MessageTypeDefOf.TaskCompletion, false);
             }
 
-            // 檢查變更並寫入
-            if (Math.Abs(prevDailyLimit - Settings.DailyBudgetLimit) > 0.001f ||
+            // 檢查變更並寫入（僅在釋放滑鼠或非 GUI 呼叫時寫入，避免拖曳滑桿時每幀觸發同步磁碟 I/O）
+            bool changed = Math.Abs(prevDailyLimit - Settings.DailyBudgetLimit) > 0.001f ||
                 prevPolicy != Settings.BudgetPolicy ||
                 prevEnableAntiAbuse != Settings.EnableAntiAbuse ||
                 prevMaxRequests != Settings.MaxRequestsPerWindow ||
                 prevWindow != Settings.ThrottlingWindowSeconds ||
-                prevCooldown != Settings.CoolDownDurationSeconds)
+                prevCooldown != Settings.CoolDownDurationSeconds;
+
+            if (RimLLMUIStyle.ShouldSaveSettings(changed))
             {
                 Settings.Write();
             }

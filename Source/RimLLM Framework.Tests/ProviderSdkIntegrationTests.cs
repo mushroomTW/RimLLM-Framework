@@ -367,6 +367,14 @@ namespace RimLLM_Framework.Tests
             var sdkGemini = new TestGeminiProvider(settings);
             ClassicAssert.IsNotNull(sdkGemini.CreateChatClient("gemini-1.5-pro"));
             ClassicAssert.IsTrue(sdkGemini.Capabilities.SupportsNativeStructuredOutput);
+
+            // 測試 OpenAICompatibleProvider (RequiresApiKey = false) 且無 API Key 時自動填入 PlaceholderApiKey
+            var localSettings = new MockSettings();
+            var localProvider = new OpenAICompatibleProvider(localSettings);
+            using (var client = localProvider.CreateChatClient("local-model"))
+            {
+                ClassicAssert.IsNotNull(client);
+            }
         }
 
         [Test]

@@ -176,6 +176,7 @@ namespace RimLLM_Framework.Providers
             {
                 Task.Run(async () =>
                 {
+                    bool hasWrittenAnyChunk = false;
                     try
                     {
                         await _provider.StreamWithGoogleGenAiAsync(
@@ -186,6 +187,7 @@ namespace RimLLM_Framework.Providers
                             {
                                 if (!string.IsNullOrEmpty(chunk))
                                 {
+                                    hasWrittenAnyChunk = true;
                                     writer.TryWrite(new ChatResponseUpdate(ChatRole.Assistant, chunk));
                                 }
                             }).ConfigureAwait(false);
@@ -193,7 +195,7 @@ namespace RimLLM_Framework.Providers
                     }
                     catch (RimLLMException ex)
                     {
-                        if (_provider.MarkReasoningUnsupported(_model, ex))
+                        if (!hasWrittenAnyChunk && _provider.MarkReasoningUnsupported(_model, ex))
                         {
                             try
                             {
@@ -257,6 +259,15 @@ namespace RimLLM_Framework.Providers
 
             public ste::System.Threading.Tasks.ValueTask DisposeAsync()
             {
+                try
+                {
+                    _linkedCts.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // 若 CTS 已被釋放則安全忽略，不拋出異常
+                }
+
                 _linkedCts.Dispose();
                 return _inner.DisposeAsync();
             }

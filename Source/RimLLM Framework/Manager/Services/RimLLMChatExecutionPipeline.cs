@@ -87,19 +87,19 @@ namespace RimLLM_Framework.Manager
             if (_responseCache.TryGet(normalizedRequest, out string cachedText))
             {
                 // 快取沒有保留原始的分塊邊界，整段一次送出即可。
-                DispatchChunk(onChunkReceived, cachedText);
+                // 串流 Channel 寫入為執行緒安全；直接呼叫可保證在 Channel 關閉前完整送出，避免主線程排隊競態丟包。
+                onChunkReceived?.Invoke(cachedText);
                 return new RimLLMGenerationResult { Text = cachedText };
             }
 
             if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false) is string mockResult)
             {
-                DispatchChunk(onChunkReceived, mockResult);
+                onChunkReceived?.Invoke(mockResult);
                 return new RimLLMGenerationResult { Text = mockResult };
             }
 
-            Action<string> mainThreadCallback = chunk => DispatchChunk(onChunkReceived, chunk);
             RimLLMGenerationResult result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
-                StreamDirectAsync(normalizedRequest, mainThreadCallback)).ConfigureAwait(false);
+                StreamDirectAsync(normalizedRequest, onChunkReceived)).ConfigureAwait(false);
             _responseCache.Store(normalizedRequest, result?.Text);
             return result;
         }
@@ -381,11 +381,6 @@ namespace RimLLM_Framework.Manager
             return clone;
         }
 
-        private static void DispatchChunk(Action<string> callback, string chunk)
-        {
-            if (callback == null) return;
-            RimLLMDispatcher.EnqueueOnMainThread(() => callback(chunk));
-        }
 
         private static void DispatchRestart(Action callback)
         {

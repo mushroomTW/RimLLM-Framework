@@ -260,6 +260,55 @@ namespace RimLLM_Framework.Tests
 
             ClassicAssert.AreEqual("hi", string.Concat(chunks));
         }
+
+        [Test]
+        public void TestBuildMessages_SystemPromptBranches()
+        {
+            // 分支 1: messages 為空，帶有 EffectiveSystemPrompt -> 插入系統訊息
+            var req1 = new RimLLMRequest { ModId = "t", SystemPrompt = "sys1" };
+            var msgs1 = RimLLMChatClientExecutor.BuildMessages(req1);
+            ClassicAssert.AreEqual(1, msgs1.Count);
+            ClassicAssert.AreEqual(ChatRole.System, msgs1[0].Role);
+            ClassicAssert.AreEqual("sys1", msgs1[0].Text);
+
+            // 分支 2: messages 已有空文字系統訊息 -> 覆寫
+            var req2 = new RimLLMRequest
+            {
+                ModId = "t",
+                SystemPrompt = "sys2",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.System, ""), new ChatMessage(ChatRole.User, "hi") }
+            };
+            var msgs2 = RimLLMChatClientExecutor.BuildMessages(req2);
+            ClassicAssert.AreEqual(2, msgs2.Count);
+            ClassicAssert.AreEqual("sys2", msgs2[0].Text);
+
+            // 分支 3: messages 已有非空系統訊息且不含 prompt -> 前置拼接
+            var req3 = new RimLLMRequest
+            {
+                ModId = "t",
+                SystemPrompt = "sys3",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.System, "existing"), new ChatMessage(ChatRole.User, "hi") }
+            };
+            var msgs3 = RimLLMChatClientExecutor.BuildMessages(req3);
+            ClassicAssert.AreEqual(2, msgs3.Count);
+            ClassicAssert.AreEqual("sys3\n\nexisting", msgs3[0].Text);
+
+            // 分支 4: messages 已有系統訊息且已包含 prompt -> 不重複拼接
+            var req4 = new RimLLMRequest
+            {
+                ModId = "t",
+                SystemPrompt = "sys4",
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.System, "sys4\n\nexisting"), new ChatMessage(ChatRole.User, "hi") }
+            };
+            var msgs4 = RimLLMChatClientExecutor.BuildMessages(req4);
+            ClassicAssert.AreEqual("sys4\n\nexisting", msgs4[0].Text);
+
+            // 分支 5: 沒有 systemPrompt 且 messages 為空 -> 補上一條空白使用者訊息
+            var req5 = new RimLLMRequest { ModId = "t" };
+            var msgs5 = RimLLMChatClientExecutor.BuildMessages(req5);
+            ClassicAssert.AreEqual(1, msgs5.Count);
+            ClassicAssert.AreEqual(ChatRole.User, msgs5[0].Role);
+        }
     }
 
     public class TestClientResultException : ClientResultException

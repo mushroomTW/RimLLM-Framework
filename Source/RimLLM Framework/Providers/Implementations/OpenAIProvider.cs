@@ -1,4 +1,5 @@
 extern alias bclasync;
+extern alias ste;
 using System;
 using System.ClientModel;
 using System.Collections.Generic;
@@ -57,6 +58,10 @@ namespace RimLLM_Framework.Providers
         public override IChatClient CreateChatClient(string model)
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
+            if (string.IsNullOrEmpty(apiKey) && !RequiresApiKey)
+            {
+                apiKey = PlaceholderApiKey;
+            }
             string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
             IChatClient rawClient = CreateOpenAiChatClient(apiKey, model, endpoint);
             return new OpenAIChatClientAdapter(rawClient, this, model);
@@ -315,7 +320,7 @@ namespace RimLLM_Framework.Providers
         {
             return requestOptions is RimLLMChatOptions rimOptions
                 ? rimOptions.DisableReasoning
-                : RimLLMChatOptions.ReadAdditional(requestOptions, "rimllm_disable_reasoning", false);
+                : RimLLMChatOptions.ReadAdditional(requestOptions, RimLLMChatOptions.DisableReasoningKey, false);
         }
 
         /// <summary>
@@ -378,7 +383,10 @@ namespace RimLLM_Framework.Providers
                     }
                 }
 
-                if (response?.Usage != null)
+                // 若由管線層 RimLLMChatClientExecutor 調度，由管線層集中記帳；
+                // 若為外部直接透過 CreateChatClient / GenerateAsync 調用，則在此處記錄用量。
+                bool isExecutorManaged = RimLLMChatOptions.ReadAdditional(options, RimLLMChatOptions.ExecutorManagedKey, false);
+                if (!isExecutorManaged && response?.Usage != null)
                 {
                     try
                     {
@@ -405,19 +413,104 @@ namespace RimLLM_Framework.Providers
                 ChatOptions options = null,
                 System.Threading.CancellationToken cancellationToken = default)
             {
-                var targetOptions = options?.Clone() ?? new ChatOptions();
-                _provider.BuildChatOptions(options, _model, targetOptions);
+                return new OpenAiStreamEnumerable(
+                    (opts, ct) => base.GetStreamingResponseAsync(messages, opts, ct),
+                    options,
+                    _provider,
+                    _model);
+            }
+        }
 
-                try
+        private sealed class OpenAiStreamEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
+        {
+            private readonly Func<ChatOptions, System.Threading.CancellationToken, bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>> _streamFactory;
+            private readonly ChatOptions _originalOptions;
+            private readonly OpenAIProvider _provider;
+            private readonly string _model;
+
+            public OpenAiStreamEnumerable(
+                Func<ChatOptions, System.Threading.CancellationToken, bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>> streamFactory,
+                ChatOptions originalOptions,
+                OpenAIProvider provider,
+                string model)
+            {
+                _streamFactory = streamFactory;
+                _originalOptions = originalOptions;
+                _provider = provider;
+                _model = model;
+            }
+
+            public bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
+                System.Threading.CancellationToken cancellationToken = default)
+            {
+                var targetOptions = _originalOptions?.Clone() ?? new ChatOptions();
+                _provider.BuildChatOptions(_originalOptions, _model, targetOptions);
+                var innerEnumerator = _streamFactory(targetOptions, cancellationToken).GetAsyncEnumerator(cancellationToken);
+                return new OpenAiStreamEnumerator(_streamFactory, innerEnumerator, _originalOptions, _provider, _model, cancellationToken);
+            }
+        }
+
+        private sealed class OpenAiStreamEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
+        {
+            private readonly Func<ChatOptions, System.Threading.CancellationToken, bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>> _streamFactory;
+            private bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> _inner;
+            private readonly ChatOptions _originalOptions;
+            private readonly OpenAIProvider _provider;
+            private readonly string _model;
+            private readonly System.Threading.CancellationToken _cancellationToken;
+            private bool _hasYieldedAny;
+
+            public OpenAiStreamEnumerator(
+                Func<ChatOptions, System.Threading.CancellationToken, bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>> streamFactory,
+                bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> inner,
+                ChatOptions originalOptions,
+                OpenAIProvider provider,
+                string model,
+                System.Threading.CancellationToken cancellationToken)
+            {
+                _streamFactory = streamFactory;
+                _inner = inner;
+                _originalOptions = originalOptions;
+                _provider = provider;
+                _model = model;
+                _cancellationToken = cancellationToken;
+            }
+
+            public ChatResponseUpdate Current => _inner.Current;
+
+            public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
+            {
+                while (true)
                 {
-                    return base.GetStreamingResponseAsync(messages, targetOptions, cancellationToken);
+                    try
+                    {
+                        bool hasNext = await _inner.MoveNextAsync().ConfigureAwait(false);
+                        if (hasNext)
+                        {
+                            _hasYieldedAny = true;
+                        }
+                        return hasNext;
+                    }
+                    catch (ClientResultException ex)
+                    {
+                        var mapped = LLMErrorMapper.CreateException(ex.Status, ex.Message, innerException: ex);
+                        if (!_hasYieldedAny && _provider.MarkUnsupportedParameters(_model, mapped))
+                        {
+                            // 尚未產出任何分塊且為可自癒參數（如思考強度/格式），在此請求中就地重試
+                            await _inner.DisposeAsync().ConfigureAwait(false);
+                            var retryOptions = _originalOptions?.Clone() ?? new ChatOptions();
+                            _provider.BuildChatOptions(_originalOptions, _model, retryOptions);
+                            _inner = _streamFactory(retryOptions, _cancellationToken).GetAsyncEnumerator(_cancellationToken);
+                            continue;
+                        }
+                        throw mapped;
+                    }
                 }
-                catch (ClientResultException ex)
-                {
-                    var mapped = LLMErrorMapper.CreateException(ex.Status, ex.Message, innerException: ex);
-                    _provider.MarkUnsupportedParameters(_model, mapped);
-                    throw mapped;
-                }
+            }
+
+            public ste::System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                return _inner.DisposeAsync();
             }
         }
 
