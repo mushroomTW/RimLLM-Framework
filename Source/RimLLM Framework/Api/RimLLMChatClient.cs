@@ -209,23 +209,6 @@ namespace RimLLM_Framework
             }
         }
 
-        /// <summary>
-        /// 結構化輸出完整路徑（供 RimLLMClientExtensions 使用）：走 manager 核心流程
-        /// （schema、JSON repair），框架功能不繞過。
-        /// </summary>
-        internal async Task<T> GenerateObjectAsync<T>(
-            IEnumerable<ChatMessage> messages,
-            RimLLMChatOptions options,
-            CancellationToken cancellationToken)
-        {
-            RimLLMRequest request = Translate(messages, options, cancellationToken);
-            request.ResponseType = typeof(T);
-            RimLLMGenerationResult result = await _manager
-                .GenerateResultAsync(request)
-                .ConfigureAwait(false);
-            return _manager.DeserializeStructured<T>(result.Text, _manager.Settings, request);
-        }
-
         internal RimLLMRequest Translate(
             IEnumerable<ChatMessage> messages,
             ChatOptions options,
@@ -257,6 +240,7 @@ namespace RimLLM_Framework
                 MinFallbackLevel = RimLLMChatOptions.GetMinFallbackLevel(options),
                 PreferredModelId = options?.ModelId,
                 OnStreamRestart = RimLLMChatOptions.GetOnStreamRestart(options),
+                ResponseType = RimLLMChatOptions.GetResponseType(options),
                 CancellationToken = cancellationToken,
                 Tools = options?.Tools,
                 ToolMode = options?.ToolMode
@@ -307,6 +291,12 @@ namespace RimLLM_Framework
             if (serviceType == typeof(ChatClientMetadata))
             {
                 return Metadata;
+            }
+            // 讓上層無論包了幾層 DelegatingChatClient，都還能認出這是框架的堆疊
+            // （MEAI 的 DelegatingChatClient.GetService 預設會往內層轉發）。
+            if (serviceType == typeof(RimLLMChatClient))
+            {
+                return this;
             }
             return null;
         }

@@ -153,6 +153,22 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestChatOptionsCloneGivesIndependentAdditionalProperties()
+        {
+            // 這是整條中介層堆疊的共同前提：每一層都會 clone options 再改寫，
+            // 若 base.Clone() 只是共用同一個字典，中介層的寫入就會回頭汙染呼叫端的物件。
+            var original = new RimLLMChatOptions { Priority = 3 };
+            ChatOptions cloned = original.Clone();
+
+            cloned.AdditionalProperties["injected_by_middleware"] = true;
+
+            ClassicAssert.IsFalse(
+                original.AdditionalProperties.ContainsKey("injected_by_middleware"),
+                "clone 之後的寫入不可回頭影響呼叫端的 options");
+            ClassicAssert.AreEqual(3, RimLLMChatOptions.GetPriority(cloned), "clone 必須保留框架欄位");
+        }
+
+        [Test]
         public void TestGetStreamingResponseAsync_YieldsChunks()
         {
             var mockSettings = new MockSettings { FallbackChain = new List<string> { "TestMockStream:model-s" } };

@@ -25,12 +25,42 @@ namespace RimLLM_Framework
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
 
-            if (client is RimLLMChatClient facade)
+            // 以 GetService 而非型別轉換辨識框架堆疊：MEAI 的 DelegatingChatClient 會把
+            // GetService 往內層轉發，因此無論外面包了幾層中介層都認得出來。
+            if (client.GetService(typeof(RimLLMChatClient)) is RimLLMChatClient)
             {
-                return facade.GenerateObjectAsync<T>(messages, options, cancellationToken);
+                return FrameworkPathAsync<T>(client, messages, options, cancellationToken);
             }
 
             return SimplifiedPathAsync<T>(client, messages, options, cancellationToken);
+        }
+
+        /// <summary>
+        /// 框架路徑：只在 options 上標註目標型別，schema 方言交給知道供應商身分的路由層決定。
+        /// 請求本身走完整的 IChatClient 鏈，因此防濫用、預算、佇列與快取都不會被繞過
+        /// ——先前這條路徑直接呼叫 facade，任何搬到 facade 外層的中介層都會被跳過。
+        /// </summary>
+        private static async Task<T> FrameworkPathAsync<T>(
+            IChatClient client,
+            IEnumerable<ChatMessage> messages,
+            RimLLMChatOptions options,
+            CancellationToken cancellationToken)
+        {
+            ChatOptions effective = (options ?? new RimLLMChatOptions()).Clone();
+            if (effective.AdditionalProperties == null)
+            {
+                effective.AdditionalProperties = new AdditionalPropertiesDictionary();
+            }
+            effective.AdditionalProperties[RimLLMChatOptions.ResponseTypeKey] = typeof(T);
+
+            ChatResponse response = await client
+                .GetResponseAsync(messages, effective, cancellationToken)
+                .ConfigureAwait(false);
+
+            string raw = response?.Text ?? string.Empty;
+            return RimLLMProvider.TryGetManager(out RimLLMManager manager)
+                ? manager.DeserializeStructured<T>(raw, manager.Settings, null)
+                : RimLLMManager.DeserializeAndValidate<T>(raw);
         }
 
         private static async Task<T> SimplifiedPathAsync<T>(

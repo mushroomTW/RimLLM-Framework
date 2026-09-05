@@ -23,6 +23,13 @@ namespace RimLLM_Framework
         internal const string EnableContextCachingKey = "rimllm_enable_context_caching";
         internal const string OnStreamRestartKey = "rimllm_on_stream_restart";
 
+        /// <summary>
+        /// 結構化輸出的目標型別。由 RimLLMClientExtensions 標註，路由層據此依供應商方言
+        /// 產生原生 schema——放在 AdditionalProperties 是為了讓結構化輸出能走完整的
+        /// IChatClient 鏈，而不是繞過中介層直接呼叫 facade。
+        /// </summary>
+        internal const string ResponseTypeKey = "rimllm_response_type";
+
         /// <summary>請求優先權。數值越高，在全域請求佇列中越先執行。</summary>
         public int Priority
         {
@@ -107,6 +114,9 @@ namespace RimLLM_Framework
 
         internal static bool GetDisableReasoning(ChatOptions options) =>
             ReadAdditional(options, DisableReasoningKey, false);
+
+        internal static System.Type GetResponseType(ChatOptions options) =>
+            ReadAdditional<System.Type>(options, ResponseTypeKey, null);
 
         /// <summary>
         /// 三態語意：鍵不存在時回退成「CachedContext 非空即啟用」，
