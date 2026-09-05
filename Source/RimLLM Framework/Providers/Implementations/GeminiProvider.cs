@@ -339,26 +339,29 @@ namespace RimLLM_Framework.Providers
             var contents = new List<Content>();
             if (messages != null)
             {
-                foreach (var m in messages)
+                // 只列舉一次來源序列（可能是單次列舉的 IEnumerable），並先建好 callId → 函式名對照表；
+                // 此表與個別訊息無關，放在迴圈內重建會讓整體複雜度變成 O(n²)。
+                var messageList = new List<ChatMessage>(messages);
+                var callIdToName = new Dictionary<string, string>();
+                foreach (var prevMsg in messageList)
+                {
+                    if (prevMsg?.Contents == null) continue;
+                    foreach (var c in prevMsg.Contents)
+                    {
+                        if (c is FunctionCallContent fcc && !string.IsNullOrEmpty(fcc.CallId) && !string.IsNullOrEmpty(fcc.Name))
+                        {
+                            callIdToName[fcc.CallId] = fcc.Name;
+                        }
+                    }
+                }
+
+                foreach (var m in messageList)
                 {
                     if (m == null || m.Role == ChatRole.System) continue;
 
                     var parts = new List<Part>();
                     if (m.Contents != null && m.Contents.Count > 0)
                     {
-                        var callIdToName = new Dictionary<string, string>();
-                        foreach (var prevMsg in messages)
-                        {
-                            if (prevMsg?.Contents == null) continue;
-                            foreach (var c in prevMsg.Contents)
-                            {
-                                if (c is FunctionCallContent fcc && !string.IsNullOrEmpty(fcc.CallId) && !string.IsNullOrEmpty(fcc.Name))
-                                {
-                                    callIdToName[fcc.CallId] = fcc.Name;
-                                }
-                            }
-                        }
-
                         foreach (AIContent item in m.Contents)
                         {
                             if (item is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
@@ -566,12 +569,6 @@ namespace RimLLM_Framework.Providers
             }
 
             return chatResponse;
-        }
-
-        private async Task<string> GenerateWithGoogleGenAiAsync(IEnumerable<ChatMessage> messages, ChatOptions options, string model)
-        {
-            ChatResponse response = await ExecuteWithGoogleGenAiAsync(messages, options, model).ConfigureAwait(false);
-            return response.Text ?? string.Empty;
         }
 
         #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
@@ -932,57 +929,6 @@ namespace RimLLM_Framework.Providers
             return null;
         }
         #pragma warning restore S3776
-
-        private string ReadGeminiResponse(GenerateContentResponse response, string model)
-        {
-            if (response == null)
-            {
-                throw new RimLLMException(LLMError.InvalidResponse, "Gemini returned no response.");
-            }
-            if (response.PromptFeedback != null && (response.Parts == null || response.Parts.Count == 0))
-            {
-                throw new RimLLMException(
-                    LLMError.ContentFilter,
-                    "Gemini blocked the prompt or response because of safety settings.");
-            }
-            if (response.Parts == null || response.Parts.Count == 0)
-            {
-                throw new RimLLMException(LLMError.InvalidResponse, "Gemini response contains no content parts.");
-            }
-
-            var builder = new StringBuilder();
-            bool inReasoning = false;
-            bool hasFinishedReasoning = false;
-            foreach (Part part in response.Parts)
-            {
-                if (string.IsNullOrEmpty(part?.Text))
-                {
-                    continue;
-                }
-                EmitGeminiPart(part, value => builder.Append(value), ref inReasoning, ref hasFinishedReasoning);
-            }
-            if (inReasoning)
-            {
-                builder.Append("\n</think>");
-            }
-
-            string result = builder.ToString();
-            if (string.IsNullOrEmpty(result))
-            {
-                throw new RimLLMException(LLMError.InvalidResponse, "Gemini response text is empty.");
-            }
-
-            if (response.UsageMetadata != null)
-            {
-                RimLLMProvider.Manager.RecordUsage(
-                    ProviderId,
-                    model,
-                    response.UsageMetadata.PromptTokenCount ?? 0,
-                    response.UsageMetadata.CandidatesTokenCount ?? 0,
-                    response.UsageMetadata.CachedContentTokenCount ?? 0);
-            }
-            return result;
-        }
 
         private static void EmitGeminiPart(
             Part part,

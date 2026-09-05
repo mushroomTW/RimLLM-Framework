@@ -39,7 +39,10 @@ namespace RimLLM_Framework.Providers
         {
             SupportsNativeStructuredOutput = SupportsNativeJsonSchemaPayload,
             SupportsStreaming = true,
-            SupportsUsageMetadata = true
+            SupportsUsageMetadata = true,
+            // 官方 OpenAI SDK 的 IChatClient 會把 ChatOptions.Tools 轉成 tools 欄位送出，
+            // OpenAI 相容端點（DeepSeek / Grok / Qwen 等子類）同樣支援。
+            SupportsFunctionCalling = true
         };
 
         public OpenAIProvider(IRimLLMSettings settings)

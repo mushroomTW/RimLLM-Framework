@@ -117,18 +117,20 @@ namespace RimLLM_Framework.Manager
         {
             var sink = new StreamAttemptSink(onChunkReceived, request.OnStreamRestart, DispatchRestart);
 
-            await _fallbackPipeline.ExecuteWithFallbackAsync(
+            RimLLMGenerationResult attempt = await _fallbackPipeline.ExecuteWithFallbackAsync(
                 request,
                 (provider, modelName) => StreamProviderAsync(provider, request, modelName, sink.Append),
                 LLMError.ProviderOffline,
                 "All fallback attempts failed, unable to establish stream connection.",
                 onAttemptStarting: sink.BeginAttempt).ConfigureAwait(false);
 
-            return new RimLLMGenerationResult { Text = sink.Result };
+            // 文字以 sink 為準（涵蓋 restart 後的重播），但工具呼叫只存在於成功那次嘗試的結果中。
+            return new RimLLMGenerationResult { Text = sink.Result, Contents = attempt?.Contents };
         }
 
         private async Task<RimLLMGenerationResult> GenerateProviderAsync(ILLMProvider provider, RimLLMRequest request, string model)
         {
+            request = StripUnsupportedTools(provider, request);
             bool useNativeSchema = request.ResponseType != null && IsNativeStructuredProvider(provider);
             if (useNativeSchema)
             {
@@ -170,6 +172,7 @@ namespace RimLLM_Framework.Manager
             string model,
             Action<string> onChunkReceived)
         {
+            request = StripUnsupportedTools(provider, request);
             using (IChatClient client = provider.CreateChatClient(model))
             {
                 RimLLMRequest providerRequest = PrepareRequestForProvider(provider, request);
@@ -232,6 +235,24 @@ namespace RimLLM_Framework.Manager
                                       message.Contains("not support") ||
                                       message.Contains("unrecognized");
             return mentionsSchema && looksLikeRejection;
+        }
+
+        /// <summary>
+        /// 供應商不支援原生工具呼叫時移除 Tools/ToolMode，並留下警告。
+        /// 直接把 tools 送給不認得的供應商會被靜默忽略，呼叫端只會拿到一段散文而不知道工具沒送出去。
+        /// </summary>
+        private static RimLLMRequest StripUnsupportedTools(ILLMProvider provider, RimLLMRequest request)
+        {
+            if (request?.Tools == null || request.Tools.Count == 0) return request;
+            if (provider?.Capabilities?.SupportsFunctionCalling == true) return request;
+
+            RimLLMLog.Warning(
+                $"[RimLLM] 供應商 {provider?.ProviderId} 不支援原生工具呼叫，本次請求的 {request.Tools.Count} 個工具已被移除。");
+
+            RimLLMRequest clone = request.Clone();
+            clone.Tools = null;
+            clone.ToolMode = null;
+            return clone;
         }
 
         private RimLLMRequest PrepareRequestForProvider(

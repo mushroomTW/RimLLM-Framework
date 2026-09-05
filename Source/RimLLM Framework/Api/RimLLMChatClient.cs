@@ -130,6 +130,15 @@ namespace RimLLM_Framework
                             Role = ChatRole.Assistant,
                             ModelId = ComposeModelId(result)
                         };
+                        if (result.HasToolCalls)
+                        {
+                            // 工具呼叫沒有文字 chunk，只能靠收尾 update 交給上層的工具執行迴圈。
+                            foreach (FunctionCallContent toolCall in System.Linq.Enumerable.OfType<FunctionCallContent>(result.Contents))
+                            {
+                                finalUpdate.Contents.Add(toolCall);
+                            }
+                            finalUpdate.FinishReason = ChatFinishReason.ToolCalls;
+                        }
                         finalUpdate.Contents.Add(new UsageContent(new UsageDetails
                         {
                             InputTokenCount = result.PromptTokens,
@@ -262,8 +271,10 @@ namespace RimLLM_Framework
                 CachedInputTokenCount = result.CachedPromptTokens
             };
 
+            // 只有真的帶工具呼叫時才改用原始 Contents；否則一律沿用 result.Text，
+            // 否則 executor 已組好的 <think> 推理封裝會因 ChatResponse.Text 只串接 TextContent 而遺失。
             ChatMessage assistantMessage;
-            if (result.Contents != null && result.Contents.Count > 0)
+            if (result.HasToolCalls)
             {
                 assistantMessage = new ChatMessage(ChatRole.Assistant, result.Contents);
             }

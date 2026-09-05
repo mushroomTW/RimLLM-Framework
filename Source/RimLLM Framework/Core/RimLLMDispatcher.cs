@@ -24,7 +24,7 @@ namespace RimLLM_Framework.Core
 
         private static RimLLMDispatcher _instance;
         private static readonly object InstanceLock = new object();
-        private static readonly ConcurrentQueue<Action> ExecutionQueue = new ConcurrentQueue<Action>();
+        private static readonly ConcurrentQueue<QueuedAction> ExecutionQueue = new ConcurrentQueue<QueuedAction>();
         private static int _queuedCount;
         private static int _droppedCount;
 
@@ -79,11 +79,13 @@ namespace RimLLM_Framework.Core
 
             var tcs = new System.Threading.Tasks.TaskCompletionSource<T>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
 
-            EnqueueOnMainThread(async () =>
+            // 內層刻意不加 ConfigureAwait(false)：本委派由 Update 在主線程上啟動，
+            // 保留 SynchronizationContext 才能讓 func 的續行回到主線程。
+            EnqueueWaitable(async () =>
             {
                 try
                 {
-                    T result = await func().ConfigureAwait(false);
+                    T result = await func();
                     tcs.TrySetResult(result);
                 }
                 catch (OperationCanceledException oce)
@@ -94,7 +96,7 @@ namespace RimLLM_Framework.Core
                 {
                     tcs.TrySetException(ex);
                 }
-            });
+            }, tcs);
 
             return tcs.Task;
         }
@@ -108,7 +110,7 @@ namespace RimLLM_Framework.Core
 
             var tcs = new System.Threading.Tasks.TaskCompletionSource<T>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
 
-            EnqueueOnMainThread(() =>
+            EnqueueWaitable(() =>
             {
                 try
                 {
@@ -122,9 +124,25 @@ namespace RimLLM_Framework.Core
                 {
                     tcs.TrySetException(ex);
                 }
-            });
+            }, tcs);
 
             return tcs.Task;
+        }
+
+        /// <summary>
+        /// 排入一個「有人在等結果」的委派。與 <see cref="EnqueueOnMainThread"/> 的差別在於：
+        /// 佇列溢位而被丟棄時會讓對應的 <paramref name="tcs"/> 失敗，避免等待端永遠掛住。
+        /// </summary>
+        private static void EnqueueWaitable<T>(Action action, System.Threading.Tasks.TaskCompletionSource<T> tcs)
+        {
+            if (_hasPump)
+            {
+                TryEnqueueBounded(new QueuedAction(action, () => tcs.TrySetException(
+                    new InvalidOperationException($"[RimLLM] 主線程佇列已滿（上限 {MaxQueuedActions}），待執行的主線程工作被丟棄。"))));
+                return;
+            }
+
+            action.Invoke();
         }
 
         /// <summary>
@@ -137,15 +155,22 @@ namespace RimLLM_Framework.Core
         internal static bool TryEnqueueBounded(Action action)
         {
             if (action == null) return false;
+            return TryEnqueueBounded(new QueuedAction(action, null));
+        }
 
-            ExecutionQueue.Enqueue(action);
+        private static bool TryEnqueueBounded(QueuedAction item)
+        {
+            ExecutionQueue.Enqueue(item);
             int count = Interlocked.Increment(ref _queuedCount);
 
             bool dropped = false;
-            while (count > MaxQueuedActions && ExecutionQueue.TryDequeue(out _))
+            while (count > MaxQueuedActions && ExecutionQueue.TryDequeue(out QueuedAction discarded))
             {
                 count = Interlocked.Decrement(ref _queuedCount);
                 dropped = true;
+
+                // 被丟棄的項目若有人在等它的結果，必須通知，否則對方會永遠掛在 await 上。
+                discarded.NotifyDropped();
 
                 int totalDropped = Interlocked.Increment(ref _droppedCount);
                 if (totalDropped % 100 == 1)
@@ -155,6 +180,29 @@ namespace RimLLM_Framework.Core
             }
 
             return !dropped;
+        }
+
+        /// <summary>佇列項目：待執行的委派，以及（可選的）被丟棄時要通知的等待者。</summary>
+        private struct QueuedAction
+        {
+            private readonly Action _run;
+            private readonly Action _onDropped;
+
+            public QueuedAction(Action run, Action onDropped)
+            {
+                _run = run;
+                _onDropped = onDropped;
+            }
+
+            public void Run()
+            {
+                _run?.Invoke();
+            }
+
+            public void NotifyDropped()
+            {
+                _onDropped?.Invoke();
+            }
         }
 
         /// <summary>
@@ -167,14 +215,14 @@ namespace RimLLM_Framework.Core
 
             while (processed < maxActions &&
                    stopwatch.ElapsedMilliseconds < budgetMs &&
-                   ExecutionQueue.TryDequeue(out Action action))
+                   ExecutionQueue.TryDequeue(out QueuedAction action))
             {
                 Interlocked.Decrement(ref _queuedCount);
                 processed++;
 
                 try
                 {
-                    action.Invoke();
+                    action.Run();
                 }
                 catch (Exception ex)
                 {

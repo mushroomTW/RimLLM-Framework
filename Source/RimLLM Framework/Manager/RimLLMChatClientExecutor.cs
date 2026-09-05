@@ -98,8 +98,9 @@ namespace RimLLM_Framework.Manager
                     result = text;
                 }
 
-                ChatMessage assistantMessage = response?.Messages != null && response.Messages.Count > 0 ? response.Messages[0] : null;
-                IList<AIContent> contents = assistantMessage?.Contents;
+                // response.Text 涵蓋所有訊息，Contents 也必須逐則彙整，
+                // 否則內層 client 回傳多則訊息時（巢狀 decorator）後續內容與工具呼叫會被吞掉。
+                IList<AIContent> contents = CollectContents(response);
                 bool hasToolCalls = contents != null && System.Linq.Enumerable.Any(contents, c => c is FunctionCallContent);
 
                 if (string.IsNullOrWhiteSpace(result) && !hasToolCalls)
@@ -142,6 +143,7 @@ namespace RimLLM_Framework.Manager
 
             TimeSpan idleTimeout = ResolveTimeout(timeoutSeconds);
             var responseBuilder = new StringBuilder();
+            var toolCalls = new List<AIContent>();
             bool anyOutput = false;
             bool inReasoning = false;
             UsageDetails lastUsage = null;
@@ -188,6 +190,12 @@ namespace RimLLM_Framework.Manager
                                 }
                                 Emit(textContent.Text);
                             }
+                            else if (part is FunctionCallContent functionCall)
+                            {
+                                // 工具呼叫沒有可顯示的文字，但必須保留下來交還給呼叫端的工具執行迴圈。
+                                anyOutput = true;
+                                toolCalls.Add(functionCall);
+                            }
                             else if (part is UsageContent usageContent && usageContent.Details != null)
                             {
                                 lastUsage = usageContent.Details;
@@ -223,14 +231,31 @@ namespace RimLLM_Framework.Manager
             RecordUsage(providerId, model, request, responseBuilder.ToString(), lastUsage);
 
             ReadUsage(lastUsage, out int promptTokens, out int completionTokens, out int cachedPromptTokens);
+            string streamedText = responseBuilder.ToString();
+
+            // 帶工具呼叫時才組 Contents，讓工具執行迴圈拿得到 FunctionCallContent；
+            // 純文字串流維持既有的「只回 Text」行為。
+            IList<AIContent> streamedContents = null;
+            if (toolCalls.Count > 0)
+            {
+                var merged = new List<AIContent>();
+                if (!string.IsNullOrEmpty(streamedText))
+                {
+                    merged.Add(new TextContent(streamedText));
+                }
+                merged.AddRange(toolCalls);
+                streamedContents = merged;
+            }
+
             return new RimLLMGenerationResult
             {
-                Text = responseBuilder.ToString(),
+                Text = streamedText,
                 ProviderId = providerId,
                 ModelName = model,
                 PromptTokens = promptTokens,
                 CompletionTokens = completionTokens,
-                CachedPromptTokens = cachedPromptTokens
+                CachedPromptTokens = cachedPromptTokens,
+                Contents = streamedContents
             };
 
             void Emit(string chunk)
@@ -240,6 +265,21 @@ namespace RimLLM_Framework.Manager
             }
         }
         #pragma warning restore S107, S3776
+
+        /// <summary>彙整 <see cref="ChatResponse"/> 內所有訊息的 content，與 <c>ChatResponse.Text</c> 的涵蓋範圍一致。</summary>
+        private static IList<AIContent> CollectContents(ChatResponse response)
+        {
+            var merged = new List<AIContent>();
+            if (response?.Messages == null || response.Messages.Count == 0) return merged;
+            if (response.Messages.Count == 1) return response.Messages[0]?.Contents ?? merged;
+
+            foreach (ChatMessage message in response.Messages)
+            {
+                if (message?.Contents == null) continue;
+                merged.AddRange(message.Contents);
+            }
+            return merged;
+        }
 
         private static TimeSpan ResolveTimeout(float timeoutSeconds)
         {
