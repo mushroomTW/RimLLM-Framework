@@ -194,6 +194,45 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestGetStreamingResponseAsync_PreservesProviderAndModelMetadata()
+        {
+            // 回歸測試：串流路徑先前只回傳 Text 與 Contents，把成功那次嘗試的
+            // ProviderId / ModelName / token 計數整組丟掉，使呼叫端只拿到空的 ModelId。
+            var mockSettings = new MockSettings { FallbackChain = new List<string> { "TestMockStream:model-s" } };
+            mockSettings.EnabledProviders["TestMockStream"] = true;
+            mockSettings.ApiKeys["TestMockStream"] = "key";
+            var manager = new RimLLMManager(mockSettings);
+            manager.RegisterProvider(new MockStreamProvider
+            {
+                ProviderId = "TestMockStream",
+                StreamHandler = (messages, options, model, onChunk) =>
+                {
+                    onChunk("chunk");
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            });
+
+            var client = CreateClient(manager, "test.stream.meta.mod");
+            string modelId = null;
+            var enumerator = client.GetStreamingResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
+                new RimLLMChatOptions()).GetAsyncEnumerator();
+            try
+            {
+                while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                {
+                    modelId = modelId ?? enumerator.Current.ModelId;
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().GetAwaiter().GetResult();
+            }
+
+            ClassicAssert.AreEqual("TestMockStream:model-s", modelId);
+        }
+
+        [Test]
         public void TestGetStreamingResponseAsync_ProducerFailurePropagates()
         {
             // 所有供應商都失敗時，例外必須傳到列舉端，不能被靜默吞成「串流正常結束」。

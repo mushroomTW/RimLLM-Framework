@@ -22,6 +22,10 @@ namespace RimLLM_Framework.Manager
 #pragma warning disable S101 // reason: RimLLM 為品牌縮寫，維持現狀
     public class RimLLMChatExecutionPipeline
     {
+        /// <summary>預算模擬回應的供應商／模型識別，供呼叫端在 ChatResponse.ModelId 上辨識。</summary>
+        internal const string MockProviderId = "rimllm";
+        internal const string MockModelName = "budget-mock";
+
         private readonly IRimLLMSettings _settings;
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
@@ -58,20 +62,20 @@ namespace RimLLM_Framework.Manager
             // 快取查詢排在准入檢查之前：命中時不會發出任何 API 呼叫，
             // 而防濫用節流與每日預算保護的都是「真的花錢的呼叫」，攔阻零成本的重播沒有意義。
             // 正規化必須先做，否則預設思考強度沒套上就算鍵，會和實際送出的請求對不起來。
-            if (_responseCache.TryGet(normalizedRequest, out string cachedText))
+            if (_responseCache.TryGet(normalizedRequest, out RimLLMGenerationResult cached))
             {
-                return new RimLLMGenerationResult { Text = cachedText };
+                return cached;
             }
 
             // 准入檢查一律在進入佇列之前執行，且整條請求路徑只執行一次。
             if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false) is string mockResult)
             {
-                return new RimLLMGenerationResult { Text = mockResult };
+                return BuildMockResult(mockResult);
             }
 
             RimLLMGenerationResult result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
                 GenerateDirectAsync(normalizedRequest)).ConfigureAwait(false);
-            _responseCache.Store(normalizedRequest, result?.Text);
+            _responseCache.Store(normalizedRequest, result);
             return result;
         }
 
@@ -84,23 +88,23 @@ namespace RimLLM_Framework.Manager
         {
             RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
 
-            if (_responseCache.TryGet(normalizedRequest, out string cachedText))
+            if (_responseCache.TryGet(normalizedRequest, out RimLLMGenerationResult cached))
             {
                 // 快取沒有保留原始的分塊邊界，整段一次送出即可。
                 // 串流 Channel 寫入為執行緒安全；直接呼叫可保證在 Channel 關閉前完整送出，避免主線程排隊競態丟包。
-                onChunkReceived?.Invoke(cachedText);
-                return new RimLLMGenerationResult { Text = cachedText };
+                onChunkReceived?.Invoke(cached.Text);
+                return cached;
             }
 
             if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false) is string mockResult)
             {
                 onChunkReceived?.Invoke(mockResult);
-                return new RimLLMGenerationResult { Text = mockResult };
+                return BuildMockResult(mockResult);
             }
 
             RimLLMGenerationResult result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
                 StreamDirectAsync(normalizedRequest, onChunkReceived)).ConfigureAwait(false);
-            _responseCache.Store(normalizedRequest, result?.Text);
+            _responseCache.Store(normalizedRequest, result);
             return result;
         }
 
@@ -124,8 +128,20 @@ namespace RimLLM_Framework.Manager
                 "All fallback attempts failed, unable to establish stream connection.",
                 onAttemptStarting: sink.BeginAttempt).ConfigureAwait(false);
 
-            // 文字以 sink 為準（涵蓋 restart 後的重播），但工具呼叫只存在於成功那次嘗試的結果中。
-            return new RimLLMGenerationResult { Text = sink.Result, Contents = attempt?.Contents };
+            // 文字以 sink 為準（涵蓋 restart 後的重播），其餘一律取自成功那次嘗試：
+            // 先前只回傳 Text 與 Contents，使得串流路徑的 ProviderId、ModelName 與三個 token
+            // 計數全部遺失，呼叫端拿到空的 ModelId 與全零的 UsageContent。
+            // 用量記帳本身不受影響（記錄發生在 executor 內），遺失的只是呼叫端可見的中繼資料。
+            return new RimLLMGenerationResult
+            {
+                Text = sink.Result,
+                Contents = attempt?.Contents,
+                ProviderId = attempt?.ProviderId,
+                ModelName = attempt?.ModelName,
+                PromptTokens = attempt?.PromptTokens ?? 0,
+                CompletionTokens = attempt?.CompletionTokens ?? 0,
+                CachedPromptTokens = attempt?.CachedPromptTokens ?? 0
+            };
         }
 
         private async Task<RimLLMGenerationResult> GenerateProviderAsync(ILLMProvider provider, RimLLMRequest request, string model)
@@ -383,6 +399,21 @@ namespace RimLLM_Framework.Manager
         {
             _requestTimestamps.Clear();
             _coolDownUntil.Clear();
+        }
+
+        /// <summary>
+        /// 預算靜默模擬（BudgetPolicy = SilentMocking）的回應。
+        /// 給它明確的供應商／模型識別，否則呼叫端只會拿到空的 ModelId，
+        /// 無從分辨「這是模擬回應」與「真的呼叫了但供應商沒回傳模型名」。
+        /// </summary>
+        private static RimLLMGenerationResult BuildMockResult(string text)
+        {
+            return new RimLLMGenerationResult
+            {
+                Text = text,
+                ProviderId = MockProviderId,
+                ModelName = MockModelName
+            };
         }
 
         private static RimLLMRequest NormalizeRequest(RimLLMRequest request, IRimLLMSettings settings)

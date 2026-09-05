@@ -185,7 +185,7 @@ namespace RimLLM_Framework.Tests
             };
 
             // 存入快取應該被跳過
-            cache.Store(reqWithTools, "cached-response");
+            cache.Store(reqWithTools, new RimLLMGenerationResult { Text = "cached-response" });
 
             bool found = cache.TryGet(reqWithTools, out var retrieved);
             ClassicAssert.IsFalse(found, "帶有 Tools 的請求絕不應命中快取");

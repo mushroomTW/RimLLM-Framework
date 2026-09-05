@@ -43,21 +43,22 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 嘗試取出未過期的快取回應。
         /// </summary>
-        public bool TryGet(RimLLMRequest request, out string cachedText)
+        public bool TryGet(RimLLMRequest request, out RimLLMGenerationResult cached)
         {
-            cachedText = null;
+            cached = null;
             // 帶有 Tools 的請求通常具有副作用或即時狀態查詢需求，一律繞過快取
             if (!IsEnabled || request == null || (request.Tools != null && request.Tools.Count > 0)) return false;
 
-            if (!_cache.TryGetValue(BuildKey(request), out string text))
+            if (!_cache.TryGetValue(BuildKey(request), out RimLLMGenerationResult stored))
             {
                 return false;
             }
 
-            cachedText = text;
+            cached = stored;
             RimLLMLog.Message("[RimLLM] Response cache hit; the API call was skipped.");
             return true;
         }
+
 
         /// <summary>
         /// 存入一筆回應。空字串不存，以免把失敗的空回應也快取起來。
@@ -65,16 +66,18 @@ namespace RimLLM_Framework.Manager
         /// <remarks>
         /// 存活時間在寫入當下就固定下來，之後玩家調整 TTL 設定只會影響新寫入的項目。
         /// </remarks>
-        public void Store(RimLLMRequest request, string text)
+        public void Store(RimLLMRequest request, RimLLMGenerationResult result)
         {
-            if (!IsEnabled || request == null || string.IsNullOrEmpty(text) || (request.Tools != null && request.Tools.Count > 0)) return;
+            if (!IsEnabled || request == null || string.IsNullOrEmpty(result?.Text) ||
+                (request.Tools != null && request.Tools.Count > 0)) return;
 
-            _cache.Set(BuildKey(request), text, new MemoryCacheEntryOptions
+            _cache.Set(BuildKey(request), result, new MemoryCacheEntryOptions
             {
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(_settings.ResponseCacheTtlMinutes),
                 Size = 1
             });
         }
+
 
         /// <summary>
         /// 釋放底層快取。實務上這個快取與遊戲行程同壽命，不會有人呼叫；

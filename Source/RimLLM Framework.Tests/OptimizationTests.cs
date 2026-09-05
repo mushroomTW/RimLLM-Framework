@@ -215,15 +215,15 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings { EnableResponseCache = false, ResponseCacheTtlMinutes = 30f };
             var cache = new RimLLMResponseCache(settings);
 
-            cache.Store(NewRequest(), "cached-text");
+            cache.Store(NewRequest(), new RimLLMGenerationResult { Text = "cached-text" });
             ClassicAssert.IsFalse(cache.TryGet(NewRequest(), out _), "關閉時不應命中");
 
             settings.EnableResponseCache = true;
             ClassicAssert.IsFalse(cache.TryGet(NewRequest(), out _), "關閉期間也不應存入");
 
-            cache.Store(NewRequest(), "cached-text");
-            ClassicAssert.IsTrue(cache.TryGet(NewRequest(), out string hit));
-            ClassicAssert.AreEqual("cached-text", hit);
+            cache.Store(NewRequest(), new RimLLMGenerationResult { Text = "cached-text" });
+            ClassicAssert.IsTrue(cache.TryGet(NewRequest(), out RimLLMGenerationResult hit));
+            ClassicAssert.AreEqual("cached-text", hit.Text);
         }
 
         [Test]
@@ -304,7 +304,7 @@ namespace RimLLM_Framework.Tests
             var cache = new RimLLMResponseCache(settings);
 
             cache.Store(NewRequest(), null);
-            cache.Store(NewRequest(), "");
+            cache.Store(NewRequest(), new RimLLMGenerationResult { Text = "" });
             ClassicAssert.IsFalse(cache.TryGet(NewRequest(), out _));
         }
 
@@ -315,7 +315,7 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 0.002f };
             var cache = new RimLLMResponseCache(settings);
 
-            cache.Store(NewRequest(), "stale");
+            cache.Store(NewRequest(), new RimLLMGenerationResult { Text = "stale" });
             ClassicAssert.IsTrue(cache.TryGet(NewRequest(), out _));
 
             await Task.Delay(300);
@@ -363,6 +363,47 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual("generated", first.Text);
             ClassicAssert.AreEqual("generated", second.Text);
             ClassicAssert.AreEqual(1, providerCalls, "第二次相同請求應由快取回應，不再打 API");
+        }
+
+        [Test]
+        public async Task CacheHitKeepsProviderAndModelMetadata()
+        {
+            // 回歸測試：快取先前只存回應文字，命中時 ProviderId / ModelName / token 計數
+            // 全部遺失，呼叫端拿到的 ChatResponse.ModelId 是空字串、Usage 全為零。
+            var settings = new MockSettings
+            {
+                MaxRetries = 0,
+                RetryDelay = 0f,
+                RoutingStrategy = 0,
+                EnableAntiAbuse = false,
+                EnableResponseCache = true,
+                ResponseCacheTtlMinutes = 30f
+            };
+            var ledger = new RimLLMHealthLedger();
+            var tracker = new RimLLMUsageTracker(settings);
+            var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
+
+            RegisterProvider(settings, providers, new MockTestProvider
+            {
+                ProviderId = "Counting",
+                GenerateHandler = (msgs, opts, model) => Task.FromResult("generated")
+            });
+            settings.FallbackChain = new List<string> { "Counting:m1" };
+
+            var pipeline = new RimLLMChatExecutionPipeline(
+                settings,
+                new RimLLMRequestQueue(settings),
+                BuildPipeline(settings, ledger, tracker, providers),
+                tracker,
+                new RimLLMResponseCache(settings));
+
+            var first = await pipeline.GenerateAsync(NewRequest());
+            var second = await pipeline.GenerateAsync(NewRequest());
+
+            ClassicAssert.AreEqual("Counting", second.ProviderId, "快取重播必須保留供應商識別");
+            ClassicAssert.AreEqual("m1", second.ModelName, "快取重播必須保留模型名稱");
+            ClassicAssert.AreEqual(first.ProviderId, second.ProviderId);
+            ClassicAssert.AreEqual(first.ModelName, second.ModelName);
         }
 
         // ---------- OpenAI Patch 傳播器停用與工廠輔助測試 ----------
