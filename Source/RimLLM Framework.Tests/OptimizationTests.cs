@@ -258,6 +258,46 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void ResponseCacheKeyCoversPassThroughSamplingFields()
+        {
+            // 這些欄位以前被 BuildOptions 整組丟棄，所以不進鍵值也無妨；
+            // 現在它們會原樣送達 provider 並改變輸出，不進鍵值就會造成快取毒化
+            // ——兩個只有 Seed 不同的請求會拿到同一份回應。
+            string baseKey = RimLLMResponseCache.BuildKey(NewRequest());
+
+            var withTopP = NewRequest();
+            withTopP.SourceOptions = new ChatOptions { TopP = 0.5f };
+            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withTopP));
+
+            var withTopK = NewRequest();
+            withTopK.SourceOptions = new ChatOptions { TopK = 20 };
+            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withTopK));
+
+            var withFrequencyPenalty = NewRequest();
+            withFrequencyPenalty.SourceOptions = new ChatOptions { FrequencyPenalty = 0.3f };
+            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withFrequencyPenalty));
+
+            var withPresencePenalty = NewRequest();
+            withPresencePenalty.SourceOptions = new ChatOptions { PresencePenalty = 0.4f };
+            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withPresencePenalty));
+
+            var withSeed = NewRequest();
+            withSeed.SourceOptions = new ChatOptions { Seed = 1234L };
+            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withSeed));
+
+            var withOtherSeed = NewRequest();
+            withOtherSeed.SourceOptions = new ChatOptions { Seed = 5678L };
+            ClassicAssert.AreNotEqual(
+                RimLLMResponseCache.BuildKey(withSeed),
+                RimLLMResponseCache.BuildKey(withOtherSeed),
+                "只有 Seed 不同的兩個請求不可共用快取");
+
+            var withStopSequences = NewRequest();
+            withStopSequences.SourceOptions = new ChatOptions { StopSequences = new List<string> { "STOP" } };
+            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withStopSequences));
+        }
+
+        [Test]
         public void ResponseCacheDoesNotStoreEmptyResults()
         {
             var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };

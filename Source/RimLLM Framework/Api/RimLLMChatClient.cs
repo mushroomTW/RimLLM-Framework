@@ -98,9 +98,8 @@ namespace RimLLM_Framework
                 System.Threading.Channels.ChannelWriter<ChatResponseUpdate> writer,
                 CancellationToken cancellationToken)
             {
-                var rimOptions = _options as RimLLMChatOptions;
                 RimLLMRequest request = _client.Translate(_messages, _options, cancellationToken);
-                Action userRestart = rimOptions?.OnStreamRestart;
+                Action userRestart = RimLLMChatOptions.GetOnStreamRestart(_options);
                 request.OnStreamRestart = () =>
                 {
                     // 供應商接手（restart）時先推送 marker update，再通知使用者清空顯示內容。
@@ -234,28 +233,30 @@ namespace RimLLM_Framework
         {
             var messagesList = new List<ChatMessage>(messages ?? new List<ChatMessage>());
 
-            RimLLMChatOptions rimOptions = options as RimLLMChatOptions;
             string systemPrompt = null;
             if (messagesList.Count > 0 && messagesList[0]?.Role == ChatRole.System)
             {
                 systemPrompt = messagesList[0].Text;
             }
 
+            // 框架欄位一律從 AdditionalProperties 取，不再對 RimLLMChatOptions 做型別轉換：
+            // 呼叫端用純 ChatOptions 塞鍵也能生效，且前方中介層 clone 掉子類別型別不會遺失設定。
             return new RimLLMRequest
             {
                 ModId = _modId,
                 Messages = messagesList,
                 SystemPrompt = systemPrompt,
-                CachedContext = rimOptions?.CachedContext,
-                EnableContextCaching = rimOptions?.EnableContextCaching ?? false,
+                SourceOptions = options,
+                CachedContext = RimLLMChatOptions.GetCachedContext(options),
+                EnableContextCaching = RimLLMChatOptions.GetEnableContextCaching(options),
                 Temperature = options?.Temperature,
                 MaxOutputTokens = options?.MaxOutputTokens,
                 ReasoningEffort = options?.Reasoning?.Effort,
-                DisableReasoning = rimOptions?.DisableReasoning ?? false,
-                Priority = rimOptions?.Priority ?? 0,
-                MinFallbackLevel = rimOptions?.MinFallbackLevel,
+                DisableReasoning = RimLLMChatOptions.GetDisableReasoning(options),
+                Priority = RimLLMChatOptions.GetPriority(options),
+                MinFallbackLevel = RimLLMChatOptions.GetMinFallbackLevel(options),
                 PreferredModelId = options?.ModelId,
-                OnStreamRestart = rimOptions?.OnStreamRestart,
+                OnStreamRestart = RimLLMChatOptions.GetOnStreamRestart(options),
                 CancellationToken = cancellationToken,
                 Tools = options?.Tools,
                 ToolMode = options?.ToolMode

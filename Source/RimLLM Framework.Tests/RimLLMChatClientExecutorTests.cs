@@ -48,6 +48,52 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestBuildOptions_PassesThroughCallerChatOptionsFields()
+        {
+            // 回歸測試：BuildOptions 曾經無條件 new 一個乾淨的 ChatOptions，
+            // 使得下游只用 MEAI 設定的 TopP / Seed / StopSequences 等欄位靜默失效——
+            // 不生效也不報錯，正是「只用 MEAI 方法」的呼叫端最難察覺的失敗形態。
+            var sourceOptions = new ChatOptions
+            {
+                TopP = 0.9f,
+                TopK = 40,
+                FrequencyPenalty = 0.3f,
+                PresencePenalty = 0.4f,
+                Seed = 1234L,
+                StopSequences = new List<string> { "STOP" },
+                ResponseFormat = ChatResponseFormat.Json,
+                AdditionalProperties = new AdditionalPropertiesDictionary { ["caller_key"] = "caller_value" }
+            };
+
+            var request = new RimLLMRequest
+            {
+                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
+                SourceOptions = sourceOptions
+            };
+
+            ChatOptions built = RimLLMChatClientExecutor.BuildOptions(
+                request, "gpt-test", useNativeSchema: false, null);
+
+            ClassicAssert.AreEqual(0.9f, built.TopP);
+            ClassicAssert.AreEqual(40, built.TopK);
+            ClassicAssert.AreEqual(0.3f, built.FrequencyPenalty);
+            ClassicAssert.AreEqual(0.4f, built.PresencePenalty);
+            ClassicAssert.AreEqual(1234L, built.Seed);
+            ClassicAssert.AreEqual(1, built.StopSequences.Count);
+            ClassicAssert.AreEqual("STOP", built.StopSequences[0]);
+            ClassicAssert.AreEqual("caller_value", built.AdditionalProperties["caller_key"]);
+
+            // 框架仍必須覆寫自己負責的欄位；Tools 尤其不可沿用呼叫端的複本，
+            // 因為 StripUnsupportedTools 可能已依供應商能力把它移除。
+            ClassicAssert.AreEqual("gpt-test", built.ModelId);
+            ClassicAssert.IsNull(built.Tools);
+
+            // ResponseFormat 反而必須被清掉：原生 schema 被拒後的降級重試也走 useNativeSchema:false，
+            // 呼叫端的 response_format 若在此存活，重試會重送剛被拒的那一份而永久失敗。
+            ClassicAssert.IsNull(built.ResponseFormat);
+        }
+
+        [Test]
         public void TestGenerateAsync_NativeSchemaSetsStrictFlag()
         {
             var client = new CapturingChatClient

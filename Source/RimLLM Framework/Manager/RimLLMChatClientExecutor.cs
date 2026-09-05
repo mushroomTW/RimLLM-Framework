@@ -31,14 +31,15 @@ namespace RimLLM_Framework.Manager
             {
                 Messages = list,
                 SystemPrompt = systemPrompt,
+                SourceOptions = options,
                 Temperature = options?.Temperature,
                 MaxOutputTokens = options?.MaxOutputTokens,
                 ReasoningEffort = options?.Reasoning?.Effort,
                 CancellationToken = cancellationToken,
                 PreferredModelId = model,
-                CachedContext = RimLLMChatOptions.ReadAdditional<string>(options, "rimllm_cached_context", null),
-                EnableContextCaching = RimLLMChatOptions.ReadAdditional(options, "rimllm_enable_context_caching", false),
-                DisableReasoning = RimLLMChatOptions.ReadAdditional(options, "rimllm_disable_reasoning", false)
+                CachedContext = RimLLMChatOptions.GetCachedContext(options),
+                EnableContextCaching = RimLLMChatOptions.GetEnableContextCaching(options),
+                DisableReasoning = RimLLMChatOptions.GetDisableReasoning(options)
             };
         }
         /// <summary>
@@ -337,12 +338,30 @@ namespace RimLLM_Framework.Manager
             Action<ChatOptions> customizeOptions,
             RimLLMSchemaProfile schemaProfile)
         {
-            var options = new ChatOptions
+            // 以呼叫端的原始 options 為基底，否則 TopP、TopK、FrequencyPenalty、PresencePenalty、
+            // Seed、StopSequences、AdditionalProperties、RawRepresentationFactory 這些框架沒有
+            // 逐一轉譯的欄位會被整組丟掉——下游設了也不生效、不報錯。
+            ChatOptions options = request.SourceOptions?.Clone() ?? new ChatOptions();
+            options.ModelId = model;
+            options.Temperature = request.Temperature ?? 0.7f;
+            options.MaxOutputTokens = request.MaxOutputTokens ?? 1024;
+
+            // 這三項相反，必須丟棄呼叫端的複本後由 RimLLMRequest 重新決定：
+            // Tools 可能已被 StripUnsupportedTools 依供應商能力移除，
+            // Reasoning 則已在 NormalizeRequest 正規化成 ReasoningEffort。
+            options.Tools = null;
+            options.ToolMode = null;
+            options.Reasoning = null;
+
+            // ResponseFormat 同樣由框架獨佔，不可沿用呼叫端的複本：
+            // 原生 schema 被拒時，GenerateWithoutNativeSchemaAsync 會以 useNativeSchema:false 重試，
+            // 若呼叫端設定的 response_format 在此存活，重試就會重送剛剛被拒的那一份而永久失敗。
+            // 代價是純 MEAI 呼叫端自行設定的 ResponseFormat 目前仍不會生效——
+            // 這留待結構化輸出改用 MEAI 原生 GetResponseAsync<T> 的階段一併處理。
+            if (!useNativeSchema)
             {
-                ModelId = model,
-                Temperature = request.Temperature ?? 0.7f,
-                MaxOutputTokens = request.MaxOutputTokens ?? 1024
-            };
+                options.ResponseFormat = null;
+            }
 
             // 框架私有欄位以 AdditionalProperties 傳遞給 provider hook（adapter 不透傳，僅框架內部讀取）
             if (options.AdditionalProperties == null)

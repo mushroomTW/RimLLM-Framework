@@ -109,6 +109,23 @@ namespace RimLLM_Framework.Manager
             AppendField(canonical, request.DisableReasoning ? "1" : "0");
             AppendField(canonical, request.ResponseType?.FullName);
 
+            // 呼叫端直接設定、框架不逐一轉譯但會原樣送達 provider 的取樣參數。
+            // 這些欄位一旦真的送到 provider 就會改變輸出，不納入鍵的話，
+            // 兩個只有 Seed（或 TopP、StopSequences…）不同的請求會共用同一筆快取。
+            ChatOptions source = request.SourceOptions;
+            AppendField(canonical, source?.TopP?.ToString("R", CultureInfo.InvariantCulture));
+            AppendField(canonical, source?.TopK?.ToString(CultureInfo.InvariantCulture));
+            AppendField(canonical, source?.FrequencyPenalty?.ToString("R", CultureInfo.InvariantCulture));
+            AppendField(canonical, source?.PresencePenalty?.ToString("R", CultureInfo.InvariantCulture));
+            AppendField(canonical, source?.Seed?.ToString(CultureInfo.InvariantCulture));
+            if (source?.StopSequences != null)
+            {
+                foreach (string stopSequence in source.StopSequences)
+                {
+                    AppendField(canonical, stopSequence);
+                }
+            }
+
             if (request.Messages != null)
             {
                 foreach (ChatMessage message in request.Messages)

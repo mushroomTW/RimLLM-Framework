@@ -136,20 +136,20 @@ namespace RimLLM_Framework.Tests
 
             ChatOptions cloned = original.Clone();
 
-            // base.Clone() 必須回傳衍生型別，否則框架欄位會在任何 middleware clone 時被切掉。
-            ClassicAssert.IsInstanceOf<RimLLMChatOptions>(cloned, "Clone 必須保留 RimLLMChatOptions 型別");
-            var typed = (RimLLMChatOptions)cloned;
-            ClassicAssert.AreEqual(0.5f, typed.Temperature);
-            ClassicAssert.AreEqual(9, typed.Priority);
-            ClassicAssert.AreEqual("Medium", typed.MinFallbackLevel);
-            ClassicAssert.AreEqual("world rules", typed.CachedContext);
-            ClassicAssert.IsTrue(typed.DisableReasoning);
-            ClassicAssert.IsTrue(typed.EnableContextCaching, "CachedContext 不為空時應沿用計算預設值");
-            ClassicAssert.IsNotNull(typed.OnStreamRestart);
+            // 框架欄位存放於 AdditionalProperties，因此 MEAI 的 base.Clone() 就足以保留它們，
+            // 不再需要覆寫 Clone、也不再要求 clone 結果維持衍生型別：前方的 middleware
+            // （ConfigureOptions、FunctionInvocation 等）即使 clone 成純 ChatOptions 也不會切掉設定。
+            ClassicAssert.AreEqual(0.5f, cloned.Temperature);
+            ClassicAssert.AreEqual(9, RimLLMChatOptions.GetPriority(cloned));
+            ClassicAssert.AreEqual("Medium", RimLLMChatOptions.GetMinFallbackLevel(cloned));
+            ClassicAssert.AreEqual("world rules", RimLLMChatOptions.GetCachedContext(cloned));
+            ClassicAssert.IsTrue(RimLLMChatOptions.GetDisableReasoning(cloned));
+            ClassicAssert.IsTrue(RimLLMChatOptions.GetEnableContextCaching(cloned), "CachedContext 不為空時應沿用計算預設值");
+            ClassicAssert.IsNotNull(RimLLMChatOptions.GetOnStreamRestart(cloned));
 
             // 明確設定 false 時不可被 CachedContext 的計算預設值蓋掉。
             original.EnableContextCaching = false;
-            ClassicAssert.IsFalse(((RimLLMChatOptions)original.Clone()).EnableContextCaching);
+            ClassicAssert.IsFalse(RimLLMChatOptions.GetEnableContextCaching(original.Clone()));
         }
 
         [Test]

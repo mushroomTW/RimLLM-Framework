@@ -12,6 +12,13 @@ namespace RimLLM_Framework.Manager
         public string ModId { get; set; }
         public IList<ChatMessage> Messages { get; set; } = new List<ChatMessage>();
         public string SystemPrompt { get; set; }
+
+        /// <summary>
+        /// 呼叫端原始的 ChatOptions。BuildOptions 以它為基底複製，
+        /// 讓框架未逐一轉譯的 MEAI 欄位（TopP、Seed、StopSequences 等）仍能送達 provider。
+        /// </summary>
+        public ChatOptions SourceOptions { get; set; }
+
         public string CachedContext { get; set; }
         public bool EnableContextCaching { get; set; }
         public float? Temperature { get; set; }
@@ -41,6 +48,7 @@ namespace RimLLM_Framework.Manager
                 ModId = ModId,
                 Messages = new List<ChatMessage>(Messages),
                 SystemPrompt = SystemPrompt,
+                SourceOptions = SourceOptions,
                 CachedContext = CachedContext,
                 EnableContextCaching = EnableContextCaching,
                 Temperature = Temperature,
