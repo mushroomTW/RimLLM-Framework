@@ -23,16 +23,13 @@ namespace RimLLM_Framework.Manager
     public class RimLLMChatExecutionPipeline
     {
         private readonly IRimLLMSettings _settings;
-        private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
 
         internal RimLLMChatExecutionPipeline(
             IRimLLMSettings settings,
-            RimLLMRequestQueue requestQueue,
             RimLLMFallbackPipeline fallbackPipeline)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-            _requestQueue = requestQueue ?? throw new ArgumentNullException(nameof(requestQueue));
             _fallbackPipeline = fallbackPipeline ?? throw new ArgumentNullException(nameof(fallbackPipeline));
         }
 
@@ -43,10 +40,9 @@ namespace RimLLM_Framework.Manager
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
 
-            // 正規化、回應快取、防濫用與預算都已上移為 IChatClient 中介層
-            // （見 RimLLMManager.CreateChatClient），抵達這裡的請求都已通過那些檢查。
-            return await _requestQueue.EnqueueRequestAsync(request, () =>
-                GenerateDirectAsync(request)).ConfigureAwait(false);
+            // 正規化、回應快取、防濫用、預算與佇列都已上移為 IChatClient 中介層
+            // （見 RimLLMManager.CreateChatClient），抵達這裡的請求都已通過那些關卡。
+            return await GenerateDirectAsync(request).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -58,8 +54,7 @@ namespace RimLLM_Framework.Manager
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
 
-            return await _requestQueue.EnqueueRequestAsync(request, () =>
-                StreamDirectAsync(request, onChunkReceived)).ConfigureAwait(false);
+            return await StreamDirectAsync(request, onChunkReceived).ConfigureAwait(false);
         }
 
         private Task<RimLLMGenerationResult> GenerateDirectAsync(RimLLMRequest request)

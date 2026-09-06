@@ -380,6 +380,40 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void StreamingHoldsItsQueueSlotForTheWholeEnumeration()
+        {
+            // 這是佇列中介層最容易踩的坑：GetStreamingResponseAsync 只是「建立」一個
+            // 延遲的 IAsyncEnumerable，若名額在它回傳時就釋放，串流請求等於完全不受
+            // 併發上限限制，而且不會有任何錯誤徵兆。
+            var settings = new MockSettings { MaxConcurrentRequests = 1 };
+            var queue = new RimLLMRequestQueue(settings);
+            var client = new RimLLMRequestQueueChatClient(
+                new MockCustomChatClient
+                {
+                    StreamHandler = (msgs, opts, onChunk) =>
+                    {
+                        onChunk("chunk");
+                        return Task.CompletedTask;
+                    }
+                },
+                queue);
+
+            var enumerator = client.GetStreamingResponseAsync(NewMessages()).GetAsyncEnumerator();
+
+            // 開始列舉即佔用唯一的名額。
+            ClassicAssert.IsTrue(enumerator.MoveNextAsync().GetAwaiter().GetResult());
+
+            Task<ChatResponse> blocked = client.GetResponseAsync(NewMessages());
+            ClassicAssert.IsFalse(blocked.Wait(200), "串流仍在列舉中，第二個請求不該取得名額");
+
+            // 名額直到列舉器被釋放才歸還——列舉結束本身不代表呼叫端已經用完。
+            while (enumerator.MoveNextAsync().GetAwaiter().GetResult()) { }
+            enumerator.DisposeAsync().GetAwaiter().GetResult();
+
+            ClassicAssert.IsTrue(blocked.Wait(5000), "名額歸還後第二個請求應該完成");
+        }
+
+        [Test]
         public void AntiAbuseWindowIsSharedAcrossClientsOfTheSameMod()
         {
             // 節流狀態必須由所有 client 共用：若每個 client 各持一份，同一個 Mod

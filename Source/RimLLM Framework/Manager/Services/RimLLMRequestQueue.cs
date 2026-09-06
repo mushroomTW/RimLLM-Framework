@@ -10,8 +10,14 @@ namespace RimLLM_Framework.Manager
 #pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
     /// 管理 API 請求的優先權佇列與並行限流。
-    /// 依據 RimLLMRequest 的優先級（Priority）與先進先出（FIFO）規則調度執行。
+    /// 依據優先級（數值大者先行）與先進先出（FIFO）規則調度執行。
     /// </summary>
+    /// <remarks>
+    /// 核心是「取得一個併發名額」而非「代為執行一段工作」。
+    /// 串流請求必須在整個列舉期間持有名額，而列舉是由呼叫端驅動的，
+    /// 佇列無從得知它何時結束——把名額交給呼叫端以 using 持有，是唯一能同時
+    /// 涵蓋串流與非串流的形狀。
+    /// </remarks>
     internal class RimLLMRequestQueue
     {
         private readonly IRimLLMSettings _settings;
@@ -24,15 +30,14 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private class QueueEntry : IComparable<QueueEntry>
         {
-            public RimLLMRequest Request { get; set; }
-            public TaskCompletionSource<RimLLMGenerationResult> Tcs { get; set; }
-            public Func<Task<RimLLMGenerationResult>> Action { get; set; }
+            public int Priority { get; set; }
+            public TaskCompletionSource<IDisposable> Tcs { get; set; }
             public DateTime EnqueueTime { get; set; } = DateTime.UtcNow;
 
             public int CompareTo(QueueEntry other)
             {
                 // 優先級高（數值大）的排在前面
-                int cmp = other.Request.Priority.CompareTo(this.Request.Priority);
+                int cmp = other.Priority.CompareTo(this.Priority);
                 if (cmp == 0)
                 {
                     // 優先級相同時，先入列的排在前面（FIFO）
@@ -42,46 +47,53 @@ namespace RimLLM_Framework.Manager
             }
         }
 
+        /// <summary>釋放時歸還名額並重新抽取佇列。</summary>
+        private sealed class Slot : IDisposable
+        {
+            private RimLLMRequestQueue _queue;
+
+            public Slot(RimLLMRequestQueue queue)
+            {
+                _queue = queue;
+            }
+
+            public void Dispose()
+            {
+                RimLLMRequestQueue queue = Interlocked.Exchange(ref _queue, null);
+                if (queue == null) return; // 重複釋放不可重複歸還名額
+
+                lock (queue._queueLock)
+                {
+                    queue._activeRequests--;
+                }
+                queue.ProcessQueue();
+            }
+        }
+
         public RimLLMRequestQueue(IRimLLMSettings settings)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         }
 
         /// <summary>
-        /// 將非同步請求包裝入優先權佇列排隊。
+        /// 排隊取得一個併發名額。名額在回傳值被 Dispose 時歸還，
+        /// 因此呼叫端必須以 using 包住整段需要佔用名額的工作。
         /// </summary>
-        public async Task<RimLLMGenerationResult> EnqueueRequestAsync(RimLLMRequest request, Func<Task<RimLLMGenerationResult>> action)
+        public async Task<IDisposable> AcquireSlotAsync(int priority, CancellationToken cancellationToken)
         {
-            var tcs = new TaskCompletionSource<RimLLMGenerationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var entry = new QueueEntry
-            {
-                Request = request,
-                Tcs = tcs,
-                Action = action
-            };
+            var tcs = new TaskCompletionSource<IDisposable>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var entry = new QueueEntry { Priority = priority, Tcs = tcs };
 
-            // 如果一開始就被取消
-            if (request.CancellationToken.IsCancellationRequested)
+            // 一開始就已取消：沿用「await 一個已取消的 Task」的形狀，
+            // 讓呼叫端拿到的仍是 TaskCanceledException 而非裸的 OperationCanceledException。
+            if (cancellationToken.IsCancellationRequested)
             {
-                tcs.TrySetCanceled(request.CancellationToken);
+                tcs.TrySetCanceled(cancellationToken);
                 return await tcs.Task.ConfigureAwait(false);
             }
 
-            CancellationTokenRegistration registration = default;
-            if (request.CancellationToken != default)
-            {
-                registration = request.CancellationToken.Register(() =>
-                {
-                    lock (_queueLock)
-                    {
-                        if (_waitingQueue.Remove(entry))
-                        {
-                            tcs.TrySetCanceled(request.CancellationToken);
-                        }
-                    }
-                });
-            }
-
+            // 必須先入列再註冊取消：反過來的話，取消若發生在註冊與入列之間，
+            // 回呼會找不到項目而不做任何事，隨後入列的項目就再也不會被取消。
             lock (_queueLock)
             {
                 int index = _waitingQueue.BinarySearch(entry);
@@ -90,6 +102,20 @@ namespace RimLLM_Framework.Manager
                     index = ~index;
                 }
                 _waitingQueue.Insert(index, entry);
+            }
+
+            CancellationTokenRegistration registration = default;
+            if (cancellationToken != default)
+            {
+                registration = cancellationToken.Register(() =>
+                {
+                    lock (_queueLock)
+                    {
+                        // 只有還在等待中才由取消端結束；已經拿到名額的交由 Dispose 歸還。
+                        if (!_waitingQueue.Remove(entry)) return;
+                    }
+                    tcs.TrySetCanceled(cancellationToken);
+                });
             }
 
             ProcessQueue();
@@ -104,9 +130,21 @@ namespace RimLLM_Framework.Manager
             }
         }
 
+        /// <summary>
+        /// 將非同步請求包裝入優先權佇列排隊。
+        /// </summary>
+        public async Task<RimLLMGenerationResult> EnqueueRequestAsync(RimLLMRequest request, Func<Task<RimLLMGenerationResult>> action)
+        {
+            using (await AcquireSlotAsync(request.Priority, request.CancellationToken).ConfigureAwait(false))
+            {
+                request.CancellationToken.ThrowIfCancellationRequested();
+                return await action().ConfigureAwait(false);
+            }
+        }
+
         private void ProcessQueue()
         {
-            List<QueueEntry> toExecute = null;
+            List<QueueEntry> toGrant = null;
             lock (_queueLock)
             {
                 int limit = Math.Max(1, _settings.MaxConcurrentRequests);
@@ -115,49 +153,22 @@ namespace RimLLM_Framework.Manager
                     var entry = _waitingQueue[0];
                     _waitingQueue.RemoveAt(0);
                     _activeRequests++;
-                    if (toExecute == null) toExecute = new List<QueueEntry>();
-                    toExecute.Add(entry);
+                    if (toGrant == null) toGrant = new List<QueueEntry>();
+                    toGrant.Add(entry);
                 }
             }
 
-            if (toExecute != null)
-            {
-                foreach (var entry in toExecute)
-                {
-                    // 於鎖外啟動排程非同步執行而不進行阻塞，大幅縮減全域鎖持有時間
-                    _ = ExecuteQueuedRequestAsync(entry);
-                }
-            }
-        }
+            if (toGrant == null) return;
 
-        private async Task ExecuteQueuedRequestAsync(QueueEntry entry)
-        {
-            try
+            // 於鎖外發放名額，大幅縮減全域鎖持有時間。
+            foreach (var entry in toGrant)
             {
-                if (entry.Request.CancellationToken.IsCancellationRequested)
+                var slot = new Slot(this);
+                if (!entry.Tcs.TrySetResult(slot))
                 {
-                    entry.Tcs.TrySetCanceled(entry.Request.CancellationToken);
-                    return;
+                    // 等待端已經被取消，發不出去的名額必須立刻歸還，否則名額會永久流失。
+                    slot.Dispose();
                 }
-
-                RimLLMGenerationResult result = await entry.Action().ConfigureAwait(false);
-                entry.Tcs.TrySetResult(result);
-            }
-            catch (OperationCanceledException ex)
-            {
-                entry.Tcs.TrySetCanceled(ex.CancellationToken);
-            }
-            catch (Exception ex)
-            {
-                entry.Tcs.TrySetException(ex);
-            }
-            finally
-            {
-                lock (_queueLock)
-                {
-                    _activeRequests--;
-                }
-                ProcessQueue();
             }
         }
     }
