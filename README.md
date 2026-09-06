@@ -264,9 +264,9 @@ catch (RimLLMException ex)
 
 `ContentFilter` and `ContextWindowExceeded` are split out of the generic 4xx rejection because the three cases call for different responses: shorten the prompt, try a different provider, or fix the request. Providers on the OpenAI protocol report both as plain `400`s, so the mapper identifies them from the message text; `413` maps to `ContextWindowExceeded` by definition. Schema, reasoning and temperature rejections keep reporting `InvalidResponse`, leaving the existing "retry without that parameter" path untouched. New enum members are appended at the end of `LLMError`, so already-compiled mods keep their values.
 
-### The one extra type: `RimLLMChatOptions`
+### The one optional type: `RimLLMChatOptions`
 
-`ChatOptions` covers the standard knobs. Subclass `RimLLMChatOptions` only when you want something MEAI has no concept of — everything else keeps working exactly as before:
+`ChatOptions` covers the standard knobs. `RimLLMChatOptions` is pure convenience: every one of its properties reads and writes `ChatOptions.AdditionalProperties` under a `rimllm_*` key, and the framework only ever reads that dictionary. Setting those keys on a plain `ChatOptions` works identically, so you never have to reference this type — and because it holds no fields of its own, a middleware that clones your options into a plain `ChatOptions` cannot silently drop your settings.
 
 ```csharp
 var options = new RimLLMChatOptions
@@ -292,7 +292,7 @@ This is the point of the framework. All of the following already happens behind 
 | API key storage and UI | AES-256 encrypted settings, shared across every mod |
 | Picking a provider or model | Player-configured fallback chain, `Provider:Model` entries |
 | Retry and `Retry-After` | Retries on timeout / 429 / connection error, honouring both header formats |
-| Failover between providers | Automatic descent through the fallback chain, mid-stream if needed |
+| Failover between providers | Automatic descent through the fallback chain before the reply starts |
 | Dead-provider handling | Circuit breaker with exponential cooldown after repeated failures |
 | Rate limiting across mods | Global priority queue and concurrency cap, so mods don't stutter the game |
 | Cost control | Daily budget with hard-block / mock / free-tier / prompt policies |
@@ -375,7 +375,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
 ### 1. Unified interface and dispatch core (`IChatClient` / `IEmbeddingGenerator` and `RimLLMProvider`)
 
 * The framework exposes the standard Microsoft.Extensions.AI interfaces. Callers only work against `IChatClient` or `IEmbeddingGenerator` and never need to know which provider or model handled the request — `RimLLMManager` handles dispatch and fallback rotation.
-* The concrete facades (`RimLLMChatClient`, `RimLLMEmbeddingClient`) are `internal`. The only framework-specific types a consumer touches are `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException` and `LLMError`; everything else crossing the boundary is a MEAI type.
+* `CreateChatClient` returns a stack of MEAI `DelegatingChatClient` middleware — reasoning-effort normalization, response cache, anti-abuse throttle, budget guard, priority queue — terminating in a `FailoverChatClient` that routes across the fallback chain. Every layer is `internal`. The only framework-specific types a consumer touches are `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException` and `LLMError`; everything else crossing the boundary is a MEAI type.
 * `modId` is a plain label, not a credential. It keys per-mod anti-abuse throttling and telemetry attribution, and requires no registration call.
 
 ### 2. Unity main-thread dispatcher (`RimLLMDispatcher`)

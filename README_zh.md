@@ -291,7 +291,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | API 金鑰的儲存與 UI | AES-256 加密設定，所有 Mod 共用同一份 |
 | 挑選供應商或模型 | 玩家設定的 Fallback 鏈，項目為 `Provider:Model` 形式 |
 | 重試與 `Retry-After` | 逾時／429／連線錯誤自動重試，兩種標頭格式都支援 |
-| 供應商之間的容錯切換 | 自動沿 Fallback 鏈降級，串流中途也能接手 |
+| 供應商之間的容錯切換 | 回應開始輸出之前，自動沿 Fallback 鏈降級 |
 | 處理掛掉的供應商 | 熔斷器，連續失敗後以指數退避冷卻 |
 | 跨 Mod 的流量控制 | 全域優先佇列與並行上限，避免多個 Mod 同時打 API 造成掉幀 |
 | 費用控管 | 每日預算，可選硬性阻擋／模擬回應／改用免費模型／詢問玩家 |
@@ -374,7 +374,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 ### 1. 統一介面與調度核心（`IChatClient` / `IEmbeddingGenerator` 與 `RimLLMProvider`）
 
 * 框架對外暴露標準的 Microsoft.Extensions.AI 介面。呼叫端只面對 `IChatClient` 或 `IEmbeddingGenerator`，完全不需要知道實際由哪個供應商或模型處理 —— 調度與 Fallback 輪替由 `RimLLMManager` 負責。
-* 具體的 facade（`RimLLMChatClient`、`RimLLMEmbeddingClient`）為 `internal`。使用端會碰到的框架專屬型別只有 `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException` 與 `LLMError`，其餘跨越邊界的全是 MEAI 型別。
+* `CreateChatClient` 回傳的是一疊 MEAI `DelegatingChatClient` 中介層——思考強度正規化、回應快取、防濫用節流、預算保護、優先權佇列——最內層是沿 Fallback 鏈路由的 `FailoverChatClient`。每一層都是 `internal`。使用端會碰到的框架專屬型別只有 `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException` 與 `LLMError`，其餘跨越邊界的全是 MEAI 型別。
 * `modId` 是純標籤，不是憑證。它是每個 Mod 防濫用節流與遙測歸屬的鍵，不需要任何註冊呼叫。
 
 ### 2. Unity 主執行緒派送器（`RimLLMDispatcher`）
