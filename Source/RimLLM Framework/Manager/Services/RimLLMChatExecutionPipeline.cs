@@ -22,31 +22,18 @@ namespace RimLLM_Framework.Manager
 #pragma warning disable S101 // reason: RimLLM 為品牌縮寫，維持現狀
     public class RimLLMChatExecutionPipeline
     {
-        /// <summary>預算模擬回應的供應商／模型識別，供呼叫端在 ChatResponse.ModelId 上辨識。</summary>
-        internal const string MockProviderId = "rimllm";
-        internal const string MockModelName = "budget-mock";
-
         private readonly IRimLLMSettings _settings;
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
-        private readonly RimLLMUsageTracker _usageTracker;
-
-        // Anti-abuse state
-        private readonly ConcurrentDictionary<string, List<DateTime>> _requestTimestamps =
-            new ConcurrentDictionary<string, List<DateTime>>(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, DateTime> _coolDownUntil =
-            new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
         internal RimLLMChatExecutionPipeline(
             IRimLLMSettings settings,
             RimLLMRequestQueue requestQueue,
-            RimLLMFallbackPipeline fallbackPipeline,
-            RimLLMUsageTracker usageTracker)
+            RimLLMFallbackPipeline fallbackPipeline)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _requestQueue = requestQueue ?? throw new ArgumentNullException(nameof(requestQueue));
             _fallbackPipeline = fallbackPipeline ?? throw new ArgumentNullException(nameof(fallbackPipeline));
-            _usageTracker = usageTracker ?? throw new ArgumentNullException(nameof(usageTracker));
         }
 
         /// <summary>
@@ -56,14 +43,8 @@ namespace RimLLM_Framework.Manager
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
 
-            // 正規化與回應快取已上移為 IChatClient 中介層（見 RimLLMManager.CreateChatClient），
-            // 因此抵達這裡的請求必然已正規化，且必然是快取沒有命中的。
-            // 准入檢查一律在進入佇列之前執行，且整條請求路徑只執行一次。
-            if (await RunAdmissionChecksAsync(request).ConfigureAwait(false) is string mockResult)
-            {
-                return BuildMockResult(mockResult);
-            }
-
+            // 正規化、回應快取、防濫用與預算都已上移為 IChatClient 中介層
+            // （見 RimLLMManager.CreateChatClient），抵達這裡的請求都已通過那些檢查。
             return await _requestQueue.EnqueueRequestAsync(request, () =>
                 GenerateDirectAsync(request)).ConfigureAwait(false);
         }
@@ -76,12 +57,6 @@ namespace RimLLM_Framework.Manager
             Action<string> onChunkReceived)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
-
-            if (await RunAdmissionChecksAsync(request).ConfigureAwait(false) is string mockResult)
-            {
-                onChunkReceived?.Invoke(mockResult);
-                return BuildMockResult(mockResult);
-            }
 
             return await _requestQueue.EnqueueRequestAsync(request, () =>
                 StreamDirectAsync(request, onChunkReceived)).ConfigureAwait(false);
@@ -329,70 +304,6 @@ namespace RimLLM_Framework.Manager
         internal static T DeserializeAndValidate<T>(string json)
         {
             return RimLLMJsonHelper.DeserializeAndValidate<T>(json);
-        }
-
-        private async Task<string> RunAdmissionChecksAsync(RimLLMRequest request)
-        {
-            if (_settings.EnableAntiAbuse)
-            {
-                CheckAntiAbuse(request.ModId);
-            }
-
-            bool budgetOk = await _usageTracker.CheckBudgetLimitAsync(request).ConfigureAwait(false);
-            if (!budgetOk)
-            {
-                throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
-            }
-
-            return _usageTracker.IsBudgetMocked(request, out string mockResult) ? mockResult : null;
-        }
-
-        public void CheckAntiAbuse(string modId)
-        {
-            if (string.IsNullOrEmpty(modId)) return;
-
-            DateTime now = DateTime.UtcNow;
-            if (_coolDownUntil.TryGetValue(modId, out DateTime cdTime) && now < cdTime)
-            {
-                throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' is in anti-abuse cooldown until {cdTime.ToLocalTime()}.");
-            }
-
-            var list = _requestTimestamps.GetOrAdd(modId, _ => new List<DateTime>());
-            lock (list)
-            {
-                DateTime limit = now.AddSeconds(-_settings.ThrottlingWindowSeconds);
-                list.RemoveAll(t => t < limit);
-                list.Add(now);
-
-                if (list.Count > _settings.MaxRequestsPerWindow)
-                {
-                    DateTime cdUntil = now.AddSeconds(_settings.CoolDownDurationSeconds);
-                    _coolDownUntil[modId] = cdUntil;
-                    RimLLMLog.Warning($"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
-                    throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
-                }
-            }
-        }
-
-        public void ClearCooldowns()
-        {
-            _requestTimestamps.Clear();
-            _coolDownUntil.Clear();
-        }
-
-        /// <summary>
-        /// 預算靜默模擬（BudgetPolicy = SilentMocking）的回應。
-        /// 給它明確的供應商／模型識別，否則呼叫端只會拿到空的 ModelId，
-        /// 無從分辨「這是模擬回應」與「真的呼叫了但供應商沒回傳模型名」。
-        /// </summary>
-        private static RimLLMGenerationResult BuildMockResult(string text)
-        {
-            return new RimLLMGenerationResult
-            {
-                Text = text,
-                ProviderId = MockProviderId,
-                ModelName = MockModelName
-            };
         }
 
 

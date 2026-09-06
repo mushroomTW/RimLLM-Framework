@@ -32,6 +32,7 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMEmbeddingService _embeddingService;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
         private readonly RimLLMChatExecutionPipeline _chatPipeline;
+        private readonly RimLLMThrottleStore _throttleStore;
 
         public RimLLMEmbeddingService EmbeddingService => _embeddingService;
         public RimLLMUsageTracker UsageTracker => _usageTracker;
@@ -74,11 +75,12 @@ namespace RimLLM_Framework.Manager
                 providerId => TryGetProvider(providerId, out var provider) ? provider : null,
                 IsProviderEnabled);
 
+            _throttleStore = new RimLLMThrottleStore(settings);
+
             _chatPipeline = new RimLLMChatExecutionPipeline(
                 settings,
                 requestQueue,
-                _fallbackPipeline,
-                _usageTracker);
+                _fallbackPipeline);
 
             // 初始化並註冊內建供應商
             RegisterBuiltInProvider(new OpenAIProvider(settings));
@@ -199,9 +201,11 @@ namespace RimLLM_Framework.Manager
 
             // 由內往外堆疊。層序是語意性的，不可調換：
             // 正規化必須在最外層，否則快取算鍵時看到的思考強度會和實際送出的不一致；
-            // 快取必須排在（facade 內部的）防濫用與預算檢查之前，因為命中不發 API 呼叫，
-            // 攔阻零成本的重播沒有意義。
+            // 快取必須排在防濫用與預算之前，因為命中不發 API 呼叫，攔阻零成本的重播沒有意義；
+            // 預算則排在防濫用之後、佇列之前，被擋下的請求不該佔用併發名額。
             IChatClient client = new RimLLMChatClient(this, modId);
+            client = new RimLLMBudgetChatClient(client, _usageTracker);
+            client = new RimLLMAntiAbuseChatClient(client, _settings, _throttleStore, modId);
             client = new RimLLMResponseCacheChatClient(client, _settings);
             client = new RimLLMOptionsNormalizingChatClient(client, _settings);
             return client;
@@ -222,7 +226,7 @@ namespace RimLLM_Framework.Manager
         {
             if (_settings.EnableAntiAbuse)
             {
-                _chatPipeline.CheckAntiAbuse(modId);
+                _throttleStore.CheckAntiAbuse(modId);
             }
         }
 
@@ -303,7 +307,7 @@ namespace RimLLM_Framework.Manager
         public void ClearCooldowns()
         {
             _fallbackPipeline.ClearCooldowns();
-            _chatPipeline.ClearCooldowns();
+            _throttleStore.ClearCooldowns();
         }
 
         public void RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)

@@ -459,6 +459,14 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         internal bool IsBudgetMocked(RimLLMRequest request, out string mockResult)
         {
+            return IsBudgetMocked(request?.ResponseType != null, out mockResult);
+        }
+
+        /// <summary>
+        /// 同上，但只取用真正需要的資訊，供直接操作 MEAI 型別的中介層使用。
+        /// </summary>
+        internal bool IsBudgetMocked(bool hasResponseType, out string mockResult)
+        {
             mockResult = null;
 
             if (_settings.BudgetPolicy != 1 ||
@@ -468,7 +476,7 @@ namespace RimLLM_Framework.Manager
                 return false;
             }
 
-            if (request?.ResponseType != null)
+            if (hasResponseType)
             {
                 mockResult = "{}";
                 return true;

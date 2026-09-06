@@ -531,19 +531,41 @@ namespace RimLLM_Framework.Tests
             settings.DailyAccumulatedCost = 2.0f;
             settings.BudgetPolicy = 1; // SilentMocking
 
-            var mockReq = new RimLLMRequest { ModId = "test.mod" };
-            var mockRes = await pipeline.GenerateAsync(mockReq);
+            // 預算檢查與靜默模擬已上移為中介層，不再由 pipeline 負責。
+            var budgetClient = new RimLLMBudgetChatClient(
+                new MockCustomChatClient(), new RimLLMUsageTracker(settings));
+            var mockMessages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+
+            ChatResponse mockRes = await budgetClient.GetResponseAsync(mockMessages);
             ClassicAssert.IsNotNull(mockRes?.Text);
+            ClassicAssert.AreEqual("rimllm:budget-mock", mockRes.ModelId, "模擬回應要有可辨識的來源");
 
             string streamedText = "";
-            var streamRes = await pipeline.StreamAsync(mockReq, chunk => streamedText += chunk);
-            ClassicAssert.AreEqual(mockRes.Text, streamRes.Text);
-            ClassicAssert.AreEqual(mockRes.Text, streamedText);
+            var streamEnumerator = budgetClient.GetStreamingResponseAsync(mockMessages).GetAsyncEnumerator();
+            try
+            {
+                while (streamEnumerator.MoveNextAsync().GetAwaiter().GetResult())
+                {
+                    streamedText += streamEnumerator.Current.Text;
+                }
+            }
+            finally
+            {
+                streamEnumerator.DisposeAsync().GetAwaiter().GetResult();
+            }
+            ClassicAssert.AreEqual(mockRes.Text, streamedText, "串流與非串流的模擬內容必須一致");
 
             // 3. ResponseType with SilentMocking returns "{}"
             settings.DailyAccumulatedCost = 2.0f;
             var objReq = new RimLLMRequest { ModId = "test.mod", ResponseType = typeof(NullableTestDataStructure) };
-            var objRes = await pipeline.GenerateAsync(objReq);
+            var structuredOptions = new RimLLMChatOptions
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    [RimLLMChatOptions.ResponseTypeKey] = typeof(NullableTestDataStructure)
+                }
+            };
+            ChatResponse objRes = await budgetClient.GetResponseAsync(mockMessages, structuredOptions);
             ClassicAssert.AreEqual("{}", objRes.Text);
 
             // 4. JSON Repair disabled throws RimLLMException
@@ -558,24 +580,29 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(42, parsed.OptionalCount);
 
             // 6. Anti-abuse rate limiting trigger & cooldown
+            // 節流狀態已從 pipeline 抽到共用的 RimLLMThrottleStore（由防濫用中介層使用）。
             settings.EnableAntiAbuse = true;
             settings.MaxRequestsPerWindow = 3;
             settings.ThrottlingWindowSeconds = 60;
             settings.CoolDownDurationSeconds = 60;
-            pipeline.CheckAntiAbuse("test-abuse-mod");
-            pipeline.CheckAntiAbuse("test-abuse-mod");
-            pipeline.CheckAntiAbuse("test-abuse-mod");
+            var throttleStore = new RimLLMThrottleStore(settings);
+            throttleStore.CheckAntiAbuse("test-abuse-mod");
+            throttleStore.CheckAntiAbuse("test-abuse-mod");
+            throttleStore.CheckAntiAbuse("test-abuse-mod");
             // 第 4 次觸發限流
-            Assert.Throws<RimLLMException>(() => pipeline.CheckAntiAbuse("test-abuse-mod"));
+            Assert.Throws<RimLLMException>(() => throttleStore.CheckAntiAbuse("test-abuse-mod"));
             // 冷卻中再次呼叫也拋出限流
-            Assert.Throws<RimLLMException>(() => pipeline.CheckAntiAbuse("test-abuse-mod"));
-            pipeline.ClearCooldowns();
+            Assert.Throws<RimLLMException>(() => throttleStore.CheckAntiAbuse("test-abuse-mod"));
+            throttleStore.ClearCooldowns();
 
-            // 7. HardBlock 預算政策 (BudgetPolicy = 0)
+            // 7. HardBlock 預算政策 (BudgetPolicy = 0)：改由預算中介層負責攔阻。
             settings.BudgetPolicy = 0;
             settings.DailyBudgetLimit = 1.0f;
             settings.DailyAccumulatedCost = 2.0f;
-            Assert.ThrowsAsync<RimLLMException>(async () => await pipeline.GenerateAsync(mockReq));
+            var hardBlockClient = new RimLLMBudgetChatClient(
+                new MockCustomChatClient(), new RimLLMUsageTracker(settings));
+            Assert.ThrowsAsync<RimLLMException>(
+                async () => await hardBlockClient.GetResponseAsync(mockMessages));
 
             // 8. 驗證空物件與結構化必填驗證
             Assert.Throws<InvalidOperationException>(() => RimLLMChatExecutionPipeline.DeserializeAndValidate<NullableTestDataStructure>("null"));

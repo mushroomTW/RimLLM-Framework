@@ -103,7 +103,7 @@ namespace RimLLM_Framework.Manager
             {
                 RimLLMLog.Message("[RimLLM] Response cache hit; the API call was skipped.");
                 // 快取沒有保留原始的分塊邊界，把整個回應攤成 update 重播即可。
-                return new ReplayEnumerable(cached.ToChatResponseUpdates());
+                return RimLLMUpdateReplay.FromResponse(cached);
             }
 
             return new RecordingEnumerable(
@@ -134,51 +134,6 @@ namespace RimLLM_Framework.Manager
                 _cache.Dispose();
             }
             base.Dispose(disposing);
-        }
-
-        /// <summary>重播已快取的回應。</summary>
-        private sealed class ReplayEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
-        {
-            private readonly IList<ChatResponseUpdate> _updates;
-
-            public ReplayEnumerable(IList<ChatResponseUpdate> updates)
-            {
-                _updates = updates;
-            }
-
-            public bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
-                CancellationToken cancellationToken = default)
-            {
-                return new ReplayEnumerator(_updates, cancellationToken);
-            }
-        }
-
-        private sealed class ReplayEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
-        {
-            private readonly IList<ChatResponseUpdate> _updates;
-            private readonly CancellationToken _cancellationToken;
-            private int _index = -1;
-
-            public ReplayEnumerator(IList<ChatResponseUpdate> updates, CancellationToken cancellationToken)
-            {
-                _updates = updates;
-                _cancellationToken = cancellationToken;
-            }
-
-            public ChatResponseUpdate Current =>
-                _index >= 0 && _index < _updates.Count ? _updates[_index] : null;
-
-            public ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
-            {
-                _cancellationToken.ThrowIfCancellationRequested();
-                _index++;
-                return new ste::System.Threading.Tasks.ValueTask<bool>(_index < _updates.Count);
-            }
-
-            public ste::System.Threading.Tasks.ValueTask DisposeAsync()
-            {
-                return default(ste::System.Threading.Tasks.ValueTask);
-            }
         }
 
         /// <summary>沿路收集 update，串流正常結束後把彙整出的回應存進快取。</summary>

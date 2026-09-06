@@ -380,6 +380,32 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void AntiAbuseWindowIsSharedAcrossClientsOfTheSameMod()
+        {
+            // 節流狀態必須由所有 client 共用：若每個 client 各持一份，同一個 Mod
+            // 只要多呼叫幾次 CreateChatClient 就能繞過節流，ClearCooldowns 也只會清掉其中一份。
+            var settings = new MockSettings
+            {
+                EnableAntiAbuse = true,
+                MaxRequestsPerWindow = 2,
+                ThrottlingWindowSeconds = 60,
+                CoolDownDurationSeconds = 60
+            };
+            var store = new RimLLMThrottleStore(settings);
+
+            IChatClient first = new RimLLMAntiAbuseChatClient(
+                new MockCustomChatClient(), settings, store, "same.mod");
+            IChatClient second = new RimLLMAntiAbuseChatClient(
+                new MockCustomChatClient(), settings, store, "same.mod");
+
+            first.GetResponseAsync(NewMessages()).GetAwaiter().GetResult();
+            second.GetResponseAsync(NewMessages()).GetAwaiter().GetResult();
+
+            // 第 3 次跨越視窗上限——不論它是由哪一個 client 發出的。
+            Assert.ThrowsAsync<RimLLMException>(async () => await second.GetResponseAsync(NewMessages()));
+        }
+
+        [Test]
         public void ResponseCacheKeyCoversEveryFieldThatChangesTheOutput()
         {
             string baseKey = RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions());
