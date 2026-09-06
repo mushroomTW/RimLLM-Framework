@@ -1,3 +1,4 @@
+extern alias bclasync;
 extern alias ste;
 using System;
 using System.Collections.Generic;
@@ -30,6 +31,12 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMUsageTracker _usageTracker;
         private readonly RimLLMFallbackPipeline _policy;
         private readonly string _modId;
+
+        /// <summary>
+        /// 標記本次請求是串流。RoutingContext 不帶這個資訊，而候選用盡時要擲出的錯誤碼
+        /// 取決於串流與否，因此以框架私有鍵夾在 ChatOptions 上傳遞。
+        /// </summary>
+        private const string StreamingKey = "rimllm_streaming";
 
         /// <summary>
         /// 每個請求的選擇進度。RoutingContext 由基底類別逐請求建立且不帶使用者狀態，
@@ -68,6 +75,48 @@ namespace RimLLM_Framework.Manager
             MaximumAttemptsPerRequest = null;
         }
 
+        /// <summary>
+        /// 組出備援路由。外面固定再包一層 <see cref="StreamingMarkerChatClient"/>：
+        /// 候選用盡時要擲出的錯誤碼取決於串流與否，而 RoutingContext 不帶這個資訊、
+        /// FailoverChatClient 又把兩個入口都 sealed 了，只能在進入路由之前先標記。
+        /// </summary>
+        public static IChatClient Create(
+            IRimLLMSettings settings,
+            RimLLMHealthLedger healthLedger,
+            RimLLMUsageTracker usageTracker,
+            RimLLMFallbackPipeline policy,
+            string modId)
+        {
+            return new StreamingMarkerChatClient(
+                new RimLLMFailoverChatClient(settings, healthLedger, usageTracker, policy, modId));
+        }
+
+        /// <summary>
+        /// 在請求進入路由之前標記「這是串流」。必須緊貼著 router：擺到回應快取之外的話，
+        /// 這個鍵會進入快取鍵的計算，讓同一個請求的串流與非串流版本各存一份。
+        /// </summary>
+        private sealed class StreamingMarkerChatClient : DelegatingChatClient
+        {
+            public StreamingMarkerChatClient(IChatClient innerClient)
+                : base(innerClient)
+            {
+            }
+
+            public override bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                CancellationToken cancellationToken = default)
+            {
+                ChatOptions marked = options?.Clone() ?? new ChatOptions();
+                if (marked.AdditionalProperties == null)
+                {
+                    marked.AdditionalProperties = new AdditionalPropertiesDictionary();
+                }
+                marked.AdditionalProperties[StreamingKey] = true;
+                return base.GetStreamingResponseAsync(messages, marked, cancellationToken);
+            }
+        }
+
         protected override async ste::System.Threading.Tasks.ValueTask<IChatClient> SelectClientAsync(
             RoutingContext context,
             CancellationToken cancellationToken)
@@ -90,7 +139,7 @@ namespace RimLLM_Framework.Manager
 
             if (state.Index >= state.Candidates.Count)
             {
-                Exhausted(state);
+                Exhausted(state, context.ChatOptions);
             }
 
             var candidate = state.Current;
@@ -153,7 +202,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 候選用盡。選擇失敗不會觸發 OnRoutingUpdateAsync，因此收尾日誌必須在這裡寫。
         /// </summary>
-        private void Exhausted(RequestState state)
+        private void Exhausted(RequestState state, ChatOptions options)
         {
             // 最後一個候選的失敗已由 AdvanceAsync 在換手前結算，這裡只需寫收尾日誌。
             state.Total.Stop();
@@ -161,9 +210,13 @@ namespace RimLLM_Framework.Manager
                 state.StartTime, _modId, "FallbackChain", "None", false,
                 state.LastException?.Message ?? "All fallbacks failed", state.Total.ElapsedMilliseconds);
 
+            // 串流沿用舊管線的 ProviderOffline：下游是以 LLMError 分支顯示離線提示的。
+            bool streaming = RimLLMChatOptions.ReadAdditional(options, StreamingKey, false);
             throw new RimLLMException(
-                LLMError.Unknown,
-                $"All fallback attempts failed. Last error: {state.LastException?.Message}",
+                streaming ? LLMError.ProviderOffline : LLMError.Unknown,
+                streaming
+                    ? $"All fallback attempts failed, unable to establish stream connection. Last error: {state.LastException?.Message}"
+                    : $"All fallback attempts failed. Last error: {state.LastException?.Message}",
                 state.LastException);
         }
 
@@ -188,9 +241,15 @@ namespace RimLLM_Framework.Manager
 
                 if (attempt.Exception == null)
                 {
-                    _healthLedger.RecordSuccess(healthKey, elapsedMs);
-                    _usageTracker.RecordLog(
-                        state.StartTime, _modId, candidate.ProviderId, candidate.ModelName, true, null, elapsedMs);
+                    // Exception 為 null 不等於成功：呼叫端提早停止列舉串流時，Exception 與
+                    // ResponseCompleted 都不會被設定。把那種情況記成成功，會讓一個正在熔斷
+                    // 冷卻中的目標被 RecordSuccess 清掉連續失敗數而立刻復活。
+                    if (attempt.ResponseCompleted)
+                    {
+                        _healthLedger.RecordSuccess(healthKey, elapsedMs);
+                        _usageTracker.RecordLog(
+                            state.StartTime, _modId, candidate.ProviderId, candidate.ModelName, true, null, elapsedMs);
+                    }
                 }
                 else
                 {

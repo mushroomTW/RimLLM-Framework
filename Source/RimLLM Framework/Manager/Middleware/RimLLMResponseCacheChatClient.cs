@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Caching.Memory;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager
@@ -30,21 +29,17 @@ namespace RimLLM_Framework.Manager
     /// </remarks>
     internal sealed class RimLLMResponseCacheChatClient : DelegatingChatClient
     {
-        /// <summary>
-        /// 快取項目上限。每筆項目的 Size 都是 1，因此 SizeLimit 等同筆數上限。
-        /// 這個數字不開放給玩家調整：調小省不了多少記憶體，調大也不會提高命中率——
-        /// 會重複的請求本來就集中在少數幾種。
-        /// </summary>
-        private const int MaxEntries = 256;
-
         private readonly IRimLLMSettings _settings;
-        private readonly MemoryCache _cache =
-            new MemoryCache(new MemoryCacheOptions { SizeLimit = MaxEntries });
+        private readonly RimLLMResponseCacheStore _store;
 
-        public RimLLMResponseCacheChatClient(IChatClient innerClient, IRimLLMSettings settings)
+        public RimLLMResponseCacheChatClient(
+            IChatClient innerClient,
+            IRimLLMSettings settings,
+            RimLLMResponseCacheStore store)
             : base(innerClient)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            _store = store ?? throw new ArgumentNullException(nameof(store));
         }
 
         /// <summary>
@@ -72,10 +67,12 @@ namespace RimLLM_Framework.Manager
             var materialized = new List<ChatMessage>(messages ?? new List<ChatMessage>());
             string key = RimLLMResponseCacheKey.Build(materialized, options);
 
-            if (_cache.TryGetValue(key, out ChatResponse cached))
+            if (_store.TryGet(key, out ChatResponse cached))
             {
                 RimLLMLog.Message("[RimLLM] Response cache hit; the API call was skipped.");
-                return cached;
+                // 每次命中都交出一份新的外殼：ChatResponse 的 Messages 是可寫清單，
+                // 直接遞出快取中的那個實例，呼叫端只要往裡面追加訊息就污染了後續所有命中。
+                return CopyForCaller(cached);
             }
 
             ChatResponse response = await base
@@ -99,7 +96,7 @@ namespace RimLLM_Framework.Manager
             var materialized = new List<ChatMessage>(messages ?? new List<ChatMessage>());
             string key = RimLLMResponseCacheKey.Build(materialized, options);
 
-            if (_cache.TryGetValue(key, out ChatResponse cached))
+            if (_store.TryGet(key, out ChatResponse cached))
             {
                 RimLLMLog.Message("[RimLLM] Response cache hit; the API call was skipped.");
                 // 快取沒有保留原始的分塊邊界，把整個回應攤成 update 重播即可。
@@ -113,27 +110,36 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 存活時間在寫入當下就固定下來，之後玩家調整 TTL 設定只會影響新寫入的項目。
         /// 空回應不存，以免把失敗的空結果也快取起來。
         /// </summary>
+        /// <remarks>
+        /// 預算靜默模擬的回應同樣不存：這一層排在預算檢查之外，模擬回應會原樣流經這裡，
+        /// 一旦存下來，玩家把每日上限調高之後仍會在 TTL 內持續拿到那段模擬文字。
+        /// </remarks>
         private void Store(string key, ChatResponse response)
         {
             if (string.IsNullOrEmpty(response?.Text)) return;
+            if (response.ModelId == RimLLMBudgetChatClient.MockModelId) return;
 
-            _cache.Set(key, response, new MemoryCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(_settings.ResponseCacheTtlMinutes),
-                Size = 1
-            });
+            _store.Store(key, response, _settings.ResponseCacheTtlMinutes);
         }
 
-        protected override void Dispose(bool disposing)
+        /// <summary>把快取項目複製成一份呼叫端可以自由改動的回應。</summary>
+        private static ChatResponse CopyForCaller(ChatResponse cached)
         {
-            if (disposing)
+            if (cached == null) return null;
+
+            return new ChatResponse(new List<ChatMessage>(cached.Messages))
             {
-                _cache.Dispose();
-            }
-            base.Dispose(disposing);
+                ResponseId = cached.ResponseId,
+                ConversationId = cached.ConversationId,
+                ModelId = cached.ModelId,
+                CreatedAt = cached.CreatedAt,
+                FinishReason = cached.FinishReason,
+                Usage = cached.Usage,
+                AdditionalProperties = cached.AdditionalProperties,
+                RawRepresentation = cached.RawRepresentation
+            };
         }
 
         /// <summary>沿路收集 update，串流正常結束後把彙整出的回應存進快取。</summary>

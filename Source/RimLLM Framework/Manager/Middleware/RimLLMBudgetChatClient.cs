@@ -20,6 +20,9 @@ namespace RimLLM_Framework.Manager
         internal const string MockProviderId = "rimllm";
         internal const string MockModelName = "budget-mock";
 
+        /// <summary>模擬回應寫在 ChatResponse.ModelId 上的複合識別，供上層中介層辨識並繞過。</summary>
+        internal const string MockModelId = MockProviderId + ":" + MockModelName;
+
         private readonly RimLLMUsageTracker _usageTracker;
 
         public RimLLMBudgetChatClient(IChatClient innerClient, RimLLMUsageTracker usageTracker)
@@ -83,7 +86,7 @@ namespace RimLLM_Framework.Manager
 
             mock = new ChatResponse(new ChatMessage(ChatRole.Assistant, mockText))
             {
-                ModelId = MockProviderId + ":" + MockModelName
+                ModelId = MockModelId
             };
             return true;
         }

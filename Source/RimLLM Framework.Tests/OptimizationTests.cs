@@ -218,7 +218,8 @@ namespace RimLLM_Framework.Tests
         {
             return new RimLLMResponseCacheChatClient(
                 new MockCustomChatClient { GetResponseHandler = handler },
-                settings);
+                settings,
+                new RimLLMResponseCacheStore());
         }
 
         [Test]
@@ -345,7 +346,8 @@ namespace RimLLM_Framework.Tests
                         return Task.CompletedTask;
                     }
                 },
-                settings);
+                settings,
+                new RimLLMResponseCacheStore());
 
             string first = CollectStream(cache);
             string second = CollectStream(cache);

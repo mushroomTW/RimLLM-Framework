@@ -19,7 +19,7 @@ namespace RimLLM_Framework.Manager
         /// <remarks>
         /// ModId 與 Priority 刻意不納入：它們只影響防濫用節流與排隊順序，不影響模型輸出，
         /// 納入只會讓不同 Mod 的相同請求各自打一次 API。取消權杖同理。
-        /// 反過來說，凡是會原樣送達 provider 的取樣參數都必須納入，否則兩個只有 Seed
+        /// 反過來說，凡是會原樣送達 provider 的取樣參數與訊息內容都必須納入，否則兩個只有 Seed
         /// 不同的請求會共用同一筆快取。
         /// </remarks>
         internal static string Build(IEnumerable<ChatMessage> messages, ChatOptions options)
@@ -56,6 +56,7 @@ namespace RimLLM_Framework.Manager
                     if (message == null) continue;
                     AppendField(canonical, message.Role.ToString());
                     AppendField(canonical, message.Text);
+                    AppendNonTextContents(canonical, message.Contents);
                 }
             }
 
@@ -68,6 +69,47 @@ namespace RimLLM_Framework.Manager
                     hex.Append(b.ToString("x2", CultureInfo.InvariantCulture));
                 }
                 return hex.ToString();
+            }
+        }
+
+        /// <summary>
+        /// 附加訊息中非文字的內容。ChatMessage.Text 只串接 TextContent，工具結果與二進位內容
+        /// 完全不影響鍵值——兩段只有工具結果不同的對話會組出同一個鍵而互相污染。
+        /// </summary>
+        private static void AppendNonTextContents(StringBuilder builder, IList<AIContent> contents)
+        {
+            if (contents == null) return;
+
+            foreach (AIContent content in contents)
+            {
+                if (content == null || content is TextContent) continue;
+
+                AppendField(builder, content.GetType().FullName);
+                switch (content)
+                {
+                    case FunctionCallContent call:
+                        AppendField(builder, call.CallId);
+                        AppendField(builder, call.Name);
+                        if (call.Arguments != null)
+                        {
+                            foreach (KeyValuePair<string, object> argument in call.Arguments)
+                            {
+                                AppendField(builder, argument.Key);
+                                AppendField(builder, argument.Value?.ToString());
+                            }
+                        }
+                        break;
+                    case FunctionResultContent result:
+                        AppendField(builder, result.CallId);
+                        AppendField(builder, result.Result?.ToString());
+                        break;
+                    case DataContent data:
+                        AppendField(builder, data.Uri);
+                        break;
+                    default:
+                        AppendField(builder, content.ToString());
+                        break;
+                }
             }
         }
 

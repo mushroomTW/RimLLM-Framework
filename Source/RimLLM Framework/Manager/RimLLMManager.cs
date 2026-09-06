@@ -32,6 +32,7 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMEmbeddingService _embeddingService;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
         private readonly RimLLMThrottleStore _throttleStore;
+        private readonly RimLLMResponseCacheStore _responseCacheStore;
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMHealthLedger _healthLedger;
 
@@ -76,6 +77,9 @@ namespace RimLLM_Framework.Manager
                 IsProviderEnabled);
 
             _throttleStore = new RimLLMThrottleStore(settings);
+            // 節流狀態與回應快取都必須跨 client 共用：CreateChatClient 每次呼叫都組出全新的
+            // 一疊中介層，狀態若跟著中介層走，換一個 client 就等同重置。
+            _responseCacheStore = new RimLLMResponseCacheStore();
 
             // 初始化並註冊內建供應商
             RegisterBuiltInProvider(new OpenAIProvider(settings));
@@ -199,12 +203,12 @@ namespace RimLLM_Framework.Manager
             // 快取必須排在防濫用與預算之前，因為命中不發 API 呼叫，攔阻零成本的重播沒有意義；
             // 預算則排在防濫用之後、佇列之前，被擋下的請求不該佔用併發名額；
             // 佇列在最內層，名額只留給真正要打 API 的請求。
-            IChatClient client = new RimLLMFailoverChatClient(
+            IChatClient client = RimLLMFailoverChatClient.Create(
                 _settings, _healthLedger, _usageTracker, _fallbackPipeline, modId);
             client = new RimLLMRequestQueueChatClient(client, _requestQueue);
             client = new RimLLMBudgetChatClient(client, _usageTracker);
             client = new RimLLMAntiAbuseChatClient(client, _settings, _throttleStore, modId);
-            client = new RimLLMResponseCacheChatClient(client, _settings);
+            client = new RimLLMResponseCacheChatClient(client, _settings, _responseCacheStore);
             client = new RimLLMOptionsNormalizingChatClient(client, _settings);
             return client;
         }
