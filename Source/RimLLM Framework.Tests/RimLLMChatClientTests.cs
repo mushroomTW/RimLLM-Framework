@@ -32,7 +32,7 @@ namespace RimLLM_Framework.Tests
             return manager;
         }
 
-        private RimLLMChatClient CreateClient(RimLLMManager manager, string modId)
+        private IChatClient CreateClient(RimLLMManager manager, string modId)
         {
             return manager.CreateChatClient(modId);
         }
@@ -106,7 +106,9 @@ namespace RimLLM_Framework.Tests
         {
             var manager = CreateManager();
             var client = CreateClient(manager, "test.translate.mod");
-            var request = client.Translate(
+            // Translate 是 facade 的內部細節，透過 GetService 穿過外層中介層取得。
+            var facade = (RimLLMChatClient)client.GetService(typeof(RimLLMChatClient));
+            var request = facade.Translate(
                 new List<ChatMessage>
                 {
                     new ChatMessage(ChatRole.System, "You are a helpful assistant."),
@@ -351,7 +353,8 @@ namespace RimLLM_Framework.Tests
         {
             var manager = CreateManager();
             var client = CreateClient(manager, "test.metadata.mod");
-            ClassicAssert.AreEqual("RimLLM", client.Metadata.ProviderName);
+            var metadata = (ChatClientMetadata)client.GetService(typeof(ChatClientMetadata));
+            ClassicAssert.AreEqual("RimLLM", metadata.ProviderName);
         }
 
         [Test]

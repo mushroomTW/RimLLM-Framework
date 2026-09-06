@@ -172,27 +172,6 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestResponseCache_BypassedWhenToolsPresent()
-        {
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 10 };
-            var cache = new RimLLMResponseCache(settings);
-            var tool = AIFunctionFactory.Create(() => "result", "Dummy");
-
-            var reqWithTools = new RimLLMRequest
-            {
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") },
-                Tools = new List<AITool> { tool }
-            };
-
-            // 存入快取應該被跳過
-            cache.Store(reqWithTools, new RimLLMGenerationResult { Text = "cached-response" });
-
-            bool found = cache.TryGet(reqWithTools, out var retrieved);
-            ClassicAssert.IsFalse(found, "帶有 Tools 的請求絕不應命中快取");
-            ClassicAssert.IsNull(retrieved);
-        }
-
-        [Test]
         public void TestGeminiProvider_BuildContents_TranslatesToolCallingAndResponses()
         {
             var gemini = new GeminiProvider(new MockSettings());

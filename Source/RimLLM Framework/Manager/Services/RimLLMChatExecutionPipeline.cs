@@ -30,7 +30,6 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
         private readonly RimLLMUsageTracker _usageTracker;
-        private readonly RimLLMResponseCache _responseCache;
 
         // Anti-abuse state
         private readonly ConcurrentDictionary<string, List<DateTime>> _requestTimestamps =
@@ -42,14 +41,12 @@ namespace RimLLM_Framework.Manager
             IRimLLMSettings settings,
             RimLLMRequestQueue requestQueue,
             RimLLMFallbackPipeline fallbackPipeline,
-            RimLLMUsageTracker usageTracker,
-            RimLLMResponseCache responseCache)
+            RimLLMUsageTracker usageTracker)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _requestQueue = requestQueue ?? throw new ArgumentNullException(nameof(requestQueue));
             _fallbackPipeline = fallbackPipeline ?? throw new ArgumentNullException(nameof(fallbackPipeline));
             _usageTracker = usageTracker ?? throw new ArgumentNullException(nameof(usageTracker));
-            _responseCache = responseCache ?? throw new ArgumentNullException(nameof(responseCache));
         }
 
         /// <summary>
@@ -57,26 +54,18 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         internal async Task<RimLLMGenerationResult> GenerateAsync(RimLLMRequest request)
         {
-            RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
+            if (request == null) throw new ArgumentNullException(nameof(request));
 
-            // 快取查詢排在准入檢查之前：命中時不會發出任何 API 呼叫，
-            // 而防濫用節流與每日預算保護的都是「真的花錢的呼叫」，攔阻零成本的重播沒有意義。
-            // 正規化必須先做，否則預設思考強度沒套上就算鍵，會和實際送出的請求對不起來。
-            if (_responseCache.TryGet(normalizedRequest, out RimLLMGenerationResult cached))
-            {
-                return cached;
-            }
-
+            // 正規化與回應快取已上移為 IChatClient 中介層（見 RimLLMManager.CreateChatClient），
+            // 因此抵達這裡的請求必然已正規化，且必然是快取沒有命中的。
             // 准入檢查一律在進入佇列之前執行，且整條請求路徑只執行一次。
-            if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false) is string mockResult)
+            if (await RunAdmissionChecksAsync(request).ConfigureAwait(false) is string mockResult)
             {
                 return BuildMockResult(mockResult);
             }
 
-            RimLLMGenerationResult result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
-                GenerateDirectAsync(normalizedRequest)).ConfigureAwait(false);
-            _responseCache.Store(normalizedRequest, result);
-            return result;
+            return await _requestQueue.EnqueueRequestAsync(request, () =>
+                GenerateDirectAsync(request)).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -86,26 +75,16 @@ namespace RimLLM_Framework.Manager
             RimLLMRequest request,
             Action<string> onChunkReceived)
         {
-            RimLLMRequest normalizedRequest = NormalizeRequest(request, _settings);
+            if (request == null) throw new ArgumentNullException(nameof(request));
 
-            if (_responseCache.TryGet(normalizedRequest, out RimLLMGenerationResult cached))
-            {
-                // 快取沒有保留原始的分塊邊界，整段一次送出即可。
-                // 串流 Channel 寫入為執行緒安全；直接呼叫可保證在 Channel 關閉前完整送出，避免主線程排隊競態丟包。
-                onChunkReceived?.Invoke(cached.Text);
-                return cached;
-            }
-
-            if (await RunAdmissionChecksAsync(normalizedRequest).ConfigureAwait(false) is string mockResult)
+            if (await RunAdmissionChecksAsync(request).ConfigureAwait(false) is string mockResult)
             {
                 onChunkReceived?.Invoke(mockResult);
                 return BuildMockResult(mockResult);
             }
 
-            RimLLMGenerationResult result = await _requestQueue.EnqueueRequestAsync(normalizedRequest, () =>
-                StreamDirectAsync(normalizedRequest, onChunkReceived)).ConfigureAwait(false);
-            _responseCache.Store(normalizedRequest, result);
-            return result;
+            return await _requestQueue.EnqueueRequestAsync(request, () =>
+                StreamDirectAsync(request, onChunkReceived)).ConfigureAwait(false);
         }
 
         private Task<RimLLMGenerationResult> GenerateDirectAsync(RimLLMRequest request)
@@ -414,23 +393,6 @@ namespace RimLLM_Framework.Manager
                 ProviderId = MockProviderId,
                 ModelName = MockModelName
             };
-        }
-
-        private static RimLLMRequest NormalizeRequest(RimLLMRequest request, IRimLLMSettings settings)
-        {
-            if (request == null)
-            {
-                throw new ArgumentNullException(nameof(request));
-            }
-
-            if (request.ReasoningEffort.HasValue || settings.DefaultReasoningEffort == null)
-            {
-                return request;
-            }
-
-            var clone = request.Clone();
-            clone.ReasoningEffort = settings.DefaultReasoningEffort;
-            return clone;
         }
 
 

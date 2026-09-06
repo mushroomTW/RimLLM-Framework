@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Providers;
 
@@ -77,8 +78,7 @@ namespace RimLLM_Framework.Manager
                 settings,
                 requestQueue,
                 _fallbackPipeline,
-                _usageTracker,
-                new RimLLMResponseCache(settings));
+                _usageTracker);
 
             // 初始化並註冊內建供應商
             RegisterBuiltInProvider(new OpenAIProvider(settings));
@@ -190,13 +190,21 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        internal RimLLMChatClient CreateChatClient(string modId)
+        internal IChatClient CreateChatClient(string modId)
         {
             if (string.IsNullOrEmpty(modId))
             {
                 throw new ArgumentException("ModId cannot be empty or null", nameof(modId));
             }
-            return new RimLLMChatClient(this, modId);
+
+            // 由內往外堆疊。層序是語意性的，不可調換：
+            // 正規化必須在最外層，否則快取算鍵時看到的思考強度會和實際送出的不一致；
+            // 快取必須排在（facade 內部的）防濫用與預算檢查之前，因為命中不發 API 呼叫，
+            // 攔阻零成本的重播沒有意義。
+            IChatClient client = new RimLLMChatClient(this, modId);
+            client = new RimLLMResponseCacheChatClient(client, _settings);
+            client = new RimLLMOptionsNormalizingChatClient(client, _settings);
+            return client;
         }
 
         /// <summary>建立綁定指定 Mod 的 embedding generator。modId 用於防濫用節流與遙測歸屬。</summary>

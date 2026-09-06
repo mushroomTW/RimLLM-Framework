@@ -209,52 +209,210 @@ namespace RimLLM_Framework.Tests
 
         // ---------- 回應快取 ----------
 
+        private static List<ChatMessage> NewMessages(string prompt = "hello")
+        {
+            return new List<ChatMessage>
+            {
+                new ChatMessage(ChatRole.System, "sys"),
+                new ChatMessage(ChatRole.User, prompt)
+            };
+        }
+
+        private static RimLLMResponseCacheChatClient BuildCache(
+            MockSettings settings,
+            Func<IEnumerable<ChatMessage>, ChatOptions, Task<ChatResponse>> handler)
+        {
+            return new RimLLMResponseCacheChatClient(
+                new MockCustomChatClient { GetResponseHandler = handler },
+                settings);
+        }
+
         [Test]
-        public void ResponseCacheReplaysIdenticalRequestsOnlyWhenEnabled()
+        public async Task ResponseCacheReplaysIdenticalRequestsOnlyWhenEnabled()
         {
             var settings = new MockSettings { EnableResponseCache = false, ResponseCacheTtlMinutes = 30f };
-            var cache = new RimLLMResponseCache(settings);
+            int calls = 0;
+            var cache = BuildCache(settings, (msgs, opts) =>
+            {
+                calls++;
+                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "cached-text")));
+            });
 
-            cache.Store(NewRequest(), new RimLLMGenerationResult { Text = "cached-text" });
-            ClassicAssert.IsFalse(cache.TryGet(NewRequest(), out _), "關閉時不應命中");
+            await cache.GetResponseAsync(NewMessages());
+            await cache.GetResponseAsync(NewMessages());
+            ClassicAssert.AreEqual(2, calls, "關閉時不應命中，兩次都要打到內層");
 
             settings.EnableResponseCache = true;
-            ClassicAssert.IsFalse(cache.TryGet(NewRequest(), out _), "關閉期間也不應存入");
+            await cache.GetResponseAsync(NewMessages());
+            ClassicAssert.AreEqual(3, calls, "關閉期間不應存入，開啟後第一次仍要打到內層");
 
-            cache.Store(NewRequest(), new RimLLMGenerationResult { Text = "cached-text" });
-            ClassicAssert.IsTrue(cache.TryGet(NewRequest(), out RimLLMGenerationResult hit));
-            ClassicAssert.AreEqual("cached-text", hit.Text);
+            ChatResponse replayed = await cache.GetResponseAsync(NewMessages());
+            ClassicAssert.AreEqual(3, calls, "第二次相同請求應由快取回應，不再打 API");
+            ClassicAssert.AreEqual("cached-text", replayed.Text);
+        }
+
+        [Test]
+        public async Task ResponseCacheIsBypassedWhenToolsArePresent()
+        {
+            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
+            int calls = 0;
+            var cache = BuildCache(settings, (msgs, opts) =>
+            {
+                calls++;
+                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "tool-result")));
+            });
+
+            var withTools = new ChatOptions
+            {
+                Tools = new List<AITool> { AIFunctionFactory.Create(() => "result", "Dummy") }
+            };
+
+            await cache.GetResponseAsync(NewMessages(), withTools);
+            await cache.GetResponseAsync(NewMessages(), withTools);
+
+            // 帶 Tools 的請求通常具有副作用或查詢即時狀態，絕不可重播。
+            ClassicAssert.AreEqual(2, calls);
+        }
+
+        [Test]
+        public async Task ResponseCacheDoesNotStoreEmptyResults()
+        {
+            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
+            int calls = 0;
+            var cache = BuildCache(settings, (msgs, opts) =>
+            {
+                calls++;
+                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, string.Empty)));
+            });
+
+            await cache.GetResponseAsync(NewMessages());
+            await cache.GetResponseAsync(NewMessages());
+
+            ClassicAssert.AreEqual(2, calls, "空回應不可寫入快取，否則失敗的空結果會被重播");
+        }
+
+        [Test]
+        public async Task ResponseCacheEntriesExpireAfterTheirTtl()
+        {
+            // 0.002 分鐘 = 120 毫秒
+            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 0.002f };
+            int calls = 0;
+            var cache = BuildCache(settings, (msgs, opts) =>
+            {
+                calls++;
+                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "stale")));
+            });
+
+            await cache.GetResponseAsync(NewMessages());
+            await cache.GetResponseAsync(NewMessages());
+            ClassicAssert.AreEqual(1, calls);
+
+            await Task.Delay(300);
+            await cache.GetResponseAsync(NewMessages());
+            ClassicAssert.AreEqual(2, calls, "過期後必須重新打 API");
+        }
+
+        [Test]
+        public async Task CacheHitKeepsResponseMetadata()
+        {
+            // 回歸測試：快取先前只存回應文字，命中時 ModelId 與 Usage 全部遺失，
+            // 呼叫端因此看到空的 ModelId 與全零的用量——與「真的打了 API 但供應商
+            // 沒回傳模型名」無從分辨。
+            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
+            var cache = BuildCache(settings, (msgs, opts) => Task.FromResult(
+                new ChatResponse(new ChatMessage(ChatRole.Assistant, "generated"))
+                {
+                    ModelId = "Counting:m1",
+                    Usage = new UsageDetails { InputTokenCount = 11, OutputTokenCount = 22 }
+                }));
+
+            ChatResponse first = await cache.GetResponseAsync(NewMessages());
+            ChatResponse second = await cache.GetResponseAsync(NewMessages());
+
+            ClassicAssert.AreEqual("Counting:m1", second.ModelId, "快取重播必須保留 ModelId");
+            ClassicAssert.AreEqual(11, second.Usage.InputTokenCount);
+            ClassicAssert.AreEqual(22, second.Usage.OutputTokenCount);
+            ClassicAssert.AreEqual(first.ModelId, second.ModelId);
+        }
+
+        [Test]
+        public void ResponseCacheReplaysStreamingResponses()
+        {
+            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
+            int calls = 0;
+            var cache = new RimLLMResponseCacheChatClient(
+                new MockCustomChatClient
+                {
+                    StreamHandler = (msgs, opts, onChunk) =>
+                    {
+                        calls++;
+                        onChunk("mock-");
+                        onChunk("stream");
+                        return Task.CompletedTask;
+                    }
+                },
+                settings);
+
+            string first = CollectStream(cache);
+            string second = CollectStream(cache);
+
+            ClassicAssert.AreEqual("mock-stream", first);
+            ClassicAssert.AreEqual("mock-stream", second, "重播的內容必須與原本的串流一致");
+            ClassicAssert.AreEqual(1, calls, "第二次相同的串流請求應由快取重播，不再打 API");
+        }
+
+        private static string CollectStream(IChatClient client)
+        {
+            var builder = new System.Text.StringBuilder();
+            var enumerator = client.GetStreamingResponseAsync(NewMessages()).GetAsyncEnumerator();
+            try
+            {
+                while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                {
+                    builder.Append(enumerator.Current.Text);
+                }
+            }
+            finally
+            {
+                enumerator.DisposeAsync().GetAwaiter().GetResult();
+            }
+            return builder.ToString();
         }
 
         [Test]
         public void ResponseCacheKeyCoversEveryFieldThatChangesTheOutput()
         {
-            string baseKey = RimLLMResponseCache.BuildKey(NewRequest());
+            string baseKey = RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions());
 
-            ClassicAssert.AreEqual(baseKey, RimLLMResponseCache.BuildKey(NewRequest()), "相同請求必須得到相同鍵");
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(NewRequest("different prompt")));
+            ClassicAssert.AreEqual(
+                baseKey,
+                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions()),
+                "相同請求必須得到相同鍵");
+            ClassicAssert.AreNotEqual(
+                baseKey,
+                RimLLMResponseCacheKey.Build(NewMessages("different prompt"), new ChatOptions()));
+            ClassicAssert.AreNotEqual(
+                baseKey,
+                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Temperature = 0.7f }));
+            ClassicAssert.AreNotEqual(
+                baseKey,
+                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { ModelId = "openai:gpt-4o" }));
 
-            var withTemperature = NewRequest();
-            withTemperature.Temperature = 0.7f;
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withTemperature));
+            var withResponseType = new RimLLMChatOptions
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    [RimLLMChatOptions.ResponseTypeKey] = typeof(string)
+                }
+            };
+            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCacheKey.Build(NewMessages(), withResponseType));
 
-            var withSystemPrompt = NewRequest();
-            withSystemPrompt.SystemPrompt = "other-sys";
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withSystemPrompt));
-
-            var withModel = NewRequest();
-            withModel.PreferredModelId = "openai:gpt-4o";
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withModel));
-
-            var withResponseType = NewRequest();
-            withResponseType.ResponseType = typeof(string);
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withResponseType));
-
-            // ModId 與 Priority 只影響節流與排隊，不影響輸出，因此不進鍵值。
-            var otherMod = NewRequest();
-            otherMod.ModId = "someone.else";
-            otherMod.Priority = 5;
-            ClassicAssert.AreEqual(baseKey, RimLLMResponseCache.BuildKey(otherMod));
+            // ModId 根本不在 options 上，Priority 只影響排隊順序，兩者都不影響模型輸出，
+            // 因此不可改變快取鍵——否則不同 Mod 的相同請求會各打一次 API。
+            ClassicAssert.AreEqual(
+                baseKey,
+                RimLLMResponseCacheKey.Build(NewMessages(), new RimLLMChatOptions { Priority = 5 }),
+                "Priority 不可改變快取鍵");
         }
 
         [Test]
@@ -263,147 +421,26 @@ namespace RimLLM_Framework.Tests
             // 這些欄位以前被 BuildOptions 整組丟棄，所以不進鍵值也無妨；
             // 現在它們會原樣送達 provider 並改變輸出，不進鍵值就會造成快取毒化
             // ——兩個只有 Seed 不同的請求會拿到同一份回應。
-            string baseKey = RimLLMResponseCache.BuildKey(NewRequest());
+            string baseKey = RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions());
 
-            var withTopP = NewRequest();
-            withTopP.SourceOptions = new ChatOptions { TopP = 0.5f };
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withTopP));
-
-            var withTopK = NewRequest();
-            withTopK.SourceOptions = new ChatOptions { TopK = 20 };
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withTopK));
-
-            var withFrequencyPenalty = NewRequest();
-            withFrequencyPenalty.SourceOptions = new ChatOptions { FrequencyPenalty = 0.3f };
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withFrequencyPenalty));
-
-            var withPresencePenalty = NewRequest();
-            withPresencePenalty.SourceOptions = new ChatOptions { PresencePenalty = 0.4f };
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withPresencePenalty));
-
-            var withSeed = NewRequest();
-            withSeed.SourceOptions = new ChatOptions { Seed = 1234L };
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withSeed));
-
-            var withOtherSeed = NewRequest();
-            withOtherSeed.SourceOptions = new ChatOptions { Seed = 5678L };
             ClassicAssert.AreNotEqual(
-                RimLLMResponseCache.BuildKey(withSeed),
-                RimLLMResponseCache.BuildKey(withOtherSeed),
+                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { TopP = 0.5f }));
+            ClassicAssert.AreNotEqual(
+                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { TopK = 20 }));
+            ClassicAssert.AreNotEqual(
+                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { FrequencyPenalty = 0.3f }));
+            ClassicAssert.AreNotEqual(
+                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { PresencePenalty = 0.4f }));
+            ClassicAssert.AreNotEqual(
+                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Seed = 1234L }));
+            ClassicAssert.AreNotEqual(
+                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Seed = 1234L }),
+                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Seed = 5678L }),
                 "只有 Seed 不同的兩個請求不可共用快取");
-
-            var withStopSequences = NewRequest();
-            withStopSequences.SourceOptions = new ChatOptions { StopSequences = new List<string> { "STOP" } };
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCache.BuildKey(withStopSequences));
-        }
-
-        [Test]
-        public void ResponseCacheDoesNotStoreEmptyResults()
-        {
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
-            var cache = new RimLLMResponseCache(settings);
-
-            cache.Store(NewRequest(), null);
-            cache.Store(NewRequest(), new RimLLMGenerationResult { Text = "" });
-            ClassicAssert.IsFalse(cache.TryGet(NewRequest(), out _));
-        }
-
-        [Test]
-        public async Task ResponseCacheEntriesExpireAfterTheirTtl()
-        {
-            // 0.002 分鐘 = 120 毫秒
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 0.002f };
-            var cache = new RimLLMResponseCache(settings);
-
-            cache.Store(NewRequest(), new RimLLMGenerationResult { Text = "stale" });
-            ClassicAssert.IsTrue(cache.TryGet(NewRequest(), out _));
-
-            await Task.Delay(300);
-            ClassicAssert.IsFalse(cache.TryGet(NewRequest(), out _));
-        }
-
-        [Test]
-        public async Task EnabledResponseCacheStopsTheSecondIdenticalCallFromReachingTheProvider()
-        {
-            var settings = new MockSettings
-            {
-                MaxRetries = 0,
-                RetryDelay = 0f,
-                RoutingStrategy = 0,
-                EnableAntiAbuse = false,
-                EnableResponseCache = true,
-                ResponseCacheTtlMinutes = 30f
-            };
-            var ledger = new RimLLMHealthLedger();
-            var tracker = new RimLLMUsageTracker(settings);
-            var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
-
-            int providerCalls = 0;
-            RegisterProvider(settings, providers, new MockTestProvider
-            {
-                ProviderId = "Counting",
-                GenerateHandler = (msgs, opts, model) =>
-                {
-                    providerCalls++;
-                    return Task.FromResult("generated");
-                }
-            });
-            settings.FallbackChain = new List<string> { "Counting:m1" };
-
-            var pipeline = new RimLLMChatExecutionPipeline(
-                settings,
-                new RimLLMRequestQueue(settings),
-                BuildPipeline(settings, ledger, tracker, providers),
-                tracker,
-                new RimLLMResponseCache(settings));
-
-            var first = await pipeline.GenerateAsync(NewRequest());
-            var second = await pipeline.GenerateAsync(NewRequest());
-
-            ClassicAssert.AreEqual("generated", first.Text);
-            ClassicAssert.AreEqual("generated", second.Text);
-            ClassicAssert.AreEqual(1, providerCalls, "第二次相同請求應由快取回應，不再打 API");
-        }
-
-        [Test]
-        public async Task CacheHitKeepsProviderAndModelMetadata()
-        {
-            // 回歸測試：快取先前只存回應文字，命中時 ProviderId / ModelName / token 計數
-            // 全部遺失，呼叫端拿到的 ChatResponse.ModelId 是空字串、Usage 全為零。
-            var settings = new MockSettings
-            {
-                MaxRetries = 0,
-                RetryDelay = 0f,
-                RoutingStrategy = 0,
-                EnableAntiAbuse = false,
-                EnableResponseCache = true,
-                ResponseCacheTtlMinutes = 30f
-            };
-            var ledger = new RimLLMHealthLedger();
-            var tracker = new RimLLMUsageTracker(settings);
-            var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
-
-            RegisterProvider(settings, providers, new MockTestProvider
-            {
-                ProviderId = "Counting",
-                GenerateHandler = (msgs, opts, model) => Task.FromResult("generated")
-            });
-            settings.FallbackChain = new List<string> { "Counting:m1" };
-
-            var pipeline = new RimLLMChatExecutionPipeline(
-                settings,
-                new RimLLMRequestQueue(settings),
-                BuildPipeline(settings, ledger, tracker, providers),
-                tracker,
-                new RimLLMResponseCache(settings));
-
-            var first = await pipeline.GenerateAsync(NewRequest());
-            var second = await pipeline.GenerateAsync(NewRequest());
-
-            ClassicAssert.AreEqual("Counting", second.ProviderId, "快取重播必須保留供應商識別");
-            ClassicAssert.AreEqual("m1", second.ModelName, "快取重播必須保留模型名稱");
-            ClassicAssert.AreEqual(first.ProviderId, second.ProviderId);
-            ClassicAssert.AreEqual(first.ModelName, second.ModelName);
+            ClassicAssert.AreNotEqual(
+                baseKey,
+                RimLLMResponseCacheKey.Build(
+                    NewMessages(), new ChatOptions { StopSequences = new List<string> { "STOP" } }));
         }
 
         // ---------- OpenAI Patch 傳播器停用與工廠輔助測試 ----------
