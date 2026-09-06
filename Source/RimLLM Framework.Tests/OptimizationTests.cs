@@ -39,6 +39,18 @@ namespace RimLLM_Framework.Tests
                 id => settings.EnabledProviders.TryGetValue(id, out bool enabled) && enabled);
         }
 
+        private static RimLLMFailoverChatClient BuildRouter(
+            MockSettings settings,
+            RimLLMHealthLedger ledger,
+            RimLLMUsageTracker tracker,
+            Dictionary<string, ILLMProvider> providers)
+        {
+            return new RimLLMFailoverChatClient(
+                settings, ledger, tracker,
+                BuildPipeline(settings, ledger, tracker, providers),
+                "test.optimization");
+        }
+
         private static void RegisterProvider(
             MockSettings settings,
             Dictionary<string, ILLMProvider> providers,
@@ -59,19 +71,19 @@ namespace RimLLM_Framework.Tests
             var tracker = new RimLLMUsageTracker(settings);
             var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
 
-            RegisterProvider(settings, providers, new MockTestProvider { ProviderId = "MultiModel" });
+            RegisterProvider(settings, providers, new MockTestProvider
+            {
+                ProviderId = "MultiModel",
+                GenerateHandler = (msgs, opts, model) => model == "bad"
+                    ? throw new RimLLMException(LLMError.ProviderOffline, "boom")
+                    : Task.FromResult("ok")
+            });
             settings.FallbackChain = new List<string> { "MultiModel:bad", "MultiModel:good" };
 
-            var pipeline = BuildPipeline(settings, ledger, tracker, providers);
-            var result = await pipeline.ExecuteWithFallbackAsync(
-                NewRequest(),
-                (p, model) => model == "bad"
-                    ? throw new RimLLMException(LLMError.ProviderOffline, "boom")
-                    : Task.FromResult(new RimLLMGenerationResult { Text = "ok" }),
-                LLMError.Unknown,
-                "exhausted");
+            var router = BuildRouter(settings, ledger, tracker, providers);
+            ChatResponse response = await router.GetResponseAsync(NewMessages());
 
-            ClassicAssert.AreEqual("ok", result.Text);
+            ClassicAssert.AreEqual("ok", response.Text);
 
             // 壞掉的模型進入冷卻，但同一個供應商底下健康的模型不受牽連。
             ClassicAssert.IsTrue(ledger.IsInCooldown("MultiModel:bad"));
@@ -86,16 +98,16 @@ namespace RimLLM_Framework.Tests
             var tracker = new RimLLMUsageTracker(settings);
             var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
 
-            RegisterProvider(settings, providers, new MockTestProvider { ProviderId = "Flaky" });
+            RegisterProvider(settings, providers, new MockTestProvider
+            {
+                ProviderId = "Flaky",
+                GenerateHandler = (msgs, opts, model) => throw new RimLLMException(LLMError.NetworkError, "offline")
+            });
             settings.FallbackChain = new List<string> { "Flaky:m1" };
 
-            var pipeline = BuildPipeline(settings, ledger, tracker, providers);
+            var router = BuildRouter(settings, ledger, tracker, providers);
 
-            Assert.ThrowsAsync<RimLLMException>(async () => await pipeline.ExecuteWithFallbackAsync(
-                NewRequest(),
-                (p, model) => throw new RimLLMException(LLMError.NetworkError, "offline"),
-                LLMError.Unknown,
-                "exhausted"));
+            Assert.ThrowsAsync<RimLLMException>(async () => await router.GetResponseAsync(NewMessages()));
 
             // 4 次嘗試（1 次 + 3 次重試）只能記成 1 次失敗，否則單一次網路抖動
             // 就會直接把目標推過熔斷門檻。
@@ -106,7 +118,7 @@ namespace RimLLM_Framework.Tests
         // ---------- 成本優先路由 ----------
 
         [Test]
-        public async Task LowestCostRoutingTriesTheCheaperModelFirst()
+        public void LowestCostRoutingTriesTheCheaperModelFirst()
         {
             var settings = new MockSettings { MaxRetries = 0, RetryDelay = 0f, RoutingStrategy = 3 };
             var ledger = new RimLLMHealthLedger();
@@ -117,24 +129,15 @@ namespace RimLLM_Framework.Tests
             // 鏈的順序刻意把貴的放前面，證明是策略而非順序決定的。
             settings.FallbackChain = new List<string> { "openai:gpt-4o", "openai:gpt-4o-mini" };
 
-            var pipeline = BuildPipeline(settings, ledger, tracker, providers);
+            var policy = BuildPipeline(settings, ledger, tracker, providers);
 
-            string firstModel = null;
-            await pipeline.ExecuteWithFallbackAsync(
-                NewRequest(),
-                (p, model) =>
-                {
-                    firstModel = firstModel ?? model;
-                    return Task.FromResult(new RimLLMGenerationResult { Text = "ok" });
-                },
-                LLMError.Unknown,
-                "exhausted");
+            var candidates = policy.ResolveCandidates(null, null);
 
-            ClassicAssert.AreEqual("gpt-4o-mini", firstModel);
+            ClassicAssert.AreEqual("gpt-4o-mini", candidates[0].ModelName);
         }
 
         [Test]
-        public async Task PriorityFailoverKeepsTheConfiguredChainOrder()
+        public void PriorityFailoverKeepsTheConfiguredChainOrder()
         {
             var settings = new MockSettings { MaxRetries = 0, RetryDelay = 0f, RoutingStrategy = 0 };
             var ledger = new RimLLMHealthLedger();
@@ -144,20 +147,11 @@ namespace RimLLM_Framework.Tests
             RegisterProvider(settings, providers, new MockTestProvider { ProviderId = "openai" });
             settings.FallbackChain = new List<string> { "openai:gpt-4o", "openai:gpt-4o-mini" };
 
-            var pipeline = BuildPipeline(settings, ledger, tracker, providers);
+            var policy = BuildPipeline(settings, ledger, tracker, providers);
 
-            string firstModel = null;
-            await pipeline.ExecuteWithFallbackAsync(
-                NewRequest(),
-                (p, model) =>
-                {
-                    firstModel = firstModel ?? model;
-                    return Task.FromResult(new RimLLMGenerationResult { Text = "ok" });
-                },
-                LLMError.Unknown,
-                "exhausted");
+            var candidates = policy.ResolveCandidates(null, null);
 
-            ClassicAssert.AreEqual("gpt-4o", firstModel);
+            ClassicAssert.AreEqual("gpt-4o", candidates[0].ModelName);
         }
 
         // ---------- 新增的錯誤碼辨識 ----------

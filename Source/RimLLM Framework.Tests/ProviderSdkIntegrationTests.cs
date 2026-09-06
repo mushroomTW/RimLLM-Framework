@@ -387,7 +387,7 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsNotNull(client);
             // 回傳的是包了中介層的堆疊，不再是裸的 facade；
             // 「這條堆疊屬於框架」改由 GetService 表達（DelegatingChatClient 會往內層轉發）。
-            ClassicAssert.IsInstanceOf<RimLLMChatClient>(client.GetService(typeof(RimLLMChatClient)));
+            ClassicAssert.IsInstanceOf<RimLLMFailoverChatClient>(client.GetService(typeof(RimLLMFailoverChatClient)));
             ChatClientMetadata metadata = client.GetService<ChatClientMetadata>();
             ClassicAssert.IsNotNull(metadata);
             ClassicAssert.AreEqual("RimLLM", metadata.ProviderName);

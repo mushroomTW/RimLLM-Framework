@@ -300,9 +300,10 @@ namespace RimLLM_Framework.Tests
         public void TestChatClientAndEmbeddingClientFacades()
         {
             var manager = new RimLLMManager(new MockSettings());
-            var chatClient = new RimLLMChatClient(manager, "test.mod");
-            ClassicAssert.IsNotNull(chatClient.Metadata);
-            ClassicAssert.AreSame(chatClient.Metadata, chatClient.GetService(typeof(ChatClientMetadata)));
+            IChatClient chatClient = manager.CreateChatClient("test.mod");
+            var metadata = (ChatClientMetadata)chatClient.GetService(typeof(ChatClientMetadata));
+            ClassicAssert.IsNotNull(metadata);
+            ClassicAssert.AreEqual("RimLLM", metadata.ProviderName);
             ClassicAssert.IsNull(chatClient.GetService(typeof(string)));
             chatClient.Dispose();
 
@@ -415,12 +416,11 @@ namespace RimLLM_Framework.Tests
 
             // 1. 空鏈例外
             settings.FallbackChain = new List<string>();
-            var req = new RimLLMRequest { ModId = "test.pipe" };
-            Assert.ThrowsAsync<RimLLMException>(async () => await pipeline.ExecuteWithFallbackAsync(req, (p, m) => Task.FromResult(new RimLLMGenerationResult { Text = "ok" }), LLMError.ProviderOffline, "exhausted"));
+            Assert.Throws<RimLLMException>(() => pipeline.ResolveCandidates(null, null));
 
             // 2. 無符合資格 Provider 例外
             settings.FallbackChain = new List<string> { "NonExistent:m1" };
-            Assert.ThrowsAsync<RimLLMException>(async () => await pipeline.ExecuteWithFallbackAsync(req, (p, m) => Task.FromResult(new RimLLMGenerationResult { Text = "ok" }), LLMError.ProviderOffline, "exhausted"));
+            Assert.Throws<RimLLMException>(() => pipeline.ResolveCandidates(null, null));
 
             // 3. MinLatency 路由策略 (Strategy = 1)
             var p1 = new MockTestProvider { ProviderId = "P1" };
@@ -439,25 +439,12 @@ namespace RimLLM_Framework.Tests
             ledger.RecordSuccess("P1:m1", 300);
             ledger.RecordSuccess("P2:m2", 50);
 
-            string firstAttempted = null;
-            await pipeline.ExecuteWithFallbackAsync(req, (p, m) =>
-            {
-                if (firstAttempted == null) firstAttempted = p.ProviderId;
-                return Task.FromResult(new RimLLMGenerationResult { Text = "latency-ok" });
-            }, LLMError.Unknown, "err");
-
-            ClassicAssert.AreEqual("P2", firstAttempted); // P2 延遲較低應先被調用
+            ClassicAssert.AreEqual("P2", pipeline.ResolveCandidates(null, null)[0].ProviderId); // P2 延遲較低應排在前面
 
             // 4. PreferredModelId 優先插入
-            req.PreferredModelId = "P1:preferred-m";
             settings.RoutingStrategy = 0; // Priority
-            firstAttempted = null;
-            await pipeline.ExecuteWithFallbackAsync(req, (p, m) =>
-            {
-                if (firstAttempted == null) firstAttempted = $"{p.ProviderId}:{m}";
-                return Task.FromResult(new RimLLMGenerationResult { Text = "pref-ok" });
-            }, LLMError.Unknown, "err");
-            ClassicAssert.AreEqual("P1:preferred-m", firstAttempted);
+            var preferred = pipeline.ResolveCandidates("P1:preferred-m", null)[0];
+            ClassicAssert.AreEqual("P1:preferred-m", $"{preferred.ProviderId}:{preferred.ModelName}");
 
             // 5. MinFallbackLevel 分級過濾與 API 價格分級
             ClassicAssert.AreEqual(3, tracker.GetModelLevel("openai", "gpt-4o")); // Completion $10.00 >= $3.00 -> High (3)
@@ -466,23 +453,15 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(1, tracker.GetModelLevel("deepseek", "deepseek-chat")); // Completion $0.28 < $0.50 -> Low (1)
             ClassicAssert.AreEqual(1, tracker.GetModelLevel("openai-compatible", "local-llama")); // 本地免費 -> Low (1)
 
-            req.PreferredModelId = null;
-            req.MinFallbackLevel = "high"; // 等級 3
             settings.ModelLevelOverrides["P2:pro-model"] = 3;
             settings.FallbackChain = new List<string> { "P1:mini-model", "P2:pro-model" }; // P1 預設為 tier 2, P2 覆寫為 tier 3
-            firstAttempted = null;
-            await pipeline.ExecuteWithFallbackAsync(req, (p, m) =>
-            {
-                if (firstAttempted == null) firstAttempted = p.ProviderId;
-                return Task.FromResult(new RimLLMGenerationResult { Text = "tier-ok" });
-            }, LLMError.Unknown, "err");
-            ClassicAssert.AreEqual("P2", firstAttempted); // P1 (tier 2) 被跳過，只執行 P2 (tier 3)
+            var tiered = pipeline.ResolveCandidates(null, "high"); // 等級 3
+            ClassicAssert.AreEqual(1, tiered.Count); // P1 (tier 2) 被過濾掉
+            ClassicAssert.AreEqual("P2", tiered[0].ProviderId);
 
             // 6. RoundRobin 路由策略 (Strategy = 2)
             settings.RoutingStrategy = 2;
-            req.MinFallbackLevel = "low";
-            var rrResult = await pipeline.ExecuteWithFallbackAsync(req, (p, m) => Task.FromResult(new RimLLMGenerationResult { Text = "rr-ok" }), LLMError.Unknown, "err");
-            ClassicAssert.AreEqual("rr-ok", rrResult.Text);
+            ClassicAssert.AreEqual(2, pipeline.ResolveCandidates(null, "low").Count);
 
             // 7. 非可重試例外直接跳往備援
             settings.RoutingStrategy = 0;
@@ -490,16 +469,18 @@ namespace RimLLM_Framework.Tests
             settings.MaxRetries = 2;
             int p1Attempts = 0;
             int p2Attempts = 0;
-            await pipeline.ExecuteWithFallbackAsync(req, (p, m) =>
+            p1.GenerateHandler = (msgs, opts, m) =>
             {
-                if (p.ProviderId == "P1")
-                {
-                    p1Attempts++;
-                    throw new ArgumentException("Invalid arguments - non-retryable");
-                }
+                p1Attempts++;
+                throw new ArgumentException("Invalid arguments - non-retryable");
+            };
+            p2.GenerateHandler = (msgs, opts, m) =>
+            {
                 p2Attempts++;
-                return Task.FromResult(new RimLLMGenerationResult { Text = "fallback-after-non-retry" });
-            }, LLMError.Unknown, "err");
+                return Task.FromResult("fallback-after-non-retry");
+            };
+            var router = new RimLLMFailoverChatClient(settings, ledger, tracker, pipeline, "test.pipe");
+            await router.GetResponseAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") });
             ClassicAssert.AreEqual(1, p1Attempts); // 非可重試不重試，直接中斷給下一個
             ClassicAssert.AreEqual(1, p2Attempts);
 
@@ -518,12 +499,6 @@ namespace RimLLM_Framework.Tests
         {
             var settings = new MockSettings();
             var manager = new RimLLMManager(settings);
-            var pipeline = manager.ChatPipeline;
-            ClassicAssert.IsNotNull(pipeline);
-
-            // 1. null request throws ArgumentNullException
-            Assert.ThrowsAsync<ArgumentNullException>(async () => await pipeline.GenerateAsync(null));
-            Assert.ThrowsAsync<ArgumentNullException>(async () => await pipeline.StreamAsync(null, _ => { }));
 
             // 2. Silent mocking when daily budget is exceeded (BudgetPolicy = 1)
             settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
@@ -570,12 +545,12 @@ namespace RimLLM_Framework.Tests
 
             // 4. JSON Repair disabled throws RimLLMException
             settings.EnableJsonRepair = false;
-            Assert.Throws<RimLLMException>(() => pipeline.DeserializeStructured<NullableTestDataStructure>("invalid json", objReq));
+            Assert.Throws<RimLLMException>(() => RimLLMStructuredOutput.Deserialize<NullableTestDataStructure>("invalid json", settings));
 
             // 5. Static JSON repair fallback
             settings.EnableJsonRepair = true;
             string markdownJson = "```json\n{\"Name\":\"repaired-str\",\"OptionalCount\":42}\n```";
-            var parsed = pipeline.DeserializeStructured<NullableTestDataStructure>(markdownJson, objReq);
+            var parsed = RimLLMStructuredOutput.Deserialize<NullableTestDataStructure>(markdownJson, settings);
             ClassicAssert.AreEqual("repaired-str", parsed.Name);
             ClassicAssert.AreEqual(42, parsed.OptionalCount);
 
@@ -605,7 +580,7 @@ namespace RimLLM_Framework.Tests
                 async () => await hardBlockClient.GetResponseAsync(mockMessages));
 
             // 8. 驗證空物件與結構化必填驗證
-            Assert.Throws<InvalidOperationException>(() => RimLLMChatExecutionPipeline.DeserializeAndValidate<NullableTestDataStructure>("null"));
+            Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<NullableTestDataStructure>("null"));
         }
 
         [Test]
@@ -613,7 +588,6 @@ namespace RimLLM_Framework.Tests
         {
             var settings = new MockSettings();
             var manager = new RimLLMManager(settings);
-            var pipeline = manager.ChatPipeline;
 
             // 1. 模擬原生 Schema 被 400 拒絕時自動降級重試
             int callCount = 0;
@@ -637,55 +611,26 @@ namespace RimLLM_Framework.Tests
             settings.FallbackChain = new List<string> { "SchemaRejectMock:m1" };
             manager.RegisterProvider(rejectingProvider);
 
-            var req = new RimLLMRequest
+            IChatClient schemaClient = manager.CreateChatClient("test.mod");
+            var structuredOptions = new RimLLMChatOptions
             {
-                ModId = "test.mod",
-                ResponseType = typeof(NullableTestDataStructure)
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    [RimLLMChatOptions.ResponseTypeKey] = typeof(NullableTestDataStructure)
+                }
             };
-
-            var res = await pipeline.GenerateAsync(req);
+            ChatResponse res = await schemaClient.GetResponseAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }, structuredOptions);
             ClassicAssert.IsNotNull(res);
             ClassicAssert.IsTrue(res.Text.Contains("fallback-success"));
 
             // 2. 結構化修復失敗時拋出 RimLLMException
-            Assert.Throws<RimLLMException>(() => pipeline.DeserializeStructured<NullableTestDataStructure>("totally broken no json anywhere", req));
+            Assert.Throws<RimLLMException>(() => RimLLMStructuredOutput.Deserialize<NullableTestDataStructure>("totally broken no json anywhere", settings));
 
             // 4. 結構化欄位驗證 (Field 必填為 null 拋出 InvalidOperationException)
-            Assert.Throws<InvalidOperationException>(() => RimLLMChatExecutionPipeline.DeserializeAndValidate<TestStructureWithRequiredField>("{\"RequiredField\":null}"));
-            Assert.Throws<InvalidOperationException>(() => RimLLMChatExecutionPipeline.DeserializeAndValidate<List<TestStructureWithRequiredField>>("[{\"RequiredField\":null}]"));
+            Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<TestStructureWithRequiredField>("{\"RequiredField\":null}"));
+            Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<List<TestStructureWithRequiredField>>("[{\"RequiredField\":null}]"));
 
-            // 5. 串流重試通知 (StreamAttemptSink 重設時派發 OnStreamRestart)
-            bool restarted = false;
-            var streamRestartReq = new RimLLMRequest
-            {
-                ModId = "test.mod",
-                OnStreamRestart = () => restarted = true
-            };
-            int streamAttempts = 0;
-            var streamFailProvider = new MockTestProvider
-            {
-                ProviderId = "StreamFailMock",
-                StreamHandler = (msgs, opts, m, callback) =>
-                {
-                    streamAttempts++;
-                    if (streamAttempts == 1)
-                    {
-                        callback("partial text before failure");
-                        throw new RimLLMException(LLMError.NetworkError, "stream dropped");
-                    }
-                    callback("fresh text after retry");
-                    return Task.CompletedTask;
-                }
-            };
-            settings.EnabledProviders["StreamFailMock"] = true;
-            settings.ApiKeys["StreamFailMock"] = "k";
-            settings.FallbackChain = new List<string> { "StreamFailMock:m1", "StreamFailMock:m2" };
-            manager.RegisterProvider(streamFailProvider);
-
-            string finalStreamed = "";
-            var streamGenResult = await pipeline.StreamAsync(streamRestartReq, chunk => finalStreamed += chunk);
-            ClassicAssert.AreEqual("fresh text after retry", streamGenResult.Text);
-            ClassicAssert.IsTrue(restarted);
         }
 
         [Test]

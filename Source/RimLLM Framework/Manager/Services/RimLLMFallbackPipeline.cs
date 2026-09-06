@@ -21,7 +21,7 @@ namespace RimLLM_Framework.Manager
         private readonly Func<string, ILLMProvider> _providerResolver;
         private readonly Func<string, bool> _isProviderEnabledFunc;
 
-        private struct ResolvedCandidate
+        internal struct ResolvedCandidate
         {
             public string Entry;
             public string ProviderId;
@@ -48,17 +48,15 @@ namespace RimLLM_Framework.Manager
         /// 依序遍歷符合資格的供應商條目，對每個條目套用相同的重試策略，
         /// 並統一處理取消檢查、健康帳本記錄與用量統計。
         /// </summary>
-#pragma warning disable S3776 // reason: 單一線性敘事含 fallback 解析、路由策略、重試迴圈，拆分反而增加重組成本
-        internal async Task<RimLLMGenerationResult> ExecuteWithFallbackAsync(
-            RimLLMRequest request,
-            Func<ILLMProvider, string, Task<RimLLMGenerationResult>> attemptAsync,
-            LLMError exhaustedError,
-            string exhaustedMessage,
-            Action onAttemptStarting = null)
+        /// <summary>
+        /// 解析出本次請求可用的候選，並依路由策略排序。
+        /// </summary>
+        /// <remarks>
+        /// 只做「選誰、依什麼順序」的決策；實際的嘗試、重試與健康記錄由
+        /// <see cref="RimLLMFailoverChatClient"/> 負責。
+        /// </remarks>
+        internal List<ResolvedCandidate> ResolveCandidates(string preferredModelId, string minFallbackLevel)
         {
-            var totalStopwatch = Stopwatch.StartNew();
-            DateTime startTime = DateTime.Now;
-
             var fallbackChain = GetFallbackChainSnapshot();
             if (fallbackChain == null || fallbackChain.Count == 0)
             {
@@ -67,9 +65,9 @@ namespace RimLLM_Framework.Manager
 
             // PreferredModelId（格式 "ProviderId:ModelName"）指定的話，於 fallback chain 前優先嘗試
             var effectiveChain = new List<string>(fallbackChain);
-            if (!string.IsNullOrEmpty(request.PreferredModelId))
+            if (!string.IsNullOrEmpty(preferredModelId))
             {
-                string preferredEntry = request.PreferredModelId;
+                string preferredEntry = preferredModelId;
                 if (!ResolveFallbackEntry(preferredEntry, out string prefProvider, out string prefModel)
                     || string.IsNullOrEmpty(prefModel))
                 {
@@ -88,7 +86,7 @@ namespace RimLLM_Framework.Manager
             var candidates = new List<ResolvedCandidate>();
             foreach (string entry in effectiveChain)
             {
-                if (TryGetEligibleCandidate(entry, request, out string pId, out ILLMProvider p, out string mName))
+                if (TryGetEligibleCandidate(entry, minFallbackLevel, out string pId, out ILLMProvider p, out string mName))
                 {
                     candidates.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
                 }
@@ -130,102 +128,16 @@ namespace RimLLM_Framework.Manager
                     break;
             }
 
-            Exception lastException = null;
-            int maxRetries = _settings.MaxRetries;
-            float retryDelay = _settings.RetryDelay;
-
-            foreach (var candidate in activeCandidates)
-            {
-                string providerId = candidate.ProviderId;
-                ILLMProvider provider = candidate.Provider;
-                string modelName = candidate.ModelName;
-                string healthKey = HealthKey(candidate);
-                bool sawRetryableFailure = false;
-
-                for (int attempt = 0; attempt <= maxRetries; attempt++)
-                {
-                    // 檢查中途是否被取消
-                    if (request.CancellationToken.IsCancellationRequested)
-                    {
-                        throw new OperationCanceledException(request.CancellationToken);
-                    }
-
-                    try
-                    {
-                        RimLLMLog.Message(attempt > 0
-                            ? $"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName}), retrying attempt {attempt + 1}..."
-                            : $"[RimLLM] Attempting to call provider: {providerId} (Model: {modelName})");
-
-                        var requestStopwatch = Stopwatch.StartNew();
-                        // 通知串流累積器：本次嘗試即將開始，需捨棄前一次嘗試的殘留內容。
-                        onAttemptStarting?.Invoke();
-
-                        var attemptResult = await attemptAsync(provider, modelName).ConfigureAwait(false);
-                        requestStopwatch.Stop();
-
-                        // 成功後重設健康狀態與記錄延遲
-                        _healthLedger.RecordSuccess(healthKey, requestStopwatch.ElapsedMilliseconds);
-
-                        _usageTracker.RecordLog(startTime, request.ModId, providerId, modelName, true, null, requestStopwatch.ElapsedMilliseconds);
-                        return attemptResult;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastException = ex;
-                        bool retryable = IsRetryableException(ex);
-
-                        // 可重試類錯誤（網路、超時、限流等）計入健康度失敗與冷卻，但一次請求
-                        // 的所有重試合計只記一次：逐次記錄會讓單一次網路抖動就把連續失敗數
-                        // 推過熔斷門檻（預設重試 3 次即記 4 次失敗），把健康的目標冤枉冷卻數分鐘。
-                        sawRetryableFailure |= retryable;
-
-                        if (retryable && attempt < maxRetries)
-                        {
-                            float effectiveDelay = ResolveRetryDelay(retryDelay, attempt, ex);
-
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) call failed: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Retrying in {effectiveDelay:F1} seconds...");
-                            if (effectiveDelay > 0f)
-                            {
-                                await Task.Delay(TimeSpan.FromSeconds(effectiveDelay), request.CancellationToken).ConfigureAwait(false);
-                            }
-                        }
-                        else if (!retryable)
-                        {
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) returned a non-retryable error: {RimLLMLog.SanitizeForLog(ex.Message, 300)}. Fallbacking to the next entry.");
-                            // 非重試類錯誤多半是請求組裝或 SDK 層的問題，只有訊息無從定位；
-                            // 詳細日誌開啟時一併輸出完整例外鏈與堆疊。
-                            RimLLMLog.Message($"[RimLLM] Non-retryable error detail:\n{RimLLMLog.SanitizeForLog(ex.ToString(), 4000)}");
-                            break;
-                        }
-                        else
-                        {
-                            RimLLMLog.Warning($"[RimLLM] Provider {providerId} (Model: {modelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
-                        }
-                    }
-                }
-
-                if (sawRetryableFailure)
-                {
-                    _healthLedger.RecordFailure(healthKey, isRetryable: true);
-                }
-            }
-
-            totalStopwatch.Stop();
-            _usageTracker.RecordLog(startTime, request.ModId, "FallbackChain", "None", false, lastException?.Message ?? "All fallbacks failed", totalStopwatch.ElapsedMilliseconds);
-            throw new RimLLMException(exhaustedError, $"{exhaustedMessage} Last error: {lastException?.Message}", lastException);
+            return activeCandidates;
         }
-#pragma warning restore S3776
+
 
         /// <summary>
         /// 健康帳本的記錄鍵。冷卻以「供應商:模型」為單位，而非只看供應商——
         /// 同一個供應商底下常有多個模型同時掛在備用鏈上（例如三個 OpenRouter 模型），
         /// 只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐冷卻。
         /// </summary>
-        private static string HealthKey(ResolvedCandidate candidate)
+        internal static string HealthKey(ResolvedCandidate candidate)
         {
             return string.IsNullOrEmpty(candidate.ModelName)
                 ? candidate.ProviderId
@@ -239,7 +151,7 @@ namespace RimLLM_Framework.Manager
         /// 伺服器若透過 Retry-After 指定了更長的等待時間則以其為準；
         /// 整體上限 60 秒，免得玩家在遊戲中枯等。
         /// </summary>
-        private static float ResolveRetryDelay(float baseDelay, int attempt, Exception ex)
+        internal static float ResolveRetryDelay(float baseDelay, int attempt, Exception ex)
         {
             const float maxDelaySeconds = 60f;
             const int maxBackoffSteps = 6;
@@ -355,7 +267,7 @@ namespace RimLLM_Framework.Manager
                    (!provider.RequiresApiKey || !string.IsNullOrEmpty(_settings.GetApiKey(providerId)));
         }
 
-        private bool TryGetEligibleCandidate(string entry, RimLLMRequest request, out string providerId, out ILLMProvider provider, out string modelName)
+        private bool TryGetEligibleCandidate(string entry, string minFallbackLevel, out string providerId, out ILLMProvider provider, out string modelName)
         {
             provider = null;
 
@@ -378,7 +290,7 @@ namespace RimLLM_Framework.Manager
             }
 
             // 評估 MinFallbackLevel 模型分級
-            int minLevel = ParseMinFallbackLevel(request.MinFallbackLevel);
+            int minLevel = ParseMinFallbackLevel(minFallbackLevel);
             if (minLevel > 0)
             {
                 int currentModelLevel = GetModelLevel(entry, providerId, modelName);
@@ -421,7 +333,7 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private static bool IsRetryableException(Exception ex)
+        internal static bool IsRetryableException(Exception ex)
         {
             if (ex is OperationCanceledException)
             {

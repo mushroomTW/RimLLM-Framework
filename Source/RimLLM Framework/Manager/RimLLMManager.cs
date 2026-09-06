@@ -31,13 +31,12 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMUsageTracker _usageTracker;
         private readonly RimLLMEmbeddingService _embeddingService;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
-        private readonly RimLLMChatExecutionPipeline _chatPipeline;
         private readonly RimLLMThrottleStore _throttleStore;
         private readonly RimLLMRequestQueue _requestQueue;
+        private readonly RimLLMHealthLedger _healthLedger;
 
         public RimLLMEmbeddingService EmbeddingService => _embeddingService;
         public RimLLMUsageTracker UsageTracker => _usageTracker;
-        public RimLLMChatExecutionPipeline ChatPipeline => _chatPipeline;
         internal IRimLLMSettings Settings => _settings;
 
         /// <summary>
@@ -66,21 +65,17 @@ namespace RimLLM_Framework.Manager
 
             // 建立子模組
             _requestQueue = new RimLLMRequestQueue(settings);
-            var healthLedger = new RimLLMHealthLedger();
+            _healthLedger = new RimLLMHealthLedger();
             _usageTracker = new RimLLMUsageTracker(settings);
 
             _fallbackPipeline = new RimLLMFallbackPipeline(
                 settings,
-                healthLedger,
+                _healthLedger,
                 _usageTracker,
                 providerId => TryGetProvider(providerId, out var provider) ? provider : null,
                 IsProviderEnabled);
 
             _throttleStore = new RimLLMThrottleStore(settings);
-
-            _chatPipeline = new RimLLMChatExecutionPipeline(
-                settings,
-                _fallbackPipeline);
 
             // 初始化並註冊內建供應商
             RegisterBuiltInProvider(new OpenAIProvider(settings));
@@ -204,7 +199,8 @@ namespace RimLLM_Framework.Manager
             // 快取必須排在防濫用與預算之前，因為命中不發 API 呼叫，攔阻零成本的重播沒有意義；
             // 預算則排在防濫用之後、佇列之前，被擋下的請求不該佔用併發名額；
             // 佇列在最內層，名額只留給真正要打 API 的請求。
-            IChatClient client = new RimLLMChatClient(this, modId);
+            IChatClient client = new RimLLMFailoverChatClient(
+                _settings, _healthLedger, _usageTracker, _fallbackPipeline, modId);
             client = new RimLLMRequestQueueChatClient(client, _requestQueue);
             client = new RimLLMBudgetChatClient(client, _usageTracker);
             client = new RimLLMAntiAbuseChatClient(client, _settings, _throttleStore, modId);
@@ -233,29 +229,11 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// SDK facade 的非串流唯一入口（回傳包含實際 provider/model 與用量的結果）。
-        /// </summary>
-        internal Task<RimLLMGenerationResult> GenerateResultAsync(RimLLMRequest request)
-        {
-            return _chatPipeline.GenerateAsync(request);
-        }
-
-        /// <summary>
-        /// SDK facade 的串流唯一入口。串流 chunk 經 <paramref name="onChunkReceived"/> 送出。
-        /// </summary>
-        internal Task<RimLLMGenerationResult> StreamResultAsync(
-            RimLLMRequest request,
-            Action<string> onChunkReceived)
-        {
-            return _chatPipeline.StreamAsync(request, onChunkReceived);
-        }
-
-        /// <summary>
         /// 結構化輸出的核心流程轉發。
         /// </summary>
         internal T DeserializeStructured<T>(string rawResponse, IRimLLMSettings settings, RimLLMRequest request)
         {
-            return _chatPipeline.DeserializeStructured<T>(rawResponse, request);
+            return RimLLMStructuredOutput.Deserialize<T>(rawResponse, settings ?? _settings);
         }
 
         internal static T DeserializeAndValidate<T>(string json)

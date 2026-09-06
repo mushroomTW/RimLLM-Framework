@@ -21,7 +21,6 @@ namespace RimLLM_Framework
         internal const string MinFallbackLevelKey = "rimllm_min_fallback_level";
         internal const string CachedContextKey = "rimllm_cached_context";
         internal const string EnableContextCachingKey = "rimllm_enable_context_caching";
-        internal const string OnStreamRestartKey = "rimllm_on_stream_restart";
 
         /// <summary>
         /// 結構化輸出的目標型別。由 RimLLMClientExtensions 標註，路由層據此依供應商方言
@@ -56,13 +55,6 @@ namespace RimLLM_Framework
         {
             get => GetEnableContextCaching(this);
             set => WriteAdditional(EnableContextCachingKey, value);
-        }
-
-        /// <summary>串流中途被下一個供應商接手時的通知（呼叫端應於此清空已顯示內容）。</summary>
-        public Action OnStreamRestart
-        {
-            get => GetOnStreamRestart(this);
-            set => WriteAdditional(OnStreamRestartKey, value);
         }
 
         /// <summary>關閉思考（對應舊 LLMReasoningEffort.None；Auto 以不設定 Reasoning 表達）。</summary>
@@ -108,9 +100,6 @@ namespace RimLLM_Framework
 
         internal static string GetCachedContext(ChatOptions options) =>
             ReadAdditional<string>(options, CachedContextKey, null);
-
-        internal static Action GetOnStreamRestart(ChatOptions options) =>
-            ReadAdditional<Action>(options, OnStreamRestartKey, null);
 
         internal static bool GetDisableReasoning(ChatOptions options) =>
             ReadAdditional(options, DisableReasoningKey, false);

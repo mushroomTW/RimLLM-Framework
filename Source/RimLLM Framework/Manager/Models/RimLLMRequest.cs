@@ -28,7 +28,6 @@ namespace RimLLM_Framework.Manager
         public int Priority { get; set; }
         public string MinFallbackLevel { get; set; }
         public string PreferredModelId { get; set; }
-        public Action OnStreamRestart { get; set; }
         public CancellationToken CancellationToken { get; set; }
         public Type ResponseType { get; set; }
         public IList<AITool> Tools { get; set; }
@@ -58,7 +57,6 @@ namespace RimLLM_Framework.Manager
                 Priority = Priority,
                 MinFallbackLevel = MinFallbackLevel,
                 PreferredModelId = PreferredModelId,
-                OnStreamRestart = OnStreamRestart,
                 CancellationToken = CancellationToken,
                 ResponseType = ResponseType,
                 Tools = Tools != null ? new List<AITool>(Tools) : null,

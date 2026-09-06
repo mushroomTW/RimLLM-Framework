@@ -244,17 +244,7 @@ namespace RimLLM_Framework.Mod
                                 MaxOutputTokens = 4096,
                                 Temperature = 0.7f,
                                 DisableReasoning = false,
-                                Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null,
-                                // 供應商中途失敗、框架改由下一家重新串流時，捨棄已顯示的殘段，
-                                // 避免畫面出現前後兩段混接的內容。
-                                OnStreamRestart = () =>
-                                {
-                                    lock (replyLock)
-                                    {
-                                        accumulatedReply = "";
-                                    }
-                                    UpdateAiHistoryEntry(aiHistoryIndex, string.Empty, scrollToBottom: false);
-                                }
+                                Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null
                             };
                             var enumerator = client.GetStreamingResponseAsync(messages, options, requestCts.Token).GetAsyncEnumerator();
                             try
@@ -262,12 +252,6 @@ namespace RimLLM_Framework.Mod
                                 while (await enumerator.MoveNextAsync().ConfigureAwait(false))
                                 {
                                     ChatResponseUpdate update = enumerator.Current;
-                                    if (update.AdditionalProperties != null &&
-                                        update.AdditionalProperties.ContainsKey("rimllm_stream_restart"))
-                                    {
-                                        // 重啟 marker：殘段捨棄已由 OnStreamRestart 處理，此 update 無文字內容。
-                                        continue;
-                                    }
                                     foreach (AIContent content in update.Contents)
                                     {
                                         if (content is TextContent textContent)

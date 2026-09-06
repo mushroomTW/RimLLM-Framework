@@ -27,8 +27,12 @@
     <!-- 啟用 C# 8.0 語言版本，以支援非同步資料流 (IAsyncEnumerable) -->
     <LangVersion>8.0</LangVersion>
     <!-- ChatCompletionOptions.Patch 為實驗性 API (SCME0001)，本專案刻意使用它以補救 wire 差異。
-         NU1608: MEAI.OpenAI 10.9.0 定義 OpenAI (< 2.13.0)，本專案升級至 2.13.0 並透過 OpenAIPatchExtensions 修復 PropagateSet NRE。 -->
-    <NoWarn>$(NoWarn);SCME0001;NU1608</NoWarn>
+         NU1608: MEAI.OpenAI 10.9.0 定義 OpenAI (< 2.13.0)，本專案升級至 2.13.0 並透過 OpenAIPatchExtensions 修復 PropagateSet NRE。
+         MEAI001: FailoverChatClient / RoutingContext / FailoverChatClientAttempt 被 Microsoft 標記為
+         「僅供評估之用，可能在未來更新中變更或移除」。備援路由建構在它們之上是刻意的取捨——
+         換得的是與 MEAI 一致的路由語意，代價是 MEAI 升版時這一層可能需要跟著改。
+         升級 Microsoft.Extensions.AI 前務必檢查 RimLLMFailoverChatClient 是否仍能編譯。 -->
+    <NoWarn>$(NoWarn);SCME0001;NU1608;MEAI001</NoWarn>
     <Authors>mushroomTW</Authors>
     <!-- SonarQube / Coverlet 覆蓋率排除非邏輯核心的 RimWorld UI 繪製與 Mod 進入點 -->
     <SonarQubeCoverageExclusions>**/Mod/UI/**;**/Mod/RimLLMFrameworkMod.cs</SonarQubeCoverageExclusions>

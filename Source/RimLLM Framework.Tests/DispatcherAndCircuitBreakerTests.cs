@@ -18,6 +18,16 @@ namespace RimLLM_Framework.Tests
     [TestFixture]
     public class DispatcherAndCircuitBreakerTests
     {
+        /// <summary>
+        /// 走組好的中介層堆疊送出一次請求。GenerateResultAsync 已隨 facade 一併移除，
+        /// 現在唯一的入口就是 CreateChatClient 回傳的 IChatClient。
+        /// </summary>
+        private static string GenerateText(RimLLMManager manager, RimLLMRequest request)
+        {
+            IChatClient client = manager.CreateChatClient(request.ModId);
+            return client.GetResponseAsync(request.Messages).GetAwaiter().GetResult().Text;
+        }
+
         [Test]
         public void TestFallbackMechanism()
         {
@@ -863,15 +873,15 @@ namespace RimLLM_Framework.Tests
             };
 
             // 第一次呼叫：兩個都沒有延遲歷史，依據 FallbackChain 順序（先 MockSlow）
-            string res1 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+            string res1 = GenerateText(manager, request);
             ClassicAssert.AreEqual("slow-ok", res1);
 
             // 第二次呼叫：因為 MockSlow 已有延遲（100ms），MockFast 尚未有歷史（視為 0 延遲），優先呼叫 MockFast
-            string res2 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+            string res2 = GenerateText(manager, request);
             ClassicAssert.AreEqual("fast-ok", res2);
 
             // 第三次呼叫：此時 MockSlow 平均 100ms，MockFast 平均 5ms，智慧路由應該優先選擇 MockFast
-            string res3 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+            string res3 = GenerateText(manager, request);
             ClassicAssert.AreEqual("fast-ok", res3);
         }
 
@@ -926,13 +936,13 @@ namespace RimLLM_Framework.Tests
             };
 
             // 第一次呼叫：MockFail 失敗，然後 Fallback 到 MockSuccess 成功
-            string res1 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+            string res1 = GenerateText(manager, request);
             ClassicAssert.AreEqual("success-ok", res1);
             ClassicAssert.AreEqual(1, failCalls);
             ClassicAssert.AreEqual(1, successCalls);
 
             // 第二次呼叫：MockFail 此時正處於 60 秒的故障冷卻期，智慧路由應直接跳過它，不進行呼叫，直接執行 MockSuccess
-            string res2 = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+            string res2 = GenerateText(manager, request);
             ClassicAssert.AreEqual("success-ok", res2);
             ClassicAssert.AreEqual(1, failCalls); // 呼叫次數仍為 1，說明已被跳過！
             ClassicAssert.AreEqual(2, successCalls);
@@ -971,13 +981,13 @@ namespace RimLLM_Framework.Tests
             // 1. 當 EnableJsonRepair 為 false 時，預期拋出例外
             Assert.Throws<RimLLMException>(() =>
             {
-                string raw = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+                string raw = GenerateText(manager, request);
                 manager.DeserializeStructured<TestDataStructure>(raw, mockSettings, request);
             });
 
             // 2. 當 EnableJsonRepair 為 true 時，預期成功修復並解析
             mockSettings.EnableJsonRepair = true;
-            string rawRepaired = manager.GenerateResultAsync(request).GetAwaiter().GetResult().Text;
+            string rawRepaired = GenerateText(manager, request);
             var res = manager.DeserializeStructured<TestDataStructure>(rawRepaired, mockSettings, request);
             ClassicAssert.IsNotNull(res);
             ClassicAssert.AreEqual(42, res.Value);

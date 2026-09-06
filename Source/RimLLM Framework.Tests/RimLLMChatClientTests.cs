@@ -104,11 +104,13 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestTranslate_SystemPromptExtractedFromFirstMessage()
         {
-            var manager = CreateManager();
-            var client = CreateClient(manager, "test.translate.mod");
-            // Translate 是 facade 的內部細節，透過 GetService 穿過外層中介層取得。
-            var facade = (RimLLMChatClient)client.GetService(typeof(RimLLMChatClient));
-            var request = facade.Translate(
+            // Translate 隨著 facade 的移除搬到了候選層：它需要知道供應商身分才能整形請求。
+            var providerClient = new RimLLMProviderChatClient(
+                new MockTestProvider { ProviderId = "TestMock" },
+                "mock-model",
+                new MockSettings(),
+                "test.translate.mod");
+            var request = providerClient.Translate(
                 new List<ChatMessage>
                 {
                     new ChatMessage(ChatRole.System, "You are a helpful assistant."),
@@ -132,8 +134,7 @@ namespace RimLLM_Framework.Tests
                 Priority = 9,
                 MinFallbackLevel = "Medium",
                 CachedContext = "world rules",
-                DisableReasoning = true,
-                OnStreamRestart = () => { }
+                DisableReasoning = true
             };
 
             ChatOptions cloned = original.Clone();
@@ -147,7 +148,6 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual("world rules", RimLLMChatOptions.GetCachedContext(cloned));
             ClassicAssert.IsTrue(RimLLMChatOptions.GetDisableReasoning(cloned));
             ClassicAssert.IsTrue(RimLLMChatOptions.GetEnableContextCaching(cloned), "CachedContext 不為空時應沿用計算預設值");
-            ClassicAssert.IsNotNull(RimLLMChatOptions.GetOnStreamRestart(cloned));
 
             // 明確設定 false 時不可被 CachedContext 的計算預設值蓋掉。
             original.EnableContextCaching = false;
@@ -292,63 +292,6 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestGetStreamingResponseAsync_RestartMarkerPushed()
-        {
-            var mockSettings = new MockSettings
-            {
-                FallbackChain = new List<string> { "MockPartial:model-a", "MockGood:model-b" },
-                MaxRetries = 0,
-                RetryDelay = 0f
-            };
-            mockSettings.EnabledProviders["MockPartial"] = true;
-            mockSettings.EnabledProviders["MockGood"] = true;
-            mockSettings.ApiKeys["MockPartial"] = "key";
-            mockSettings.ApiKeys["MockGood"] = "key";
-
-            var manager = new RimLLMManager(mockSettings);
-            manager.RegisterProvider(new MockStreamProvider
-            {
-                ProviderId = "MockPartial",
-                StreamHandler = (messages, options, model, onChunk) =>
-                {
-                    onChunk("partial");
-                    throw new RimLLMException(LLMError.ProviderOffline, "dropped mid-stream");
-                }
-            });
-            manager.RegisterProvider(new MockStreamProvider
-            {
-                ProviderId = "MockGood",
-                StreamHandler = (messages, options, model, onChunk) =>
-                {
-                    onChunk("final");
-                    return System.Threading.Tasks.Task.CompletedTask;
-                }
-            });
-
-            int restartCount = 0;
-            var updates = new List<ChatResponseUpdate>();
-            var client = CreateClient(manager, "test.stream.restart.mod");
-            var enumerator = client.GetStreamingResponseAsync(
-                new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
-                new RimLLMChatOptions { OnStreamRestart = () => restartCount++ }).GetAsyncEnumerator();
-            try
-            {
-                while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
-                {
-                    updates.Add(enumerator.Current);
-                }
-            }
-            finally
-            {
-                enumerator.DisposeAsync().GetAwaiter().GetResult();
-            }
-            ClassicAssert.AreEqual(1, restartCount, "供應商中途失敗後應恰好通知呼叫端重設一次");
-            ClassicAssert.IsTrue(updates.Exists(u => u.AdditionalProperties != null
-                && u.AdditionalProperties.ContainsKey("rimllm_stream_restart")),
-                "應推送 rimllm_stream_restart marker update");
-        }
-
-        [Test]
         public void TestMetadata_ProviderNameIsRimLLM()
         {
             var manager = CreateManager();
@@ -450,19 +393,28 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestGetResponseAsync_AdditionalPropertiesMerged()
+        public void TestGetResponseAsync_DoesNotEchoRequestAdditionalProperties()
         {
+            // 回應先前會把「請求的」AdditionalProperties 原樣回填。框架欄位改存在同一個
+            // 字典之後，那等於把 rimllm_priority、rimllm_response_type 等內部設定洩漏給
+            // 呼叫端；ChatResponse.AdditionalProperties 的語意也本該是供應商的回應中繼資料，
+            // 而不是請求的回音。
             var manager = CreateManager();
             var client = CreateClient(manager, "test.addprops.mod");
             var options = new RimLLMChatOptions
             {
+                Priority = 4,
                 AdditionalProperties = new AdditionalPropertiesDictionary { ["custom_key"] = "custom_val" }
             };
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }, options).GetAwaiter().GetResult();
 
-            ClassicAssert.IsNotNull(response.AdditionalProperties);
-            ClassicAssert.AreEqual("custom_val", response.AdditionalProperties["custom_key"]);
+            ClassicAssert.IsNotEmpty(response.Text);
+            if (response.AdditionalProperties != null)
+            {
+                ClassicAssert.IsFalse(response.AdditionalProperties.ContainsKey("custom_key"));
+                ClassicAssert.IsFalse(response.AdditionalProperties.ContainsKey(RimLLMChatOptions.PriorityKey));
+            }
         }
 
         [Test]

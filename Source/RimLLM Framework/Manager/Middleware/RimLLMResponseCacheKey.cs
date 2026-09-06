@@ -18,7 +18,7 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         /// <remarks>
         /// ModId 與 Priority 刻意不納入：它們只影響防濫用節流與排隊順序，不影響模型輸出，
-        /// 納入只會讓不同 Mod 的相同請求各自打一次 API。OnStreamRestart 與取消權杖同理。
+        /// 納入只會讓不同 Mod 的相同請求各自打一次 API。取消權杖同理。
         /// 反過來說，凡是會原樣送達 provider 的取樣參數都必須納入，否則兩個只有 Seed
         /// 不同的請求會共用同一筆快取。
         /// </remarks>
