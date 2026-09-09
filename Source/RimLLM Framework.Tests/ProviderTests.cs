@@ -1156,8 +1156,7 @@ namespace RimLLM_Framework.Tests
             {
                 throw LLMErrorMapper.CreateException(
                     (int)statusCode,
-                    responseBody,
-                    LLMErrorMapper.ParseRetryAfter(response));
+                    responseBody);
             }
         }
     }

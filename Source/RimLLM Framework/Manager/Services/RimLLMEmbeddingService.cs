@@ -226,16 +226,6 @@ namespace RimLLM_Framework.Manager
             return OrderEmbeddingCandidatesFirst(ids);
         }
 
-        internal static bool DeclaresEmbedContent(IEnumerable<string> supportedActions)
-        {
-            if (supportedActions == null) return false;
-            foreach (string action in supportedActions)
-            {
-                if (string.Equals(action, "embedContent", StringComparison.OrdinalIgnoreCase)) return true;
-            }
-            return false;
-        }
-
         /// <summary>
         /// 常見的 embedding 模型命名片段。只用來排序，不用來過濾 ——
         /// 本地伺服器的模型名由使用者自訂，過濾會把合法選項藏起來。

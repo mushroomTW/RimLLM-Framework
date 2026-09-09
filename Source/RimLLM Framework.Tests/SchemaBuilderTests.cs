@@ -419,20 +419,6 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsTrue(plain.StrictCompatible);
         }
 
-        [Test]
-        public void ContainsOpenEndedMapMatchesLegacyReflection()
-        {
-            foreach (Type type in SampleTypes())
-            {
-#pragma warning disable CS0618
-                bool legacy = RimLLMJsonHelper.ContainsOpenEndedMap(type);
-#pragma warning restore CS0618
-                ClassicAssert.AreEqual(
-                    legacy,
-                    RimLLMSchemaBuilder.ContainsOpenEndedMap(type),
-                    type.Name + " 的開放式 map 判定在新舊兩條路徑上應一致。");
-            }
-        }
 
         // -----------------------------------------------------------------
         // 降級路徑與快取

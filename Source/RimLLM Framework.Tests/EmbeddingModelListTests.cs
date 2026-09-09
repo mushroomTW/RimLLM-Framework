@@ -16,26 +16,6 @@ namespace RimLLM_Framework.Tests
     public class EmbeddingModelListTests
     {
         [Test]
-        public void EmbedContentActionIsDetectedCaseInsensitively()
-        {
-            ClassicAssert.IsTrue(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "embedContent" }));
-            ClassicAssert.IsTrue(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "generateContent", "EMBEDCONTENT" }));
-        }
-
-        [Test]
-        public void ChatOnlyModelIsNotTreatedAsEmbedding()
-        {
-            ClassicAssert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(new[] { "generateContent", "countTokens" }));
-        }
-
-        [Test]
-        public void MissingSupportedActionsIsNotTreatedAsEmbedding()
-        {
-            ClassicAssert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(null));
-            ClassicAssert.IsFalse(RimLLMEmbeddingService.DeclaresEmbedContent(new string[0]));
-        }
-
-        [Test]
         public void EmbeddingLookingNamesAreRecognised()
         {
             ClassicAssert.IsTrue(RimLLMEmbeddingService.LooksLikeEmbeddingModel("text-embedding-004"));

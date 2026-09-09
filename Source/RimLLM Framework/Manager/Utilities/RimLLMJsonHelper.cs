@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using RimLLM_Framework.Core;
 #pragma warning disable S108, S1133, S1643, S2486, S6610 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Manager
@@ -53,13 +54,39 @@ namespace RimLLM_Framework.Manager
 
 
         /// <summary>
-        /// 判斷型別是否會產生開放式 map（由 Dictionary 產生的 additionalProperties schema）。
-        /// OpenAI 的 strict structured output 不接受這種形狀。
+        /// 結構化輸出的核心流程：直接解析 → JSON repair 回退 → LLM-assisted double-repair。
         /// </summary>
-        [Obsolete("改用 RimLLMSchemaBuilder.ContainsOpenEndedMap(type)。此多載將於下一版移除。", false)]
-        public static bool ContainsOpenEndedMap(Type type)
+        public static T DeserializeStructured<T>(string rawResponse, IRimLLMSettings settings)
         {
-            return RimLLMSchemaBuilder.ContainsOpenEndedMap(type);
+            try
+            {
+                return DeserializeAndValidate<T>(rawResponse);
+            }
+            catch (Exception ex)
+            {
+                if (settings?.EnableJsonRepair != true)
+                {
+                    throw new RimLLMException(
+                        LLMError.InvalidResponse,
+                        $"Unable to parse LLM response to target object {typeof(T).Name} (JSON Repair is disabled). Raw Response: {RimLLMLog.SanitizeForLog(rawResponse, 300)}. Parse error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}",
+                        ex);
+                }
+
+                string repairedJson = RepairJson(rawResponse);
+                RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting static repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                try
+                {
+                    string fallbackExtracted = ExtractJsonBlock(repairedJson);
+                    return DeserializeAndValidate<T>(fallbackExtracted);
+                }
+                catch (Exception repairEx)
+                {
+                    throw new RimLLMException(
+                        LLMError.InvalidResponse,
+                        $"Unable to parse LLM response to target object {typeof(T).Name}. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}. Parse error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}. Static repair error: {RimLLMLog.SanitizeForLog(repairEx.Message, 200)}",
+                        repairEx);
+                }
+            }
         }
 
         /// <summary>

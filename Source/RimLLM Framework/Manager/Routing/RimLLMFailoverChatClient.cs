@@ -147,7 +147,7 @@ namespace RimLLM_Framework.Manager
                 ? $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName}), retrying attempt {state.AttemptOnCurrent + 1}..."
                 : $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName})");
 
-            return new RimLLMProviderChatClient(candidate.Provider, candidate.ModelName, _settings, _modId);
+            return new RimLLMProviderChatClient(candidate.Provider, candidate.ModelName, _settings);
         }
 
         /// <summary>

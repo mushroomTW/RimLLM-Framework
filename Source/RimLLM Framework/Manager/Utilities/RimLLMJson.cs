@@ -8,7 +8,7 @@ namespace RimLLM_Framework.Manager
     /// 全框架共用的 JSON 序列化設定與薄包裝。
     /// Newtonsoft 移除後唯一的 JSON 引擎是 System.Text.Json，所有生產路徑
     /// （結構化輸出反序列化、設定／遙測 DTO、sample JSON）都經由此處，寬容度只定義一次。
-    /// </summary>
+#pragma warning disable S101 // reason: RimLLM 為品牌縮寫，維持現狀
     internal static class RimLLMJson
     {
         private static readonly JsonSerializerOptions SharedOptions = CreateSharedOptions();
@@ -52,4 +52,5 @@ namespace RimLLM_Framework.Manager
             return JsonSerializer.Deserialize<T>(json, SharedOptions);
         }
     }
+#pragma warning restore S101
 }

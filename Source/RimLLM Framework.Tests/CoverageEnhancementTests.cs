@@ -61,22 +61,6 @@ namespace RimLLM_Framework.Tests
             ledger.RecordSuccess("p_lat", 200); // 應踢除第一筆 100
             ClassicAssert.AreEqual(120f, ledger.GetAverageLatency("p_lat"));
 
-            // AreAllInCooldown 測試
-            var chain = new List<string> { "p1", "p2" };
-            ClassicAssert.IsFalse(ledger.AreAllInCooldown(chain, id => id)); // p1, p2 不在冷卻中
-
-            ledger.RecordFailure("p1", true);
-            ledger.RecordFailure("p1", true);
-            ledger.RecordFailure("p1", true);
-            ClassicAssert.IsFalse(ledger.AreAllInCooldown(chain, id => id)); // 只有 p1 冷卻
-
-            ledger.RecordFailure("p2", true);
-            ledger.RecordFailure("p2", true);
-            ledger.RecordFailure("p2", true);
-            ClassicAssert.IsTrue(ledger.AreAllInCooldown(chain, id => id)); // p1, p2 皆冷卻
-
-            ClassicAssert.IsFalse(ledger.AreAllInCooldown((List<string>)null, id => id));
-
             // Clear 測試
             ledger.Clear();
             ClassicAssert.IsFalse(ledger.IsInCooldown("p1"));
@@ -498,12 +482,12 @@ namespace RimLLM_Framework.Tests
 
             // 4. JSON Repair disabled throws RimLLMException
             settings.EnableJsonRepair = false;
-            Assert.Throws<RimLLMException>(() => RimLLMStructuredOutput.Deserialize<NullableTestDataStructure>("invalid json", settings));
+            Assert.Throws<RimLLMException>(() => RimLLMJsonHelper.DeserializeStructured<NullableTestDataStructure>("invalid json", settings));
 
             // 5. Static JSON repair fallback
             settings.EnableJsonRepair = true;
             string markdownJson = "```json\n{\"Name\":\"repaired-str\",\"OptionalCount\":42}\n```";
-            var parsed = RimLLMStructuredOutput.Deserialize<NullableTestDataStructure>(markdownJson, settings);
+            var parsed = RimLLMJsonHelper.DeserializeStructured<NullableTestDataStructure>(markdownJson, settings);
             ClassicAssert.AreEqual("repaired-str", parsed.Name);
             ClassicAssert.AreEqual(42, parsed.OptionalCount);
 
@@ -578,7 +562,7 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsTrue(res.Text.Contains("fallback-success"));
 
             // 2. 結構化修復失敗時拋出 RimLLMException
-            Assert.Throws<RimLLMException>(() => RimLLMStructuredOutput.Deserialize<NullableTestDataStructure>("totally broken no json anywhere", settings));
+            Assert.Throws<RimLLMException>(() => RimLLMJsonHelper.DeserializeStructured<NullableTestDataStructure>("totally broken no json anywhere", settings));
 
             // 4. 結構化欄位驗證 (Field 必填為 null 拋出 InvalidOperationException)
             Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<TestStructureWithRequiredField>("{\"RequiredField\":null}"));
@@ -619,19 +603,19 @@ namespace RimLLM_Framework.Tests
 
             // Policy 0 = HardBlock
             settings.BudgetPolicy = 0;
-            bool ok = await tracker.CheckBudgetLimitAsync();
+            bool ok = tracker.CheckBudgetLimit();
             ClassicAssert.IsFalse(ok);
 
             // Policy 1 = SilentMocking
             settings.BudgetPolicy = 1;
-            ok = await tracker.CheckBudgetLimitAsync();
+            ok = tracker.CheckBudgetLimit();
             ClassicAssert.IsTrue(ok);
             ClassicAssert.IsTrue(tracker.IsBudgetMocked(false, out string mockStr));
             ClassicAssert.IsNotNull(mockStr);
 
             // Policy 2 = FallbackToFree
             settings.BudgetPolicy = 2;
-            ok = await tracker.CheckBudgetLimitAsync();
+            ok = tracker.CheckBudgetLimit();
             ClassicAssert.IsTrue(ok);
 
             // 5. 跨天重置

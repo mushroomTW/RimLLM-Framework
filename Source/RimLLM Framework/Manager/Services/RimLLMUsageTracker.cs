@@ -436,7 +436,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 審查每日預算限額。
         /// </summary>
-        internal async Task<bool> CheckBudgetLimitAsync()
+        internal bool CheckBudgetLimit()
         {
             CheckDailyReset();
 
@@ -446,12 +446,7 @@ namespace RimLLM_Framework.Manager
             }
 
             // 0=HardBlock, 1=SilentMocking, 2=FallbackToFree
-            if (_settings.BudgetPolicy == 1 || _settings.BudgetPolicy == 2)
-            {
-                return true;
-            }
-
-            return false;
+            return _settings.BudgetPolicy == 1 || _settings.BudgetPolicy == 2;
         }
 
         /// <summary>

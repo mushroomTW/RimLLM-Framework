@@ -21,6 +21,7 @@ namespace RimLLM_Framework.Manager
         /// 使 SDK 路徑與 raw HTTP 路徑的逾時語意一致。
         /// <paramref name="customizeOptions"/> 為供應商專屬的 options 客製化（如 reasoning、Patch 逃生門）。
         /// </summary>
+#pragma warning disable S107 // reason: 內部轉接器協調 IChatClient、逾時與逐候選參數，參數物件無重用價值且降低可讀性，維持窄範圍抑制
         public static async Task<ChatResponse> GenerateAsync(
             IChatClient client,
             IEnumerable<ChatMessage> messages,
@@ -80,6 +81,7 @@ namespace RimLLM_Framework.Manager
                 return response;
             }
         }
+#pragma warning restore S107
 
         /// <summary>
         /// 串流請求：採「閒置逾時」語意 —— 每收到一個 chunk 就重設計時器。

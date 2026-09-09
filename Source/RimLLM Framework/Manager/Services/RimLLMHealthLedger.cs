@@ -137,26 +137,6 @@ namespace RimLLM_Framework.Manager
             return IsInCooldown(target, out _, out _);
         }
 
-        /// <summary>
-        /// 檢查候選清單中的項目是否全部都在冷卻中（若是，則允許破例放行以免阻斷所有呼叫）。
-        /// </summary>
-        public bool AreAllInCooldown<T>(IEnumerable<T> candidates, Func<T, string> targetSelector)
-        {
-            if (candidates == null || targetSelector == null) return false;
-
-            bool anyCandidate = false;
-            foreach (var candidate in candidates)
-            {
-                string target = targetSelector(candidate);
-                if (string.IsNullOrEmpty(target)) continue;
-                anyCandidate = true;
-                if (!IsInCooldown(target))
-                {
-                    return false;
-                }
-            }
-            return anyCandidate;
-        }
 
         /// <summary>
         /// 取得目標的平均延遲（毫秒），無記錄時回傳 0。

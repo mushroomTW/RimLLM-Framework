@@ -237,7 +237,7 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         internal T DeserializeStructured<T>(string rawResponse, IRimLLMSettings settings)
         {
-            return RimLLMStructuredOutput.Deserialize<T>(rawResponse, settings ?? _settings);
+            return RimLLMJsonHelper.DeserializeStructured<T>(rawResponse, settings ?? _settings);
         }
 
         internal static T DeserializeAndValidate<T>(string json)

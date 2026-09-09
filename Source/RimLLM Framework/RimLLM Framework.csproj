@@ -59,14 +59,7 @@
       安全恢復底層 JsonPatch 寫入行為。
     -->
     <PackageReference Include="OpenAI" Version="2.13.0" />
-    <!--
-      回應快取的儲存層。版本刻意對齊 MEAI 已經帶進來的
-      Microsoft.Extensions.Caching.Abstractions（10.0.11）：RimWorld 把所有 Mod 載入同一個
-      AppDomain，抽象層與實作層的組件識別一旦對不上就會在遊戲內炸開。
-      其四個相依（Options、Primitives、DependencyInjection.Abstractions、Logging.Abstractions）
-      本來就已隨 MEAI 出貨，因此淨增一個 DLL。
-    -->
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
+
     <!--
       升級 System.Threading.Tasks.Extensions 至 4.6.3，並以 alias 隔離其 ValueTask，
       避免與 Krafs.Rimworld.Ref 附帶的 RimWorld Mono mscorlib（同樣定義 ValueTask）衝突（CS0433）。

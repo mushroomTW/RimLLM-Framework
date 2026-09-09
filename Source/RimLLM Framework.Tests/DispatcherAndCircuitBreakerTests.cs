@@ -841,7 +841,7 @@ namespace RimLLM_Framework.Tests
                 ProviderId = "MockSlow",
                 GenerateHandler = async (msgs, opts, model) =>
                 {
-                    await System.Threading.Tasks.Task.Delay(100);
+                    await System.Threading.Tasks.Task.Delay(150);
                     return "slow-ok";
                 }
             };
@@ -850,7 +850,7 @@ namespace RimLLM_Framework.Tests
                 ProviderId = "MockFast",
                 GenerateHandler = async (msgs, opts, model) =>
                 {
-                    await System.Threading.Tasks.Task.Delay(5);
+                    await System.Threading.Tasks.Task.Delay(1);
                     return "fast-ok";
                 }
             };

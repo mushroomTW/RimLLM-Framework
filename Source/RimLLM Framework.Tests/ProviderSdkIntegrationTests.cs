@@ -57,38 +57,7 @@ namespace RimLLM_Framework.Tests
             }
         }
 
-        [Test]
-        public void ResponseCacheStoreAssemblyShipsWithMatchingAbstractionsVersion()
-        {
-            string implementationPath = FindWorkspaceAssembly("Microsoft.Extensions.Caching.Memory.dll");
-            ClassicAssert.IsNotNull(implementationPath, "RimWorld Mod Assemblies 應包含 Microsoft.Extensions.Caching.Memory.dll。");
 
-            string abstractionsPath = FindWorkspaceAssembly("Microsoft.Extensions.Caching.Abstractions.dll");
-            ClassicAssert.IsNotNull(abstractionsPath, "RimWorld Mod Assemblies 應包含 Microsoft.Extensions.Caching.Abstractions.dll。");
-
-            // RimWorld 把所有 Mod 載入同一個 AppDomain，抽象層與實作層的組件版本一旦漂開
-            // 就會在遊戲內炸開，而這在開發端完全看不出來。
-            ClassicAssert.AreEqual(
-                AssemblyName.GetAssemblyName(abstractionsPath).Version,
-                AssemblyName.GetAssemblyName(implementationPath).Version,
-                "Caching 抽象層與實作層的組件版本必須一致。");
-
-            Assembly assembly = Assembly.LoadFrom(implementationPath);
-            try
-            {
-                ClassicAssert.IsNotEmpty(assembly.GetTypes());
-            }
-            catch (ReflectionTypeLoadException exception)
-            {
-                Assert.Fail(
-                    "Microsoft.Extensions.Caching.Memory.dll 反射載入失敗：" +
-                    string.Join(
-                        "\n",
-                        Array.ConvertAll(
-                            exception.LoaderExceptions,
-                            loaderException => loaderException?.Message ?? "未知載入例外")));
-            }
-        }
 
         private static string FindWorkspaceAssembly(string fileName)
         {

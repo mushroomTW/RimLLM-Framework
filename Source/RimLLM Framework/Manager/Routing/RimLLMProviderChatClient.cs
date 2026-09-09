@@ -30,18 +30,15 @@ namespace RimLLM_Framework.Manager
         private readonly ILLMProvider _provider;
         private readonly string _model;
         private readonly IRimLLMSettings _settings;
-        private readonly string _modId;
 
         public RimLLMProviderChatClient(
             ILLMProvider provider,
             string model,
-            IRimLLMSettings settings,
-            string modId)
+            IRimLLMSettings settings)
         {
             _provider = provider ?? throw new ArgumentNullException(nameof(provider));
             _model = model;
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-            _modId = modId;
         }
 
         public async Task<ChatResponse> GetResponseAsync(
@@ -189,7 +186,7 @@ namespace RimLLM_Framework.Manager
                 // 因此不走原生 schema 時就直接把 JSON 要求寫進提示詞。
                 IList<ChatMessage> providerMessages = useNativeSchema
                     ? messageList
-                    : _client.ApplyJsonSchemaInstructions(messageList, responseType);
+                    : ApplyJsonSchemaInstructions(messageList, responseType);
 
                 string composedModelId = ComposeModelId(_client._provider.ProviderId, _client._model);
 
@@ -347,7 +344,7 @@ namespace RimLLM_Framework.Manager
         /// 附加在既有系統訊息之後而不是取代它——先前這裡是直接覆寫，系統訊息若不在
         /// 索引 0，原本的內容就會連同被換掉。
         /// </remarks>
-        private IList<ChatMessage> ApplyJsonSchemaInstructions(IList<ChatMessage> messages, Type responseType)
+        private static IList<ChatMessage> ApplyJsonSchemaInstructions(IList<ChatMessage> messages, Type responseType)
         {
             if (responseType == null) return messages;
 

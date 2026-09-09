@@ -25,14 +25,6 @@ namespace RimLLM_Framework
                 : null;
         }
 
-        /// <summary>
-        /// 從已解析的 HTTP 回應標頭取出 Retry-After 建議等待時間。
-        /// </summary>
-        public static TimeSpan? ParseRetryAfter(HttpResponseMessage response)
-        {
-            return ToDelay(response?.Headers?.RetryAfter);
-        }
-
         /// <summary>把 Retry-After 的兩種表示法統一換算成剩餘等待時間；非正值視為無建議。</summary>
         private static TimeSpan? ToDelay(RetryConditionHeaderValue retryAfter)
         {

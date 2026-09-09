@@ -366,6 +366,31 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void ResponseCacheStorePrunesWhenCapacityExceeded()
+        {
+            using (var store = new RimLLMResponseCacheStore())
+            {
+                // 寫入 260 筆 (上限為 256)
+                for (int i = 0; i < 260; i++)
+                {
+                    store.Store($"k{i}", new ChatResponse(new ChatMessage(ChatRole.Assistant, $"resp{i}")), 30f);
+                }
+
+                // 最新寫入的應該仍存在
+                ClassicAssert.IsTrue(store.TryGet("k259", out ChatResponse latest));
+                ClassicAssert.AreEqual("resp259", latest.Text);
+
+                // 最早寫入的應該已被容量淘汰
+                ClassicAssert.IsFalse(store.TryGet("k0", out _));
+
+                // null 或無效參數安全防護
+                store.Store(null, null, 0);
+                ClassicAssert.IsFalse(store.TryGet(null, out _));
+            }
+        }
+
+
+        [Test]
         public void StreamingHoldsItsQueueSlotForTheWholeEnumeration()
         {
             // 這是佇列中介層最容易踩的坑：GetStreamingResponseAsync 只是「建立」一個
