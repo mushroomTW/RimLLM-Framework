@@ -703,11 +703,36 @@ namespace RimLLM_Framework.Providers
             {
                 Temperature = options?.Temperature,
                 MaxOutputTokens = options?.MaxOutputTokens,
+                // Gemini 的取樣參數是 double，MEAI 的是 float／int，兩者皆可隱含轉換。
+                TopP = options?.TopP,
+                TopK = options?.TopK,
+                FrequencyPenalty = options?.FrequencyPenalty,
+                PresencePenalty = options?.PresencePenalty,
                 ThinkingConfig = BuildNativeThinkingConfig(model, options?.Reasoning?.Effort, disableReasoning),
                 SafetySettings = this.SafetySettings.Count == 0
                     ? null
                     : new List<SafetySetting>(this.SafetySettings)
             };
+
+            // 這兩項無法寫在初始化器裡：Gemini 的 seed 是 32 位元而 MEAI 的是 64 位元，
+            // StopSequences 兩邊的集合型別也不同。
+            if (options?.Seed != null)
+            {
+                if (options.Seed.Value >= int.MinValue && options.Seed.Value <= int.MaxValue)
+                {
+                    config.Seed = (int)options.Seed.Value;
+                }
+                else
+                {
+                    // 截斷會悄悄換掉呼叫端指定的 seed，寧可不送並說明原因。
+                    RimLLMLog.Warning($"[RimLLM] Gemini 的 seed 僅接受 32 位元整數，{options.Seed.Value} 超出範圍，本次請求不指定 seed。");
+                }
+            }
+
+            if (options?.StopSequences != null && options.StopSequences.Count > 0)
+            {
+                config.StopSequences = new List<string>(options.StopSequences);
+            }
 
             string systemPromptMsg = null;
             if (messages != null)

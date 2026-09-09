@@ -237,6 +237,86 @@ namespace RimLLM_Framework.Tests
         }
 
         /// <summary>
+        /// 純 MEAI 呼叫端設定的取樣參數必須真的送達 Gemini。這六個欄位原本會走到
+        /// BuildNativeConfigAsync，卻沒有被映射進 GenerateContentConfig——設了不生效也不報錯，
+        /// 而同一份 ChatOptions 在 OpenAI 家族上是會生效的。
+        /// </summary>
+        [Test]
+        public void GeminiNativeConfigMapsPassThroughSamplingFields()
+        {
+            var settings = new MockSettings();
+            settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
+            var provider = new GeminiProvider(settings);
+            var request = new RimLLMRequest
+            {
+                Messages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
+                {
+                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "測試取樣參數。")
+                },
+                SourceOptions = new ChatOptions
+                {
+                    TopP = 0.85f,
+                    TopK = 40,
+                    FrequencyPenalty = 0.5f,
+                    PresencePenalty = 0.25f,
+                    Seed = 4242L,
+                    StopSequences = new System.Collections.Generic.List<string> { "END", "STOP" }
+                }
+            };
+
+            MethodInfo method = typeof(GeminiProvider).GetMethod(
+                "BuildNativeConfigAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var messages = RimLLMChatClientExecutor.BuildMessages(request);
+            var options = RimLLMChatClientExecutor.BuildOptions(request, "gemini-2.5-flash", useNativeSchema: false, null);
+            var task = (System.Threading.Tasks.Task)method.Invoke(
+                provider,
+                new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
+            task.GetAwaiter().GetResult();
+            var config = (GenerateContentConfig)task.GetType().GetProperty("Result").GetValue(task, null);
+
+            ClassicAssert.AreEqual(0.85d, config.TopP.Value, 1e-6d);
+            ClassicAssert.AreEqual(40d, config.TopK.Value, 1e-6d);
+            ClassicAssert.AreEqual(0.5d, config.FrequencyPenalty.Value, 1e-6d);
+            ClassicAssert.AreEqual(0.25d, config.PresencePenalty.Value, 1e-6d);
+            ClassicAssert.AreEqual(4242, config.Seed);
+            CollectionAssert.AreEqual(new[] { "END", "STOP" }, config.StopSequences);
+        }
+
+        /// <summary>
+        /// Gemini 的 seed 是 32 位元、MEAI 的是 64 位元。超出範圍時必須不指定 seed，
+        /// 不能截斷——截斷等於悄悄換掉呼叫端要求的那個 seed，比不生效更糟。
+        /// </summary>
+        [Test]
+        public void GeminiNativeConfigDropsOutOfRangeSeedInsteadOfTruncating()
+        {
+            var settings = new MockSettings();
+            settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
+            var provider = new GeminiProvider(settings);
+            var request = new RimLLMRequest
+            {
+                Messages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
+                {
+                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "測試超出範圍的 seed。")
+                },
+                SourceOptions = new ChatOptions { Seed = (long)int.MaxValue + 1L }
+            };
+
+            MethodInfo method = typeof(GeminiProvider).GetMethod(
+                "BuildNativeConfigAsync",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var messages = RimLLMChatClientExecutor.BuildMessages(request);
+            var options = RimLLMChatClientExecutor.BuildOptions(request, "gemini-2.5-flash", useNativeSchema: false, null);
+            var task = (System.Threading.Tasks.Task)method.Invoke(
+                provider,
+                new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
+            task.GetAwaiter().GetResult();
+            var config = (GenerateContentConfig)task.GetType().GetProperty("Result").GetValue(task, null);
+
+            ClassicAssert.IsNull(config.Seed);
+        }
+
+        /// <summary>
         /// Schema 產生不得經由 MEAI 的 <c>AIJsonUtilities.CreateJsonSchema</c> 包裝層。
         ///
         /// 該包裝層出貨的是 net462 資產，會參考 <c>System.ComponentModel.DataAnnotations</c>
