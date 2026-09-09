@@ -130,18 +130,6 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        /// <summary>
-        /// 將非同步請求包裝入優先權佇列排隊。
-        /// </summary>
-        public async Task<RimLLMGenerationResult> EnqueueRequestAsync(RimLLMRequest request, Func<Task<RimLLMGenerationResult>> action)
-        {
-            using (await AcquireSlotAsync(request.Priority, request.CancellationToken).ConfigureAwait(false))
-            {
-                request.CancellationToken.ThrowIfCancellationRequested();
-                return await action().ConfigureAwait(false);
-            }
-        }
-
         private void ProcessQueue()
         {
             List<QueueEntry> toGrant = null;

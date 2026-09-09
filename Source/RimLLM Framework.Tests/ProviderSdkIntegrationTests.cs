@@ -200,25 +200,27 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings();
             settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
             var provider = new GeminiProvider(settings);
-            var request = new RimLLMRequest
+            var callerMessages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
             {
-                Messages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
-                {
-                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, "你是測試用助手。"),
-                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "請回傳結構化資料。")
-                },
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, "你是測試用助手。"),
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "請回傳結構化資料。")
+            };
+            var callerOptions = new ChatOptions
+            {
                 Temperature = 0.25f,
                 MaxOutputTokens = 321,
-                ResponseType = typeof(StructuredResponse),
-                ReasoningEffort = ReasoningEffort.High,
-                EnableContextCaching = false
+                Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    [RimLLMChatOptions.ResponseTypeKey] = typeof(StructuredResponse)
+                }
             };
 
             MethodInfo method = typeof(GeminiProvider).GetMethod(
                 "BuildNativeConfigAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic);
-            var messages = RimLLMChatClientExecutor.BuildMessages(request);
-            var options = RimLLMChatClientExecutor.BuildOptions(request, "gemini-2.5-flash", useNativeSchema: true, null);
+            var messages = RimLLMChatClientExecutor.BuildMessages(callerMessages, callerOptions);
+            var options = RimLLMChatClientExecutor.BuildOptions(callerOptions, "gemini-2.5-flash", useNativeSchema: true, null);
             var task = (System.Threading.Tasks.Task)method.Invoke(
                 provider,
                 new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
@@ -247,28 +249,25 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings();
             settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
             var provider = new GeminiProvider(settings);
-            var request = new RimLLMRequest
+            var callerMessages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
             {
-                Messages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
-                {
-                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "測試取樣參數。")
-                },
-                SourceOptions = new ChatOptions
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "測試取樣參數。")
+            };
+            var callerOptions = new ChatOptions
                 {
                     TopP = 0.85f,
                     TopK = 40,
                     FrequencyPenalty = 0.5f,
                     PresencePenalty = 0.25f,
                     Seed = 4242L,
-                    StopSequences = new System.Collections.Generic.List<string> { "END", "STOP" }
-                }
+                StopSequences = new System.Collections.Generic.List<string> { "END", "STOP" }
             };
 
             MethodInfo method = typeof(GeminiProvider).GetMethod(
                 "BuildNativeConfigAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic);
-            var messages = RimLLMChatClientExecutor.BuildMessages(request);
-            var options = RimLLMChatClientExecutor.BuildOptions(request, "gemini-2.5-flash", useNativeSchema: false, null);
+            var messages = RimLLMChatClientExecutor.BuildMessages(callerMessages, callerOptions);
+            var options = RimLLMChatClientExecutor.BuildOptions(callerOptions, "gemini-2.5-flash", useNativeSchema: false, null);
             var task = (System.Threading.Tasks.Task)method.Invoke(
                 provider,
                 new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
@@ -293,20 +292,17 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings();
             settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
             var provider = new GeminiProvider(settings);
-            var request = new RimLLMRequest
+            var callerMessages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
             {
-                Messages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
-                {
-                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "測試超出範圍的 seed。")
-                },
-                SourceOptions = new ChatOptions { Seed = (long)int.MaxValue + 1L }
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "測試超出範圍的 seed。")
             };
+            var callerOptions = new ChatOptions { Seed = (long)int.MaxValue + 1L };
 
             MethodInfo method = typeof(GeminiProvider).GetMethod(
                 "BuildNativeConfigAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic);
-            var messages = RimLLMChatClientExecutor.BuildMessages(request);
-            var options = RimLLMChatClientExecutor.BuildOptions(request, "gemini-2.5-flash", useNativeSchema: false, null);
+            var messages = RimLLMChatClientExecutor.BuildMessages(callerMessages, callerOptions);
+            var options = RimLLMChatClientExecutor.BuildOptions(callerOptions, "gemini-2.5-flash", useNativeSchema: false, null);
             var task = (System.Threading.Tasks.Task)method.Invoke(
                 provider,
                 new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
@@ -394,20 +390,23 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings();
             settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
             var provider = new GeminiProvider(settings);
-            var request = new RimLLMRequest
+            var callerMessages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
             {
-                Messages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
+                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "請回傳結構化資料。")
+            };
+            var callerOptions = new ChatOptions
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary
                 {
-                    new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "請回傳結構化資料。")
-                },
-                ResponseType = typeof(NullableTestDataStructure)
+                    [RimLLMChatOptions.ResponseTypeKey] = typeof(NullableTestDataStructure)
+                }
             };
 
             MethodInfo method = typeof(GeminiProvider).GetMethod(
                 "BuildNativeConfigAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic);
-            var messages = RimLLMChatClientExecutor.BuildMessages(request);
-            var options = RimLLMChatClientExecutor.BuildOptions(request, "gemini-2.5-flash", true, null, profile);
+            var messages = RimLLMChatClientExecutor.BuildMessages(callerMessages, callerOptions);
+            var options = RimLLMChatClientExecutor.BuildOptions(callerOptions, "gemini-2.5-flash", true, null, profile);
             var task = (System.Threading.Tasks.Task)method.Invoke(
                 provider,
                 new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });

@@ -39,12 +39,12 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 計算單筆文字的 embedding 向量。
+        /// 計算單筆文字的 embedding 向量，並帶回供應商回報的輸入 token 數。
         /// </summary>
         /// <exception cref="RimLLMException">
         /// 當 EmbeddingProvider 尚未設定、供應商不支援或 API 回傳錯誤時拋出。
         /// </exception>
-        public async Task<float[]> ComputeEmbeddingAsync(string text, CancellationToken cancellationToken = default)
+        public async Task<RimLLMEmbeddingResult> ComputeEmbeddingAsync(string text, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(text))
             {
@@ -290,11 +290,11 @@ namespace RimLLM_Framework.Manager
         /// 批次計算多筆文字的 embedding 向量。
         /// Google 的批次請求語意與 OpenAI 不同，因此統一採序列呼叫以維持行為一致。
         /// </summary>
-        public async Task<IReadOnlyList<float[]>> ComputeEmbeddingsAsync(IEnumerable<string> texts, CancellationToken cancellationToken = default)
+        public async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(IEnumerable<string> texts, CancellationToken cancellationToken = default)
         {
             if (texts == null) throw new ArgumentNullException(nameof(texts));
 
-            var results = new List<float[]>();
+            var results = new List<RimLLMEmbeddingResult>();
             foreach (string text in texts)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -303,7 +303,7 @@ namespace RimLLM_Framework.Manager
             return results;
         }
 
-        private static async Task<float[]> ComputeGoogleEmbeddingAsync(
+        private static async Task<RimLLMEmbeddingResult> ComputeGoogleEmbeddingAsync(
             string text, string model, string apiKey, CancellationToken cancellationToken)
         {
             using (var client = new Client(apiKey: apiKey))
@@ -312,10 +312,12 @@ namespace RimLLM_Framework.Manager
                     .EmbedContentAsync(model, text, null, cancellationToken)
                     .ConfigureAwait(false);
 
-                // Google.GenAI 以 double 表示向量元素，框架統一使用 float。
-                List<double> values = response?.Embeddings != null && response.Embeddings.Count > 0
-                    ? response.Embeddings[0]?.Values
+                ContentEmbedding embedding = response?.Embeddings != null && response.Embeddings.Count > 0
+                    ? response.Embeddings[0]
                     : null;
+
+                // Google.GenAI 以 double 表示向量元素，框架統一使用 float。
+                List<double> values = embedding?.Values;
 
                 if (values == null)
                 {
@@ -327,25 +329,34 @@ namespace RimLLM_Framework.Manager
                 {
                     vector[i] = (float)values[i];
                 }
-                return vector;
+
+                // tokenCount 只有 Gemini Enterprise 平台會回報，公開 API 一律留空。
+                double? tokenCount = embedding.Statistics?.TokenCount;
+                return new RimLLMEmbeddingResult(
+                    vector,
+                    tokenCount.HasValue ? (long)tokenCount.Value : (long?)null);
             }
         }
 
-        private static async Task<float[]> ComputeOpenAiCompatibleEmbeddingAsync(
+        private static async Task<RimLLMEmbeddingResult> ComputeOpenAiCompatibleEmbeddingAsync(
             string text, string model, string apiKey, string endpoint, string defaultEndpoint, CancellationToken cancellationToken)
         {
             BuildOpenAiCompatibleClientArgs(apiKey, endpoint, defaultEndpoint, out var credential, out var options);
             var client = new EmbeddingClient(model, credential, options);
 
-            OpenAIEmbedding embedding = await client
-                .GenerateEmbeddingAsync(text, cancellationToken: cancellationToken)
+            // 單筆版的 GenerateEmbeddingAsync 只回傳向量，usage 掛在集合上，
+            // 因此改送單元素批次以取得 token 數。
+            OpenAIEmbeddingCollection embeddings = await client
+                .GenerateEmbeddingsAsync(new[] { text }, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            if (embedding == null)
+            if (embeddings == null || embeddings.Count == 0)
             {
                 throw new RimLLMException(LLMError.InvalidResponse, "OpenAI 相容 embedding 回應不含向量資料。");
             }
-            return embedding.ToFloats().ToArray();
+            return new RimLLMEmbeddingResult(
+                embeddings[0].ToFloats().ToArray(),
+                embeddings.Usage?.InputTokenCount);
         }
 
         private static readonly char[] SlashTrimChars = { '/' };

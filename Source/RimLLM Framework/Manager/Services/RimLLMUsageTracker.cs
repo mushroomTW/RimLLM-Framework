@@ -436,7 +436,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 審查每日預算限額。
         /// </summary>
-        internal async Task<bool> CheckBudgetLimitAsync(RimLLMRequest request)
+        internal async Task<bool> CheckBudgetLimitAsync()
         {
             CheckDailyReset();
 
@@ -456,14 +456,6 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>
         /// 判斷請求是否處於靜默模擬模式並產出模擬字串。
-        /// </summary>
-        internal bool IsBudgetMocked(RimLLMRequest request, out string mockResult)
-        {
-            return IsBudgetMocked(request?.ResponseType != null, out mockResult);
-        }
-
-        /// <summary>
-        /// 同上，但只取用真正需要的資訊，供直接操作 MEAI 型別的中介層使用。
         /// </summary>
         internal bool IsBudgetMocked(bool hasResponseType, out string mockResult)
         {

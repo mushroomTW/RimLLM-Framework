@@ -63,17 +63,19 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual("mock-reply for preferred-model", response.Text);
         }
 
+        /// <summary>
+        /// 供應商沒有回報用量時，Usage 就是 null——框架不再捏造一份全零的 UsageDetails。
+        /// 「零個 token」與「供應商沒說」是兩回事，前者會讓費用面板誤以為這次呼叫免費。
+        /// </summary>
         [Test]
-        public void TestGetResponseAsync_UsageMappedFromResult()
+        public void TestGetResponseAsync_UsageIsNullWhenProviderReportsNone()
         {
             var manager = CreateManager();
             var client = CreateClient(manager, "test.usage.mod");
             var response = client.GetResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
                 new RimLLMChatOptions()).GetAwaiter().GetResult();
-            ClassicAssert.IsNotNull(response.Usage);
-            ClassicAssert.AreEqual(0, response.Usage.InputTokenCount ?? 0);
-            ClassicAssert.AreEqual(0, response.Usage.OutputTokenCount ?? 0);
+            ClassicAssert.IsNull(response.Usage);
         }
 
         [Test]
@@ -101,28 +103,42 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsNotEmpty(response.Text);
         }
 
+        /// <summary>
+        /// GetService 必須能穿透整條中介層堆疊。DelegatingChatClient 會往內層轉發，
+        /// 因此無論外面包了幾層，呼叫端都拿得到框架的 ChatClientMetadata。
+        /// </summary>
         [Test]
-        public void TestTranslate_SystemPromptExtractedFromFirstMessage()
+        public void TestGetService_ResolvesMetadataThroughTheWholeStack()
         {
-            // Translate 隨著 facade 的移除搬到了候選層：它需要知道供應商身分才能整形請求。
-            var providerClient = new RimLLMProviderChatClient(
-                new MockTestProvider { ProviderId = "TestMock" },
-                "mock-model",
-                new MockSettings(),
-                "test.translate.mod");
-            var request = providerClient.Translate(
-                new List<ChatMessage>
+            var manager = CreateManager();
+            var client = CreateClient(manager, "test.getservice.mod");
+
+            var metadata = client.GetService(typeof(ChatClientMetadata), null) as ChatClientMetadata;
+            ClassicAssert.IsNotNull(metadata);
+            ClassicAssert.AreEqual("RimLLM", metadata.ProviderName);
+        }
+
+        /// <summary>
+        /// 框架欄位一律由 RimLLMChatOptions 的靜態讀取器從 AdditionalProperties 取出，
+        /// 不再經過中介請求物件——呼叫端用 RimLLMChatOptions 或純 ChatOptions 塞鍵等價。
+        /// </summary>
+        [Test]
+        public void TestFrameworkFieldsReadDirectlyFromChatOptions()
+        {
+            var sugar = new RimLLMChatOptions { DisableReasoning = true, Priority = 7 };
+            ClassicAssert.IsTrue(RimLLMChatOptions.GetDisableReasoning(sugar));
+            ClassicAssert.AreEqual(7, RimLLMChatOptions.GetPriority(sugar));
+
+            var plain = new ChatOptions
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary
                 {
-                    new ChatMessage(ChatRole.System, "You are a helpful assistant."),
-                    new ChatMessage(ChatRole.User, "hi")
-                },
-                new RimLLMChatOptions { DisableReasoning = true, Priority = 7 },
-                CancellationToken.None);
-            ClassicAssert.AreEqual("You are a helpful assistant.", request.SystemPrompt);
-            ClassicAssert.IsTrue(request.DisableReasoning);
-            ClassicAssert.AreEqual(7, request.Priority);
-            ClassicAssert.AreEqual(2, request.Messages.Count);
-            ClassicAssert.AreEqual("test.translate.mod", request.ModId);
+                    [RimLLMChatOptions.DisableReasoningKey] = true,
+                    [RimLLMChatOptions.PriorityKey] = 7
+                }
+            };
+            ClassicAssert.IsTrue(RimLLMChatOptions.GetDisableReasoning(plain));
+            ClassicAssert.AreEqual(7, RimLLMChatOptions.GetPriority(plain));
         }
 
                 [Test]
@@ -493,37 +509,32 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestBuildMessages_MergesSystemPromptWhenSystemMessageAlreadyExists()
+        public void TestBuildMessages_AppendsCachedContextToExistingSystemMessage()
         {
-            var request = new RimLLMRequest
+            var options = new RimLLMChatOptions { CachedContext = "Cached Lore" };
+            var messages = new List<ChatMessage>
             {
-                SystemPrompt = "Framework System Instruction",
-                CachedContext = "Cached Lore",
-                Messages = new List<ChatMessage>
-                {
-                    new ChatMessage(ChatRole.System, "Caller System Message"),
-                    new ChatMessage(ChatRole.User, "Hello")
-                }
+                new ChatMessage(ChatRole.System, "Caller System Message"),
+                new ChatMessage(ChatRole.User, "Hello")
             };
 
-            var built = RimLLMChatClientExecutor.BuildMessages(request);
+            var built = RimLLMChatClientExecutor.BuildMessages(messages, options);
             ClassicAssert.AreEqual(2, built.Count);
             ClassicAssert.AreEqual(ChatRole.System, built[0].Role);
-            StringAssert.Contains("Framework System Instruction", built[0].Text);
-            StringAssert.Contains("Cached Lore", built[0].Text);
             StringAssert.Contains("Caller System Message", built[0].Text);
+            StringAssert.Contains("Cached Lore", built[0].Text);
+
+            // 呼叫端的系統訊息只能出現一次。先前是「前置一份已含既有內容的字串」，
+            // 結果同一段提示詞在送出的訊息裡重複了兩遍。
+            ClassicAssert.AreEqual(
+                built[0].Text.IndexOf("Caller System Message", StringComparison.Ordinal),
+                built[0].Text.LastIndexOf("Caller System Message", StringComparison.Ordinal));
         }
 
         [Test]
         public void TestBuildOptions_IncludesExecutorManagedFlag()
         {
-            var request = new RimLLMRequest
-            {
-                ModId = "test.mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }
-            };
-
-            var options = RimLLMChatClientExecutor.BuildOptions(request, "gpt-4o", false, null, RimLLMSchemaProfile.OpenAI);
+            var options = RimLLMChatClientExecutor.BuildOptions(null, "gpt-4o", false, null, RimLLMSchemaProfile.OpenAI);
             ClassicAssert.IsNotNull(options.AdditionalProperties);
             ClassicAssert.IsTrue(options.AdditionalProperties.ContainsKey(RimLLMChatOptions.ExecutorManagedKey));
             ClassicAssert.IsTrue((bool)options.AdditionalProperties[RimLLMChatOptions.ExecutorManagedKey]);

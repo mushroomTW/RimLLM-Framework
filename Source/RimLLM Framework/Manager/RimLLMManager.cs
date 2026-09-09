@@ -235,7 +235,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 結構化輸出的核心流程轉發。
         /// </summary>
-        internal T DeserializeStructured<T>(string rawResponse, IRimLLMSettings settings, RimLLMRequest request)
+        internal T DeserializeStructured<T>(string rawResponse, IRimLLMSettings settings)
         {
             return RimLLMStructuredOutput.Deserialize<T>(rawResponse, settings ?? _settings);
         }

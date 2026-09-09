@@ -59,7 +59,7 @@ namespace RimLLM_Framework
 
             string raw = response?.Text ?? string.Empty;
             return RimLLMProvider.TryGetManager(out RimLLMManager manager)
-                ? manager.DeserializeStructured<T>(raw, manager.Settings, null)
+                ? manager.DeserializeStructured<T>(raw, manager.Settings)
                 : RimLLMManager.DeserializeAndValidate<T>(raw);
         }
 

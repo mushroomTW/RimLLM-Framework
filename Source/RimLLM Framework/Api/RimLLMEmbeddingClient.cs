@@ -32,21 +32,51 @@ namespace RimLLM_Framework
             if (values == null) throw new ArgumentNullException(nameof(values));
 
             _manager.CheckAntiAbuseForMod(_modId);
-            IReadOnlyList<float[]> vectors = await _manager.EmbeddingService
+            IReadOnlyList<RimLLMEmbeddingResult> results = await _manager.EmbeddingService
                 .ComputeEmbeddingsAsync(values, cancellationToken)
                 .ConfigureAwait(false);
 
-            var embeddings = new List<Embedding<float>>(vectors.Count);
-            foreach (float[] vector in vectors)
+            // 標上實際算出向量的模型。少了它，呼叫端把不同模型的向量存進同一個索引
+            // 也不會發現——維度相同但語意空間不同的向量，比對結果只會是雜訊。
+            string modelId = _manager.Settings.EmbeddingModel;
+            var embeddings = new List<Embedding<float>>(results.Count);
+            long? inputTokens = null;
+            foreach (RimLLMEmbeddingResult result in results)
             {
-                embeddings.Add(new Embedding<float>(vector));
+                embeddings.Add(new Embedding<float>(result.Vector) { ModelId = modelId });
+                if (result.InputTokenCount.HasValue)
+                {
+                    inputTokens = (inputTokens ?? 0L) + result.InputTokenCount.Value;
+                }
             }
-            return new GeneratedEmbeddings<Embedding<float>>(embeddings);
+
+            var generated = new GeneratedEmbeddings<Embedding<float>>(embeddings);
+            if (inputTokens.HasValue)
+            {
+                // Embedding 沒有輸出 token，總量即輸入量。沒有任何一筆回報時整個
+                // Usage 維持 null，讓呼叫端分得出「供應商沒說」與「真的是 0」。
+                generated.Usage = new UsageDetails
+                {
+                    InputTokenCount = inputTokens,
+                    TotalTokenCount = inputTokens
+                };
+            }
+            return generated;
         }
 
         public object GetService(Type serviceType, object serviceKey = null)
         {
-            return null;
+            if (serviceType == null) throw new ArgumentNullException(nameof(serviceType));
+            if (serviceKey != null) return null;
+
+            if (serviceType == typeof(EmbeddingGeneratorMetadata))
+            {
+                return new EmbeddingGeneratorMetadata(
+                    _manager.Settings.EmbeddingProvider,
+                    null,
+                    _manager.Settings.EmbeddingModel);
+            }
+            return serviceType.IsInstanceOfType(this) ? this : null;
         }
 
         public void Dispose()

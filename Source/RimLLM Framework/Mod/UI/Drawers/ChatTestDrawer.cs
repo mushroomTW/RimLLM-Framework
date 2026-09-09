@@ -6,6 +6,7 @@ using Microsoft.Extensions.AI;
 using UnityEngine;
 using Verse;
 using RimLLM_Framework.Core;
+using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod
 {
@@ -246,30 +247,35 @@ namespace RimLLM_Framework.Mod
                                 DisableReasoning = false,
                                 Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null
                             };
+                            // 框架的串流只傳遞 MEAI 原生的 TextReasoningContent，
+                            // <think> 標記由這裡自己組——顯示成灰色的邏輯需要它。
+                            var thinkFormatter = new RimLLMThinkTagFormatter();
                             var enumerator = client.GetStreamingResponseAsync(messages, options, requestCts.Token).GetAsyncEnumerator();
                             try
                             {
                                 while (await enumerator.MoveNextAsync().ConfigureAwait(false))
                                 {
-                                    ChatResponseUpdate update = enumerator.Current;
-                                    foreach (AIContent content in update.Contents)
-                                    {
-                                        if (content is TextContent textContent)
-                                        {
-                                            string localReply;
-                                            lock (replyLock)
-                                            {
-                                                accumulatedReply += textContent.Text;
-                                                localReply = RenderReply(accumulatedReply);
-                                            }
-                                            UpdateAiHistoryEntry(aiHistoryIndex, localReply);
-                                        }
-                                    }
+                                    AppendToReply(thinkFormatter.Append(enumerator.Current));
                                 }
                             }
                             finally
                             {
                                 await enumerator.DisposeAsync().ConfigureAwait(false);
+                            }
+
+                            // 整段都是推理內容時，收尾標籤只能在串流結束後補。
+                            AppendToReply(thinkFormatter.Complete());
+
+                            void AppendToReply(string text)
+                            {
+                                if (string.IsNullOrEmpty(text)) return;
+                                string localReply;
+                                lock (replyLock)
+                                {
+                                    accumulatedReply += text;
+                                    localReply = RenderReply(accumulatedReply);
+                                }
+                                UpdateAiHistoryEntry(aiHistoryIndex, localReply);
                             }
 
                             string formattedFinal = RenderReply(accumulatedReply);

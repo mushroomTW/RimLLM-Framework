@@ -64,7 +64,7 @@ namespace RimLLM_Framework.Manager
         private void EnsureWithinBudget()
         {
             // CheckBudgetLimitAsync 沒有任何 await，同步取結果不會阻塞。
-            if (!_usageTracker.CheckBudgetLimitAsync(null).GetAwaiter().GetResult())
+            if (!_usageTracker.CheckBudgetLimitAsync().GetAwaiter().GetResult())
             {
                 throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
             }

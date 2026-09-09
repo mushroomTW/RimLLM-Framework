@@ -16,6 +16,17 @@ namespace RimLLM_Framework.Tests
     [TestFixture]
     public class RimLLMChatClientExecutorTests
     {
+        private static ChatOptions NewOptionsWithResponseType(Type responseType)
+        {
+            return new ChatOptions
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    [RimLLMChatOptions.ResponseTypeKey] = responseType
+                }
+            };
+        }
+
         [Test]
         public void TestGenerateAsync_SendsMessagesAndOptions()
         {
@@ -24,17 +35,16 @@ namespace RimLLM_Framework.Tests
                 ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "hello"))
             };
 
-            var request = new RimLLMRequest
+            var callerMessages = new List<ChatMessage>
             {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
-                SystemPrompt = "be brief",
-                MaxOutputTokens = 256,
-                Temperature = 0.2f
+                new ChatMessage(ChatRole.System, "be brief"),
+                new ChatMessage(ChatRole.User, "hi")
             };
+            var callerOptions = new ChatOptions { MaxOutputTokens = 256, Temperature = 0.2f };
 
             var result = RimLLMChatClientExecutor.GenerateAsync(
-                client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult();
+                client, callerMessages, callerOptions, "gpt-test", useNativeSchema: false, "OpenAI", 30f,
+                CancellationToken.None).GetAwaiter().GetResult();
 
             ClassicAssert.AreEqual("hello", result.Text);
             ClassicAssert.AreEqual(1, client.ReceivedOptions.Count);
@@ -65,14 +75,8 @@ namespace RimLLM_Framework.Tests
                 AdditionalProperties = new AdditionalPropertiesDictionary { ["caller_key"] = "caller_value" }
             };
 
-            var request = new RimLLMRequest
-            {
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") },
-                SourceOptions = sourceOptions
-            };
-
             ChatOptions built = RimLLMChatClientExecutor.BuildOptions(
-                request, "gpt-test", useNativeSchema: false, null);
+                sourceOptions, "gpt-test", useNativeSchema: false, null);
 
             ClassicAssert.AreEqual(0.9f, built.TopP);
             ClassicAssert.AreEqual(40, built.TopK);
@@ -101,19 +105,15 @@ namespace RimLLM_Framework.Tests
                 ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "{}"))
             };
 
-            var request = new RimLLMRequest
-            {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "give data") }
-            };
-            request.ResponseType = typeof(TestDataStructure);
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "give data") };
+            var options = NewOptionsWithResponseType(typeof(TestDataStructure));
 
             RimLLMChatClientExecutor.GenerateAsync(
-                client, request, "gpt-test", useNativeSchema: true, "OpenAI", 30f).GetAwaiter().GetResult();
+                client, messages, options, "gpt-test", useNativeSchema: true, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult();
 
-            ChatOptions options = client.ReceivedOptions[0];
-            ClassicAssert.IsNotNull(options.ResponseFormat);
-            ClassicAssert.IsTrue((bool)options.AdditionalProperties["strict"]);
+            ChatOptions sent = client.ReceivedOptions[0];
+            ClassicAssert.IsNotNull(sent.ResponseFormat);
+            ClassicAssert.IsTrue((bool)sent.AdditionalProperties["strict"]);
         }
 
         [Test]
@@ -124,15 +124,11 @@ namespace RimLLM_Framework.Tests
                 ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "{}"))
             };
 
-            var request = new RimLLMRequest
-            {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "give data") }
-            };
-            request.ResponseType = typeof(Dictionary<string, string>);
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "give data") };
+            var options = NewOptionsWithResponseType(typeof(Dictionary<string, string>));
 
             RimLLMChatClientExecutor.GenerateAsync(
-                client, request, "gpt-test", useNativeSchema: true, "OpenAI", 30f).GetAwaiter().GetResult();
+                client, messages, options, "gpt-test", useNativeSchema: true, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult();
 
             // 與 raw 路徑一致：含 Dictionary 的型別仍送出 response_format，
             // 但 strict 關閉，否則服務端會拒絕開放式 map。
@@ -140,8 +136,13 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsFalse((bool)client.ReceivedOptions[0].AdditionalProperties["strict"]);
         }
 
+        /// <summary>
+        /// 推理內容維持 MEAI 原生的 TextReasoningContent，不再被合成進 Text。
+        /// 先前 executor 會把它包成 &lt;think&gt; 塞進文字流，那讓結構化輸出、快取鍵與
+        /// 任何讀 Text 的呼叫端都得先剝標籤；&lt;think&gt; 現在只是呈現層的一種表述方式。
+        /// </summary>
         [Test]
-        public void TestGenerateAsync_WrapsReasoningInThink()
+        public void TestGenerateAsync_KeepsReasoningAsNativeContent()
         {
             var client = new CapturingChatClient
             {
@@ -153,16 +154,62 @@ namespace RimLLM_Framework.Tests
                     }))
             };
 
-            var request = new RimLLMRequest
-            {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "solve") }
-            };
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "solve") };
 
             var result = RimLLMChatClientExecutor.GenerateAsync(
-                client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult();
+                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult();
 
-            ClassicAssert.AreEqual("<think>\nstep one\n</think>\n\nfinal answer", result.Text);
+            ClassicAssert.AreEqual("final answer", result.Text);
+
+            var reasoning = new List<TextReasoningContent>();
+            foreach (ChatMessage message in result.Messages)
+            {
+                foreach (AIContent content in message.Contents)
+                {
+                    if (content is TextReasoningContent r) reasoning.Add(r);
+                }
+            }
+            ClassicAssert.AreEqual(1, reasoning.Count, "推理內容必須原樣保留在 Contents 裡。");
+            ClassicAssert.AreEqual("step one", reasoning[0].Text);
+        }
+
+        /// <summary>
+        /// provider 回的 ChatResponse 必須原樣交還。這些欄位只有 provider 知道，
+        /// 先前它們會在「拆成 RimLLMGenerationResult 再重組」的過程中整批消失。
+        /// </summary>
+        [Test]
+        public void TestGenerateAsync_PreservesProviderResponseMetadata()
+        {
+            var raw = new object();
+            var created = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero);
+            var client = new CapturingChatClient
+            {
+                ResponseFactory = () => new ChatResponse(
+                    new ChatMessage(ChatRole.Assistant, "hello"))
+                {
+                    ResponseId = "resp-123",
+                    ConversationId = "conv-456",
+                    CreatedAt = created,
+                    RawRepresentation = raw,
+                    FinishReason = ChatFinishReason.Stop,
+                    Usage = new UsageDetails { InputTokenCount = 11, OutputTokenCount = 22 },
+                    AdditionalProperties = new AdditionalPropertiesDictionary { ["provider_flag"] = true }
+                }
+            };
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+
+            var result = RimLLMChatClientExecutor.GenerateAsync(
+                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult();
+
+            ClassicAssert.AreEqual("resp-123", result.ResponseId);
+            ClassicAssert.AreEqual("conv-456", result.ConversationId);
+            ClassicAssert.AreEqual(created, result.CreatedAt);
+            ClassicAssert.AreSame(raw, result.RawRepresentation);
+            ClassicAssert.AreEqual(ChatFinishReason.Stop, result.FinishReason);
+            ClassicAssert.AreEqual(11, result.Usage.InputTokenCount);
+            ClassicAssert.AreEqual(22, result.Usage.OutputTokenCount);
+            ClassicAssert.IsTrue((bool)result.AdditionalProperties["provider_flag"]);
         }
 
         [Test]
@@ -173,15 +220,11 @@ namespace RimLLM_Framework.Tests
                 ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))
             };
 
-            var request = new RimLLMRequest
-            {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }
-            };
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             bool invoked = false;
 
             RimLLMChatClientExecutor.GenerateAsync(
-                client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f,
+                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None,
                 options =>
                 {
                     invoked = true;
@@ -200,15 +243,11 @@ namespace RimLLM_Framework.Tests
                 ResponseException = new TestClientResultException("bad request", 400)
             };
 
-            var request = new RimLLMRequest
-            {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }
-            };
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
 
             RimLLMException ex = Assert.Throws<RimLLMException>(() =>
                 RimLLMChatClientExecutor.GenerateAsync(
-                    client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult());
+                    client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult());
 
             ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
         }
@@ -221,21 +260,22 @@ namespace RimLLM_Framework.Tests
                 ResponseException = new TestClientResultException("rate limited", 429)
             };
 
-            var request = new RimLLMRequest
-            {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }
-            };
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
 
             RimLLMException ex = Assert.Throws<RimLLMException>(() =>
                 RimLLMChatClientExecutor.GenerateAsync(
-                    client, request, "gpt-test", useNativeSchema: false, "OpenAI", 30f).GetAwaiter().GetResult());
+                    client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult());
 
             ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error);
         }
 
+        /// <summary>
+        /// 串流一律原樣轉發 provider 的 update：推理內容維持 TextReasoningContent，
+        /// 不再被合成成 &lt;think&gt; 字串 chunk。想要那種扁平表述的呈現層自己用
+        /// RimLLMThinkTagFormatter 組。
+        /// </summary>
         [Test]
-        public void TestStreamAsync_HandlesReasoningAndText()
+        public void TestStreamAsync_ForwardsUpdatesVerbatim()
         {
             var client = new CapturingChatClient
             {
@@ -256,22 +296,52 @@ namespace RimLLM_Framework.Tests
                 }
             };
 
-            var request = new RimLLMRequest
-            {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "solve") }
-            };
-            var chunks = new List<string>();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "solve") };
+            var received = new List<ChatResponseUpdate>();
 
             RimLLMChatClientExecutor.StreamAsync(
-                client, request, "gpt-test", useNativeSchema: false, "OpenAI",
-                chunks.Add, 30f).GetAwaiter().GetResult();
+                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI",
+                received.Add, 30f, CancellationToken.None).GetAwaiter().GetResult();
 
-            ClassicAssert.AreEqual("<think>", chunks[0]);
-            ClassicAssert.AreEqual("think a", chunks[1]);
-            ClassicAssert.AreEqual("think b", chunks[2]);
-            ClassicAssert.AreEqual("</think>", chunks[3]);
-            ClassicAssert.AreEqual("answer", chunks[4]);
+            ClassicAssert.AreEqual(3, received.Count, "每一個 provider update 都應原封不動轉發一次。");
+            ClassicAssert.AreSame(client.StreamUpdates[0], received[0]);
+            ClassicAssert.AreSame(client.StreamUpdates[1], received[1]);
+            ClassicAssert.AreSame(client.StreamUpdates[2], received[2]);
+            ClassicAssert.IsInstanceOf<TextReasoningContent>(received[0].Contents[0]);
+            ClassicAssert.AreEqual("think a", ((TextReasoningContent)received[0].Contents[0]).Text);
+            ClassicAssert.AreEqual("answer", ((TextContent)received[2].Contents[0]).Text);
+        }
+
+        /// <summary>
+        /// &lt;think&gt; 封裝從框架資料流移到呈現層之後，這裡是它唯一的定義處。
+        /// </summary>
+        [Test]
+        public void TestThinkTagFormatter_WrapsReasoningSegments()
+        {
+            var formatter = new RimLLMThinkTagFormatter();
+
+            string a = formatter.Append(new ChatResponseUpdate(
+                ChatRole.Assistant, new List<AIContent> { new TextReasoningContent("think a") }));
+            string b = formatter.Append(new ChatResponseUpdate(
+                ChatRole.Assistant, new List<AIContent> { new TextReasoningContent("think b") }));
+            string c = formatter.Append(new ChatResponseUpdate(
+                ChatRole.Assistant, new List<AIContent> { new TextContent("answer") }));
+
+            ClassicAssert.AreEqual("<think>think a", a);
+            ClassicAssert.AreEqual("think b", b);
+            ClassicAssert.AreEqual("</think>answer", c);
+            ClassicAssert.AreEqual(string.Empty, formatter.Complete(), "已閉合就不該再補標籤。");
+        }
+
+        /// <summary>整段都是推理內容時，收尾標籤只能在串流結束後補。</summary>
+        [Test]
+        public void TestThinkTagFormatter_ClosesUnterminatedReasoning()
+        {
+            var formatter = new RimLLMThinkTagFormatter();
+
+            ClassicAssert.AreEqual("<think>only thinking", formatter.Append(new ChatResponseUpdate(
+                ChatRole.Assistant, new List<AIContent> { new TextReasoningContent("only thinking") })));
+            ClassicAssert.AreEqual("</think>", formatter.Complete());
         }
 
         [Test]
@@ -293,65 +363,51 @@ namespace RimLLM_Framework.Tests
                 }
             };
 
-            var request = new RimLLMRequest
-            {
-                ModId = "test-mod",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }
-            };
-            var chunks = new List<string>();
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
+            var received = new List<ChatResponseUpdate>();
 
             RimLLMChatClientExecutor.StreamAsync(
-                client, request, "gpt-test", useNativeSchema: false, "OpenAI",
-                chunks.Add, 30f).GetAwaiter().GetResult();
+                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI",
+                received.Add, 30f, CancellationToken.None).GetAwaiter().GetResult();
 
-            ClassicAssert.AreEqual("hi", string.Concat(chunks));
+            // UsageContent 也原樣轉發，不再被抽出來重組成收尾 update。
+            ClassicAssert.AreEqual(2, received.Count);
+            ClassicAssert.AreSame(usage, received[1].Contents[0]);
         }
 
         [Test]
-        public void TestBuildMessages_SystemPromptBranches()
+        public void TestBuildMessages_CachedContextBranches()
         {
-            // 分支 1: messages 為空，帶有 EffectiveSystemPrompt -> 插入系統訊息
-            var req1 = new RimLLMRequest { ModId = "t", SystemPrompt = "sys1" };
-            var msgs1 = RimLLMChatClientExecutor.BuildMessages(req1);
+            var withCache = new RimLLMChatOptions { CachedContext = "lore" };
+
+            // 分支 1: messages 為空 -> 插入一則系統訊息承載 CachedContext
+            var msgs1 = RimLLMChatClientExecutor.BuildMessages(null, withCache);
             ClassicAssert.AreEqual(1, msgs1.Count);
             ClassicAssert.AreEqual(ChatRole.System, msgs1[0].Role);
-            ClassicAssert.AreEqual("sys1", msgs1[0].Text);
+            ClassicAssert.AreEqual("lore", msgs1[0].Text);
 
-            // 分支 2: messages 已有空文字系統訊息 -> 覆寫
-            var req2 = new RimLLMRequest
-            {
-                ModId = "t",
-                SystemPrompt = "sys2",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.System, ""), new ChatMessage(ChatRole.User, "hi") }
-            };
-            var msgs2 = RimLLMChatClientExecutor.BuildMessages(req2);
+            // 分支 2: 已有空文字系統訊息 -> 直接填入
+            var msgs2 = RimLLMChatClientExecutor.BuildMessages(
+                new List<ChatMessage> { new ChatMessage(ChatRole.System, ""), new ChatMessage(ChatRole.User, "hi") },
+                withCache);
             ClassicAssert.AreEqual(2, msgs2.Count);
-            ClassicAssert.AreEqual("sys2", msgs2[0].Text);
+            ClassicAssert.AreEqual("lore", msgs2[0].Text);
 
-            // 分支 3: messages 已有非空系統訊息且不含 prompt -> 前置拼接
-            var req3 = new RimLLMRequest
-            {
-                ModId = "t",
-                SystemPrompt = "sys3",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.System, "existing"), new ChatMessage(ChatRole.User, "hi") }
-            };
-            var msgs3 = RimLLMChatClientExecutor.BuildMessages(req3);
+            // 分支 3: 已有非空系統訊息 -> 附加在後面，呼叫端的內容排在前
+            var msgs3 = RimLLMChatClientExecutor.BuildMessages(
+                new List<ChatMessage> { new ChatMessage(ChatRole.System, "existing"), new ChatMessage(ChatRole.User, "hi") },
+                withCache);
             ClassicAssert.AreEqual(2, msgs3.Count);
-            ClassicAssert.AreEqual("sys3\n\nexisting", msgs3[0].Text);
+            ClassicAssert.AreEqual("existing\n\nlore", msgs3[0].Text);
 
-            // 分支 4: messages 已有系統訊息且已包含 prompt -> 不重複拼接
-            var req4 = new RimLLMRequest
-            {
-                ModId = "t",
-                SystemPrompt = "sys4",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.System, "sys4\n\nexisting"), new ChatMessage(ChatRole.User, "hi") }
-            };
-            var msgs4 = RimLLMChatClientExecutor.BuildMessages(req4);
-            ClassicAssert.AreEqual("sys4\n\nexisting", msgs4[0].Text);
+            // 分支 4: 系統訊息已含 CachedContext -> 不重複附加
+            var msgs4 = RimLLMChatClientExecutor.BuildMessages(
+                new List<ChatMessage> { new ChatMessage(ChatRole.System, "existing\n\nlore"), new ChatMessage(ChatRole.User, "hi") },
+                withCache);
+            ClassicAssert.AreEqual("existing\n\nlore", msgs4[0].Text);
 
-            // 分支 5: 沒有 systemPrompt 且 messages 為空 -> 補上一條空白使用者訊息
-            var req5 = new RimLLMRequest { ModId = "t" };
-            var msgs5 = RimLLMChatClientExecutor.BuildMessages(req5);
+            // 分支 5: 沒有 CachedContext 且 messages 為空 -> 補上一條空白使用者訊息
+            var msgs5 = RimLLMChatClientExecutor.BuildMessages(null, null);
             ClassicAssert.AreEqual(1, msgs5.Count);
             ClassicAssert.AreEqual(ChatRole.User, msgs5[0].Role);
         }
@@ -443,35 +499,6 @@ namespace RimLLM_Framework.Tests
 
         public void Dispose()
         {
-        }
-    }
-
-    [TestFixture]
-    public class RimLLMRequestTests
-    {
-        [Test]
-        public void TestEffectiveSystemPrompt_PrefersCombined()
-        {
-            var r = new RimLLMRequest { SystemPrompt = "sys", CachedContext = "cache" };
-            ClassicAssert.AreEqual("sys\n\ncache", r.GetEffectiveSystemPrompt());
-        }
-
-        [Test]
-        public void TestEffectiveSystemPrompt_FallsBackToCachedContext()
-        {
-            var r = new RimLLMRequest { CachedContext = "cache" };
-            ClassicAssert.AreEqual("cache", r.GetEffectiveSystemPrompt());
-        }
-
-        [Test]
-        public void TestClone_IsDeepIndependent()
-        {
-            var r = new RimLLMRequest { ModId = "m", Temperature = 0.3f, ReasoningEffort = ReasoningEffort.High };
-            var c = r.Clone();
-            c.Temperature = 0.9f;
-            ClassicAssert.AreEqual(0.3f, r.Temperature);
-            ClassicAssert.AreEqual(ReasoningEffort.High, r.ReasoningEffort);
-            ClassicAssert.AreEqual("m", c.ModId);
         }
     }
 }

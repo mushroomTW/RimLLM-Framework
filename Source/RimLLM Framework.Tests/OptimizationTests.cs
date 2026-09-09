@@ -15,16 +15,6 @@ namespace RimLLM_Framework.Tests
     [TestFixture]
     public class OptimizationTests
     {
-        private static RimLLMRequest NewRequest(string prompt = "hello")
-        {
-            return new RimLLMRequest
-            {
-                ModId = "test.optimization",
-                SystemPrompt = "sys",
-                Messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, prompt) }
-            };
-        }
-
         private static RimLLMFallbackPipeline BuildPipeline(
             MockSettings settings,
             RimLLMHealthLedger ledger,

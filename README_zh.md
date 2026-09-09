@@ -123,6 +123,8 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 訊息清單與 `ChatOptions` 的用法與 MEAI 文件完全相同。唯一與本框架有關的規則是：不設定 `ModelId` 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定；要指定就填 `"供應商:模型"` 形式的項目。
 
+回傳的 `ChatResponse` 就是供應商產生的那一個，除了 `ModelId` 被改寫成 `"供應商:模型"`（讓你在 failover 之後仍分辨得出實際是誰回的）之外，一律原樣交還。`ResponseId`、`CreatedAt`、`ConversationId`、`Usage`、`FinishReason`、`RawRepresentation` 與 `AdditionalProperties` 都是供應商設什麼就是什麼，包括 `null`。`Usage` 為 `null` 代表供應商沒有回報 token 數，不是這次呼叫免費。
+
 ### 串流
 
 串流是標準 MEAI 的 `GetStreamingResponseAsync` / `await foreach`，語法見 MEAI 文件。框架額外保證兩件事：每一個 update 都已派送到 Unity 主執行緒，可以直接在迴圈裡操作 UI；整條 Fallback 鏈失敗時，原始的 `RimLLMException` 會從 `await foreach` 重新擲出，串流不會無聲結束。
@@ -193,7 +195,7 @@ IEmbeddingGenerator<string, Embedding<float>> generator =
     RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
 ```
 
-`GenerateAsync`、`GeneratedEmbeddings<T>` 與 `Embedding<float>` 的行為與 MEAI 文件相同。Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出 `RimLLMException`。
+`GenerateAsync`、`GeneratedEmbeddings<T>` 與 `Embedding<float>` 的行為與 MEAI 文件相同。每個 `Embedding<float>` 都帶著實際算出它的 `ModelId`，`GeneratedEmbeddings.Usage` 則在供應商有回報時帶回輸入 token 數—— OpenAI 相容端點會回報，Gemini 公開 API 不會（它的 `tokenCount` 限 Enterprise 平台），因此在 Gemini 下 `Usage` 維持 `null`。與對話一樣，`null` 代表供應商沒有回報，不是這次呼叫免費。Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出 `RimLLMException`。
 
 ### 錯誤處理
 
@@ -251,7 +253,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 跨 Mod 的流量控制 | 全域優先佇列與並行上限，避免多個 Mod 同時打 API 造成掉幀 |
 | 費用控管 | 每日預算，可選硬性阻擋／模擬回應／改用免費模型／詢問玩家 |
 | 用量與費用回報 | Debug 分頁的各供應商 Token 與成本看板 |
-| 推理模型的差異 | `reasoning_content` 與 Gemini 的 `thought` 統一正規化為 `<think>...</think>` |
+| 推理模型的差異 | `reasoning_content` 與 Gemini 的 `thought` 統一正規化為 MEAI 的 `TextReasoningContent` |
 | 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，並具備 LLM 輔助的二次修復 |
 | 主執行緒切換 | 串流 chunk 與日誌寫入都已派送回 Unity 主執行緒 |
 | 原生 Tool Calling 與主執行緒排程 | Gemini／OpenAI 雙向工具轉譯；工具委派自動排入 Unity 主執行緒 |
@@ -300,8 +302,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * `RecordLog` 觸發的 Scribe 寫入會透過 `RimLLMDispatcher` 派送回 Unity 主執行緒，並套用 15 秒寫入節流，避免背景存檔造成崩潰或 TPS 掉幀。
 8. **推理模型與思維鏈標記**
    * 原生支援 **Gemini 3.7 Flash / 3.1 Pro (Thinking)**、**OpenAI GPT-5.6 Sol / GPT-5.5**、**DeepSeek-V4-Pro / Flash**、**Grok 4.6**、**Qwen3.8-Max**、**Kimi K3**、**GLM-5.3-Flash** 等現代深度推理與思考模型。
-   * 框架會擷取 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位），並統一以 `<think>...</think>` 標籤包裹。
-   * GUI 對話測試頁會解析這些標籤，將思維鏈以灰色斜體呈現。呼叫端 Mod 可用正規表示式輕易剝除或保留思維鏈。
+   * 框架會把 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位）正規化成 MEAI 原生的 `TextReasoningContent`，放在 `ChatResponse.Messages` 與 `ChatResponseUpdate.Contents` 裡交給你。它刻意**不**被揉進 `ChatResponse.Text`：否則每一個讀 `Text` 的呼叫端（結構化輸出、快取鍵、JSON 解析）都得先把標籤剥掉。要保留或丟棄，依內容型別過濾即可。
+   * GUI 對話測試頁自己從這些內容組出 `<think>...</think>` 標籤，再將思維鏈以灰色斜體呈現。那個扁平化是呈現，不是協定。
    * **推理強度控制**：預設為「自動」，讓各供應商執行自己的自適應或動態思考設定（Gemini 的 `thinkingBudget = -1`、OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
    * **強度對所有供應商、所有模型都有效**。線上格式由各供應商自行宣告，框架不再靠模型名猜測：頂層 `reasoning_effort`（OpenAI、xAI、Groq、MiniMax、NVIDIA、OpenAI 相容端點）、OpenRouter 的統一 `reasoning` 物件、`thinking: {type}` 加強度（DeepSeek、Z.ai、Kimi）、`enable_thinking` 搭配 `thinking_budget`（Qwen），以及 Gemini 的 `thinkingConfig`。詞彙差異逐家對應 —— Kimi 只吃 low/high/max，xAI 的推理無法關閉，關閉請求在該家會被忽略而不是換來 400。
    * **未知模型先樂觀送出，再從服務端學習**。以模型名列白名單必然腐化：框架先前只對 `o1`/`o3` 開頭的模型送出強度，其餘一律靜默丟棄。現在除了少數已知不具思考能力的系列之外一律送出；若服務端以 400 拒絕該參數，框架會記下這組 (供應商, 模型)、去掉參數重打一次，並在本次遊戲執行期間不再送。漏掉一個模型的代價因此是一次重試，而不是永久失效。同一套機制也涵蓋 `temperature` —— GPT-5 等推理模型會直接拒絕它。記憶只存在於本次執行，模型日後支援了，重開遊戲就會重新嘗試。
@@ -339,7 +341,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 ### 3. 串流橋接（`Channel<T>`）
 
-* Manager 的串流 API 是回呼形式（`Action<string> onChunkReceived`），而 MEAI 要的是 `IAsyncEnumerable<ChatResponseUpdate>`。兩者之間以無界的 `System.Threading.Channels.Channel<T>` 橋接，消費端就是 `ChannelReader.ReadAllAsync()`。
+* Executor 的串流 API 是回呼形式（`Action<ChatResponseUpdate> onUpdateReceived`），而 MEAI 要的是 `IAsyncEnumerable<ChatResponseUpdate>`。兩者之間以無界的 `System.Threading.Channels.Channel<T>` 橋接，消費端就是 `ChannelReader.ReadAllAsync()`。
+* update 以**原樣**穿過這座橋——你列舉到的就是供應商產生的那個物件，只有 `ModelId` 被改寫。框架不再自行合成一個收尾 update，因此 `UsageContent`、`FinishReason` 與 `ResponseId` 只在供應商真的送出時才存在。
 * 由於 `IAsyncEnumerable` 是透過 `bclasync` extern alias 進入本專案，C# 8 無法對它編譯 async iterator。`ReadAllAsync()` 直接繞過這個限制：它回傳的正是同一顆組件的 `IAsyncEnumerable`，因此不必手寫任何 iterator。
 * 一層薄包裝會解開 `ChannelClosedException`，讓生產端的失敗以原始的 `RimLLMException` 呈現給呼叫端。
 

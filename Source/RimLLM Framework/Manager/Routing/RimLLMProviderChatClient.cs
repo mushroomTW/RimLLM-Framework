@@ -49,17 +49,24 @@ namespace RimLLM_Framework.Manager
             ChatOptions options = null,
             CancellationToken cancellationToken = default)
         {
-            RimLLMRequest request = StripUnsupportedTools(
-                _provider, Translate(messages, options, cancellationToken));
+            ChatOptions effective = StripUnsupportedTools(_provider, options);
+            var messageList = new List<ChatMessage>(messages ?? new List<ChatMessage>());
 
-            RimLLMGenerationResult result = await GenerateAsync(request).ConfigureAwait(false);
-            return BuildResponse(result, options);
+            ChatResponse response = await GenerateAsync(messageList, effective, cancellationToken).ConfigureAwait(false);
+
+            // 只覆寫框架真正要改的欄位：把 ModelId 換成 "供應商:模型" 複合識別，
+            // 讓呼叫端在 fallback 之後仍分辨得出實際是誰回的。其餘一律原樣放行。
+            response.ModelId = ComposeModelId(_provider.ProviderId, _model);
+            return response;
         }
 
-        private async Task<RimLLMGenerationResult> GenerateAsync(RimLLMRequest request)
+        private async Task<ChatResponse> GenerateAsync(
+            IList<ChatMessage> messages,
+            ChatOptions options,
+            CancellationToken cancellationToken)
         {
-            bool useNativeSchema = request.ResponseType != null && IsNativeStructuredProvider(_provider);
-            if (useNativeSchema)
+            Type responseType = RimLLMChatOptions.GetResponseType(options);
+            if (responseType != null && IsNativeStructuredProvider(_provider))
             {
                 try
                 {
@@ -67,16 +74,22 @@ namespace RimLLM_Framework.Manager
                     {
                         return await RimLLMChatClientExecutor.GenerateAsync(
                             nativeClient,
-                            request,
+                            messages,
+                            options,
                             _model,
                             useNativeSchema: true,
                             _provider.ProviderId,
-                            _settings.ApiTimeout).ConfigureAwait(false);
+                            _settings.ApiTimeout,
+                            cancellationToken).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex) when (IsNativeSchemaRejected(ex))
                 {
-                    return await GenerateWithoutNativeSchemaAsync(request).ConfigureAwait(false);
+                    // 原生 schema 被拒，降級成「以提示詞要求 JSON」重試一次。
+                    return await GenerateAsync(
+                        ApplyJsonSchemaInstructions(messages, responseType),
+                        options,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -84,27 +97,13 @@ namespace RimLLM_Framework.Manager
             {
                 return await RimLLMChatClientExecutor.GenerateAsync(
                     client,
-                    PrepareRequestForProvider(_provider, request),
+                    ApplyJsonSchemaInstructions(messages, responseType),
+                    options,
                     _model,
                     useNativeSchema: false,
                     _provider.ProviderId,
-                    _settings.ApiTimeout).ConfigureAwait(false);
-            }
-        }
-
-        private async Task<RimLLMGenerationResult> GenerateWithoutNativeSchemaAsync(RimLLMRequest request)
-        {
-            RimLLMRequest fallbackRequest = PrepareRequestForProvider(_provider, request, forceJsonFallback: true);
-
-            using (IChatClient client = _provider.CreateChatClient(_model))
-            {
-                return await RimLLMChatClientExecutor.GenerateAsync(
-                    client,
-                    fallbackRequest,
-                    _model,
-                    useNativeSchema: false,
-                    _provider.ProviderId,
-                    _settings.ApiTimeout).ConfigureAwait(false);
+                    _settings.ApiTimeout,
+                    cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -118,7 +117,17 @@ namespace RimLLM_Framework.Manager
 
         public object GetService(Type serviceType, object serviceKey = null)
         {
-            return serviceType == typeof(ILLMProvider) ? _provider : null;
+            if (serviceType == null) throw new ArgumentNullException(nameof(serviceType));
+            // 帶 key 的查詢代表呼叫端要的是具名服務，這一層沒有提供任何具名服務。
+            if (serviceKey != null) return null;
+
+            if (serviceType == typeof(ChatClientMetadata))
+            {
+                // 回報實際的候選身分，而不是框架的 "RimLLM"——這一層底下就是真正的供應商了。
+                return new ChatClientMetadata(_provider.ProviderId, null, _model);
+            }
+            if (serviceType == typeof(ILLMProvider)) return _provider;
+            return serviceType.IsInstanceOfType(this) ? this : null;
         }
 
         public void Dispose()
@@ -171,8 +180,18 @@ namespace RimLLM_Framework.Manager
                 System.Threading.Channels.ChannelWriter<ChatResponseUpdate> writer,
                 CancellationToken cancellationToken)
             {
-                RimLLMRequest request = StripUnsupportedTools(
-                    _client._provider, _client.Translate(_messages, _options, cancellationToken));
+                ChatOptions effective = StripUnsupportedTools(_client._provider, _options);
+                var messageList = new List<ChatMessage>(_messages ?? new List<ChatMessage>());
+                Type responseType = RimLLMChatOptions.GetResponseType(effective);
+                bool useNativeSchema = responseType != null && _client.IsNativeStructuredProvider(_client._provider);
+
+                // 串流沒有原生 schema 的降級重試（內容一旦開始吐出就無法重來），
+                // 因此不走原生 schema 時就直接把 JSON 要求寫進提示詞。
+                IList<ChatMessage> providerMessages = useNativeSchema
+                    ? messageList
+                    : _client.ApplyJsonSchemaInstructions(messageList, responseType);
+
+                string composedModelId = ComposeModelId(_client._provider.ProviderId, _client._model);
 
                 Task.Run(async () =>
                 {
@@ -180,42 +199,26 @@ namespace RimLLM_Framework.Manager
                     {
                         using (IChatClient client = _client._provider.CreateChatClient(_client._model))
                         {
-                            RimLLMGenerationResult result = await RimLLMChatClientExecutor.StreamAsync(
+                            await RimLLMChatClientExecutor.StreamAsync(
                                 client,
-                                _client.PrepareRequestForProvider(_client._provider, request),
+                                providerMessages,
+                                effective,
                                 _client._model,
-                                request.ResponseType != null && _client.IsNativeStructuredProvider(_client._provider),
+                                useNativeSchema,
                                 _client._provider.ProviderId,
-                                chunk =>
+                                update =>
                                 {
-                                    if (!string.IsNullOrEmpty(chunk))
-                                    {
-                                        writer.TryWrite(new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent> { new TextContent(chunk) }));
-                                    }
+                                    // 唯一的改寫：把 ModelId 換成 "供應商:模型" 複合識別，
+                                    // 讓呼叫端在 fallback 之後仍分辨得出實際是誰回的。
+                                    // 工具呼叫、FinishReason 與 UsageContent 都由 provider 的
+                                    // update 自己帶著，框架不再另外合成一個收尾 update——
+                                    // 那個收尾 update 過去正是 ResponseId 等欄位消失的地方。
+                                    update.ModelId = composedModelId;
+                                    writer.TryWrite(update);
                                 },
-                                _client._settings.ApiTimeout).ConfigureAwait(false);
+                                _client._settings.ApiTimeout,
+                                cancellationToken).ConfigureAwait(false);
 
-                            var finalUpdate = new ChatResponseUpdate
-                            {
-                                Role = ChatRole.Assistant,
-                                ModelId = ComposeModelId(result)
-                            };
-                            if (result.HasToolCalls)
-                            {
-                                // 工具呼叫沒有文字 chunk，只能靠收尾 update 交給上層的工具執行迴圈。
-                                foreach (FunctionCallContent toolCall in System.Linq.Enumerable.OfType<FunctionCallContent>(result.Contents))
-                                {
-                                    finalUpdate.Contents.Add(toolCall);
-                                }
-                                finalUpdate.FinishReason = ChatFinishReason.ToolCalls;
-                            }
-                            finalUpdate.Contents.Add(new UsageContent(new UsageDetails
-                            {
-                                InputTokenCount = result.PromptTokens,
-                                OutputTokenCount = result.CompletionTokens,
-                                CachedInputTokenCount = result.CachedPromptTokens
-                            }));
-                            writer.TryWrite(finalUpdate);
                             writer.TryComplete();
                         }
                     }
@@ -281,80 +284,14 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        internal RimLLMRequest Translate(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions options,
-            CancellationToken cancellationToken)
-        {
-            var messagesList = new List<ChatMessage>(messages ?? new List<ChatMessage>());
-
-            string systemPrompt = null;
-            if (messagesList.Count > 0 && messagesList[0]?.Role == ChatRole.System)
-            {
-                systemPrompt = messagesList[0].Text;
-            }
-
-            // 框架欄位一律從 AdditionalProperties 取，不再對 RimLLMChatOptions 做型別轉換：
-            // 呼叫端用純 ChatOptions 塞鍵也能生效，且前方中介層 clone 掉子類別型別不會遺失設定。
-            return new RimLLMRequest
-            {
-                ModId = _modId,
-                Messages = messagesList,
-                SystemPrompt = systemPrompt,
-                SourceOptions = options,
-                CachedContext = RimLLMChatOptions.GetCachedContext(options),
-                EnableContextCaching = RimLLMChatOptions.GetEnableContextCaching(options),
-                Temperature = options?.Temperature,
-                MaxOutputTokens = options?.MaxOutputTokens,
-                ReasoningEffort = options?.Reasoning?.Effort,
-                DisableReasoning = RimLLMChatOptions.GetDisableReasoning(options),
-                Priority = RimLLMChatOptions.GetPriority(options),
-                MinFallbackLevel = RimLLMChatOptions.GetMinFallbackLevel(options),
-                PreferredModelId = options?.ModelId,
-                ResponseType = RimLLMChatOptions.GetResponseType(options),
-                CancellationToken = cancellationToken,
-                Tools = options?.Tools,
-                ToolMode = options?.ToolMode
-            };
-        }
-
-        internal static ChatResponse BuildResponse(RimLLMGenerationResult result, ChatOptions options)
-        {
-            var usageDetails = new UsageDetails
-            {
-                InputTokenCount = result.PromptTokens,
-                OutputTokenCount = result.CompletionTokens,
-                CachedInputTokenCount = result.CachedPromptTokens
-            };
-
-            // 只有真的帶工具呼叫時才改用原始 Contents；否則一律沿用 result.Text，
-            // 否則 executor 已組好的 <think> 推理封裝會因 ChatResponse.Text 只串接 TextContent 而遺失。
-            ChatMessage assistantMessage;
-            if (result.HasToolCalls)
-            {
-                assistantMessage = new ChatMessage(ChatRole.Assistant, result.Contents);
-            }
-            else
-            {
-                assistantMessage = new ChatMessage(ChatRole.Assistant, result.Text);
-            }
-
-            return new ChatResponse(assistantMessage)
-            {
-                Usage = usageDetails,
-                ModelId = ComposeModelId(result),
-                FinishReason = result.HasToolCalls ? ChatFinishReason.ToolCalls : (ChatFinishReason?)null
-            };
-        }
-
         /// <summary>組合成 "ProviderId:ModelName" 複合識別，供呼叫端追蹤實際使用的供應商。</summary>
-        internal static string ComposeModelId(RimLLMGenerationResult result)
+        internal static string ComposeModelId(string providerId, string modelName)
         {
-            if (!string.IsNullOrEmpty(result.ProviderId) && !string.IsNullOrEmpty(result.ModelName))
+            if (!string.IsNullOrEmpty(providerId) && !string.IsNullOrEmpty(modelName))
             {
-                return result.ProviderId + ":" + result.ModelName;
+                return providerId + ":" + modelName;
             }
-            return result.ModelName ?? string.Empty;
+            return modelName ?? string.Empty;
         }
 
         private static bool IsNativeSchemaRejected(Exception exception)
@@ -389,52 +326,46 @@ namespace RimLLM_Framework.Manager
         /// 供應商不支援原生工具呼叫時移除 Tools/ToolMode，並留下警告。
         /// 直接把 tools 送給不認得的供應商會被靜默忽略，呼叫端只會拿到一段散文而不知道工具沒送出去。
         /// </summary>
-        private static RimLLMRequest StripUnsupportedTools(ILLMProvider provider, RimLLMRequest request)
+        private static ChatOptions StripUnsupportedTools(ILLMProvider provider, ChatOptions options)
         {
-            if (request?.Tools == null || request.Tools.Count == 0) return request;
-            if (provider?.Capabilities?.SupportsFunctionCalling == true) return request;
+            if (options?.Tools == null || options.Tools.Count == 0) return options;
+            if (provider?.Capabilities?.SupportsFunctionCalling == true) return options;
 
             RimLLMLog.Warning(
-                $"[RimLLM] 供應商 {provider?.ProviderId} 不支援原生工具呼叫，本次請求的 {request.Tools.Count} 個工具已被移除。");
+                $"[RimLLM] 供應商 {provider?.ProviderId} 不支援原生工具呼叫，本次請求的 {options.Tools.Count} 個工具已被移除。");
 
-            RimLLMRequest clone = request.Clone();
+            ChatOptions clone = options.Clone();
             clone.Tools = null;
             clone.ToolMode = null;
             return clone;
         }
 
-        private RimLLMRequest PrepareRequestForProvider(
-            ILLMProvider provider,
-            RimLLMRequest request,
-            bool forceJsonFallback = false)
+        /// <summary>
+        /// 供應商沒有原生結構化輸出時，改以提示詞要求模型只回傳 JSON。
+        /// </summary>
+        /// <remarks>
+        /// 附加在既有系統訊息之後而不是取代它——先前這裡是直接覆寫，系統訊息若不在
+        /// 索引 0，原本的內容就會連同被換掉。
+        /// </remarks>
+        private IList<ChatMessage> ApplyJsonSchemaInstructions(IList<ChatMessage> messages, Type responseType)
         {
-            if (request.ResponseType == null ||
-                (!forceJsonFallback && IsNativeStructuredProvider(provider)))
-            {
-                return request;
-            }
+            if (responseType == null) return messages;
 
-            RimLLMRequest clone = request.Clone();
-            string originalSystemPrompt = clone.SystemPrompt ?? string.Empty;
             string schemaInstructions =
                 "\n\n[結構化輸出要求：只能回傳符合下列結構的原始 JSON，不要加入 Markdown code fence 或其他說明。範例：\n" +
-                RimLLMJsonHelper.GetSampleJson(request.ResponseType) + "]";
-            clone.SystemPrompt = originalSystemPrompt + schemaInstructions;
-            if (clone.Messages != null && clone.Messages.Count > 0)
+                RimLLMJsonHelper.GetSampleJson(responseType) + "]";
+
+            var copy = new List<ChatMessage>(messages ?? new List<ChatMessage>());
+            int sysIdx = copy.FindIndex(m => m != null && m.Role == ChatRole.System);
+            if (sysIdx >= 0)
             {
-                var messagesCopy = new List<ChatMessage>(clone.Messages);
-                int sysIdx = messagesCopy.FindIndex(m => m.Role == ChatRole.System);
-                if (sysIdx >= 0)
-                {
-                    messagesCopy[sysIdx] = new ChatMessage(ChatRole.System, clone.SystemPrompt);
-                }
-                else
-                {
-                    messagesCopy.Insert(0, new ChatMessage(ChatRole.System, clone.SystemPrompt));
-                }
-                clone.Messages = messagesCopy;
+                copy[sysIdx] = new ChatMessage(ChatRole.System, (copy[sysIdx].Text ?? string.Empty) + schemaInstructions);
             }
-            return clone;
+            else
+            {
+                copy.Insert(0, new ChatMessage(ChatRole.System, schemaInstructions));
+            }
+            return copy;
         }
 
         private bool IsNativeStructuredProvider(ILLMProvider provider)

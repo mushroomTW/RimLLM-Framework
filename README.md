@@ -124,6 +124,8 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 Message lists and `ChatOptions` behave exactly as MEAI documents them. The one framework-specific rule: leave `ModelId` unset and the player's configured fallback chain decides which provider and model actually runs — set it to a `"Provider:Model"` entry to pin one.
 
+The `ChatResponse` you get back is the provider's own, handed over unchanged apart from `ModelId`, which is rewritten to `"Provider:Model"` so you can tell who actually answered after a failover. `ResponseId`, `CreatedAt`, `ConversationId`, `Usage`, `FinishReason`, `RawRepresentation` and `AdditionalProperties` are whatever the provider set — including `null`. A `null` `Usage` means the provider reported no token counts, not that the call was free.
+
 ### Chat streaming
 
 Streaming is MEAI's standard `GetStreamingResponseAsync` / `await foreach`. The framework adds two guarantees on top: every update is already dispatched onto the Unity main thread, so you can touch the UI directly from the loop; and if the whole fallback chain fails, the original `RimLLMException` is rethrown from `await foreach`, so a failing stream never ends silently.
@@ -194,7 +196,7 @@ IEmbeddingGenerator<string, Embedding<float>> generator =
     RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
 ```
 
-`GenerateAsync`, `GeneratedEmbeddings<T>` and `Embedding<float>` behave as MEAI documents them. The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws `RimLLMException`.
+`GenerateAsync`, `GeneratedEmbeddings<T>` and `Embedding<float>` behave as MEAI documents them. Each `Embedding<float>` carries the `ModelId` that actually produced it, and `GeneratedEmbeddings.Usage` carries the input token count when the provider reports one — OpenAI-compatible endpoints do, Gemini's public API does not (its `tokenCount` is Enterprise-only), so there `Usage` stays `null`. As with chat, `null` means the provider reported nothing, not that the call was free. The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws `RimLLMException`.
 
 ### Error handling
 
@@ -252,7 +254,7 @@ This is the point of the framework. All of the following already happens behind 
 | Rate limiting across mods | Global priority queue and concurrency cap, so mods don't stutter the game |
 | Cost control | Daily budget with hard-block / mock / free-tier / prompt policies |
 | Usage and cost reporting | Per-provider token and cost dashboard in the Debug tab |
-| Reasoning-model quirks | `reasoning_content` and Gemini `thought` normalized into `<think>...</think>` |
+| Reasoning-model quirks | `reasoning_content` and Gemini `thought` normalized into MEAI `TextReasoningContent` |
 | Malformed JSON | Markdown fences, unclosed brackets and trailing commas repaired, with LLM-assisted double repair |
 | Main-thread marshalling | Streaming chunks and log writes dispatched back to Unity's main thread |
 | Native Tool Calling & Dispatching | Bi-directional schema translation for Gemini/OpenAI; automatic dispatch onto Unity main thread |
@@ -301,8 +303,8 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
    * Scribe writes triggered by `RecordLog` are dispatched back to the Unity main thread through `RimLLMDispatcher` with a 15-second write throttle, preventing crashes and TPS spikes caused by background saves.
 8. **Reasoning models and chain-of-thought tagging**
    * Native support for modern reasoning and thinking models such as **Gemini 3.7 Flash / 3.1 Pro (Thinking)**, **OpenAI GPT-5.6 Sol / GPT-5.5**, **DeepSeek-V4-Pro / Flash**, **Grok 4.6**, **Qwen3.8-Max**, **Kimi K3** and **GLM-5.3-Flash**.
-   * The framework extracts the chain of thought returned by the API (`reasoning_content` in the OpenAI protocol, the `thought` field in Gemini) and wraps it uniformly in `<think>...</think>` tags.
-   * The GUI chat test page parses these tags and renders the reasoning as grey italic text. Calling mods can easily strip or keep the chain of thought with a regular expression.
+   * The framework normalizes the chain of thought returned by the API (`reasoning_content` in the OpenAI protocol, the `thought` field in Gemini) into MEAI's own `TextReasoningContent`, and hands it to you inside `ChatResponse.Messages` / `ChatResponseUpdate.Contents`. It is deliberately **not** folded into `ChatResponse.Text`: every caller that reads `Text` — structured output, the response cache key, JSON parsing — would otherwise have to strip tags out of it first. Filter on the content type to keep or drop it.
+   * The GUI chat test page builds `<think>...</think>` tags from those contents itself and renders the reasoning as grey italic text. That flattening is presentation, not protocol.
    * **Reasoning effort control**: the default is "Auto", which lets each provider run its own adaptive or dynamic thinking configuration (Gemini's `thinkingBudget = -1`, OpenAI's dynamic `reasoning_effort`, and so on). You can also disable reasoning entirely or set it manually to low / medium / high.
    * **Effort reaches every provider and every model.** Each provider declares its own wire format instead of the framework guessing from model names: top-level `reasoning_effort` (OpenAI, xAI, Groq, MiniMax, NVIDIA, OpenAI-compatible endpoints), OpenRouter's unified `reasoning` object, `thinking: {type}` plus effort (DeepSeek, Z.ai, Kimi), `enable_thinking` with `thinking_budget` (Qwen), and `thinkingConfig` for Gemini. Vocabulary differences are mapped per provider — Kimi only accepts low/high/max, and xAI cannot disable reasoning at all, so a disable request is ignored there rather than turned into a 400.
    * **Unknown models are handled optimistically, then learned.** Model-name allow-lists rot: the framework previously sent effort only for names starting with `o1`/`o3`, silently dropping the setting everywhere else. Now the effort is sent unless the model is on a short deny-list of known non-reasoning families. If the service rejects the parameter with a 400, the framework records that `(provider, model)` pair, retries the request once without it, and stops sending it for the rest of the session. Missing a model therefore costs one retry instead of failing permanently. The same mechanism covers `temperature`, which reasoning models such as the GPT-5 series reject outright. The memory is per game session, so a model that gains support later is retried after a restart.
@@ -340,7 +342,8 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
 
 ### 3. Streaming bridge (`Channel<T>`)
 
-* The manager's streaming API is callback-shaped (`Action<string> onChunkReceived`), while MEAI expects `IAsyncEnumerable<ChatResponseUpdate>`. The bridge between them is an unbounded `System.Threading.Channels.Channel<T>`; the consumer side is simply `ChannelReader.ReadAllAsync()`.
+* The executor's streaming API is callback-shaped (`Action<ChatResponseUpdate> onUpdateReceived`), while MEAI expects `IAsyncEnumerable<ChatResponseUpdate>`. The bridge between them is an unbounded `System.Threading.Channels.Channel<T>`; the consumer side is simply `ChannelReader.ReadAllAsync()`.
+* Updates cross that bridge **verbatim** — the object the provider produced is the object you enumerate, with only `ModelId` rewritten. The framework no longer synthesizes a closing update of its own, so `UsageContent`, `FinishReason` and `ResponseId` are present exactly when the provider emits them.
 * Because `IAsyncEnumerable` reaches this project through the `bclasync` extern alias, C# 8 cannot compile an async iterator over it. `ReadAllAsync()` sidesteps that entirely: it returns the same assembly's `IAsyncEnumerable`, so no iterator has to be hand-written.
 * A thin wrapper unwraps `ChannelClosedException` so producer failures surface to callers as the original `RimLLMException`.
 

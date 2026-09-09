@@ -223,47 +223,19 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestRequestQueueCancellationAndErrorBranches()
+        public void TestRequestQueueRejectsAlreadyCanceledToken()
         {
             var settings = new MockSettings { MaxConcurrentRequests = 2 };
             var queue = new RimLLMRequestQueue(settings);
 
-            // 1. Pre-canceled token
             using (var cts = new CancellationTokenSource())
             {
                 cts.Cancel();
-                var req = new RimLLMRequest
-                {
-                    ModId = "test.cancel",
-                    Priority = 5,
-                    CancellationToken = cts.Token
-                };
-
                 Assert.ThrowsAsync<TaskCanceledException>(async () =>
                 {
-                    await queue.EnqueueRequestAsync(req, () => Task.FromResult(new RimLLMGenerationResult()));
+                    await queue.AcquireSlotAsync(5, cts.Token);
                 });
             }
-
-            // 2. Action throws OperationCanceledException
-            var reqCancel = new RimLLMRequest { ModId = "test.action.cancel", Priority = 1 };
-            Assert.CatchAsync<OperationCanceledException>(async () =>
-            {
-                await queue.EnqueueRequestAsync(reqCancel, () =>
-                {
-                    throw new OperationCanceledException();
-                });
-            });
-
-            // 3. Action throws general Exception
-            var reqError = new RimLLMRequest { ModId = "test.action.error", Priority = 1 };
-            Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            {
-                await queue.EnqueueRequestAsync(reqError, () =>
-                {
-                    throw new InvalidOperationException("Simulated queue task failure");
-                });
-            });
         }
 
         [Test]
@@ -316,31 +288,15 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestChatClientExecutorNullMessagesHandling()
         {
-            var req = RimLLMChatClientExecutor.CreateFromChatOptions(
-                null,
-                new ChatOptions { Temperature = 0.5f, MaxOutputTokens = 100 },
-                "test-model",
-                CancellationToken.None);
-
-            ClassicAssert.IsNotNull(req.Messages);
-            ClassicAssert.AreEqual(0, req.Messages.Count);
-
-            var messagesWithSys = RimLLMChatClientExecutor.BuildMessages(new RimLLMRequest
-            {
-                Messages = null,
-                SystemPrompt = "System instruction"
-            });
+            var cachedContextOptions = new RimLLMChatOptions { CachedContext = "System instruction" };
+            var messagesWithSys = RimLLMChatClientExecutor.BuildMessages(null, cachedContextOptions);
 
             ClassicAssert.IsNotNull(messagesWithSys);
             ClassicAssert.AreEqual(1, messagesWithSys.Count);
             ClassicAssert.AreEqual(ChatRole.System, messagesWithSys[0].Role);
             ClassicAssert.AreEqual("System instruction", messagesWithSys[0].Text);
 
-            var messagesEmpty = RimLLMChatClientExecutor.BuildMessages(new RimLLMRequest
-            {
-                Messages = null,
-                SystemPrompt = null
-            });
+            var messagesEmpty = RimLLMChatClientExecutor.BuildMessages(null, null);
 
             ClassicAssert.IsNotNull(messagesEmpty);
             ClassicAssert.AreEqual(1, messagesEmpty.Count);
@@ -532,7 +488,6 @@ namespace RimLLM_Framework.Tests
 
             // 3. ResponseType with SilentMocking returns "{}"
             settings.DailyAccumulatedCost = 2.0f;
-            var objReq = new RimLLMRequest { ModId = "test.mod", ResponseType = typeof(NullableTestDataStructure) };
             var structuredOptions = new RimLLMChatOptions
             {
                 AdditionalProperties = new AdditionalPropertiesDictionary
@@ -666,19 +621,19 @@ namespace RimLLM_Framework.Tests
 
             // Policy 0 = HardBlock
             settings.BudgetPolicy = 0;
-            bool ok = await tracker.CheckBudgetLimitAsync(new RimLLMRequest { ModId = "t" });
+            bool ok = await tracker.CheckBudgetLimitAsync();
             ClassicAssert.IsFalse(ok);
 
             // Policy 1 = SilentMocking
             settings.BudgetPolicy = 1;
-            ok = await tracker.CheckBudgetLimitAsync(new RimLLMRequest { ModId = "t" });
+            ok = await tracker.CheckBudgetLimitAsync();
             ClassicAssert.IsTrue(ok);
-            ClassicAssert.IsTrue(tracker.IsBudgetMocked(new RimLLMRequest { ModId = "t" }, out string mockStr));
+            ClassicAssert.IsTrue(tracker.IsBudgetMocked(false, out string mockStr));
             ClassicAssert.IsNotNull(mockStr);
 
             // Policy 2 = FallbackToFree
             settings.BudgetPolicy = 2;
-            ok = await tracker.CheckBudgetLimitAsync(new RimLLMRequest { ModId = "t" });
+            ok = await tracker.CheckBudgetLimitAsync();
             ClassicAssert.IsTrue(ok);
 
             // 5. 跨天重置
