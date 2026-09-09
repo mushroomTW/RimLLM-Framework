@@ -54,7 +54,6 @@
       安全恢復底層 JsonPatch 寫入行為。
     -->
     <PackageReference Include="OpenAI" Version="2.13.0" />
-    <PackageReference Include="Google.GenAI" Version="1.21.0" />
     <!--
       回應快取的儲存層。版本刻意對齊 MEAI 已經帶進來的
       Microsoft.Extensions.Caching.Abstractions（10.0.11）：RimWorld 把所有 Mod 載入同一個

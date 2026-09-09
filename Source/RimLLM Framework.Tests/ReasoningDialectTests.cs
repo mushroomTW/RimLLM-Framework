@@ -260,12 +260,13 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsNull(payload["reasoning_effort"]);
         }
 
-        // ---------- Gemini：thinkingConfig ----------
+        // ---------- Gemini：經 OpenAI 相容端點，頂層 reasoning_effort ----------
 
         [Test]
-        public void UnknownFutureGeminiModelFallsBackToThinkingLevel()
+        public void GeminiSendsReasoningEffortForAnyModel()
         {
-            // 舊實作對認不出來的模型直接回 null，設定會被靜默丟掉。
+            // Gemini 改走 OpenAI 相容端點後，不再以模型名靜態排除思考參數：
+            // 認不出來的未來模型也樂觀送出，不支援時由服務端的 400 觸發自癒重試。
             var settings = SettingsWithKey(ProviderIds.Gemini);
             var provider = new TestGeminiProvider(settings);
 
@@ -274,25 +275,24 @@ namespace RimLLM_Framework.Tests
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "gemini-5-flash").GetAwaiter().GetResult();
 
-            ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
-            ClassicAssert.AreEqual(Google.GenAI.Types.ThinkingLevel.High, provider.LastConfig.ThinkingConfig.ThinkingLevel);
+            ClassicAssert.AreEqual("high", (string)JObject.Parse(provider.InterceptedPayload)["reasoning_effort"]);
         }
 
         [Test]
-        public void KnownNonThinkingGeminiModelSendsNoThinkingConfig()
+        public void GeminiOmitsReasoningEffortWhenAuto()
         {
             var provider = new TestGeminiProvider(SettingsWithKey(ProviderIds.Gemini));
 
             provider.GenerateAsync(
                 UserMessages,
-                new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
+                new ChatOptions(),
                 "gemini-2.0-flash").GetAwaiter().GetResult();
 
-            ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig);
+            ClassicAssert.IsNull(JObject.Parse(provider.InterceptedPayload)["reasoning_effort"]);
         }
 
         [Test]
-        public void RememberedGeminiRejectionSkipsThinkingConfig()
+        public void RememberedGeminiRejectionSkipsReasoningEffort()
         {
             RimLLMReasoningSupport.MarkReasoningUnsupported(ProviderIds.Gemini, "gemini-5-flash");
             var provider = new TestGeminiProvider(SettingsWithKey(ProviderIds.Gemini));
@@ -302,7 +302,8 @@ namespace RimLLM_Framework.Tests
                 new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
                 "gemini-5-flash").GetAwaiter().GetResult();
 
-            ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig);
+            ClassicAssert.AreEqual(1, provider.WireHandler.RequestBodies.Count);
+            ClassicAssert.IsNull(JObject.Parse(provider.InterceptedPayload)["reasoning_effort"]);
         }
 
         // ---------- 服務端拒絕後的自動降級 ----------

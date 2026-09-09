@@ -3,7 +3,7 @@
   <name>RimLLM Framework</name>
   <author>綠菇</author>
   <packageId>GreenMushroom.RimLLMFramework</packageId>
-  <modVersion>2026.09.09.3</modVersion>
+  <modVersion>2026.09.09.5</modVersion>
   <supportedVersions>
     <li>1.6</li>
   </supportedVersions>
@@ -17,11 +17,11 @@ This mod provides a stable and flexible foundation for managing API keys, model 
 3. <b>AES-256 Encryption</b>: API keys are stored with AES-256 symmetric encryption to reduce plaintext exposure risk. This is an obfuscation-level protection — it does not prevent same-process attacks via reflection or memory reading. Caller-assembly verification has been removed: it could not stop a hostile in-process mod, and its first-come-wins ModId binding could lock out the legitimate owner at startup.
 4. <b>Thread Safety &amp; Scribe Scheduling</b>: All dictionary operations are guarded with locks. RecordLog writes are dispatched back to the Unity main thread via RimLLMDispatcher with a 15-second throttle, preventing crashes or TPS spikes caused by background saves.
 5. <b>Reasoning Models &amp; Auto Effort</b>: Native support for modern reasoning and thinking models (Gemini 3.7 Flash/3.1 Pro Thinking, OpenAI GPT-5.6 Sol/5.5, DeepSeek-V4-Pro/Flash, Grok 4.6, Qwen3.8-Max, Kimi K3, GLM-5.3-Flash, etc.). The layer automatically extracts reasoning_content and thought blocks, wrapping them uniformly in &lt;think&gt;...&lt;/think&gt; tags. Reasoning effort is translated into each provider's own wire format, and a model that rejects the parameter is learned from the service response and skipped afterwards instead of failing.
-6. <b>Native Tool Calling (Function Calling)</b>: Fully compliant with Microsoft.Extensions.AI standards (AIFunction, ChatOptions.Tools, FunctionCallContent). Features bi-directional schema and message translation for Gemini and OpenAI, along with RimWorldFunctionInvoker (.AsMainThreadFunctionInvokingClient()) to safely dispatch tool execution onto the Unity main thread.
+6. <b>Native Tool Calling (Function Calling)</b>: Fully compliant with Microsoft.Extensions.AI standards (AIFunction, ChatOptions.Tools, FunctionCallContent) across all providers over the shared OpenAI-compatible protocol, along with RimWorldFunctionInvoker (.AsMainThreadFunctionInvokingClient()) to safely dispatch tool execution onto the Unity main thread.
 7. <b>Embedding SDK</b>: A public embedding API backed by Google, Ollama, or OpenAI-compatible endpoints, so other mods can build semantic search and clustering on top of the framework.
-8. <b>Provider Stats</b>: Each provider settings page shows a request success-rate progress bar and an API-side prompt cache hit-rate chart (supports Gemini Context Caching, etc.).
+8. <b>Provider Stats</b>: Each provider settings page shows a request success-rate progress bar and an API-side prompt cache hit-rate chart (supports server-side prompt caching, including Gemini via its OpenAI-compatible endpoint).
 9. <b>Local Response Cache</b> (optional, off by default): Byte-identical repeat requests are answered from an in-memory cache with no API call at all — zero cost and zero latency. Exact matching only, so identical input always yields identical output; the lifetime is player-configurable and nothing is written to the save. Automatically bypassed when Tools are present.
-10. <b>Developer SDK</b>: Everything crossing the boundary is a standard Microsoft.Extensions.AI type (IChatClient, IEmbeddingGenerator) — no bespoke client interface to learn, and no registration step. Includes dynamic streaming control and a cached JSON Schema pipeline that normalizes Microsoft.Extensions.AI schema output into per-provider dialects, so other mods can integrate LLM services and build Agent tools quickly and reliably.]]>
+10. <b>Developer SDK</b>: Everything crossing the boundary is a standard Microsoft.Extensions.AI type (IChatClient, IEmbeddingGenerator) — no bespoke client interface to learn, and no registration step. Includes dynamic streaming control and a cached JSON Schema pipeline that normalizes Microsoft.Extensions.AI schema output into a single OpenAI-compatible dialect, so other mods can integrate LLM services and build Agent tools quickly and reliably.]]>
   </description>
   <loadAfter>
     <li>brrainz.harmony</li>

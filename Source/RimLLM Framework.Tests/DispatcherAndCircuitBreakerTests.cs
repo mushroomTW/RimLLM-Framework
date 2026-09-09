@@ -699,26 +699,19 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaGenerator()
         {
-            // test OpenAI style
-            var openaiSchema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI));
-            ClassicAssert.AreEqual("object", openaiSchema["type"]?.ToString());
-            ClassicAssert.IsNotNull(openaiSchema["properties"]);
-            ClassicAssert.AreEqual("integer", openaiSchema["properties"]?["Value"]?["type"]?.ToString());
-            ClassicAssert.AreEqual("string", openaiSchema["properties"]?["Message"]?["type"]?.ToString());
-            ClassicAssert.IsFalse((bool)openaiSchema["additionalProperties"]);
-
-            // test Gemini style
-            var geminiSchema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure), RimLLMSchemaProfile.Gemini));
-            ClassicAssert.AreEqual("object", geminiSchema["type"]?.ToString());
-            ClassicAssert.AreEqual("integer", geminiSchema["properties"]?["Value"]?["type"]?.ToString());
-            ClassicAssert.AreEqual("string", geminiSchema["properties"]?["Message"]?["type"]?.ToString());
+            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure)));
+            ClassicAssert.AreEqual("object", schema["type"]?.ToString());
+            ClassicAssert.IsNotNull(schema["properties"]);
+            ClassicAssert.AreEqual("integer", schema["properties"]?["Value"]?["type"]?.ToString());
+            ClassicAssert.AreEqual("string", schema["properties"]?["Message"]?["type"]?.ToString());
+            ClassicAssert.IsFalse((bool)schema["additionalProperties"]);
         }
 
         [Test]
         public void TestJsonSchemaRecursiveTypeDoesNotStackOverflow()
         {
             // NestedData.SelfRef 指回 ComplexTestDataStructure，形成循環。
-            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI));
+            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)));
 
             ClassicAssert.IsNotNull(schema, "循環型別仍應產生可用的 schema，不得遞迴爆棧");
 
@@ -736,7 +729,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaDictionaryBecomesOpenMap()
         {
-            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI));
+            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)));
             var mapping = schema["properties"]?["Mapping"];
 
             ClassicAssert.IsNotNull(mapping, "Dictionary 成員應出現在 schema 中");
@@ -754,7 +747,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaNullableIsRequiredButTypedAsUnion()
         {
-            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(NullableTestDataStructure), RimLLMSchemaProfile.OpenAI));
+            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(NullableTestDataStructure)));
 
             var optionalType = (JArray)schema["properties"]["OptionalCount"]["type"];
             CollectionAssert.AreEquivalent(
@@ -772,8 +765,8 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaGeneratorCacheReturnsIndependentInstances()
         {
-            var first = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
-            var second = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
+            var first = RimLLMSchemaBuilder.Build(typeof(TestDataStructure));
+            var second = RimLLMSchemaBuilder.Build(typeof(TestDataStructure));
 
             ClassicAssert.AreEqual(first.Json, second.Json, "schema 快取應提供一致的不可變結果");
         }

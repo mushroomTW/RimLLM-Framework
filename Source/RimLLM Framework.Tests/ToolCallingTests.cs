@@ -172,85 +172,29 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestGeminiProvider_BuildContents_TranslatesToolCallingAndResponses()
+        public void GeminiSendsToolDefinitionsThroughOpenAiCompatibleEndpoint()
         {
-            var gemini = new GeminiProvider(new MockSettings());
-            var method = typeof(GeminiProvider).GetMethod("BuildContents", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-            ClassicAssert.IsNotNull(method, "BuildContents 應存在");
+            // Gemini 改走 OpenAI 相容端點後，工具定義沿用 OpenAI 家族的 wire 格式；
+            // 翻譯正確性由 OpenAI 路徑的既有測試覆蓋，此處只釘住 Gemini 發出的請求形狀。
+            var mockSettings = new MockSettings();
+            mockSettings.ApiKeys[ProviderIds.Gemini] = "mock-key";
+            var provider = new TestGeminiProvider(mockSettings);
 
-            var messages = new List<ChatMessage>
+            var addFunc = AIFunctionFactory.Create((int a, int b) => a + b, "AddNumbers", "Adds two numbers");
+            var options = new ChatOptions
             {
-                new ChatMessage(ChatRole.User, "What is 1+1?"),
-                new ChatMessage(ChatRole.Assistant, new List<AIContent>
-                {
-                    new FunctionCallContent("call_1", "add", new Dictionary<string, object> { ["x"] = 1, ["y"] = 1 })
-                }),
-                new ChatMessage(ChatRole.Tool, new List<AIContent>
-                {
-                    new FunctionResultContent("call_1", 2)
-                })
+                Tools = new List<AITool> { addFunc }
             };
 
-            var contents = method.Invoke(null, new object[] { messages }) as List<Google.GenAI.Types.Content>;
-            ClassicAssert.IsNotNull(contents);
-            ClassicAssert.AreEqual(3, contents.Count);
+            string result = provider.GenerateAsync(
+                new List<ChatMessage> { new ChatMessage(ChatRole.User, "Calculate 10 + 32") },
+                options,
+                "gemini-2.5-flash").GetAwaiter().GetResult();
 
-            // 驗證 Model Assistant Part
-            ClassicAssert.AreEqual("model", contents[1].Role);
-            var part1 = contents[1].Parts[0];
-            ClassicAssert.IsNotNull(part1.FunctionCall);
-            ClassicAssert.AreEqual("add", part1.FunctionCall.Name);
-
-            // 驗證 User / Tool Response Part
-            ClassicAssert.AreEqual("user", contents[2].Role);
-            var part2 = contents[2].Parts[0];
-            ClassicAssert.IsNotNull(part2.FunctionResponse);
-            ClassicAssert.AreEqual("add", part2.FunctionResponse.Name, "應能透過 CallId 還原原始函式名稱");
-        }
-
-        [Test]
-        public void TestGeminiProvider_ReadGeminiChatResponse_ParsesFunctionCall()
-        {
-            var gemini = new GeminiProvider(new MockSettings());
-            var method = typeof(GeminiProvider).GetMethod("ReadGeminiChatResponse", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            ClassicAssert.IsNotNull(method, "ReadGeminiChatResponse 應存在");
-
-            var geminiResponse = new Google.GenAI.Types.GenerateContentResponse
-            {
-                ResponseId = "resp_123",
-                Candidates = new List<Google.GenAI.Types.Candidate>
-                {
-                    new Google.GenAI.Types.Candidate
-                    {
-                        Content = new Google.GenAI.Types.Content
-                        {
-                            Parts = new List<Google.GenAI.Types.Part>
-                            {
-                                new Google.GenAI.Types.Part
-                                {
-                                    FunctionCall = new Google.GenAI.Types.FunctionCall
-                                    {
-                                        Id = "call_gemini_1",
-                                        Name = "GetStatus",
-                                        Args = new Dictionary<string, object> { ["target"] = "Pawn" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-
-            var chatResponse = method.Invoke(gemini, new object[] { geminiResponse, "gemini-2.5-flash" }) as ChatResponse;
-            ClassicAssert.IsNotNull(chatResponse);
-            ClassicAssert.AreEqual(ChatFinishReason.ToolCalls, chatResponse.FinishReason);
-            ClassicAssert.AreEqual(1, chatResponse.Messages.Count);
-
-            var call = chatResponse.Messages[0].Contents.OfType<FunctionCallContent>().FirstOrDefault();
-            ClassicAssert.IsNotNull(call);
-            ClassicAssert.AreEqual("GetStatus", call.Name);
-            ClassicAssert.AreEqual("call_gemini_1", call.CallId);
-            ClassicAssert.AreEqual("Pawn", call.Arguments["target"]);
+            ClassicAssert.AreEqual("ok", result);
+            var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+            ClassicAssert.IsNotNull(payload["tools"], "工具定義應隨請求送出。");
+            ClassicAssert.AreEqual("gemini-2.5-flash", payload["model"]?.ToString());
         }
     }
 }

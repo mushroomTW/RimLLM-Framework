@@ -6,12 +6,11 @@ using RimLLM_Framework.Manager;
 namespace RimLLM_Framework.Tests
 {
     /// <summary>
-    /// Embedding 模型清單的篩選與排序。
+    /// Embedding 模型清單的排序。
     ///
-    /// 兩種資料來源的可信度不同，行為也刻意不同：
-    /// Google 的 models.list 會宣告 supportedActions，可以精確篩選；
-    /// OpenAI 相容端點的 /v1/models 沒有能力資訊，只能排序不能過濾 ——
-    /// 本地伺服器的模型名由使用者自訂，過濾會把合法選項藏起來。
+    /// 各供應商皆走 OpenAI 相容的 /v1/models，該端點沒有能力資訊，
+    /// 因此只能排序不能過濾 —— 本地伺服器的模型名由使用者自訂，
+    /// 過濾會把合法選項藏起來。
     /// </summary>
     [TestFixture]
     public class EmbeddingModelListTests

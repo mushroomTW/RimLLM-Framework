@@ -44,7 +44,7 @@ namespace RimLLM_Framework.Manager
                 {
                     response = await client.GetResponseAsync(
                         builtMessages,
-                        BuildOptions(options, model, useNativeSchema, customizeOptions, RimLLMSchemaBuilder.ResolveProfile(providerId)),
+                        BuildOptions(options, model, useNativeSchema, customizeOptions),
                         linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (ClientResultException ex)
@@ -114,7 +114,7 @@ namespace RimLLM_Framework.Manager
                 {
                     await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync(
                         builtMessages,
-                        BuildOptions(options, model, useNativeSchema, customizeOptions, RimLLMSchemaBuilder.ResolveProfile(providerId)),
+                        BuildOptions(options, model, useNativeSchema, customizeOptions),
                         linkedCts.Token))
                     {
                         // 收到任何更新即重設閒置計時器，避免長回應被整體逾時誤殺。
@@ -242,24 +242,13 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 不指定方言時一律以 OpenAI 方言產生 schema。
-        /// 呼叫端若知道目標供應商，請改用帶 <see cref="RimLLMSchemaProfile"/> 的多載。
+        /// 以呼叫端的原始 options 為基底複製，組出送往 provider 的選項。
         /// </summary>
         internal static ChatOptions BuildOptions(
             ChatOptions source,
             string model,
             bool useNativeSchema,
             Action<ChatOptions> customizeOptions)
-        {
-            return BuildOptions(source, model, useNativeSchema, customizeOptions, RimLLMSchemaProfile.OpenAI);
-        }
-
-        internal static ChatOptions BuildOptions(
-            ChatOptions source,
-            string model,
-            bool useNativeSchema,
-            Action<ChatOptions> customizeOptions,
-            RimLLMSchemaProfile schemaProfile)
         {
             // 以呼叫端的原始 options 為基底複製，因此 TopP、TopK、FrequencyPenalty、
             // PresencePenalty、Seed、StopSequences、Tools、Reasoning、AdditionalProperties、
@@ -297,7 +286,7 @@ namespace RimLLM_Framework.Manager
             if (useNativeSchema && responseType != null)
             {
                 // schema 與 strict 取自同一次產生結果，避免兩者各算一次而分歧。
-                RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(responseType, schemaProfile);
+                RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(responseType);
                 using (JsonDocument document = JsonDocument.Parse(schema.Json))
 #pragma warning disable S3267 // reason: 迴圈遍歷在串流與用量統計具更高可讀性與效能，刻意保留 foreach
                 {

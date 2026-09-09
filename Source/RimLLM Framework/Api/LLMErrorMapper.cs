@@ -171,9 +171,8 @@ namespace RimLLM_Framework
 
         /// <summary>
         /// 判斷 4xx 錯誤訊息是否指向「內容被安全策略或內容過濾擋下」。
-        /// Gemini 走原生路徑時會自行擲出 <see cref="LLMError.ContentFilter"/>，
-        /// 這裡補的是 OpenAI 協定家族——它們一律以 400 回報，若不分辨就會和
-        /// 「請求組壞了」混為一談，呼叫端無從得知該換一家還是該修請求。
+        /// OpenAI 協定家族一律以 400 回報，若不分辨就會和「請求組壞了」混為一談，
+        /// 呼叫端無從得知該換一家還是該修請求。
         /// </summary>
         public static bool LooksLikeContentPolicyRejection(string message)
         {

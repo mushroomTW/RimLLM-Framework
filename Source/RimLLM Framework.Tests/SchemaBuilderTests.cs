@@ -1,16 +1,12 @@
 using System;
 #pragma warning disable S2699, S2701, S3415 // reason: 測試檔案斷言語意保留，Explicit 診斷測試無需斷言
 using System.Collections.Generic;
-using Google.GenAI.Types;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager;
-
-// Google.GenAI.Types 也有一個 Type，會與 System.Type 撞名。
-using Type = System.Type;
 
 namespace RimLLM_Framework.Tests
 {
@@ -32,39 +28,16 @@ namespace RimLLM_Framework.Tests
         }
 
         // -----------------------------------------------------------------
-        // 價值證明：正規化後的輸出確實能被 Gemini 接受
+        // 契約對齊：STJ 產 schema、Newtonsoft 反序列化
         // -----------------------------------------------------------------
 
-        /// <summary>
-        /// 與 <c>ProviderSdkIntegrationTests.RawMeaiSchemaIsRejectedByGoogleSchemaFromJson</c> 成對。
-        /// 前者證明 MEAI 的原始輸出會讓 <c>Schema.FromJson</c> 回傳 null，本測試證明正規化後可用。
-        /// 這兩個測試合起來就是整層正規化存在的理由。
-        /// </summary>
-        [Test]
-        public void GeminiProfileSchemaIsAcceptedByGoogleSchemaFromJson()
-        {
-            foreach (Type type in SampleTypes())
-            {
-                string json = RimLLMSchemaBuilder.BuildJson(type, RimLLMSchemaProfile.Gemini);
-                Schema schema = Schema.FromJson(json);
-
-                ClassicAssert.IsNotNull(schema, type.Name + " 的 Gemini profile schema 應能轉成 Google.GenAI 的 Schema。輸出：" + json);
-                ClassicAssert.IsNotNull(schema.Type, type.Name + " 的 schema 應有單一 type。");
-            }
-        }
-
-        /// <summary>
-        /// MEAI exporter 必須真的跑得起來，不能靜默降級。
-        /// 沒有這道防線的話，任何在 net472 上不存在的 API（例如 .NET Core 才有的
-        /// <c>string.Split(char)</c> 多載）都會被 safety net 吞成「測試照樣全綠、但走的是舊實作」。
-        /// </summary>
         [Test]
         public void ManagedExporterIsUsedWithoutFallingBackToLegacy()
         {
             foreach (Type type in SampleTypes())
             {
                 ClassicAssert.IsFalse(
-                    RimLLMSchemaBuilder.Build(type, RimLLMSchemaProfile.OpenAI).UsedLegacyFallback,
+                    RimLLMSchemaBuilder.Build(type).UsedLegacyFallback,
                     type.Name + " 不應觸發降級 —— MEAI exporter 在此環境應可用。");
             }
         }
@@ -88,7 +61,7 @@ namespace RimLLM_Framework.Tests
                     }
                 }
 
-                JObject schema = ParseSchema(type, RimLLMSchemaProfile.OpenAI);
+                JObject schema = ParseSchema(type);
                 var actual = new List<string>();
                 foreach (KeyValuePair<string, JToken> property in (JObject)schema["properties"])
                 {
@@ -109,7 +82,7 @@ namespace RimLLM_Framework.Tests
         {
             foreach (Type type in SampleTypes())
             {
-                JObject schema = ParseSchema(type, RimLLMSchemaProfile.OpenAI);
+                JObject schema = ParseSchema(type);
                 var sample = JObject.Parse(RimLLMJsonHelper.GetSampleJson(type));
 
                 foreach (JToken requiredName in (JArray)schema["required"])
@@ -160,17 +133,14 @@ namespace RimLLM_Framework.Tests
 
             foreach (Type type in SampleTypes())
             {
-                foreach (RimLLMSchemaProfile profile in AllProfiles())
+                JObject schema = ParseSchema(type);
+                foreach (JObject node in EnumerateNodes(schema))
                 {
-                    JObject schema = ParseSchema(type, profile);
-                    foreach (JObject node in EnumerateNodes(schema))
+                    foreach (string keyword in forbidden)
                     {
-                        foreach (string keyword in forbidden)
-                        {
-                            ClassicAssert.IsNull(
-                                node[keyword],
-                                type.Name + " / " + profile + " 的 schema 不應含 " + keyword + "。");
-                        }
+                        ClassicAssert.IsNull(
+                            node[keyword],
+                            type.Name + " 的 schema 不應含 " + keyword + "。");
                     }
                 }
             }
@@ -179,38 +149,20 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void KeywordWhitelistIsEnforced()
         {
-            string[] allowed = { "type", "enum", "properties", "required", "items", "additionalProperties", "description", "nullable" };
+            string[] allowed = { "type", "enum", "properties", "required", "items", "additionalProperties", "description" };
 
             foreach (Type type in SampleTypes())
             {
-                foreach (RimLLMSchemaProfile profile in AllProfiles())
+                JObject schema = ParseSchema(type);
+                foreach (JObject node in EnumerateNodes(schema))
                 {
-                    JObject schema = ParseSchema(type, profile);
-                    foreach (JObject node in EnumerateNodes(schema))
+                    foreach (KeyValuePair<string, JToken> member in node)
                     {
-                        foreach (KeyValuePair<string, JToken> member in node)
-                        {
-                            CollectionAssert.Contains(
-                                allowed,
-                                member.Key,
-                                type.Name + " / " + profile + " 的 schema 出現白名單外的關鍵字 " + member.Key + "。");
-                        }
+                        CollectionAssert.Contains(
+                            allowed,
+                            member.Key,
+                            type.Name + " 的 schema 出現白名單外的關鍵字 " + member.Key + "。");
                     }
-                }
-            }
-        }
-
-        [Test]
-        public void GeminiProfileHasNoTypeUnions()
-        {
-            foreach (Type type in SampleTypes())
-            {
-                foreach (JObject node in EnumerateNodes(ParseSchema(type, RimLLMSchemaProfile.Gemini)))
-                {
-                    ClassicAssert.AreEqual(
-                        JTokenType.String,
-                        node["type"].Type,
-                        type.Name + " 的 Gemini profile 每個 type 都必須是單一字串（Schema.Type 是單一列舉值）。");
                 }
             }
         }
@@ -220,9 +172,9 @@ namespace RimLLM_Framework.Tests
         {
             foreach (Type type in SampleTypes())
             {
-                foreach (JObject node in EnumerateNodes(ParseSchema(type, RimLLMSchemaProfile.OpenAI)))
+                foreach (JObject node in EnumerateNodes(ParseSchema(type)))
                 {
-                    ClassicAssert.IsNull(node["nullable"], type.Name + " 的 OpenAI profile 不應使用 OpenAPI 的 nullable 關鍵字。");
+                    ClassicAssert.IsNull(node["nullable"], type.Name + " 的 schema 不應使用 OpenAPI 的 nullable 關鍵字。");
                 }
             }
         }
@@ -230,61 +182,53 @@ namespace RimLLM_Framework.Tests
         /// <summary>
         /// OpenAI 的 strict structured output 要求 <c>required</c> 涵蓋所有 property，
         /// 選填只能靠聯集型別表達 —— 這正是舊實作把 <c>Nullable&lt;T&gt;</c> 排除在 required 之外時
-        /// 會在 OpenAI 端被 400 的原因。兩個 profile 統一採用同一套 required 語意。
+        /// 會在 OpenAI 端被 400 的原因。
         /// </summary>
         [Test]
-        public void EveryPropertyIsRequiredInBothProfiles()
+        public void EveryPropertyIsRequired()
         {
             foreach (Type type in SampleTypes())
             {
-                foreach (RimLLMSchemaProfile profile in AllProfiles())
+                foreach (JObject node in EnumerateNodes(ParseSchema(type)))
                 {
-                    foreach (JObject node in EnumerateNodes(ParseSchema(type, profile)))
+                    var properties = node["properties"] as JObject;
+                    if (properties == null) continue;
+
+                    var required = new List<string>();
+                    foreach (JToken name in (JArray)node["required"])
                     {
-                        var properties = node["properties"] as JObject;
-                        if (properties == null) continue;
-
-                        var required = new List<string>();
-                        foreach (JToken name in (JArray)node["required"])
-                        {
-                            required.Add(name.Value<string>());
-                        }
-
-                        var declared = new List<string>();
-                        foreach (KeyValuePair<string, JToken> property in properties)
-                        {
-                            declared.Add(property.Key);
-                        }
-
-                        required.Sort(StringComparer.Ordinal);
-                        declared.Sort(StringComparer.Ordinal);
-                        CollectionAssert.AreEqual(
-                            declared,
-                            required,
-                            type.Name + " / " + profile + " 的 required 必須與 properties 完全一致。");
+                        required.Add(name.Value<string>());
                     }
+
+                    var declared = new List<string>();
+                    foreach (KeyValuePair<string, JToken> property in properties)
+                    {
+                        declared.Add(property.Key);
+                    }
+
+                    required.Sort(StringComparer.Ordinal);
+                    declared.Sort(StringComparer.Ordinal);
+                    CollectionAssert.AreEqual(
+                        declared,
+                        required,
+                        type.Name + " 的 required 必須與 properties 完全一致。");
                 }
             }
         }
 
         [Test]
-        public void NullableMemberIsOptionalInProfileSpecificShape()
+        public void NullableMemberUsesUnionType()
         {
-            JObject openAi = ParseSchema(typeof(NullableTestDataStructure), RimLLMSchemaProfile.OpenAI);
-            JToken openAiType = openAi["properties"]["OptionalCount"]["type"];
-            ClassicAssert.AreEqual(JTokenType.Array, openAiType.Type, "OpenAI profile 的 int? 應寫成聯集型別。");
-            CollectionAssert.AreEquivalent(new[] { "integer", "null" }, openAiType.ToObject<string[]>());
-
-            JObject gemini = ParseSchema(typeof(NullableTestDataStructure), RimLLMSchemaProfile.Gemini);
-            JToken geminiMember = gemini["properties"]["OptionalCount"];
-            ClassicAssert.AreEqual("integer", geminiMember["type"].Value<string>(), "Gemini profile 的 int? 應維持單一 type。");
-            ClassicAssert.IsTrue(geminiMember["nullable"].Value<bool>(), "Gemini profile 的 int? 應以 nullable 關鍵字表達選填。");
+            JObject schema = ParseSchema(typeof(NullableTestDataStructure));
+            JToken memberType = schema["properties"]["OptionalCount"]["type"];
+            ClassicAssert.AreEqual(JTokenType.Array, memberType.Type, "int? 應寫成聯集型別。");
+            CollectionAssert.AreEquivalent(new[] { "integer", "null" }, memberType.ToObject<string[]>());
 
             // 專案未啟用 NRT，exporter 會把所有參考型別也寫成可為 null 的聯集。
             // 只有 Nullable<T> 才算選填 —— 與舊實作的 IsOptionalMember 判定一致。
             ClassicAssert.AreEqual(
                 JTokenType.String,
-                openAi["properties"]["Name"]["type"].Type,
+                schema["properties"]["Name"]["type"].Type,
                 "參考型別成員不應被誤判為選填。");
         }
 
@@ -300,7 +244,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void RecursiveMemberIsTruncatedButDeduplicatedMemberSurvives()
         {
-            JObject schema = ParseSchema(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI);
+            JObject schema = ParseSchema(typeof(ComplexTestDataStructure));
 
             // 去重的 $ref 必須完整展開成原本的 schema，不能只剩空殼 —— 這是「一律截斷 $ref」會踩到的坑。
             var skills = (JObject)schema["properties"]["Skills"];
@@ -326,10 +270,10 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void RecursiveSchemaStaysCompact()
         {
-            int managed = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI).Length;
+            int managed = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)).Length;
 
             RimLLMSchemaBuilder.ForceLegacy = true;
-            int legacy = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI).Length;
+            int legacy = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)).Length;
 
             ClassicAssert.Less(
                 managed,
@@ -339,26 +283,17 @@ namespace RimLLM_Framework.Tests
 
         /// <summary>
         /// OpenAI 的 strict structured output 明訂最多 5 層巢狀，超過會被服務端拒絕並靜默降級成
-        /// 提示式 JSON。Gemini 沒有這條限制，不該被連累，所以深度上限依方言而異。
+        /// 提示式 JSON，因此產生器在此先截斷。
         /// </summary>
         [Test]
-        public void DeepNestingIsTruncatedPerProfileDepthLimit()
+        public void DeepNestingIsTruncatedAtStrictLimit()
         {
-            int openAiDepth = MeasureNextChainDepth(ParseSchema(typeof(DeepChainLevel0), RimLLMSchemaProfile.OpenAI));
-            int geminiDepth = MeasureNextChainDepth(ParseSchema(typeof(DeepChainLevel0), RimLLMSchemaProfile.Gemini));
+            int depth = MeasureNextChainDepth(ParseSchema(typeof(DeepChainLevel0)));
 
             ClassicAssert.LessOrEqual(
-                openAiDepth,
+                depth,
                 RimLLMSchemaBuilder.OpenAIMaxSchemaDepth,
-                "OpenAI 方言的巢狀層數不得超過服務端上限。實際：" + openAiDepth);
-            ClassicAssert.LessOrEqual(
-                geminiDepth,
-                RimLLMSchemaBuilder.MaxSchemaDepth,
-                "Gemini 方言仍受整體深度上限保護。實際：" + geminiDepth);
-            ClassicAssert.Greater(
-                geminiDepth,
-                openAiDepth,
-                "Gemini 沒有 5 層限制，不應被 OpenAI 的上限連累。");
+                "巢狀層數不得超過服務端上限。實際：" + depth);
         }
 
         private static int MeasureNextChainDepth(JObject schema)
@@ -390,9 +325,9 @@ namespace RimLLM_Framework.Tests
             foreach (Type type in SampleTypes())
             {
                 RimLLMSchemaBuilder.ForceLegacy = false;
-                int managed = RimLLMSchemaBuilder.BuildJson(type, RimLLMSchemaProfile.OpenAI).Length;
+                int managed = RimLLMSchemaBuilder.BuildJson(type).Length;
                 RimLLMSchemaBuilder.ForceLegacy = true;
-                int legacy = RimLLMSchemaBuilder.BuildJson(type, RimLLMSchemaProfile.OpenAI).Length;
+                int legacy = RimLLMSchemaBuilder.BuildJson(type).Length;
                 TestContext.WriteLine(type.Name + ": managed=" + managed + " legacy=" + legacy);
             }
         }
@@ -410,7 +345,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void EnumMemberBecomesStringEnum()
         {
-            JObject schema = ParseSchema(typeof(EnumTestDataStructure), RimLLMSchemaProfile.OpenAI);
+            JObject schema = ParseSchema(typeof(EnumTestDataStructure));
             var kind = (JObject)schema["properties"]["Kind"];
 
             ClassicAssert.AreEqual("string", kind["type"].Value<string>(), "列舉應以字串名稱表達，Newtonsoft 反序列化接受名稱。");
@@ -422,7 +357,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void DescriptionAttributeFlowsIntoSchema()
         {
-            JObject schema = ParseSchema(typeof(DescribedTestDataStructure), RimLLMSchemaProfile.OpenAI);
+            JObject schema = ParseSchema(typeof(DescribedTestDataStructure));
 
             ClassicAssert.AreEqual(
                 "殖民者的名字",
@@ -438,7 +373,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void DictionaryBecomesOpenMapAndDisablesStrict()
         {
-            RimLLMSchemaResult result = RimLLMSchemaBuilder.Build(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI);
+            RimLLMSchemaResult result = RimLLMSchemaBuilder.Build(typeof(ComplexTestDataStructure));
             var schema = JObject.Parse(result.Json);
             var mapping = (JObject)schema["properties"]["Mapping"];
 
@@ -448,7 +383,7 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsTrue(result.ContainsOpenEndedMap, "含 Dictionary 的型別應被判定為開放式 map。");
             ClassicAssert.IsFalse(result.StrictCompatible, "開放式 map 不相容於 OpenAI 的 strict structured output。");
 
-            RimLLMSchemaResult plain = RimLLMSchemaBuilder.Build(typeof(NullableTestDataStructure), RimLLMSchemaProfile.OpenAI);
+            RimLLMSchemaResult plain = RimLLMSchemaBuilder.Build(typeof(NullableTestDataStructure));
             ClassicAssert.IsFalse(plain.ContainsOpenEndedMap);
             ClassicAssert.IsTrue(plain.StrictCompatible);
         }
@@ -479,7 +414,7 @@ namespace RimLLM_Framework.Tests
 
             foreach (Type type in SampleTypes())
             {
-                RimLLMSchemaResult result = RimLLMSchemaBuilder.Build(type, RimLLMSchemaProfile.Gemini);
+                RimLLMSchemaResult result = RimLLMSchemaBuilder.Build(type);
                 var schema = JObject.Parse(result.Json);
 
                 ClassicAssert.AreEqual("object", schema["type"].Value<string>(), type.Name + " 降級後仍應產生可用 schema。");
@@ -487,27 +422,15 @@ namespace RimLLM_Framework.Tests
                 ClassicAssert.IsFalse(
                     result.StrictCompatible,
                     "降級產物的 required 語意是舊的（Nullable 不列入），不得再宣告相容於 strict。");
-                ClassicAssert.IsNotNull(Schema.FromJson(result.Json), type.Name + " 降級產物仍應能被 Gemini 接受。");
             }
         }
 
         [Test]
         public void ResultCacheReturnsSameImmutableInstance()
         {
-            RimLLMSchemaResult first = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
-            RimLLMSchemaResult second = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
+            RimLLMSchemaResult first = RimLLMSchemaBuilder.Build(typeof(TestDataStructure));
+            RimLLMSchemaResult second = RimLLMSchemaBuilder.Build(typeof(TestDataStructure));
             ClassicAssert.AreSame(first, second, "結果不可變，快取應直接共用同一個實例。");
-
-            RimLLMSchemaResult gemini = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.Gemini);
-            ClassicAssert.AreNotSame(first, gemini, "不同 profile 必須是不同的快取項。");
-        }
-
-        [Test]
-        public void ResolveProfileMapsGeminiById()
-        {
-            ClassicAssert.AreEqual(RimLLMSchemaProfile.Gemini, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.Gemini));
-            ClassicAssert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.OpenAI));
-            ClassicAssert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(null));
         }
 
         // -----------------------------------------------------------------
@@ -522,15 +445,9 @@ namespace RimLLM_Framework.Tests
             yield return typeof(EnumTestDataStructure);
         }
 
-        private static IEnumerable<RimLLMSchemaProfile> AllProfiles()
+        private static JObject ParseSchema(Type type)
         {
-            yield return RimLLMSchemaProfile.OpenAI;
-            yield return RimLLMSchemaProfile.Gemini;
-        }
-
-        private static JObject ParseSchema(Type type, RimLLMSchemaProfile profile)
-        {
-            return JObject.Parse(RimLLMSchemaBuilder.BuildJson(type, profile));
+            return JObject.Parse(RimLLMSchemaBuilder.BuildJson(type));
         }
 
         private static List<string> PropertyNames(JObject node)

@@ -6,8 +6,7 @@ namespace RimLLM_Framework.Manager
     ///
     /// <see cref="InputTokenCount"/> 為 <c>null</c> 代表供應商沒有回報用量，
     /// 這與「0 token」是兩回事 —— 後者會讓呼叫端誤以為這次呼叫不耗配額。
-    /// 目前只有 OpenAI 相容端點會回報；Gemini 的 tokenCount 限 Enterprise 平台，
-    /// 公開 API 一律留空。
+    /// 目前經由 OpenAI 相容端點回報；供應商未回報時為 <c>null</c>。
     /// </summary>
     public class RimLLMEmbeddingResult
     {

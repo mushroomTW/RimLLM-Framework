@@ -236,12 +236,10 @@ namespace RimLLM_Framework.Mod
             // 所以自我檢查必須先解除，否則第二次之後按下去都只是在讀上一次的結論而非重新探測。
             RimLLMSchemaBuilder.ForceLegacy = false;
 
-            RimLLMSchemaResult openAiSchema;
-            RimLLMSchemaResult geminiSchema;
+            RimLLMSchemaResult schema;
             try
             {
-                openAiSchema = RimLLMSchemaBuilder.Build(typeof(SchemaSelfTestPayload), RimLLMSchemaProfile.OpenAI);
-                geminiSchema = RimLLMSchemaBuilder.Build(typeof(SchemaSelfTestPayload), RimLLMSchemaProfile.Gemini);
+                schema = RimLLMSchemaBuilder.Build(typeof(SchemaSelfTestPayload));
             }
             catch (Exception exception)
             {
@@ -252,10 +250,9 @@ namespace RimLLM_Framework.Mod
                 return;
             }
 
-            Log.Message("[RimLLM] Schema self-test (OpenAI profile): " + openAiSchema.Json);
-            Log.Message("[RimLLM] Schema self-test (Gemini profile): " + geminiSchema.Json);
+            Log.Message("[RimLLM] Schema self-test: " + schema.Json);
 
-            if (openAiSchema.UsedLegacyFallback)
+            if (schema.UsedLegacyFallback)
             {
                 // exporter 不可用時框架仍能運作，但會失去 description、精確的型別對照與 strict 相容性。
                 string failure = RimLLMSchemaBuilder.LastExporterFailure;

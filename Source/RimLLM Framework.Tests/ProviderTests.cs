@@ -6,8 +6,6 @@ using System;
 using System.Reflection;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
-using Google.GenAI;
-using Google.GenAI.Types;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using OpenAI;
@@ -118,84 +116,6 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestGeminiContextCachingFlow()
-        {
-            var mockSettings = new MockSettings();
-            mockSettings.ApiKeys["Gemini"] = "mock-key";
-
-            var provider = new TestGeminiProvider(mockSettings);
-            // 內容須超過顯式快取門檻（pro 模型約 2048 token，以字元數為保守下界），否則會正確地略過快取改走 systemInstruction
-            const string systemPrompt = "base-system-instructions";
-            string cachedContext = "stable-colony-context-for-gemini-caching " + new string('x', 2100);
-            string expectedSystemText = systemPrompt + "\n\n" + cachedContext;
-
-            var messages = new List<ChatMessage>
-            {
-                new ChatMessage(ChatRole.System, systemPrompt),
-                new ChatMessage(ChatRole.User, "hello")
-            };
-            var options = new RimLLMChatOptions
-            {
-                CachedContext = cachedContext
-            };
-
-            // 1. 第一次呼叫：應觸發快取建立與快取引用
-            string response1 = provider.GenerateAsync(messages, options, "gemini-1.5-pro").GetAwaiter().GetResult();
-            ClassicAssert.AreEqual("gemini-response", response1);
-            ClassicAssert.AreEqual(1, provider.CacheCreateCalls.Count);
-
-            // 驗證快取建立參數（改走官方 SDK 後為型別化物件，不再解析 JSON 字串）
-            var firstCall = provider.CacheCreateCalls[0];
-            ClassicAssert.AreEqual("models/gemini-1.5-pro", firstCall.model);
-            ClassicAssert.AreEqual(expectedSystemText, firstCall.config.SystemInstruction?.Parts?[0]?.Text);
-            ClassicAssert.AreEqual("300s", firstCall.config.Ttl);
-
-            // 驗證 SDK seam 收到 cachedContent 且未附帶 systemInstruction
-            ClassicAssert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
-            ClassicAssert.IsNull(provider.LastConfig.SystemInstruction);
-
-            // 2. 第二次呼叫：快取已存在，應直接引用而不重複建立快取
-            provider.CacheCreateCalls.Clear();
-            string response2 = provider.GenerateAsync(messages, options, "gemini-1.5-pro").GetAwaiter().GetResult();
-            ClassicAssert.AreEqual("gemini-response", response2);
-            ClassicAssert.AreEqual(0, provider.CacheCreateCalls.Count);
-            ClassicAssert.AreEqual("cachedContents/mock-cache-id", provider.LastConfig.CachedContent);
-            ClassicAssert.IsNull(provider.LastConfig.SystemInstruction);
-        }
-
-        [Test]
-        public void TestGeminiSkipsExplicitCacheWhenContextTooSmall()
-        {
-            // 內容過小時建立顯式快取不划算（建立費 + 儲存費 > 節省），應略過快取改走一般 systemInstruction。
-            var mockSettings = new MockSettings();
-            mockSettings.ApiKeys["Gemini"] = "mock-key";
-
-            var provider = new TestGeminiProvider(mockSettings);
-            var messages = new List<ChatMessage>
-            {
-                new ChatMessage(ChatRole.System, "small-system"),
-                new ChatMessage(ChatRole.User, "hello")
-            };
-            var options = new RimLLMChatOptions
-            {
-                CachedContext = "tiny-context"
-            };
-
-            string response = provider.GenerateAsync(messages, options, "gemini-2.5-flash").GetAwaiter().GetResult();
-            ClassicAssert.AreEqual("gemini-response", response);
-
-            // 不應有任何建立快取的呼叫
-            ClassicAssert.AreEqual(0, provider.CacheCreateCalls.Count);
-
-            // SDK seam 未附 cachedContent，改以 systemInstruction 承載
-            ClassicAssert.IsNull(provider.LastConfig.CachedContent);
-            ClassicAssert.IsNotNull(provider.LastConfig.SystemInstruction);
-            ClassicAssert.AreEqual(
-                "small-system\n\ntiny-context",
-                provider.LastConfig.SystemInstruction.Parts?[0]?.Text);
-        }
-
-        [Test]
         public void TestGeminiConnectionTestUsesGemini35Flash()
         {
             var mockSettings = new MockSettings();
@@ -206,8 +126,25 @@ namespace RimLLM_Framework.Tests
 
             ClassicAssert.IsTrue(result.Success);
             ClassicAssert.AreEqual("gemini-3.5-flash", result.Model);
-            ClassicAssert.AreEqual("gemini-3.5-flash", provider.LastModel);
-            ClassicAssert.AreEqual(0, provider.CacheCreateCalls.Count);
+            ClassicAssert.IsNotNull(provider.InterceptedPayload);
+            var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+            ClassicAssert.AreEqual("gemini-3.5-flash", payload["model"]?.ToString());
+        }
+
+        [Test]
+        public void TestGeminiRequestsGoToOpenAiCompatibleEndpoint()
+        {
+            var mockSettings = new MockSettings();
+            mockSettings.ApiKeys["Gemini"] = "mock-key";
+
+            var provider = new TestGeminiProvider(mockSettings);
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
+            string response = provider.GenerateAsync(messages, null, "gemini-2.5-flash").GetAwaiter().GetResult();
+
+            ClassicAssert.AreEqual("ok", response);
+            ClassicAssert.IsTrue(
+                provider.InterceptedUrl.StartsWith("https://generativelanguage.googleapis.com/v1beta/openai"),
+                "Gemini 應經官方 OpenAI 相容端點存取，實際：" + provider.InterceptedUrl);
         }
 
         [Test]
@@ -302,7 +239,7 @@ namespace RimLLM_Framework.Tests
                 ClassicAssert.IsNull(payload["max_completion_tokens"]);
             }
 
-            // 4. Gemini: Gemini with ReasoningEffort.Low
+            // 4. Gemini：經 OpenAI 相容端點，以頂層 reasoning_effort 表達思考強度
             {
                 var provider = new TestGeminiProvider(mockSettings);
                 var options = new ChatOptions
@@ -310,35 +247,22 @@ namespace RimLLM_Framework.Tests
                     Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Low },
                     MaxOutputTokens = 2000
                 };
-                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                ClassicAssert.AreEqual(1024, provider.LastConfig.ThinkingConfig.ThinkingBudget);
+                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.5-flash").GetAwaiter().GetResult();
+                ClassicAssert.AreEqual("ok", response);
+                ClassicAssert.IsNotNull(provider.InterceptedPayload);
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                ClassicAssert.AreEqual("low", payload["reasoning_effort"]?.ToString());
+                ClassicAssert.AreEqual("gemini-2.5-flash", payload["model"]?.ToString());
             }
 
-            // 4b. Gemini: Gemini 1.5 Pro (non-thinking model) with ReasoningEffort.Low (should NOT include thinkingConfig)
+            // 4b. Gemini：明確關閉思考對應 effort "none"，由服務端套用預設行為
             {
                 var provider = new TestGeminiProvider(mockSettings);
-                var options = new ChatOptions
-                {
-                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Low },
-                    MaxOutputTokens = 2000
-                };
-                string response = provider.GenerateAsync(userMsgs, options, "gemini-1.5-pro").GetAwaiter().GetResult();
-                ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig);
-            }
-
-            // 4c. Gemini: Gemma 4 (thinking-level model) with ReasoningEffort.Medium (should include thinkingLevel)
-            {
-                var provider = new TestGeminiProvider(mockSettings);
-                var options = new ChatOptions
-                {
-                    Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium },
-                    MaxOutputTokens = 2000
-                };
-                string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                ClassicAssert.AreEqual(Google.GenAI.Types.ThinkingLevel.Medium, provider.LastConfig.ThinkingConfig.ThinkingLevel);
-                ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig.ThinkingBudget);
+                var options = new RimLLMChatOptions { DisableReasoning = true };
+                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.5-flash").GetAwaiter().GetResult();
+                ClassicAssert.AreEqual("ok", response);
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                ClassicAssert.AreEqual("none", payload["reasoning_effort"]?.ToString());
             }
 
             // 5. OpenRouter: DeepSeek R1 with ReasoningEffort.Medium
@@ -389,39 +313,14 @@ namespace RimLLM_Framework.Tests
                 ClassicAssert.IsNull(payload["reasoning_effort"]);
             }
 
-            // 6b. Gemini 2.0 Auto -> thinkingBudget = -1
+            // 6b. Gemini Auto -> 不干預，完全不送 reasoning_effort
             {
                 var provider = new TestGeminiProvider(mockSettings);
                 var options = new ChatOptions(); // Reasoning null
-                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                ClassicAssert.AreEqual(-1, provider.LastConfig.ThinkingConfig.ThinkingBudget);
-            }
-
-            // 6c. Gemini 2.0 None -> thinkingBudget = 0
-            {
-                var provider = new TestGeminiProvider(mockSettings);
-                var options = new RimLLMChatOptions { DisableReasoning = true };
-                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.0-flash-thinking-exp").GetAwaiter().GetResult();
-                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                ClassicAssert.AreEqual(0, provider.LastConfig.ThinkingConfig.ThinkingBudget);
-            }
-
-            // 6d. Gemma 4 Auto -> Omit thinkingLevel
-            {
-                var provider = new TestGeminiProvider(mockSettings);
-                var options = new ChatOptions();
-                string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                ClassicAssert.IsNull(provider.LastConfig.ThinkingConfig);
-            }
-
-            // 6e. Gemma 4 None -> thinkingLevel = "minimal"
-            {
-                var provider = new TestGeminiProvider(mockSettings);
-                var options = new RimLLMChatOptions { DisableReasoning = true };
-                string response = provider.GenerateAsync(userMsgs, options, "gemma-4-it-b-t").GetAwaiter().GetResult();
-                ClassicAssert.IsNotNull(provider.LastConfig.ThinkingConfig);
-                ClassicAssert.AreEqual(Google.GenAI.Types.ThinkingLevel.Minimal, provider.LastConfig.ThinkingConfig.ThinkingLevel);
+                string response = provider.GenerateAsync(userMsgs, options, "gemini-2.5-flash").GetAwaiter().GetResult();
+                ClassicAssert.AreEqual("ok", response);
+                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                ClassicAssert.IsNull(payload["reasoning_effort"]);
             }
 
             // 6i. OpenRouter Auto -> 不干預，完全不送 reasoning
@@ -512,10 +411,13 @@ namespace RimLLM_Framework.Tests
                 ClassicAssert.IsTrue(result.Contains("Hello, user!"));
             }
 
-            // 2. 測試 GeminiProvider (thought: true 欄位)
+            // 2. Gemini 經 OpenAI 相容端點：reasoning_content 同樣包裝成 <think>
             {
-                var provider = new TestGeminiProviderWithReasoning(mockSettings);
-                string result = provider.GenerateAsync(userMsgs, null, "gemini-thinking").GetAwaiter().GetResult();
+                var provider = new TestGeminiProvider(mockSettings);
+                provider.WireHandler.ResponseBody = "{" +
+                    "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"Response from Gemini\", " +
+                    "\"reasoning_content\": \"Thinking deeply...\"}}]}";
+                string result = provider.GenerateAsync(userMsgs, null, "gemini-2.5-flash").GetAwaiter().GetResult();
                 ClassicAssert.IsTrue(result.Contains("<think>"));
                 ClassicAssert.IsTrue(result.Contains("</think>"));
                 ClassicAssert.IsTrue(result.Contains("Thinking deeply..."));
@@ -636,7 +538,7 @@ namespace RimLLM_Framework.Tests
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             var options = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
-            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
+            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure));
             options.AdditionalProperties["rimllm_response_schema"] = schema.Json;
             options.AdditionalProperties["strict"] = schema.StrictCompatible;
             provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
@@ -664,7 +566,7 @@ namespace RimLLM_Framework.Tests
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
             var options = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
-            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(ComplexTestDataStructure), RimLLMSchemaProfile.OpenAI);
+            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(ComplexTestDataStructure));
             options.AdditionalProperties["rimllm_response_schema"] = schema.Json;
             options.AdditionalProperties["strict"] = schema.StrictCompatible;
             provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
@@ -695,7 +597,7 @@ namespace RimLLM_Framework.Tests
 
             var provider = new TestDeepSeekPayloadProvider(mockSettings);
 
-            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure), RimLLMSchemaProfile.OpenAI);
+            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure));
             var requestOptions = new ChatOptions { AdditionalProperties = new AdditionalPropertiesDictionary() };
             requestOptions.AdditionalProperties["rimllm_response_schema"] = schema.Json;
             requestOptions.AdditionalProperties["strict"] = schema.StrictCompatible;
@@ -879,102 +781,23 @@ namespace RimLLM_Framework.Tests
 
     public class TestGeminiProvider : GeminiProvider
     {
-        /// <summary>快取建立呼叫紀錄（走官方 SDK 的 Caches.CreateAsync seam）。</summary>
-        public List<(string model, CreateCachedContentConfig config)> CacheCreateCalls { get; } = new List<(string, CreateCachedContentConfig)>();
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
 
-        /// <summary>非串流 seam 最後收到的組態，供斷言 cachedContent / systemInstruction。</summary>
-        public GenerateContentConfig LastConfig { get; private set; }
+        public string InterceptedPayload => WireHandler.LastRequestBody;
 
-        public string LastModel { get; private set; }
+        public string InterceptedUrl => WireHandler.LastRequestUrl;
 
-        /// <summary>可注入的模擬回應；預設回傳含 text 的 response。</summary>
-        public GenerateContentResponse MockResponse { get; set; }
+        public TestGeminiProvider(IRimLLMSettings settings) : base(settings) { }
 
-        public TestGeminiProvider(IRimLLMSettings settings) : base(settings)
+        public override IChatClient CreateChatClient(string model)
         {
-            MockResponse = new GenerateContentResponse
-            {
-                Candidates = new List<Candidate>
-                {
-                    new Candidate
-                    {
-                        Content = new Content
-                        {
-                            Parts = new List<Part> { new Part { Text = "gemini-response" } }
-                        }
-                    }
-                }
-            };
-        }
-
-        protected override Client CreateGenAiClient(string apiKey)
-        {
-            return null;
-        }
-
-        protected override System.Threading.Tasks.Task<GenerateContentResponse> GenerateContentNativeAsync(
-            Client client,
-            string model,
-            List<Content> contents,
-            GenerateContentConfig config,
-            System.Threading.CancellationToken ct)
-        {
-            LastConfig = config;
-            LastModel = model;
-            return System.Threading.Tasks.Task.FromResult(MockResponse);
-        }
-
-        protected override bclasync::System.Collections.Generic.IAsyncEnumerable<GenerateContentResponse> GenerateContentStreamNativeAsync(
-            Client client,
-            string model,
-            List<Content> contents,
-            GenerateContentConfig config,
-            System.Threading.CancellationToken cancellationToken)
-        {
-            LastConfig = config;
-            LastModel = model;
-            var channel = System.Threading.Channels.Channel.CreateUnbounded<GenerateContentResponse>();
-            channel.Writer.TryWrite(MockResponse);
-            channel.Writer.TryComplete();
-            return channel.Reader.ReadAllAsync(cancellationToken);
-        }
-
-        protected override System.Threading.Tasks.Task<CachedContent> CreateCachedContentNativeAsync(
-            string apiKey,
-            string modelWithPrefix,
-            CreateCachedContentConfig config,
-            System.Threading.CancellationToken cancellationToken)
-        {
-            CacheCreateCalls.Add((modelWithPrefix, config));
-            return System.Threading.Tasks.Task.FromResult(new CachedContent
-            {
-                Name = "cachedContents/mock-cache-id",
-                ExpireTime = DateTime.UtcNow.AddMinutes(5)
-            });
-        }
-    }
-
-    public class TestGeminiProviderWithReasoning : TestGeminiProvider
-    {
-        public TestGeminiProviderWithReasoning(IRimLLMSettings settings) : base(settings)
-        {
-            MockResponse = new GenerateContentResponse
-            {
-                Candidates = new List<Candidate>
-                {
-                    new Candidate
-                    {
-                        Content = new Content
-                        {
-                            Parts = new List<Part>
-                            {
-                                new Part { Text = "Thinking deeply...", Thought = true },
-                                new Part { Text = "Response from Gemini" }
-                            }
-                        }
-                    }
-                }
-            };
+            var rawClient = WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
         }
     }
 

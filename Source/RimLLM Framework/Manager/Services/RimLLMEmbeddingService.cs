@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.ClientModel;
 using System.Threading;
 using System.Threading.Tasks;
-using Google.GenAI;
-using Google.GenAI.Types;
 using OpenAI;
 using OpenAI.Embeddings;
 using OpenAI.Models;
@@ -15,8 +13,8 @@ namespace RimLLM_Framework.Manager
 #pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
 #pragma warning disable S3267 // reason: foreach+if 在此可讀性高於 Where，刻意保留現狀
     /// <summary>
-    /// Embedding 向量運算服務。線上供應商一律透過官方 SDK 呼叫
-    /// （Google 走 Google.GenAI，Ollama 與自架服務走 OpenAI 相容的 EmbeddingClient）。
+    /// Embedding 向量運算服務。線上供應商一律透過 OpenAI SDK 呼叫
+    /// （Google 走官方 OpenAI 相容端點，Ollama 與自架服務走 OpenAI 相容的 EmbeddingClient）。
     /// </summary>
     public class RimLLMEmbeddingService
     {
@@ -26,10 +24,54 @@ namespace RimLLM_Framework.Manager
         public const string DisabledProviderId = "Disabled";
 
         /// <summary>
+        /// Google Gemini 經官方 OpenAI 相容端點存取時的預設服務根位址。
+        /// </summary>
+        private const string GoogleOpenAiCompatibleEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai";
+
+        /// <summary>
         /// 本地相容伺服器通常不驗證金鑰，但 OpenAI SDK 不接受空憑證，
         /// 因此在未設定金鑰時填入佔位字串。
         /// </summary>
         private const string PlaceholderApiKey = "not-required";
+
+        /// <summary>
+        /// 各 Embedding 供應商的 OpenAI 相容預設服務根位址。
+        /// 模型清單與向量運算兩條路徑共用同一張表，新增供應商時只改一處。
+        /// </summary>
+        private static readonly Dictionary<string, string> OpenAiCompatibleDefaultEndpoints =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "Google", GoogleOpenAiCompatibleEndpoint },
+                { "LocalAPI_Ollama", "http://localhost:11434/v1" },
+                { "LocalAPI_OpenAI", "http://localhost:1234/v1" },
+            };
+
+        /// <summary>
+        /// 查表取得供應商的預設服務根位址；不支援的供應商直接擲回例外，
+        /// 呼叫端不再各自寫 switch 分派。
+        /// </summary>
+        private static string ResolveDefaultEndpoint(string provider)
+        {
+            string defaultEndpoint;
+            if (!OpenAiCompatibleDefaultEndpoints.TryGetValue(provider ?? string.Empty, out defaultEndpoint))
+            {
+                throw new RimLLMException(LLMError.Unknown, $"不支援的 Embedding 供應商：{provider}");
+            }
+            return defaultEndpoint;
+        }
+
+        /// <summary>
+        /// 把 SDK 與 HTTP 層之外的未預期例外收斂為 Unknown。
+        /// ClientResultException（帶狀態碼）由呼叫端先行以 CreateException 精細映射，
+        /// 落到這裡的代表真的無從分類。
+        /// </summary>
+        private static RimLLMException WrapUnknownEmbeddingError(string operation, Exception ex)
+        {
+            return new RimLLMException(
+                LLMError.Unknown,
+                $"{operation}：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                innerException: ex);
+        }
 
         private readonly IRimLLMSettings _settings;
 
@@ -72,22 +114,8 @@ namespace RimLLM_Framework.Manager
             {
                 try
                 {
-                    switch (provider)
-                    {
-                        case "Google":
-                            return await ComputeGoogleEmbeddingAsync(text, model, apiKey, linkedCts.Token).ConfigureAwait(false);
-
-                        case "LocalAPI_Ollama":
-                            return await ComputeOpenAiCompatibleEmbeddingAsync(
-                                text, model, apiKey, endpoint, "http://localhost:11434/v1", linkedCts.Token).ConfigureAwait(false);
-
-                        case "LocalAPI_OpenAI":
-                            return await ComputeOpenAiCompatibleEmbeddingAsync(
-                                text, model, apiKey, endpoint, "http://localhost:1234/v1", linkedCts.Token).ConfigureAwait(false);
-
-                        default:
-                            throw new RimLLMException(LLMError.Unknown, $"不支援的 Embedding 供應商：{provider}");
-                    }
+                    return await ComputeOpenAiCompatibleEmbeddingAsync(
+                        text, model, apiKey, endpoint, ResolveDefaultEndpoint(provider), linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
@@ -107,8 +135,7 @@ namespace RimLLM_Framework.Manager
                 }
                 catch (Exception ex)
                 {
-                    // Google.GenAI 的 ClientError／ServerError 與 Gemini 對話路徑共用同一份轉譯。
-                    throw GeminiProvider.TranslateGoogleException(ex, "embedContent");
+                    throw WrapUnknownEmbeddingError("Embedding API", ex);
                 }
             }
         }
@@ -116,11 +143,9 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 取得目前 Embedding 供應商可用的模型清單。
         ///
-        /// Google 走 <c>models.list</c>，並以模型自己宣告的 <c>supportedActions</c> 是否包含
-        /// <c>embedContent</c> 精確篩選 —— 這是服務端給的事實，不是名稱猜測。
-        /// OpenAI 相容端點（Ollama、LM Studio 等）的 <c>/v1/models</c> 不回傳能力資訊，
-        /// 因此不做過濾，只把看起來像 embedding 的名稱排到前面，
-        /// 避免把使用者自行命名的本地模型藏起來。
+        /// 各供應商皆走 OpenAI 相容的 <c>/v1/models</c>，該端點不回傳能力資訊，
+        /// 因此不做精確過濾，只把看起來像 embedding 的名稱排到前面，
+        /// 避免把使用者自行命名的模型藏起來。
         /// </summary>
         public async Task<List<string>> FetchAvailableModelsAsync(CancellationToken cancellationToken = default)
         {
@@ -136,22 +161,8 @@ namespace RimLLM_Framework.Manager
 
             try
             {
-                switch (provider)
-                {
-                    case "Google":
-                        return await FetchGoogleEmbeddingModelsAsync(apiKey).ConfigureAwait(false);
-
-                    case "LocalAPI_Ollama":
-                        return await FetchOpenAiCompatibleModelsAsync(
-                            apiKey, _settings.EmbeddingEndpoint, "http://localhost:11434/v1").ConfigureAwait(false);
-
-                    case "LocalAPI_OpenAI":
-                        return await FetchOpenAiCompatibleModelsAsync(
-                            apiKey, _settings.EmbeddingEndpoint, "http://localhost:1234/v1").ConfigureAwait(false);
-
-                    default:
-                        throw new RimLLMException(LLMError.Unknown, $"不支援的 Embedding 供應商：{provider}");
-                }
+                return await FetchOpenAiCompatibleModelsAsync(
+                    apiKey, _settings.EmbeddingEndpoint, ResolveDefaultEndpoint(provider)).ConfigureAwait(false);
             }
             catch (ClientResultException ex)
             {
@@ -166,7 +177,7 @@ namespace RimLLM_Framework.Manager
             }
             catch (Exception ex)
             {
-                throw GeminiProvider.TranslateGoogleException(ex, "list models");
+                throw WrapUnknownEmbeddingError("Embedding 模型清單", ex);
             }
         }
 
@@ -177,35 +188,6 @@ namespace RimLLM_Framework.Manager
         public static string GetModelListKey(string embeddingProvider)
         {
             return "Embedding:" + (embeddingProvider ?? string.Empty);
-        }
-
-        private static async Task<List<string>> FetchGoogleEmbeddingModelsAsync(string apiKey)
-        {
-            using (var client = new Client(apiKey: apiKey))
-            {
-                var pager = await client.Models.ListAsync().ConfigureAwait(false);
-                var all = new List<string>();
-                var declaresEmbedding = new List<string>();
-
-                await foreach (Model item in pager)
-                {
-                    string name = item?.Name;
-                    if (string.IsNullOrEmpty(name)) continue;
-                    if (name.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
-                    {
-                        name = name.Substring("models/".Length);
-                    }
-
-                    all.Add(name);
-                    if (DeclaresEmbedContent(item.SupportedActions))
-                    {
-                        declaresEmbedding.Add(name);
-                    }
-                }
-
-                // 舊版端點可能不回傳 supportedActions，此時退回名稱排序而不是給出空清單。
-                return declaresEmbedding.Count > 0 ? declaresEmbedding : OrderEmbeddingCandidatesFirst(all);
-            }
         }
 
         /// <summary>
@@ -287,8 +269,7 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 批次計算多筆文字的 embedding 向量。
-        /// Google 的批次請求語意與 OpenAI 不同，因此統一採序列呼叫以維持行為一致。
+        /// 批次計算多筆文字的 embedding 向量。為維持各供應商行為一致，統一採序列呼叫。
         /// </summary>
         public async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(IEnumerable<string> texts, CancellationToken cancellationToken = default)
         {
@@ -301,41 +282,6 @@ namespace RimLLM_Framework.Manager
                 results.Add(await ComputeEmbeddingAsync(text, cancellationToken).ConfigureAwait(false));
             }
             return results;
-        }
-
-        private static async Task<RimLLMEmbeddingResult> ComputeGoogleEmbeddingAsync(
-            string text, string model, string apiKey, CancellationToken cancellationToken)
-        {
-            using (var client = new Client(apiKey: apiKey))
-            {
-                EmbedContentResponse response = await client.Models
-                    .EmbedContentAsync(model, text, null, cancellationToken)
-                    .ConfigureAwait(false);
-
-                ContentEmbedding embedding = response?.Embeddings != null && response.Embeddings.Count > 0
-                    ? response.Embeddings[0]
-                    : null;
-
-                // Google.GenAI 以 double 表示向量元素，框架統一使用 float。
-                List<double> values = embedding?.Values;
-
-                if (values == null)
-                {
-                    throw new RimLLMException(LLMError.InvalidResponse, "Google embedding 回應不含向量資料。");
-                }
-
-                var vector = new float[values.Count];
-                for (int i = 0; i < values.Count; i++)
-                {
-                    vector[i] = (float)values[i];
-                }
-
-                // tokenCount 只有 Gemini Enterprise 平台會回報，公開 API 一律留空。
-                double? tokenCount = embedding.Statistics?.TokenCount;
-                return new RimLLMEmbeddingResult(
-                    vector,
-                    tokenCount.HasValue ? (long)tokenCount.Value : (long?)null);
-            }
         }
 
         private static async Task<RimLLMEmbeddingResult> ComputeOpenAiCompatibleEmbeddingAsync(

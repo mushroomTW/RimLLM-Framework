@@ -88,13 +88,8 @@ namespace RimLLM_Framework.Tests
         public void TestSchemaBuilderCacheKeysAndEdgeCases()
         {
             // Null type
-            Assert.Throws<ArgumentNullException>(() => RimLLMSchemaBuilder.Build(null, RimLLMSchemaProfile.OpenAI));
+            Assert.Throws<ArgumentNullException>(() => RimLLMSchemaBuilder.Build(null));
             ClassicAssert.IsFalse(RimLLMSchemaBuilder.ContainsOpenEndedMap(null));
-
-            // Profile resolve
-            ClassicAssert.AreEqual(RimLLMSchemaProfile.Gemini, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.Gemini));
-            ClassicAssert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile(ProviderIds.OpenAI));
-            ClassicAssert.AreEqual(RimLLMSchemaProfile.OpenAI, RimLLMSchemaBuilder.ResolveProfile("custom-provider"));
 
             // ForceLegacy toggle
             bool originalLegacy = RimLLMSchemaBuilder.ForceLegacy;
@@ -103,16 +98,16 @@ namespace RimLLM_Framework.Tests
                 RimLLMSchemaBuilder.ForceLegacy = true;
                 ClassicAssert.IsTrue(RimLLMSchemaBuilder.ForceLegacy);
 
-                var legacyResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure), RimLLMSchemaProfile.OpenAI);
+                var legacyResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
                 ClassicAssert.IsNotNull(legacyResult);
                 ClassicAssert.IsTrue(legacyResult.UsedLegacyFallback);
 
                 RimLLMSchemaBuilder.ForceLegacy = false;
-                var normalResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure), RimLLMSchemaProfile.OpenAI);
+                var normalResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
                 ClassicAssert.IsNotNull(normalResult);
 
                 // Cache hit check
-                var cachedResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure), RimLLMSchemaProfile.OpenAI);
+                var cachedResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
                 ClassicAssert.AreSame(normalResult, cachedResult);
             }
             finally
@@ -324,7 +319,7 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public async Task TestGeminiChatClientAdapterCoverage()
+        public async Task TestGeminiChatClientCoverage()
         {
             var settings = new MockSettings();
             settings.ApiKeys["Gemini"] = "test-key";
@@ -337,6 +332,9 @@ namespace RimLLM_Framework.Tests
                 var resp = await client.GetResponseAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") });
                 ClassicAssert.IsNotNull(resp);
 
+                // 串流需以 SSE 格式回應，這是 OpenAI wire 協定的既有測試寫法。
+                provider.WireHandler.ResponseContentType = "text/event-stream";
+                provider.WireHandler.ResponseBody = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n";
                 var streamed = new List<string>();
                 await foreach (var update in client.GetStreamingResponseAsync(new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") }))
                 {

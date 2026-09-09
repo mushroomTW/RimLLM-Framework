@@ -149,11 +149,11 @@ PawnIncidentDecision decision = await client.GetResponseObjectAsync<PawnIncident
 ```
 
 > [!NOTE]
-> 請用這個而不是 MEAI 自己的 `GetResponseAsync<T>`。MEAI 的 `AIJsonUtilities.CreateJsonSchema` 在 RimWorld 的 Mono 環境根本無法執行（它會拉進該環境沒有的 `System.ComponentModel.DataAnnotations`），其原始 schema 形狀（聯集型別、`$ref`）也不被 Google Gemini 接受，而且 MEAI 沒有 JSON 修復路徑。RimLLM 驅動的是同一個底層 `JsonSchemaExporter`，但在其上加了正規化層與各供應商方言。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
+> 請用這個而不是 MEAI 自己的 `GetResponseAsync<T>`。MEAI 的 `AIJsonUtilities.CreateJsonSchema` 在 RimWorld 的 Mono 環境根本無法執行（它會拉進該環境沒有的 `System.ComponentModel.DataAnnotations`），而且 MEAI 沒有 JSON 修復路徑。RimLLM 驅動的是同一個底層 `JsonSchemaExporter`，但在其上加了正規化層。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
 
 ### 原生 Tool Calling（函式呼叫）
 
-RimLLM Framework 原生支援 Microsoft.Extensions.AI 的 Tool Calling（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`）。OpenAI 與 Google Gemini 均支援完整的雙向工具 Schema 與訊息協定轉譯。
+RimLLM Framework 原生支援 Microsoft.Extensions.AI 的 Tool Calling（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`）。所有供應商經共用的 OpenAI 協定路徑支援完整工具呼叫。
 
 #### 1. 自動迴圈執行模式（推薦，內建 Unity 主執行緒安全調度）
 
@@ -237,7 +237,7 @@ var options = new RimLLMChatOptions
 ChatResponse response = await client.GetResponseAsync(messages, options);
 ```
 
-`CachedContext` 不為空時，`EnableContextCaching` 會自動開啟。Gemini 會快取 `SystemPrompt + CachedContext`（TTL 300 秒），內容太小而不值得付建立費時則退回一般的 `systemInstruction`；OpenAI 則在服務端自動對重複前綴套用 prompt caching。
+`CachedContext` 不為空時，`EnableContextCaching` 會自動開啟。可重用的前綴會併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會自動對重複前綴打折。
 
 ### 你不必自己寫的部分
 
@@ -253,10 +253,10 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 跨 Mod 的流量控制 | 全域優先佇列與並行上限，避免多個 Mod 同時打 API 造成掉幀 |
 | 費用控管 | 每日預算，可選硬性阻擋／模擬回應／改用免費模型／詢問玩家 |
 | 用量與費用回報 | Debug 分頁的各供應商 Token 與成本看板 |
-| 推理模型的差異 | `reasoning_content` 與 Gemini 的 `thought` 統一正規化為 MEAI 的 `TextReasoningContent` |
+| 推理模型的差異 | `reasoning_content` 統一正規化為 MEAI 的 `TextReasoningContent` |
 | 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，並具備 LLM 輔助的二次修復 |
 | 主執行緒切換 | 串流 chunk 與日誌寫入都已派送回 Unity 主執行緒 |
-| 原生 Tool Calling 與主執行緒排程 | Gemini／OpenAI 雙向工具轉譯；工具委派自動排入 Unity 主執行緒 |
+| 原生 Tool Calling 與主執行緒排程 | 所有供應商經 OpenAI 協定送出工具定義；工具委派自動排入 Unity 主執行緒 |
 
 ### API 表面速查
 
@@ -302,25 +302,24 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * `RecordLog` 觸發的 Scribe 寫入會透過 `RimLLMDispatcher` 派送回 Unity 主執行緒，並套用 15 秒寫入節流，避免背景存檔造成崩潰或 TPS 掉幀。
 8. **推理模型與思維鏈標記**
    * 原生支援 **Gemini 3.7 Flash / 3.1 Pro (Thinking)**、**OpenAI GPT-5.6 Sol / GPT-5.5**、**DeepSeek-V4-Pro / Flash**、**Grok 4.6**、**Qwen3.8-Max**、**Kimi K3**、**GLM-5.3-Flash** 等現代深度推理與思考模型。
-   * 框架會把 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`、Gemini 的 `thought` 欄位）正規化成 MEAI 原生的 `TextReasoningContent`，放在 `ChatResponse.Messages` 與 `ChatResponseUpdate.Contents` 裡交給你。它刻意**不**被揉進 `ChatResponse.Text`：否則每一個讀 `Text` 的呼叫端（結構化輸出、快取鍵、JSON 解析）都得先把標籤剥掉。要保留或丟棄，依內容型別過濾即可。
+   * 框架會把 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`）正規化成 MEAI 原生的 `TextReasoningContent`，放在 `ChatResponse.Messages` 與 `ChatResponseUpdate.Contents` 裡交給你。它刻意**不**被揉進 `ChatResponse.Text`：否則每一個讀 `Text` 的呼叫端（結構化輸出、快取鍵、JSON 解析）都得先把標籤剥掉。要保留或丟棄，依內容型別過濾即可。
    * GUI 對話測試頁自己從這些內容組出 `<think>...</think>` 標籤，再將思維鏈以灰色斜體呈現。那個扁平化是呈現，不是協定。
-   * **推理強度控制**：預設為「自動」，讓各供應商執行自己的自適應或動態思考設定（Gemini 的 `thinkingBudget = -1`、OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
-   * **強度對所有供應商、所有模型都有效**。線上格式由各供應商自行宣告，框架不再靠模型名猜測：頂層 `reasoning_effort`（OpenAI、xAI、Groq、MiniMax、NVIDIA、OpenAI 相容端點）、OpenRouter 的統一 `reasoning` 物件、`thinking: {type}` 加強度（DeepSeek、Z.ai、Kimi）、`enable_thinking` 搭配 `thinking_budget`（Qwen），以及 Gemini 的 `thinkingConfig`。詞彙差異逐家對應 —— Kimi 只吃 low/high/max，xAI 的推理無法關閉，關閉請求在該家會被忽略而不是換來 400。
+   * **推理強度控制**：預設為「自動」，維持服務端自己的預設行為（OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
+   * **強度對所有供應商、所有模型都有效**。線上格式由各供應商自行宣告，框架不再靠模型名猜測：頂層 `reasoning_effort`（OpenAI、經 OpenAI 相容端點存取的 Gemini、xAI、Groq、MiniMax、NVIDIA、OpenAI 相容端點）、OpenRouter 的統一 `reasoning` 物件、`thinking: {type}` 加強度（DeepSeek、Z.ai、Kimi）、`enable_thinking` 搭配 `thinking_budget`（Qwen）。詞彙差異逐家對應 —— Kimi 只吃 low/high/max，xAI 的推理無法關閉，關閉請求在該家會被忽略而不是換來 400。
    * **未知模型先樂觀送出，再從服務端學習**。以模型名列白名單必然腐化：框架先前只對 `o1`/`o3` 開頭的模型送出強度，其餘一律靜默丟棄。現在除了少數已知不具思考能力的系列之外一律送出；若服務端以 400 拒絕該參數，框架會記下這組 (供應商, 模型)、去掉參數重打一次，並在本次遊戲執行期間不再送。漏掉一個模型的代價因此是一次重試，而不是永久失效。同一套機制也涵蓋 `temperature` —— GPT-5 等推理模型會直接拒絕它。記憶只存在於本次執行，模型日後支援了，重開遊戲就會重新嘗試。
    * **Markdown 呈現**：對話測試頁會把模型回覆轉成 Unity 舊版 rich text，標題、粗體、斜體、清單、引用、連結與程式碼區塊會以結構呈現，而不是印出 `**`、`` ` `` 這些原始符號。舊版 IMGUI 只認得 `b`、`i`、`size`、`color`、`material`、`quad` 六個標籤，沒有對應標籤的結構（縮排、表格）以空白與符號近似。底線斜體刻意不支援，因為會與 `snake_case` 識別字衝突。
 9. **上下文快取與 Prompt 快取**
-   * 原生支援 **Gemini context caching** 與 **OpenAI prompt caching**。在 `RimLLMChatOptions` 設定 `CachedContext`，框架會提交 `SystemPrompt + CachedContext` 進行快取，大幅降低高頻重複請求的輸入 Token 成本與延遲。
-   * **成本防呆**：Gemini 顯式快取有最小尺寸門檻，內容過小時框架會跳過快取改用 `systemInstruction`，避免建立費永遠回收不了。同一份上下文的快取建立也以鎖序列化，防止產生重複資源。
-   * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`）並套用折扣費率估算成本，讓成本面板反映真實節省。
+   * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
+   * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位）並套用折扣費率估算成本，讓成本面板反映真實節省。
    * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 每一則訊息（角色、文字，以及工具結果之類的非文字內容）、目標模型、最低相容等級、快取上下文、temperature、最大輸出 Token、思考強度、是否關閉思考、結構化輸出型別，以及所有會原樣送達供應商的取樣參數（`TopP`、`TopK`、`FrequencyPenalty`、`PresencePenalty`、`Seed`、`StopSequences`）—— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰交給 `Microsoft.Extensions.Caching.Memory.MemoryCache`（版本釘 `10.0.11`，以對齊 MEAI 已經帶進來的 `Caching.Abstractions` 組件識別），框架只負責判定「什麼算同一個請求」。只存在記憶體中，不寫入存檔。
 10. **Embedding SDK**
     * 框架公開由 Google、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
-    * 三種線上來源全走官方 SDK：Google 使用 `Google.GenAI` 的 `EmbedContentAsync`；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。
-    * 設定頁可直接抓取可用模型清單，不必憑記憶輸入名稱。Google 依模型自己宣告的 `supportedActions` 是否包含 `embedContent` 精確篩選，只列出真正的 embedding 模型。OpenAI 相容端點的 `/v1/models` 不回傳能力資訊，因此該清單只**排序**（把像 embedding 的名稱排前面）而不過濾 —— 本地伺服器的模型名由使用者自訂，過濾會把合法選項藏起來。沒有 `/v1/models` 的伺服器仍可手動輸入。
+    * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。
+    * 設定頁可直接抓取可用模型清單，不必憑記憶輸入名稱。OpenAI 相容端點的 `/v1/models` 不回傳能力資訊，因此該清單只**排序**（把像 embedding 的名稱排前面）而不過濾 —— 伺服器的模型名可能由使用者自訂，過濾會把合法選項藏起來。沒有 `/v1/models` 的伺服器仍可手動輸入。
     * Embedding 屬計費 API，因此與一般生成請求共用同一套防濫用檢查；其金鑰採用與供應商金鑰相同的 AES 加密。
 11. **原生 Tool Calling（函式呼叫）**
     * 完整支援 Microsoft.Extensions.AI Tool Calling 標準（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`、`FunctionResultContent`）。
-    * 針對 OpenAI 與 Google Gemini 模型提供雙向工具 Schema 與訊息協定轉譯。
+    * 完整支援 Microsoft.Extensions.AI Tool Calling 標準（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`、`FunctionResultContent`），所有供應商經共用的 OpenAI 協定路徑提供。
     * 提供 `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`，自動將工具叫用委派排入 Unity 主執行緒執行，杜絕 RimWorld 跨執行緒崩潰風險。
     * 當請求中包含工具時，自動繞過本地回應快取以確保狀態副作用一致性。
 
@@ -355,23 +354,23 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 ### 5. 容錯的結構化輸出（structured output 與 JSON repair）
 
 * 開發者經常需要模型回傳特定的 JSON 結構。
-* 內建的 OpenAI 與 Gemini 供應商優先使用官方 SDK 的原生結構化輸出：OpenAI 透過 `IChatClient` 的 JSON Schema response format，Gemini 透過 `ResponseMimeType = "application/json"` 加 `ResponseSchema`。框架會先驗證必要成員與 null 狀態，再反序列化為目標 C# 物件。
-* schema 本身會依供應商方言產生 —— 所有成員都列入 `required`，選填性以 `["integer","null"]` 聯集（OpenAI）或 `nullable: true`（Gemini）表達。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
+* 內建供應商優先使用官方 SDK 的原生結構化輸出，經 `IChatClient` 的 JSON Schema response format 送出（Gemini 經其 OpenAI 相容端點同樣適用）。框架會先驗證必要成員與 null 狀態，再反序列化為目標 C# 物件。
+* schema 本身只有一種 OpenAI 相容方言 —— 所有成員都列入 `required`，選填性以 `["integer","null"]` 聯集表達。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
 * `RepairJson` 回退機制僅在供應商不支援原生 Schema、服務拒絕 Schema，或模型仍回傳格式錯誤內容時啟用。它處理 Markdown 圍籬（如 ` ```json `）、未閉合括號、尾隨逗號與 JSON 區塊擷取。
 
 ### 6. 官方 SDK 與供應商職責
 
 * 主專案與測試專案維持 `net472`；RimWorld Mod 不需要遷移到 .NET 8。官方 SDK 的相依 DLL 隨 Mod 發佈，並由 `ProviderSdkIntegrationTests` 逐一載入並反射，讓遺漏的間接相依組件在建置階段就失敗而不是在遊戲裡。要注意這項檢查跑在真正的 .NET Framework 上，因此拓不到「在這裡存在、但 RimWorld 的 Mono BCL 沒有」的型別 ——下方的 `DataAnnotations` 就是這種失敗，只能靠實際啟動遊戲才抓得到。雖然 .NET Framework 將 `System.ValueTuple` 視為框架組件，建置仍明確部署其 `4.0.5.0` DLL，以避免 RimWorld 的 Mono 反射 MEAI 時發生 `ReflectionTypeLoadException`。
 * **OpenAI** 使用 `OpenAI` SDK `2.13.0` 搭配 `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.9.0`。針對 OpenAI SDK 2.13.0 與 `System.ClientModel` 1.15.0 在實驗性 `ChatCompletionOptions.Patch` API 內部因 `PropagateSet` 缺乏 null 防護而擲出 `NullReferenceException` 的問題，框架透過 `OpenAIPatchExtensions.DisablePatchPropagators()` 清除傳播委派，安全恢復底層 JSON Patch 寫入機制以注入 `reasoning_effort`、`response_format`、`max_tokens` 與 `models` 欄位。內建的 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用 manager。只有真正實作 OpenAI Chat Completions 協定的端點（LM Studio、Ollama、vLLM…）才適合 OpenAI 相容轉接。
-* **Gemini** 使用官方 `Google.GenAI` `1.21.0`，以 API 金鑰建立 Gemini Developer API 用戶端。文字、串流、原生 Schema、思考、上下文快取與安全設定全走原生 `Google.GenAI` 路徑（在程式碼中以測試縫隔離：`CreateGenAiClient`、`GenerateContentNativeAsync`、`GenerateContentStreamNativeAsync`、`CreateCachedContentNativeAsync`）。Gemini 絕不以 `OpenAI.Chat.ChatClient` 模擬。
-* **每個內建供應商都走官方 SDK**：OpenAI 家族（OpenAI、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）使用 `OpenAI` SDK `2.13.0` 加 MEAI 的 `IChatClient`；Gemini 走原生 `Google.GenAI` 路徑。模型清單使用 `OpenAIModelClient.GetModelsAsync()`，而非自行拼 `/models` URL 再解析 JSON。
-* **框架已無任何 raw HTTP 路徑。** 建立 Gemini `cachedContents` 顯式快取是最後一處，現已改走 `Client.Caches.CreateAsync`，回傳型別化的 `CachedContent`（`ExpireTime` 直接是 `DateTime?`，不需要再解析字串）。本文件先前宣稱 `Caches` 只暴露 `ListAsync` —— 那是錯的，而且從未被驗證過；對實際組件反射顯示 `CreateAsync`、`GetAsync`、`UpdateAsync`、`DeleteAsync`、`ListAsync` 全是公開成員。移除該路徑後，整個 HTTP 傳輸層與認證 Header 處理都一併刪除。
-* **JSON Schema 產生走 `System.Text.Json` 的 `JsonSchemaExporter` 加一層正規化**（`RimLLMSchemaBuilder`），分三階段。**Stage A** 由 exporter 匯出完整 JSON Schema。**Stage B** 正規化成所有供應商都接受的受限子集：解析並展開 `$ref` 指標、截斷循環與過深巢狀、把可為 null 的聯集收斂成單一 `type`、只保留關鍵字白名單。**Stage C** 套用目標供應商的方言。方言有兩種，取自 `LLMProviderCapabilities.PreferredSchemaProfile`，第三方供應商因此能宣告自己的方言：OpenAI 把選填成員寫成 `["integer","null"]` 聯集，Gemini 則寫成單一 `type` 加 `nullable: true`。
+* **Gemini** 經 Google 官方 OpenAI 相容端點（`https://generativelanguage.googleapis.com/v1beta/openai/`）存取，文字、串流、原生 Schema、思考與工具呼叫全數重用共用的 `OpenAIProvider` 實作。Gemini 只是宣告端點與預設測試模型的薄子類 —— 與 Groq、Qwen 等供應商同形。
+* **所有內建供應商都走 OpenAI SDK**：整個家族（OpenAI、Gemini、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）使用 `OpenAI` SDK `2.13.0` 加 MEAI 的 `IChatClient`。模型清單使用 `OpenAIModelClient.GetModelsAsync()`，而非自行拼 `/models` URL 再解析 JSON。
+* **框架已無任何 raw HTTP 路徑，也不再有第二套 SDK。** 移除最後的原生 `Google.GenAI` 路徑後，整個第二套傳輸層、認證處理，以及 Google `cachedContents` 顯式快取機制一併刪除：`CachedContext` 一律以系統訊息內文送達，快取與否由供應商在服務端對重複前綴自行處理。
+* **JSON Schema 產生走 `System.Text.Json` 的 `JsonSchemaExporter` 加一層正規化**（`RimLLMSchemaBuilder`），分三階段。**Stage A** 由 exporter 匯出完整 JSON Schema。**Stage B** 正規化成所有供應商都接受的受限子集：解析並展開 `$ref` 指標、截斷循環與過深巢狀、把可為 null 的聯集收斂成單一 `type`、只保留關鍵字白名單。**Stage C** 套用唯一的 OpenAI 相容方言，選填成員寫成 `["integer","null"]` 聯集。
   * **直接呼叫 exporter，不經過 MEAI 的 `AIJsonUtilities.CreateJsonSchema` 包裝層。** 該包裝層出貨的是 `net462` 資產，會參考 `System.ComponentModel.DataAnnotations`（用來讀 `[EmailAddress]`、`[Range]` 之類的驗證屬性豐富 schema）。RimWorld 的 Mono BCL 沒有那個組件，所以實機上會拋 `TypeLoadException: Could not resolve type … 'EmailAddressAttribute' in assembly 'System.ComponentModel.DataAnnotations, Version=4.0.0.0'`，整份 schema 產生靜默降級成舊的反射實作 —— 而單元測試跑在有 GAC 的真 .NET Framework 上，完全看不出來。`System.Text.Json` 沒有該參考，而且它就是 MEAI 內部使用的同一個引擎，直呼不損失任何能力。MEAI 唯一多做而仍需要的 `[Description]`，改由 Stage B 自行讀取。這條限制由 `SchemaGenerationEngineHasNoDataAnnotationsDependency` 釘住。
   * 直呼 exporter 有兩個後果：列舉只會輸出 `{"enum":[…]}` 而不帶 `type`（Stage B 由列舉值反推型別，否則所有列舉成員都會消失），而且它完全沒有 `description` 的概念（Stage B 自行讀取成員與類別上的 `[Description]`）。
   * **循環在 CLR 型別層截斷，而非 JSON pointer 層。** exporter 會把遞迴成員先完整展開一輪、其中才出現指回祖先的 `$ref`，只靠 pointer 偵測就會多送一整層 —— 實測遞迴測試型別從 789 字元漲到 3119 字元，而那是每次請求都要付的 prompt token。由 `RecursiveSchemaStaysCompact` 守住。
-  * **巢狀深度上限依方言而異。** OpenAI 的 strict structured output 最多允許 5 層巢狀（另有全域 100 個 property 的上限），超過會被服務端拒絕並靜默降級成提示式 JSON，因此 OpenAI 方言在 5 層截斷；Gemini 沒有這條限制，維持框架整體的 8 層。注意 100 個 property 的上限目前**尚未**強制。
-  * exporter 的原始輸出不能直接送。`Google.GenAI.Types.Schema.Type` 是單一列舉值，聯集型別會讓 `Schema.FromJson` **靜默回傳 null** —— Gemini 於是完全收不到 schema，而且沒有任何錯誤浮上來。這一點由一對迴歸測試釘住（`RawMeaiSchemaIsRejectedByGoogleSchemaFromJson` 與 `GeminiProfileSchemaIsAcceptedByGoogleSchemaFromJson`），不再只是本文件裡的一句宣稱。
+  * **巢狀深度上限跟隨 strict structured output 的上限。** OpenAI 的 strict structured output 最多允許 5 層巢狀（另有全域 100 個 property 的上限），超過會被服務端拒絕並靜默降級成提示式 JSON，因此產生器在 5 層截斷。注意 100 個 property 的上限目前**尚未**強制。
+  * exporter 的原始輸出不能直接送：可為 null 的成員會寫成 `["string","null"]` 聯集，送出前必須先正規化；`$ref` 指標也必須先解析 —— 這兩點由單元測試覆蓋，不再只是本文件裡的一句宣稱。
   * `$ref` **不只**用於遞迴 —— MEAI 也用它來為重複出現的型別去重，所以一律截斷 `$ref` 會靜默刪掉正常成員。正規化層會解析 JSON pointer，只有在它指向目前展開路徑上的祖先時才視為循環。
   * **所有成員一律列入 `required`**，選填性改由型別表達。OpenAI 的 strict structured output 要求 `required` 涵蓋每一個 property，所以舊行為（`Nullable<T>` 不列入 `required` 卻仍送 `strict: true`）在服務端會被拒絕，並被靜默降級成提示式 JSON。
   * 由於 schema 由 System.Text.Json 的 exporter 產生、反序列化卻是 Newtonsoft，兩者的成員契約由一個 contract modifier 對齊（納入欄位、尊重 `[JsonIgnore]`、套用 `[JsonProperty]` 名稱、排除唯讀成員），並有測試斷言兩邊成員集合一致。**結構化輸出的型別請勿使用自訂的 Newtonsoft `JsonConverter`** —— 它會改變 wire 形狀，而 exporter 看不到。
@@ -394,13 +393,13 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 本模組原始碼以 **MIT License** 釋出 —— Copyright (c) 2026 **mushroomTW**。詳見 [LICENSE](LICENSE)。
 
-隨附於 `Assemblies/` 的相依組件維持各自的授權：Microsoft.Extensions.AI、OpenAI .NET SDK 與 Newtonsoft.Json 為 MIT；Google.GenAI 與 Google.Apis.\* 為 Apache-2.0。RimWorld 本身的組件屬於 Ludeon Studios，本模組不予散布。
+隨附於 `Assemblies/` 的相依組件維持各自的授權：Microsoft.Extensions.AI、OpenAI .NET SDK 與 Newtonsoft.Json 為 MIT。RimWorld 本身的組件屬於 Ludeon Studios，本模組不予散布。
 
 ---
 
 ## 🧪 單元測試與驗證
 
-專案在 `Source/RimLLM Framework.Tests`（與主專案並列的獨立專案）附有完整的單元測試套件，涵蓋 AES 加解密、模型 Fallback、JSON Schema 產生（正規化、各供應商方言，以及與 `Google.GenAI` `Schema.FromJson` 的成對對照測試）與修復、HTTP 錯誤對照、`Retry-After` 解析、`ChatOptions` 複製、串流重試與預算控制。
+專案在 `Source/RimLLM Framework.Tests`（與主專案並列的獨立專案）附有完整的單元測試套件，涵蓋 AES 加解密、模型 Fallback、JSON Schema 產生（正規化）與修復、HTTP 錯誤對照、`Retry-After` 解析、`ChatOptions` 複製、串流重試與預算控制。
 
 > **前置需求**：測試在執行期需要 RimWorld 的 `Assembly-CSharp` 與 Unity DLL。這些檔案不可轉散布，因此需要本機安裝 RimWorld。
 > 預設路徑為 `C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed`，

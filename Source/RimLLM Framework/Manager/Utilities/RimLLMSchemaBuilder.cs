@@ -17,19 +17,6 @@ namespace RimLLM_Framework.Manager
 {
 #pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
-    /// 送往 provider 的 JSON Schema 方言。
-    /// 兩家對「可為 null 的成員」要求不同的寫法，其餘形狀相同。
-    /// </summary>
-    public enum RimLLMSchemaProfile
-    {
-        /// <summary>OpenAI 家族：選填成員以 <c>"type": ["integer","null"]</c> 聯集表達。</summary>
-        OpenAI,
-
-        /// <summary>Gemini：<c>type</c> 只能是單一值，選填成員以 <c>"nullable": true</c> 表達。</summary>
-        Gemini
-    }
-
-    /// <summary>
     /// 一次 schema 產生的完整結果。不可變，因此可直接由快取共用而不需複製。
     /// </summary>
     public sealed class RimLLMSchemaResult
@@ -61,33 +48,24 @@ namespace RimLLM_Framework.Manager
     /// 管線分三段：
     /// <list type="number">
     /// <item>Stage A：<c>System.Text.Json.Schema.JsonSchemaExporter</c> 產生完整的 JSON Schema。</item>
-    /// <item>Stage B：正規化成所有 provider 都吃得下的受限子集 —— 展開 <c>$ref</c>、截斷循環與過深巢狀、
+    /// <item>Stage B：正規化成 provider 吃得下的受限子集 —— 展開 <c>$ref</c>、截斷循環與過深巢狀、
     /// 把可為 null 的聯集收斂成單一 <c>type</c>、補上 <c>[Description]</c>、只保留關鍵字白名單。</item>
-    /// <item>Stage C：套用目標 provider 的方言（選填成員寫成聯集或 <c>nullable</c>）。</item>
+    /// <item>Stage C：套用目標 provider 的方言（選填成員寫成聯集）。</item>
     /// </list>
     ///
     /// 為什麼不能直接送 exporter 的原始輸出：它把可為 null 的成員寫成 <c>"type": ["string","null"]</c>，
-    /// 而 <c>Google.GenAI.Types.Schema.Type</c> 是單一列舉值，<c>Schema.FromJson</c> 會靜默回傳 null。
-    /// 見 <c>ProviderSdkIntegrationTests.RawMeaiSchemaIsRejectedByGoogleSchemaFromJson</c>。
+    /// 而舊的 Gemini 原生路徑（Google.GenAI）要求單一列舉值，靜默拒收聯集。
+    /// 現全供應商皆走 OpenAI 相容端點，統一使用聯集寫法。
     /// </summary>
     public static class RimLLMSchemaBuilder
     {
         /// <summary>
         /// Schema 遞迴的最大深度。超過此深度的巢狀成員會被略過，避免病態型別造成堆疊耗盡。
-        /// </summary>
-        public const int MaxSchemaDepth = 8;
-
-        /// <summary>
         /// OpenAI 的 strict structured output 明訂 schema 最多 5 層巢狀（另有全域 100 個 property 的上限）。
         /// 超過就會被服務端拒絕，接著被 <c>IsNativeSchemaRejected</c> 靜默降級成提示式 JSON ——
-        /// 與其送出已知會被拒的 schema，不如在此先截斷。Gemini 沒有這條限制，因此不受影響。
+        /// 與其送出已知會被拒的 schema，不如在此先截斷。
         /// </summary>
         public const int OpenAIMaxSchemaDepth = 5;
-
-        private static int ResolveMaxDepth(RimLLMSchemaProfile profile)
-        {
-            return profile == RimLLMSchemaProfile.Gemini ? MaxSchemaDepth : OpenAIMaxSchemaDepth;
-        }
 
         /// <summary>Stage B 用來標記「這個成員是 <c>Nullable&lt;T&gt;</c>」的私有關鍵字，Stage C 會翻譯並移除它。</summary>
         private const string OptionalMarker = "x-rimllm-optional";
@@ -128,38 +106,13 @@ namespace RimLLM_Framework.Manager
             }
         }
 
-        private readonly struct ResultCacheKey : IEquatable<ResultCacheKey>
-        {
-            public readonly Type Type;
-            public readonly RimLLMSchemaProfile Profile;
-
-            public ResultCacheKey(Type type, RimLLMSchemaProfile profile)
-            {
-                Type = type;
-                Profile = profile;
-            }
-
-            public bool Equals(ResultCacheKey other)
-            {
-                return Type == other.Type && Profile == other.Profile;
-            }
-
-            public override bool Equals(object obj)
-            {
-                return obj is ResultCacheKey other && Equals(other);
-            }
-
-            public override int GetHashCode()
-            {
-                unchecked
-                {
-                    return ((Type != null ? Type.GetHashCode() : 0) * 397) ^ (int)Profile;
-                }
-            }
-        }
-
         private static readonly ConcurrentDictionary<CanonicalCacheKey, JObject> CanonicalCache = new ConcurrentDictionary<CanonicalCacheKey, JObject>();
-        private static readonly ConcurrentDictionary<ResultCacheKey, RimLLMSchemaResult> ResultCache = new ConcurrentDictionary<ResultCacheKey, RimLLMSchemaResult>();
+
+        /// <summary>
+        /// 最終結果快取。Stage C 只剩唯一的 OpenAI 相容方言，結果完全由型別決定，
+        /// 因此直接以 <c>Type</c> 為鍵 —— 方言時代的包裝 struct 已刪除。
+        /// </summary>
+        private static readonly ConcurrentDictionary<Type, RimLLMSchemaResult> ResultCache = new ConcurrentDictionary<Type, RimLLMSchemaResult>();
 
         private static readonly object OptionsLock = new object();
         private static JsonSerializerOptions _serializerOptions;
@@ -193,33 +146,33 @@ namespace RimLLM_Framework.Manager
         public static string LastExporterFailure { get; private set; }
 
         /// <summary>
-        /// 產生指定型別在目標 provider 方言下的 schema。結果不可變，可直接共用。
+        /// 產生指定型別的 schema。結果不可變，可直接共用。
+        /// 全內建供應商皆走 OpenAI 相容端點，共用同一種方言。
         /// </summary>
-        public static RimLLMSchemaResult Build(Type type, RimLLMSchemaProfile profile)
+        public static RimLLMSchemaResult Build(Type type)
         {
             if (type == null) throw new ArgumentNullException(nameof(type));
 
-            var cacheKey = new ResultCacheKey(type, profile);
-            if (ResultCache.TryGetValue(cacheKey, out RimLLMSchemaResult cached))
+            if (ResultCache.TryGetValue(type, out RimLLMSchemaResult cached))
             {
                 return cached;
             }
 
-            JObject canonical = GetCanonical(type, ResolveMaxDepth(profile), out bool usedLegacyFallback);
-            JObject shaped = ApplyProfile(canonical, profile);
+            JObject canonical = GetCanonical(type, OpenAIMaxSchemaDepth, out bool usedLegacyFallback);
+            JObject shaped = ApplyOpenAiDialect(canonical);
 
             bool containsOpenEndedMap = HasOpenEndedMap(shaped);
-            bool strictCompatible = !containsOpenEndedMap && !usedLegacyFallback && profile != RimLLMSchemaProfile.Gemini;
+            bool strictCompatible = !containsOpenEndedMap && !usedLegacyFallback;
 
             var result = new RimLLMSchemaResult(shaped.ToString(), containsOpenEndedMap, strictCompatible, usedLegacyFallback);
-            ResultCache[cacheKey] = result;
+            ResultCache[type] = result;
             return result;
         }
 
         /// <summary>產生 schema 的 JSON 字串。</summary>
-        public static string BuildJson(Type type, RimLLMSchemaProfile profile)
+        public static string BuildJson(Type type)
         {
-            return Build(type, profile).Json;
+            return Build(type).Json;
         }
 
         /// <summary>
@@ -229,18 +182,7 @@ namespace RimLLM_Framework.Manager
         public static bool ContainsOpenEndedMap(Type type)
         {
             if (type == null) return false;
-            return Build(type, RimLLMSchemaProfile.OpenAI).ContainsOpenEndedMap;
-        }
-
-        /// <summary>
-        /// 由 provider id 推導方言。只在拿不到 provider 實例（因此讀不到
-        /// <c>LLMProviderCapabilities.PreferredSchemaProfile</c>）時使用。
-        /// </summary>
-        public static RimLLMSchemaProfile ResolveProfile(string providerId)
-        {
-            return string.Equals(providerId, ProviderIds.Gemini, StringComparison.OrdinalIgnoreCase)
-                ? RimLLMSchemaProfile.Gemini
-                : RimLLMSchemaProfile.OpenAI;
+            return Build(type).ContainsOpenEndedMap;
         }
 
         // ---------------------------------------------------------------------
@@ -249,7 +191,6 @@ namespace RimLLM_Framework.Manager
 
         private static JObject GetCanonical(Type type, int maxDepth, out bool usedLegacyFallback)
         {
-            // 深度上限依方言而異，因此必須進 cache key —— 否則 Gemini 會拿到被 OpenAI 上限截斷過的樹。
             var cacheKey = new CanonicalCacheKey(type, maxDepth);
             if (CanonicalCache.TryGetValue(cacheKey, out JObject cached))
             {
@@ -705,19 +646,19 @@ namespace RimLLM_Framework.Manager
         }
 
         // ---------------------------------------------------------------------
-        // Stage C：provider 方言
+        // Stage C：唯一的 OpenAI 相容方言（選填成員寫成 ["T","null"] 聯集）
         // ---------------------------------------------------------------------
 
-        private static JObject ApplyProfile(JObject canonical, RimLLMSchemaProfile profile)
+        private static JObject ApplyOpenAiDialect(JObject canonical)
         {
             var shaped = (JObject)canonical.DeepClone();
             shaped.Remove(LegacyMarker);
-            ApplyProfileRecursive(shaped, profile);
+            ApplyOpenAiDialectRecursive(shaped);
             return shaped;
         }
 #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
 
-        private static void ApplyProfileRecursive(JObject node, RimLLMSchemaProfile profile)
+        private static void ApplyOpenAiDialectRecursive(JObject node)
         {
             if (node == null) return;
 
@@ -727,25 +668,18 @@ namespace RimLLM_Framework.Manager
 
             if (optional)
             {
-                if (profile == RimLLMSchemaProfile.Gemini)
+                JToken type = node["type"];
+                if (type != null && type.Type == JTokenType.String)
                 {
-                    node["nullable"] = true;
-                }
-                else
-                {
-                    JToken type = node["type"];
-                    if (type != null && type.Type == JTokenType.String)
-                    {
-                        node["type"] = new JArray(type.Value<string>(), "null");
-                    }
+                    node["type"] = new JArray(type.Value<string>(), "null");
                 }
             }
 
-            // 白名單過濾放在最後：nullable 是 Stage C 才加的，必須在此之後才允許存在。
+            // 白名單過濾放在最後。
             var removable = new List<string>();
             foreach (KeyValuePair<string, JToken> member in node)
             {
-                if (!AllowedKeywords.Contains(member.Key) && member.Key != "nullable")
+                if (!AllowedKeywords.Contains(member.Key))
                 {
                     removable.Add(member.Key);
                 }
@@ -755,15 +689,15 @@ namespace RimLLM_Framework.Manager
                 node.Remove(key);
             }
 
-            ApplyProfileRecursive(node["items"] as JObject, profile);
-            ApplyProfileRecursive(node["additionalProperties"] as JObject, profile);
+            ApplyOpenAiDialectRecursive(node["items"] as JObject);
+            ApplyOpenAiDialectRecursive(node["additionalProperties"] as JObject);
 
             var properties = node["properties"] as JObject;
             if (properties != null)
             {
                 foreach (KeyValuePair<string, JToken> property in properties)
                 {
-                    ApplyProfileRecursive(property.Value as JObject, profile);
+                    ApplyOpenAiDialectRecursive(property.Value as JObject);
                 }
             }
         }

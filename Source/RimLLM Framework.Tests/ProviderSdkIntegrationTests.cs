@@ -1,8 +1,6 @@
 using System;
 using System.IO;
 using System.Reflection;
-using Google.GenAI;
-using Google.GenAI.Types;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -22,7 +20,6 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void OfficialProviderAssembliesCanBeLoaded()
         {
-            ClassicAssert.IsNotNull(typeof(Client).Assembly, "Google.GenAI assembly 應可載入。");
             ClassicAssert.IsNotNull(typeof(IChatClient).Assembly, "Microsoft.Extensions.AI assembly 應可載入。");
             ClassicAssert.IsNotNull(typeof(ChatClient).Assembly, "OpenAI assembly 應可載入。");
         }
@@ -122,7 +119,10 @@ namespace RimLLM_Framework.Tests
                 ClassicAssert.IsNotNull(openAiClient);
             }
 
-            using (IChatClient geminiClient = GeminiProvider.CreateGeminiChatClient("unit-test-key", "gemini-2.5-flash"))
+            // Gemini 經官方 OpenAI 相容端點存取，建立 client 不發出網路請求。
+            var geminiSettings = new MockSettings();
+            geminiSettings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
+            using (IChatClient geminiClient = new GeminiProvider(geminiSettings).CreateChatClient("gemini-2.5-flash"))
             {
                 ClassicAssert.IsNotNull(geminiClient);
             }
@@ -134,55 +134,22 @@ namespace RimLLM_Framework.Tests
             Assert.Throws<ArgumentException>(() => OpenAIProvider.CreateOpenAiChatClient("", "model"));
             Assert.Throws<ArgumentException>(() => OpenAIProvider.CreateOpenAiChatClient("key", ""));
 
-            Assert.Throws<ArgumentException>(() => GeminiProvider.CreateGeminiChatClient("", "model"));
-            Assert.Throws<ArgumentException>(() => GeminiProvider.CreateGeminiChatClient("key", ""));
+            // Gemini 沿用 OpenAI 路徑：無金鑰時同樣拒絕建立。
+            Assert.Throws<ArgumentException>(() => new GeminiProvider(new MockSettings()).CreateChatClient("gemini-2.5-flash"));
         }
 
         [Test]
-        public void NativeSchemaCanBeConvertedToGoogleSchema()
+        public void GeminiDeclaresOpenAiFamilyCapabilities()
         {
-            Schema schema = Schema.FromJson(RimLLMSchemaBuilder.BuildJson(typeof(StructuredResponse), RimLLMSchemaProfile.Gemini));
+            var settings = new MockSettings();
+            settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
+            var provider = new GeminiProvider(settings);
 
-            ClassicAssert.IsNotNull(schema);
-        }
-
-        /// <summary>
-        /// 迴歸保護：MEAI <c>AIJsonUtilities.CreateJsonSchema</c> 的**原始**輸出無法被
-        /// <c>Google.GenAI</c> 的 <c>Schema.FromJson</c> 接受，所以框架必須在其上加一層正規化。
-        ///
-        /// 根因是可為 null 的成員被表達成 <c>"type": ["string","null"]</c> 聯集，
-        /// 而 <c>Google.GenAI.Types.Schema.Type</c> 是單一列舉值：
-        /// <c>The JSON value could not be converted to System.Nullable&lt;Google.GenAI.Types.Type&gt;</c>。
-        ///
-        /// 特別注意失敗模式：<c>Schema.FromJson</c> **不會拋例外**，它吞掉 JsonException、
-        /// 把堆疊印到 stderr，然後回傳 <see langword="null"/>。而 <c>GeminiProvider.BuildNativeConfigAsync</c>
-        /// 是直接 <c>config.ResponseSchema = Schema.FromJson(schemaJson)</c>，所以 Gemini 會靜默地
-        /// 收不到任何 schema，只剩 <c>responseMimeType: application/json</c> —— 沒有任何錯誤浮上來。
-        ///
-        /// 這個宣稱長期只寫在 README 而沒有測試佐證。若哪天 MEAI 或 Google.GenAI 改版讓它通過，
-        /// 本測試會失敗 —— 那是重新評估正規化層是否還有必要的訊號，不是把測試刪掉的理由。
-        /// </summary>
-        [Test]
-        public void RawMeaiSchemaIsRejectedByGoogleSchemaFromJson()
-        {
-            AssertRawMeaiSchemaIsRejected(typeof(NullableTestDataStructure));
-            AssertRawMeaiSchemaIsRejected(typeof(ComplexTestDataStructure));
-            AssertRawMeaiSchemaIsRejected(typeof(StructuredResponse));
-        }
-
-        private static void AssertRawMeaiSchemaIsRejected(System.Type type)
-        {
-            string rawJson = AIJsonUtilities.CreateJsonSchema(type).GetRawText();
-            TestContext.WriteLine(type.Name + " 的 MEAI 原始輸出：" + rawJson);
-
-            StringAssert.Contains(
-                "\",\"null\"]",
-                rawJson,
-                type.Name + " 的 MEAI 輸出應含可為 null 的聯集型別，這正是 Gemini 無法解析的形狀。");
-
-            ClassicAssert.IsNull(
-                Schema.FromJson(rawJson),
-                type.Name + " 的 MEAI 原始輸出不應能轉成 Google.GenAI 的 Schema（FromJson 失敗時回傳 null）。");
+            ClassicAssert.AreEqual(ProviderIds.Gemini, provider.ProviderId);
+            ClassicAssert.IsTrue(provider.Capabilities.SupportsNativeStructuredOutput);
+            ClassicAssert.IsTrue(provider.Capabilities.SupportsStreaming);
+            ClassicAssert.IsTrue(provider.Capabilities.SupportsUsageMetadata);
+            ClassicAssert.IsTrue(provider.Capabilities.SupportsFunctionCalling);
         }
 
         [Test]
@@ -192,124 +159,6 @@ namespace RimLLM_Framework.Tests
                 "https://example.invalid/v1",
                 OpenAIProvider.NormalizeEndpoint(" https://example.invalid/v1/chat/completions/ "));
             ClassicAssert.IsNull(OpenAIProvider.NormalizeEndpoint(null));
-        }
-
-        [Test]
-        public void GeminiNativeConfigMapsSchemaSystemPromptAndThinking()
-        {
-            var settings = new MockSettings();
-            settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
-            var provider = new GeminiProvider(settings);
-            var callerMessages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
-            {
-                new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, "你是測試用助手。"),
-                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "請回傳結構化資料。")
-            };
-            var callerOptions = new ChatOptions
-            {
-                Temperature = 0.25f,
-                MaxOutputTokens = 321,
-                Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
-                AdditionalProperties = new AdditionalPropertiesDictionary
-                {
-                    [RimLLMChatOptions.ResponseTypeKey] = typeof(StructuredResponse)
-                }
-            };
-
-            MethodInfo method = typeof(GeminiProvider).GetMethod(
-                "BuildNativeConfigAsync",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            var messages = RimLLMChatClientExecutor.BuildMessages(callerMessages, callerOptions);
-            var options = RimLLMChatClientExecutor.BuildOptions(callerOptions, "gemini-2.5-flash", useNativeSchema: true, null);
-            var task = (System.Threading.Tasks.Task)method.Invoke(
-                provider,
-                new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
-            task.GetAwaiter().GetResult();
-            var config = (GenerateContentConfig)task.GetType().GetProperty("Result").GetValue(task, null);
-
-            ClassicAssert.AreEqual(0.25d, config.Temperature);
-            ClassicAssert.AreEqual(321, config.MaxOutputTokens);
-            ClassicAssert.AreEqual("application/json", config.ResponseMimeType);
-            ClassicAssert.IsNotNull(config.ResponseSchema);
-            ClassicAssert.IsNotNull(config.SystemInstruction);
-            ClassicAssert.AreEqual("你是測試用助手。", config.SystemInstruction.Parts[0].Text);
-            ClassicAssert.IsNotNull(config.ThinkingConfig);
-            ClassicAssert.AreEqual(4096, config.ThinkingConfig.ThinkingBudget);
-            ClassicAssert.IsTrue(config.ThinkingConfig.IncludeThoughts);
-        }
-
-        /// <summary>
-        /// 純 MEAI 呼叫端設定的取樣參數必須真的送達 Gemini。這六個欄位原本會走到
-        /// BuildNativeConfigAsync，卻沒有被映射進 GenerateContentConfig——設了不生效也不報錯，
-        /// 而同一份 ChatOptions 在 OpenAI 家族上是會生效的。
-        /// </summary>
-        [Test]
-        public void GeminiNativeConfigMapsPassThroughSamplingFields()
-        {
-            var settings = new MockSettings();
-            settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
-            var provider = new GeminiProvider(settings);
-            var callerMessages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
-            {
-                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "測試取樣參數。")
-            };
-            var callerOptions = new ChatOptions
-                {
-                    TopP = 0.85f,
-                    TopK = 40,
-                    FrequencyPenalty = 0.5f,
-                    PresencePenalty = 0.25f,
-                    Seed = 4242L,
-                StopSequences = new System.Collections.Generic.List<string> { "END", "STOP" }
-            };
-
-            MethodInfo method = typeof(GeminiProvider).GetMethod(
-                "BuildNativeConfigAsync",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            var messages = RimLLMChatClientExecutor.BuildMessages(callerMessages, callerOptions);
-            var options = RimLLMChatClientExecutor.BuildOptions(callerOptions, "gemini-2.5-flash", useNativeSchema: false, null);
-            var task = (System.Threading.Tasks.Task)method.Invoke(
-                provider,
-                new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
-            task.GetAwaiter().GetResult();
-            var config = (GenerateContentConfig)task.GetType().GetProperty("Result").GetValue(task, null);
-
-            ClassicAssert.AreEqual(0.85d, config.TopP.Value, 1e-6d);
-            ClassicAssert.AreEqual(40d, config.TopK.Value, 1e-6d);
-            ClassicAssert.AreEqual(0.5d, config.FrequencyPenalty.Value, 1e-6d);
-            ClassicAssert.AreEqual(0.25d, config.PresencePenalty.Value, 1e-6d);
-            ClassicAssert.AreEqual(4242, config.Seed);
-            CollectionAssert.AreEqual(new[] { "END", "STOP" }, config.StopSequences);
-        }
-
-        /// <summary>
-        /// Gemini 的 seed 是 32 位元、MEAI 的是 64 位元。超出範圍時必須不指定 seed，
-        /// 不能截斷——截斷等於悄悄換掉呼叫端要求的那個 seed，比不生效更糟。
-        /// </summary>
-        [Test]
-        public void GeminiNativeConfigDropsOutOfRangeSeedInsteadOfTruncating()
-        {
-            var settings = new MockSettings();
-            settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
-            var provider = new GeminiProvider(settings);
-            var callerMessages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
-            {
-                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "測試超出範圍的 seed。")
-            };
-            var callerOptions = new ChatOptions { Seed = (long)int.MaxValue + 1L };
-
-            MethodInfo method = typeof(GeminiProvider).GetMethod(
-                "BuildNativeConfigAsync",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            var messages = RimLLMChatClientExecutor.BuildMessages(callerMessages, callerOptions);
-            var options = RimLLMChatClientExecutor.BuildOptions(callerOptions, "gemini-2.5-flash", useNativeSchema: false, null);
-            var task = (System.Threading.Tasks.Task)method.Invoke(
-                provider,
-                new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
-            task.GetAwaiter().GetResult();
-            var config = (GenerateContentConfig)task.GetType().GetProperty("Result").GetValue(task, null);
-
-            ClassicAssert.IsNull(config.Seed);
         }
 
         /// <summary>
@@ -354,68 +203,6 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void GeminiCapabilitiesDeclareGeminiSchemaProfile()
-        {
-            var settings = new MockSettings();
-            settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
-
-            ClassicAssert.AreEqual(
-                RimLLMSchemaProfile.Gemini,
-                new GeminiProvider(settings).Capabilities.PreferredSchemaProfile);
-            ClassicAssert.AreEqual(
-                RimLLMSchemaProfile.OpenAI,
-                new OpenAIProvider(settings).Capabilities.PreferredSchemaProfile,
-                "OpenAI 家族沿用預設方言。");
-        }
-
-        /// <summary>
-        /// 方言接線的端到端驗證：帶 <c>int?</c> 成員的型別在 OpenAI 方言下會產生聯集型別，
-        /// 而 <c>Schema.FromJson</c> 對聯集會靜默回傳 null，導致 Gemini 收不到 schema。
-        /// 只有把 Gemini 方言一路傳到 <c>BuildOptions</c>，<c>ResponseSchema</c> 才會真的建立起來。
-        /// </summary>
-        [Test]
-        public void GeminiNativeConfigAcceptsSchemaWithNullableMember()
-        {
-            ClassicAssert.IsNotNull(
-                BuildGeminiResponseSchema(RimLLMSchemaProfile.Gemini),
-                "Gemini 方言的 schema 應能建立 ResponseSchema。");
-
-            ClassicAssert.IsNull(
-                BuildGeminiResponseSchema(RimLLMSchemaProfile.OpenAI),
-                "反向對照：OpenAI 方言的聯集型別會讓 Gemini 靜默收不到 schema —— 方言接線斷掉時就會變成這樣。");
-        }
-
-        private static object BuildGeminiResponseSchema(RimLLMSchemaProfile profile)
-        {
-            var settings = new MockSettings();
-            settings.ApiKeys[ProviderIds.Gemini] = "unit-test-key";
-            var provider = new GeminiProvider(settings);
-            var callerMessages = new System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>
-            {
-                new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "請回傳結構化資料。")
-            };
-            var callerOptions = new ChatOptions
-            {
-                AdditionalProperties = new AdditionalPropertiesDictionary
-                {
-                    [RimLLMChatOptions.ResponseTypeKey] = typeof(NullableTestDataStructure)
-                }
-            };
-
-            MethodInfo method = typeof(GeminiProvider).GetMethod(
-                "BuildNativeConfigAsync",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            var messages = RimLLMChatClientExecutor.BuildMessages(callerMessages, callerOptions);
-            var options = RimLLMChatClientExecutor.BuildOptions(callerOptions, "gemini-2.5-flash", true, null, profile);
-            var task = (System.Threading.Tasks.Task)method.Invoke(
-                provider,
-                new object[] { messages, options, "gemini-2.5-flash", "unit-test-key" });
-            task.GetAwaiter().GetResult();
-            var config = (GenerateContentConfig)task.GetType().GetProperty("Result").GetValue(task, null);
-            return config.ResponseSchema;
-        }
-
-        [Test]
         public void BuiltInSdkProvidersExposeNativeCapabilities()
         {
             var settings = new MockSettings();
@@ -435,8 +222,8 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsFalse(unknown.SupportsNativeStructuredOutput);
             ClassicAssert.IsFalse(unknown.SupportsStreaming);
 
-            // 所有內建 provider 一律走官方 SDK（OpenAI / Google.GenAI）+ MEAI，
-            // 不再保留 raw HTTP 對話路徑。
+            // 所有內建 provider 一律走 OpenAI SDK（含 OpenAI 相容端點）+ MEAI，
+            // 不再保留 raw HTTP 對話路徑，也不再使用 Google.GenAI。
             settings.ApiKeys["OpenAI"] = "mock-key";
             settings.ApiKeys["Gemini"] = "mock-key";
             var sdkOpenAi = new TestOpenAIProvider(settings);
@@ -487,16 +274,5 @@ namespace RimLLM_Framework.Tests
             Assert.Throws<ArgumentException>(() => RimLLMProvider.CreateEmbeddingGenerator(null));
         }
 
-        private sealed class StructuredResponse
-        {
-            public string Name { get; set; }
-            public StructuredChild Child { get; set; }
-            public System.Collections.Generic.List<StructuredChild> Items { get; set; }
-        }
-
-        private sealed class StructuredChild
-        {
-            public int Value { get; set; }
-        }
     }
 }

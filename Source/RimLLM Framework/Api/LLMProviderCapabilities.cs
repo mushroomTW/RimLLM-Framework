@@ -1,5 +1,3 @@
-using RimLLM_Framework.Manager;
-
 namespace RimLLM_Framework
 {
 #pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
@@ -10,13 +8,6 @@ namespace RimLLM_Framework
     {
         /// <summary>是否支援由服務端原生驗證結構化輸出 Schema。</summary>
         public bool SupportsNativeStructuredOutput { get; set; }
-
-        /// <summary>
-        /// 結構化輸出的 JSON Schema 方言。
-        /// 預設為 OpenAI（選填成員以聯集型別表達）；Gemini 只接受單一 <c>type</c> 加 <c>nullable</c>。
-        /// 第三方供應商可據此宣告自己的方言，不必修改框架。
-        /// </summary>
-        public RimLLMSchemaProfile PreferredSchemaProfile { get; set; } = RimLLMSchemaProfile.OpenAI;
 
         /// <summary>是否支援串流輸出。</summary>
         public bool SupportsStreaming { get; set; }
