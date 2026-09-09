@@ -100,21 +100,16 @@ Declare the dependency in your mod's `About/About.xml` so the framework initiali
 
 **If you already know [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.9.0), you already know this API.**
 
-RimLLM Framework's entire job is to hand you a standard MEAI `IChatClient`. Every line after that is plain Microsoft.Extensions.AI — exactly the same calls you would write against [`Microsoft.Extensions.AI.OpenAI`](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.9.0), Ollama, or any other provider package.
+RimLLM Framework's entire job is to hand you a standard MEAI `IChatClient`. Everything after that one line is plain Microsoft.Extensions.AI, so this page documents only what is specific to this framework — for the MEAI calls themselves, read [Microsoft's own docs](https://learn.microsoft.com/dotnet/ai/microsoft-extensions-ai).
 
 ### Only one line differs
 
 ```csharp
-// Microsoft.Extensions.AI.OpenAI — you supply the model and the API key
-IChatClient client =
-    new OpenAI.Chat.ChatClient("gpt-4o-mini", Environment.GetEnvironmentVariable("OPENAI_API_KEY"))
-    .AsIChatClient();
-
-// RimLLM Framework — the player supplies the provider, model, key and fallback chain in the mod settings
+// The player supplies the provider, model, key and fallback chain in the mod settings
 IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
 ```
 
-`"myai.mod"` is just a label used for per-mod throttling and usage attribution. There is no registration call and no key handling on your side.
+Where another provider package would have you construct a client from a model name and an API key, you call this instead. `"myai.mod"` is just a label used for per-mod throttling and usage attribution. There is no registration call and no key handling on your side.
 
 ### Chat
 
@@ -127,33 +122,11 @@ IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
 Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 ```
 
-With a message list and options — still plain MEAI:
-
-```csharp
-var messages = new List<ChatMessage>
-{
-    new ChatMessage(ChatRole.System, "You are a cold, random and unpredictable storyteller."),
-    new ChatMessage(ChatRole.User, "Greet the player in the voice of Randy Random.")
-};
-
-ChatResponse response = await client.GetResponseAsync(
-    messages,
-    new ChatOptions { Temperature = 0.7f, MaxOutputTokens = 150 });
-```
-
-Leave `ModelId` unset and the player's configured fallback chain decides which provider and model actually runs.
+Message lists and `ChatOptions` behave exactly as MEAI documents them. The one framework-specific rule: leave `ModelId` unset and the player's configured fallback chain decides which provider and model actually runs — set it to a `"Provider:Model"` entry to pin one.
 
 ### Chat streaming
 
-```csharp
-await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync("Write a colony radio broadcast."))
-{
-    // Already dispatched onto the Unity main thread — safe to touch the UI
-    MyGameUI.AppendText(update.Text);
-}
-```
-
-If the whole fallback chain fails, the original `RimLLMException` is rethrown from `await foreach`, so a failing stream never ends silently.
+Streaming is MEAI's standard `GetStreamingResponseAsync` / `await foreach`. The framework adds two guarantees on top: every update is already dispatched onto the Unity main thread, so you can touch the UI directly from the loop; and if the whole fallback chain fails, the original `RimLLMException` is rethrown from `await foreach`, so a failing stream never ends silently.
 
 ### Structured output
 
@@ -210,36 +183,18 @@ Log.Message(response.Text);
 
 #### 2. Raw / Manual Mode
 
-If your mod wants full manual control over each turn of function execution, pass `ChatOptions.Tools` directly to `client.GetResponseAsync()`. The model's response will contain `FunctionCallContent` and `FinishReason = ChatFinishReason.ToolCalls`:
-
-```csharp
-ChatResponse response = await client.GetResponseAsync(messages, new ChatOptions { Tools = myTools });
-
-if (response.FinishReason == ChatFinishReason.ToolCalls)
-{
-    foreach (var content in response.Messages[0].Contents.OfType<FunctionCallContent>())
-    {
-        Log.Message($"Model requested function: {content.Name} with args: {content.Arguments}");
-        // Execute manually and respond with FunctionResultContent in the next turn
-    }
-}
-```
+If your mod wants full manual control over each turn, skip the wrapper and pass `ChatOptions.Tools` straight to `client.GetResponseAsync()`. The response then carries `FunctionCallContent` with `FinishReason = ChatFinishReason.ToolCalls`, and you drive the loop yourself exactly as MEAI documents it. Note that nothing is dispatched onto the Unity main thread on this path — that is what the wrapper above exists for.
 
 ### Embeddings
 
-Also a standard MEAI interface:
+Same shape — one framework call, then standard MEAI:
 
 ```csharp
 IEmbeddingGenerator<string, Embedding<float>> generator =
     RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
-
-GeneratedEmbeddings<Embedding<float>> result =
-    await generator.GenerateAsync(new[] { "colonist mental break" });
-
-ReadOnlyMemory<float> vector = result[0].Vector;
 ```
 
-The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws `RimLLMException`.
+`GenerateAsync`, `GeneratedEmbeddings<T>` and `Embedding<float>` behave as MEAI documents them. The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws `RimLLMException`.
 
 ### Error handling
 
@@ -356,7 +311,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
    * Native support for **Gemini context caching** and **OpenAI prompt caching**. Set `CachedContext` in `RimLLMChatOptions` and the framework submits `SystemPrompt + CachedContext` for caching, significantly reducing input token cost and latency for high-frequency repeated requests.
    * **Cost guard**: Gemini explicit caching has a minimum size threshold. When the content is too small the framework skips the cache and uses `systemInstruction` instead, avoiding the case where the creation fee is never recouped. Cache creation for the same context is also serialized by a lock to prevent duplicate resources.
    * **Quantified savings**: usage tracking parses the cache-hit tokens returned by the API (OpenAI `cached_tokens`, Gemini `cachedContentTokenCount`) and applies a discounted rate to the cost estimate, so the cost panel reflects the real saving.
-   * **Local response cache** (off by default, and a different thing from the two bullets above — those are the *provider's* cache, this one never leaves the player's machine). When enabled, a byte-identical request replays the previous answer with no API call at all: zero cost, zero latency, and no token usage recorded. The key covers everything that changes the output — messages, system prompt, cached context, temperature, max output tokens, reasoning effort, target model and structured-output type — but deliberately not `modId` or `Priority`, which only affect throttling and queue order. Matching is exact, not semantic. The trade-off is that identical input always produces identical output, which is not what narrative text usually wants; that is why it ships off, with a player-set TTL (1–120 minutes, fixed at the moment an entry is written) and a 256-entry cap. Expiry and capacity eviction are `Microsoft.Extensions.Caching.Memory.MemoryCache` — pinned to `10.0.11` so its assembly identity matches the `Caching.Abstractions` MEAI already ships — leaving the framework to decide only what counts as the same request. Memory only — nothing is written to the save file.
+   * **Local response cache** (off by default, and a different thing from the two bullets above — those are the *provider's* cache, this one never leaves the player's machine). When enabled, a byte-identical request replays the previous answer with no API call at all: zero cost, zero latency, and no token usage recorded. The key covers everything that changes the output — every message (role, text, and non-text content such as tool results), the target model, minimum fallback level, cached context, temperature, max output tokens, reasoning effort, whether reasoning is disabled, the structured-output type, and every sampling parameter that reaches the provider verbatim (`TopP`, `TopK`, `FrequencyPenalty`, `PresencePenalty`, `Seed`, `StopSequences`) — but deliberately not `modId` or `Priority`, which only affect throttling and queue order. Matching is exact, not semantic. The trade-off is that identical input always produces identical output, which is not what narrative text usually wants; that is why it ships off, with a player-set TTL (1–120 minutes, fixed at the moment an entry is written) and a 256-entry cap. Expiry and capacity eviction are `Microsoft.Extensions.Caching.Memory.MemoryCache` — pinned to `10.0.11` so its assembly identity matches the `Caching.Abstractions` MEAI already ships — leaving the framework to decide only what counts as the same request. Memory only — nothing is written to the save file.
 10. **Embedding SDK**
     * The framework exposes public embedding functionality backed by Google, Ollama or an OpenAI-compatible endpoint. Other mods obtain a standard `IEmbeddingGenerator` through `RimLLMProvider.CreateEmbeddingGenerator` for semantic search and clustering.
     * All three online sources go through official SDKs: Google uses `EmbedContentAsync` from `Google.GenAI`; Ollama and self-hosted services use the OpenAI SDK's `EmbeddingClient` (Ollama via its OpenAI-compatible `/v1` endpoint). The *Embedding endpoint* field therefore takes a **service root address** such as `http://localhost:11434/v1`; a full `/embeddings` path is normalized automatically.

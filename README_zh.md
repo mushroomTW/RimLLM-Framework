@@ -99,21 +99,16 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 **如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.9.0)，你就已經會用這套 API。**
 
-RimLLM Framework 的全部工作，就是交給你一個標準的 MEAI `IChatClient`。從那一行之後全是純 Microsoft.Extensions.AI —— 與你對 [`Microsoft.Extensions.AI.OpenAI`](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.9.0)、Ollama 或任何其他 provider 套件所寫的呼叫完全相同。
+RimLLM Framework 的全部工作，就是交給你一個標準的 MEAI `IChatClient`。從那一行之後全是純 Microsoft.Extensions.AI，因此本文件只寫本框架專屬的部分；MEAI 本身的語法請看 [Microsoft 官方文件](https://learn.microsoft.com/zh-tw/dotnet/ai/microsoft-extensions-ai)。
 
 ### 只有一行不一樣
 
 ```csharp
-// Microsoft.Extensions.AI.OpenAI —— 由你提供模型與 API 金鑰
-IChatClient client =
-    new OpenAI.Chat.ChatClient("gpt-4o-mini", Environment.GetEnvironmentVariable("OPENAI_API_KEY"))
-    .AsIChatClient();
-
-// RimLLM Framework —— 由玩家在模組設定中提供供應商、模型、金鑰與 Fallback 鏈
+// 由玩家在模組設定中提供供應商、模型、金鑰與 Fallback 鏈
 IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
 ```
 
-`"myai.mod"` 只是一個標籤，用於各 Mod 的節流與用量歸屬。你這邊不需要註冊呼叫，也不需要處理任何金鑰。
+其他 provider 套件要你用模型名稱與 API 金鑰自行建構 client，這裡改成呼叫這一行。`"myai.mod"` 只是一個標籤，用於各 Mod 的節流與用量歸屬。你這邊不需要註冊呼叫，也不需要處理任何金鑰。
 
 ### 對話
 
@@ -126,33 +121,11 @@ IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
 Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 ```
 
-改用訊息清單與選項 —— 依然是純 MEAI：
-
-```csharp
-var messages = new List<ChatMessage>
-{
-    new ChatMessage(ChatRole.System, "你是一個冷酷、隨機且難以預測的說書人。"),
-    new ChatMessage(ChatRole.User, "用隨機蘭迪的口吻向玩家打招呼。")
-};
-
-ChatResponse response = await client.GetResponseAsync(
-    messages,
-    new ChatOptions { Temperature = 0.7f, MaxOutputTokens = 150 });
-```
-
-不設定 `ModelId` 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定。
+訊息清單與 `ChatOptions` 的用法與 MEAI 文件完全相同。唯一與本框架有關的規則是：不設定 `ModelId` 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定；要指定就填 `"供應商:模型"` 形式的項目。
 
 ### 串流
 
-```csharp
-await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync("寫一段殖民地廣播稿。"))
-{
-    // 已派送回 Unity 主執行緒，可安全操作 UI
-    MyGameUI.AppendText(update.Text);
-}
-```
-
-整條 Fallback 鏈都失敗時，原始的 `RimLLMException` 會從 `await foreach` 重新擲出，失敗的串流不會靜默結束。
+串流是標準 MEAI 的 `GetStreamingResponseAsync` / `await foreach`，語法見 MEAI 文件。框架額外保證兩件事：每一個 update 都已派送到 Unity 主執行緒，可以直接在迴圈裡操作 UI；整條 Fallback 鏈失敗時，原始的 `RimLLMException` 會從 `await foreach` 重新擲出，串流不會無聲結束。
 
 ### 結構化輸出
 
@@ -209,36 +182,18 @@ Log.Message(response.Text);
 
 #### 2. 手動單輪模式 (Raw Mode)
 
-若你的 Mod 希望手動掌控每輪工具叫用過程，可直接傳入 `ChatOptions.Tools` 至 `client.GetResponseAsync()`。模型回傳的結果將包含 `FunctionCallContent` 且 `FinishReason = ChatFinishReason.ToolCalls`：
-
-```csharp
-ChatResponse response = await client.GetResponseAsync(messages, new ChatOptions { Tools = myTools });
-
-if (response.FinishReason == ChatFinishReason.ToolCalls)
-{
-    foreach (var content in response.Messages[0].Contents.OfType<FunctionCallContent>())
-    {
-        Log.Message($"模型請求叫用函式：{content.Name}，參數：{content.Arguments}");
-        // 手動執行該工具，並在下一輪以 FunctionResultContent 回覆模型
-    }
-}
-```
+若你的 Mod 希望手動掌控每一輪，就不要套用上面那層包裝，直接把 `ChatOptions.Tools` 傳給 `client.GetResponseAsync()`。回應會帶著 `FunctionCallContent` 與 `FinishReason = ChatFinishReason.ToolCalls`，之後的迴圈完全依 MEAI 文件的標準寫法自行驅動。注意這條路徑不會有任何主執行緒派送 —— 那正是上面那層包裝存在的理由。
 
 ### Embedding 向量
 
-同樣是標準的 MEAI 介面：
+形狀一樣：一行框架呼叫，之後全是標準 MEAI：
 
 ```csharp
 IEmbeddingGenerator<string, Embedding<float>> generator =
     RimLLMProvider.CreateEmbeddingGenerator("myai.mod");
-
-GeneratedEmbeddings<Embedding<float>> result =
-    await generator.GenerateAsync(new[] { "殖民者精神崩潰" });
-
-ReadOnlyMemory<float> vector = result[0].Vector;
 ```
 
-Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出 `RimLLMException`。
+`GenerateAsync`、`GeneratedEmbeddings<T>` 與 `Embedding<float>` 的行為與 MEAI 文件相同。Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出 `RimLLMException`。
 
 ### 錯誤處理
 
@@ -355,7 +310,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 原生支援 **Gemini context caching** 與 **OpenAI prompt caching**。在 `RimLLMChatOptions` 設定 `CachedContext`，框架會提交 `SystemPrompt + CachedContext` 進行快取，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **成本防呆**：Gemini 顯式快取有最小尺寸門檻，內容過小時框架會跳過快取改用 `systemInstruction`，避免建立費永遠回收不了。同一份上下文的快取建立也以鎖序列化，防止產生重複資源。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens`、Gemini `cachedContentTokenCount`）並套用折扣費率估算成本，讓成本面板反映真實節省。
-   * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 訊息、系統提示詞、快取上下文、temperature、最大輸出 Token、思考強度、目標模型與結構化輸出型別 —— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰交給 `Microsoft.Extensions.Caching.Memory.MemoryCache`（版本釘 `10.0.11`，以對齊 MEAI 已經帶進來的 `Caching.Abstractions` 組件識別），框架只負責判定「什麼算同一個請求」。只存在記憶體中，不寫入存檔。
+   * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 每一則訊息（角色、文字，以及工具結果之類的非文字內容）、目標模型、最低相容等級、快取上下文、temperature、最大輸出 Token、思考強度、是否關閉思考、結構化輸出型別，以及所有會原樣送達供應商的取樣參數（`TopP`、`TopK`、`FrequencyPenalty`、`PresencePenalty`、`Seed`、`StopSequences`）—— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰交給 `Microsoft.Extensions.Caching.Memory.MemoryCache`（版本釘 `10.0.11`，以對齊 MEAI 已經帶進來的 `Caching.Abstractions` 組件識別），框架只負責判定「什麼算同一個請求」。只存在記憶體中，不寫入存檔。
 10. **Embedding SDK**
     * 框架公開由 Google、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
     * 三種線上來源全走官方 SDK：Google 使用 `Google.GenAI` 的 `EmbedContentAsync`；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。
