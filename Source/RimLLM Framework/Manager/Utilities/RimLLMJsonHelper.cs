@@ -3,8 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 #pragma warning disable S108, S1133, S1643, S2486, S6610 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
 
 namespace RimLLM_Framework.Manager
@@ -42,7 +40,7 @@ namespace RimLLM_Framework.Manager
             try
             {
                 object instance = CreateDummyInstance(type);
-                string generatedJson = JsonConvert.SerializeObject(instance, Formatting.None);
+                string generatedJson = RimLLMJson.Serialize(instance);
                 SampleJsonCache[type] = generatedJson;
                 return generatedJson;
             }
@@ -289,7 +287,7 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         public static T DeserializeAndValidate<T>(string json)
         {
-            T result = JsonConvert.DeserializeObject<T>(json);
+            T result = RimLLMJson.Deserialize<T>(json);
             ValidateStructuredObject(result);
             return result;
         }

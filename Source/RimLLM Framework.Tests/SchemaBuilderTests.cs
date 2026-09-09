@@ -1,9 +1,9 @@
 using System;
 #pragma warning disable S2699, S2701, S3415 // reason: 測試檔案斷言語意保留，Explicit 診斷測試無需斷言
 using System.Collections.Generic;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using Newtonsoft.Json.Serialization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager;
@@ -14,8 +14,8 @@ namespace RimLLM_Framework.Tests
     /// <see cref="RimLLMSchemaBuilder"/> 的形狀不變式與契約對齊測試。
     ///
     /// 這裡守住的核心風險有兩個：
-    /// 一是 schema 由 System.Text.Json 的 exporter 產生、反序列化卻由 Newtonsoft 執行，
-    /// 兩邊的成員契約一旦漂移，模型就會照 schema 填一個 Newtonsoft 收不到的欄位；
+    /// 一是 schema 由 System.Text.Json 的 exporter 產生、反序列化也由 STJ 執行，
+    /// 兩邊的成員契約一旦漂移，模型就會照 schema 填一個反序列化收不到的欄位；
     /// 二是 MEAI 的完整 JSON Schema（聯集型別、<c>$ref</c>）不是所有 provider 都接受。
     /// </summary>
     [TestFixture]
@@ -28,7 +28,7 @@ namespace RimLLM_Framework.Tests
         }
 
         // -----------------------------------------------------------------
-        // 契約對齊：STJ 產 schema、Newtonsoft 反序列化
+        // 契約對齊：STJ 產 schema、STJ 反序列化
         // -----------------------------------------------------------------
 
         [Test]
@@ -43,27 +43,26 @@ namespace RimLLM_Framework.Tests
         }
 
         // -----------------------------------------------------------------
-        // 契約對齊：STJ 產 schema、Newtonsoft 反序列化
+        // 契約對齊：STJ 產 schema、STJ 反序列化
         // -----------------------------------------------------------------
 
         [Test]
-        public void SchemaPropertiesMatchNewtonsoftContract()
+        public void SchemaPropertiesMatchStjContract()
         {
             foreach (Type type in SampleTypes())
             {
-                var contract = (JsonObjectContract)new DefaultContractResolver().ResolveContract(type);
+                // 以 STJ 自身的中繼資料解析反序列化契約，再與 schema 成員比對。
+                // 用的是生產路徑同一份設定（RimLLMJson.Options），契約漂移會在這裡現形。
+                JsonTypeInfo typeInfo = new DefaultJsonTypeInfoResolver().GetTypeInfo(type, RimLLMJson.Options);
                 var expected = new List<string>();
-                foreach (JsonProperty property in contract.Properties)
+                foreach (JsonPropertyInfo property in typeInfo.Properties)
                 {
-                    if (!property.Ignored)
-                    {
-                        expected.Add(property.PropertyName);
-                    }
+                    expected.Add(property.Name);
                 }
 
-                JObject schema = ParseSchema(type);
+                JsonObject schema = ParseSchema(type);
                 var actual = new List<string>();
-                foreach (KeyValuePair<string, JToken> property in (JObject)schema["properties"])
+                foreach (var property in schema["properties"].AsObject())
                 {
                     actual.Add(property.Key);
                 }
@@ -73,7 +72,7 @@ namespace RimLLM_Framework.Tests
                 CollectionAssert.AreEqual(
                     expected,
                     actual,
-                    type.Name + " 的 schema 成員集合必須與 Newtonsoft 的反序列化契約一致。");
+                    type.Name + " 的 schema 成員集合必須與 STJ 的反序列化契約一致。");
             }
         }
 
@@ -82,20 +81,39 @@ namespace RimLLM_Framework.Tests
         {
             foreach (Type type in SampleTypes())
             {
-                JObject schema = ParseSchema(type);
-                var sample = JObject.Parse(RimLLMJsonHelper.GetSampleJson(type));
+                JsonObject schema = ParseSchema(type);
+                var sample = JsonNode.Parse(RimLLMJsonHelper.GetSampleJson(type)).AsObject();
 
-                foreach (JToken requiredName in (JArray)schema["required"])
+                foreach (var requiredName in schema["required"].AsArray())
                 {
-                    string name = requiredName.Value<string>();
+                    string name = requiredName.GetValue<string>();
                     ClassicAssert.IsTrue(
                         sample.ContainsKey(name),
                         type.Name + " 的提示式範例 JSON 缺少 required 成員 " + name + "，兩條路徑對成員的認知已經分歧。");
                 }
 
-                Assert.DoesNotThrow(
-                    () => JsonConvert.DeserializeObject(sample.ToString(), type),
-                    type.Name + " 的範例 JSON 應能被 Newtonsoft 反序列化。");
+                // ComplexTestDataStructure 刻意只有帶參建構子（見下方說明），跳過通用的反序列化檢查。
+                if (type != typeof(ComplexTestDataStructure))
+                {
+                    Assert.DoesNotThrow(
+                        () => JsonSerializer.Deserialize(sample.ToJsonString(), type, RimLLMJson.Options),
+                        type.Name + " 的範例 JSON 應能被 STJ 反序列化。");
+                }
+
+                // ComplexTestDataStructure 刻意只有帶參建構子（dummyParam 對應不到任何成員），
+                // 用來覆蓋 CreateDummyInstance 的 FormatterServices 逃生路徑。
+                // STJ 要求建構子參數全數可綁定，這類舊 Newtonsoft 靜默容忍（傳 default）的形狀
+                // 現在會明確失敗 —— 這是引擎遷移有意的契約收斂，不是回歸：schema 產生與 sample
+                // 產生不受影響（上方的 required 檢查已通過），且失敗是 loud 而非靜默半初始化物件。
+                if (type == typeof(ComplexTestDataStructure))
+                {
+                    Assert.Throws<InvalidOperationException>(
+                        () => JsonSerializer.Deserialize(
+                            "{\"Name\":\"x\",\"Age\":1,\"IsActive\":true,\"Skills\":[],\"Mapping\":{},\"Nested\":null}",
+                            type,
+                            RimLLMJson.Options),
+                        "無法綁定的建構子參數應明確失敗，而非靜默產出半初始化物件。");
+                }
             }
         }
 
@@ -133,8 +151,8 @@ namespace RimLLM_Framework.Tests
 
             foreach (Type type in SampleTypes())
             {
-                JObject schema = ParseSchema(type);
-                foreach (JObject node in EnumerateNodes(schema))
+                JsonObject schema = ParseSchema(type);
+                foreach (JsonObject node in EnumerateNodes(schema))
                 {
                     foreach (string keyword in forbidden)
                     {
@@ -153,10 +171,10 @@ namespace RimLLM_Framework.Tests
 
             foreach (Type type in SampleTypes())
             {
-                JObject schema = ParseSchema(type);
-                foreach (JObject node in EnumerateNodes(schema))
+                JsonObject schema = ParseSchema(type);
+                foreach (JsonObject node in EnumerateNodes(schema))
                 {
-                    foreach (KeyValuePair<string, JToken> member in node)
+                    foreach (var member in node)
                     {
                         CollectionAssert.Contains(
                             allowed,
@@ -172,7 +190,7 @@ namespace RimLLM_Framework.Tests
         {
             foreach (Type type in SampleTypes())
             {
-                foreach (JObject node in EnumerateNodes(ParseSchema(type)))
+                foreach (JsonObject node in EnumerateNodes(ParseSchema(type)))
                 {
                     ClassicAssert.IsNull(node["nullable"], type.Name + " 的 schema 不應使用 OpenAPI 的 nullable 關鍵字。");
                 }
@@ -189,19 +207,19 @@ namespace RimLLM_Framework.Tests
         {
             foreach (Type type in SampleTypes())
             {
-                foreach (JObject node in EnumerateNodes(ParseSchema(type)))
+                foreach (JsonObject node in EnumerateNodes(ParseSchema(type)))
                 {
-                    var properties = node["properties"] as JObject;
+                    var properties = node["properties"] as JsonObject;
                     if (properties == null) continue;
 
                     var required = new List<string>();
-                    foreach (JToken name in (JArray)node["required"])
+                    foreach (var name in node["required"].AsArray())
                     {
-                        required.Add(name.Value<string>());
+                        required.Add(name.GetValue<string>());
                     }
 
                     var declared = new List<string>();
-                    foreach (KeyValuePair<string, JToken> property in properties)
+                    foreach (var property in properties)
                     {
                         declared.Add(property.Key);
                     }
@@ -219,16 +237,16 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void NullableMemberUsesUnionType()
         {
-            JObject schema = ParseSchema(typeof(NullableTestDataStructure));
-            JToken memberType = schema["properties"]["OptionalCount"]["type"];
-            ClassicAssert.AreEqual(JTokenType.Array, memberType.Type, "int? 應寫成聯集型別。");
-            CollectionAssert.AreEquivalent(new[] { "integer", "null" }, memberType.ToObject<string[]>());
+            JsonObject schema = ParseSchema(typeof(NullableTestDataStructure));
+            JsonNode memberType = schema["properties"].AsObject()["OptionalCount"].AsObject()["type"];
+            ClassicAssert.AreEqual(JsonValueKind.Array, memberType.GetValueKind(), "int? 應寫成聯集型別。");
+            CollectionAssert.AreEquivalent(new[] { "integer", "null" }, memberType.Deserialize<string[]>());
 
             // 專案未啟用 NRT，exporter 會把所有參考型別也寫成可為 null 的聯集。
             // 只有 Nullable<T> 才算選填 —— 與舊實作的 IsOptionalMember 判定一致。
             ClassicAssert.AreEqual(
-                JTokenType.String,
-                schema["properties"]["Name"]["type"].Type,
+                JsonValueKind.String,
+                schema["properties"].AsObject()["Name"].AsObject()["type"].GetValueKind(),
                 "參考型別成員不應被誤判為選填。");
         }
 
@@ -244,22 +262,22 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void RecursiveMemberIsTruncatedButDeduplicatedMemberSurvives()
         {
-            JObject schema = ParseSchema(typeof(ComplexTestDataStructure));
+            JsonObject schema = ParseSchema(typeof(ComplexTestDataStructure));
 
             // 去重的 $ref 必須完整展開成原本的 schema，不能只剩空殼 —— 這是「一律截斷 $ref」會踩到的坑。
-            var skills = (JObject)schema["properties"]["Skills"];
+            var skills = schema["properties"].AsObject()["Skills"];
             ClassicAssert.IsNotNull(skills, "Skills 是 $ref 去重而非循環，不得被截斷。");
-            ClassicAssert.AreEqual("array", skills["type"].Value<string>());
-            ClassicAssert.AreEqual("string", skills["items"]["type"].Value<string>());
+            ClassicAssert.AreEqual("array", skills["type"].GetValue<string>());
+            ClassicAssert.AreEqual("string", skills["items"].AsObject()["type"].GetValue<string>());
 
             // 循環在 CLR 型別層截斷，而非等到 JSON pointer 重現。exporter 會先把遞迴成員完整
             // 展開一輪、其中才出現指回祖先的 $ref，只靠 pointer 偵測會多送一整層
             // （實測 789 → 3119 字元，而那是每次請求都要付的 prompt token）。
-            var nested = (JObject)schema["properties"]["Nested"];
+            var nested = schema["properties"].AsObject()["Nested"].AsObject();
             ClassicAssert.IsNotNull(nested, "非循環的巢狀成員應正常展開。");
-            ClassicAssert.AreEqual("number", nested["properties"]["Weight"]["type"].Value<string>());
+            ClassicAssert.AreEqual("number", nested["properties"].AsObject()["Weight"].AsObject()["type"].GetValue<string>());
 
-            ClassicAssert.IsNull(nested["properties"]["SelfRef"], "指回祖先型別的成員應被截斷。");
+            ClassicAssert.IsNull(nested["properties"].AsObject()["SelfRef"], "指回祖先型別的成員應被截斷。");
             CollectionAssert.DoesNotContain(RequiredNames(nested), "SelfRef", "被截斷的成員不得留在 required。");
         }
 
@@ -296,13 +314,13 @@ namespace RimLLM_Framework.Tests
                 "巢狀層數不得超過服務端上限。實際：" + depth);
         }
 
-        private static int MeasureNextChainDepth(JObject schema)
+        private static int MeasureNextChainDepth(JsonObject schema)
         {
             int depth = 0;
-            JObject current = schema;
+            JsonObject current = schema;
             while (true)
             {
-                var next = current["properties"]["Next"] as JObject;
+                var next = current["properties"].AsObject()["Next"] as JsonObject;
                 if (next == null) break;
 
                 depth++;
@@ -338,35 +356,48 @@ namespace RimLLM_Framework.Tests
         {
             foreach (Type type in SampleTypes())
             {
-                TestContext.WriteLine(type.Name + " => " + RimLLMSchemaBuilder.ExportRaw(type).ToString(Formatting.None));
+                TestContext.WriteLine(type.Name + " => " + RimLLMSchemaBuilder.ExportRaw(type).ToJsonString());
             }
+        }
+
+        [Test]
+        public void StringEnumValueFromLlmDeserializes()
+        {
+            // schema 把列舉宣告為字串名稱，LLM 會照 schema 回傳 "Kind":"Beta"。
+            // 反序列化必須接受名稱（與舊 Newtonsoft 預設一致），否則含列舉的結構化輸出
+            // 會拋 JsonException —— 而該例外被歸類為不可重試，連備援都不會觸發。
+            EnumTestDataStructure parsed = RimLLMManager.DeserializeAndValidate<EnumTestDataStructure>(
+                "{\"Kind\":\"Beta\",\"Label\":\"x\"}");
+
+            ClassicAssert.AreEqual(TestKind.Beta, parsed.Kind);
+            ClassicAssert.AreEqual("x", parsed.Label);
         }
 
         [Test]
         public void EnumMemberBecomesStringEnum()
         {
-            JObject schema = ParseSchema(typeof(EnumTestDataStructure));
-            var kind = (JObject)schema["properties"]["Kind"];
+            JsonObject schema = ParseSchema(typeof(EnumTestDataStructure));
+            var kind = schema["properties"].AsObject()["Kind"];
 
-            ClassicAssert.AreEqual("string", kind["type"].Value<string>(), "列舉應以字串名稱表達，Newtonsoft 反序列化接受名稱。");
+            ClassicAssert.AreEqual("string", kind["type"].GetValue<string>(), "列舉應以字串名稱表達，STJ 反序列化接受名稱。");
             CollectionAssert.AreEquivalent(
                 new[] { "Alpha", "Beta" },
-                kind["enum"].ToObject<string[]>());
+                kind["enum"].Deserialize<string[]>());
         }
 
         [Test]
         public void DescriptionAttributeFlowsIntoSchema()
         {
-            JObject schema = ParseSchema(typeof(DescribedTestDataStructure));
+            JsonObject schema = ParseSchema(typeof(DescribedTestDataStructure));
 
             ClassicAssert.AreEqual(
                 "殖民者的名字",
-                schema["properties"]["Name"]["description"].Value<string>(),
+                schema["properties"].AsObject()["Name"].AsObject()["description"].GetValue<string>(),
                 "成員層級的 [Description] 應傳進 schema —— 這是舊反射實作沒有的能力。");
 
             ClassicAssert.AreEqual(
                 "一筆殖民者紀錄",
-                schema["description"].Value<string>(),
+                schema["description"].GetValue<string>(),
                 "類別層級的 [Description] 也應傳進 schema。");
         }
 
@@ -374,11 +405,11 @@ namespace RimLLM_Framework.Tests
         public void DictionaryBecomesOpenMapAndDisablesStrict()
         {
             RimLLMSchemaResult result = RimLLMSchemaBuilder.Build(typeof(ComplexTestDataStructure));
-            var schema = JObject.Parse(result.Json);
-            var mapping = (JObject)schema["properties"]["Mapping"];
+            var schema = JsonNode.Parse(result.Json).AsObject();
+            var mapping = schema["properties"].AsObject()["Mapping"];
 
-            ClassicAssert.AreEqual("object", mapping["type"].Value<string>());
-            ClassicAssert.AreEqual("integer", mapping["additionalProperties"]["type"].Value<string>());
+            ClassicAssert.AreEqual("object", mapping["type"].GetValue<string>());
+            ClassicAssert.AreEqual("integer", mapping["additionalProperties"].AsObject()["type"].GetValue<string>());
 
             ClassicAssert.IsTrue(result.ContainsOpenEndedMap, "含 Dictionary 的型別應被判定為開放式 map。");
             ClassicAssert.IsFalse(result.StrictCompatible, "開放式 map 不相容於 OpenAI 的 strict structured output。");
@@ -415,9 +446,9 @@ namespace RimLLM_Framework.Tests
             foreach (Type type in SampleTypes())
             {
                 RimLLMSchemaResult result = RimLLMSchemaBuilder.Build(type);
-                var schema = JObject.Parse(result.Json);
+                var schema = JsonNode.Parse(result.Json).AsObject();
 
-                ClassicAssert.AreEqual("object", schema["type"].Value<string>(), type.Name + " 降級後仍應產生可用 schema。");
+                ClassicAssert.AreEqual("object", schema["type"].GetValue<string>(), type.Name + " 降級後仍應產生可用 schema。");
                 ClassicAssert.IsTrue(result.UsedLegacyFallback);
                 ClassicAssert.IsFalse(
                     result.StrictCompatible,
@@ -445,18 +476,18 @@ namespace RimLLM_Framework.Tests
             yield return typeof(EnumTestDataStructure);
         }
 
-        private static JObject ParseSchema(Type type)
+        private static JsonObject ParseSchema(Type type)
         {
-            return JObject.Parse(RimLLMSchemaBuilder.BuildJson(type));
+            return JsonNode.Parse(RimLLMSchemaBuilder.BuildJson(type)).AsObject();
         }
 
-        private static List<string> PropertyNames(JObject node)
+        private static List<string> PropertyNames(JsonObject node)
         {
             var names = new List<string>();
-            var properties = node["properties"] as JObject;
+            var properties = node["properties"] as JsonObject;
             if (properties != null)
             {
-                foreach (KeyValuePair<string, JToken> property in properties)
+                foreach (var property in properties)
                 {
                     names.Add(property.Key);
                 }
@@ -466,15 +497,15 @@ namespace RimLLM_Framework.Tests
             return names;
         }
 
-        private static List<string> RequiredNames(JObject node)
+        private static List<string> RequiredNames(JsonObject node)
         {
             var names = new List<string>();
-            var required = node["required"] as JArray;
+            var required = node["required"] as JsonArray;
             if (required != null)
             {
-                foreach (JToken name in required)
+                foreach (JsonNode name in required)
                 {
-                    names.Add(name.Value<string>());
+                    names.Add(name.GetValue<string>());
                 }
             }
 
@@ -483,28 +514,28 @@ namespace RimLLM_Framework.Tests
         }
 
         /// <summary>深度優先走訪 schema 中的每個節點（含根節點）。</summary>
-        private static IEnumerable<JObject> EnumerateNodes(JObject node)
+        private static IEnumerable<JsonObject> EnumerateNodes(JsonObject node)
         {
             if (node == null) yield break;
 
             yield return node;
 
-            foreach (JObject child in EnumerateNodes(node["items"] as JObject))
+            foreach (JsonObject child in EnumerateNodes(node["items"] as JsonObject))
             {
                 yield return child;
             }
 
-            foreach (JObject child in EnumerateNodes(node["additionalProperties"] as JObject))
+            foreach (JsonObject child in EnumerateNodes(node["additionalProperties"] as JsonObject))
             {
                 yield return child;
             }
 
-            var properties = node["properties"] as JObject;
+            var properties = node["properties"] as JsonObject;
             if (properties == null) yield break;
 
-            foreach (KeyValuePair<string, JToken> property in properties)
+            foreach (var property in properties)
             {
-                foreach (JObject child in EnumerateNodes(property.Value as JObject))
+                foreach (JsonObject child in EnumerateNodes(property.Value as JsonObject))
                 {
                     yield return child;
                 }

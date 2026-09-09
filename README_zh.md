@@ -373,7 +373,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
   * exporter 的原始輸出不能直接送：可為 null 的成員會寫成 `["string","null"]` 聯集，送出前必須先正規化；`$ref` 指標也必須先解析 —— 這兩點由單元測試覆蓋，不再只是本文件裡的一句宣稱。
   * `$ref` **不只**用於遞迴 —— MEAI 也用它來為重複出現的型別去重，所以一律截斷 `$ref` 會靜默刪掉正常成員。正規化層會解析 JSON pointer，只有在它指向目前展開路徑上的祖先時才視為循環。
   * **所有成員一律列入 `required`**，選填性改由型別表達。OpenAI 的 strict structured output 要求 `required` 涵蓋每一個 property，所以舊行為（`Nullable<T>` 不列入 `required` 卻仍送 `strict: true`）在服務端會被拒絕，並被靜默降級成提示式 JSON。
-  * 由於 schema 由 System.Text.Json 的 exporter 產生、反序列化卻是 Newtonsoft，兩者的成員契約由一個 contract modifier 對齊（納入欄位、尊重 `[JsonIgnore]`、套用 `[JsonProperty]` 名稱、排除唯讀成員），並有測試斷言兩邊成員集合一致。**結構化輸出的型別請勿使用自訂的 Newtonsoft `JsonConverter`** —— 它會改變 wire 形狀，而 exporter 看不到。
+  * schema 產生與反序列化都跑在 System.Text.Json 的單一共用契約下（納入欄位、尊重 `[JsonIgnore]`／`[JsonPropertyName]`、排除唯讀成員），並有測試斷言兩邊成員集合一致。**結構化輸出的型別請勿使用自訂的 `JsonConverter`** —— 它會改變 wire 形狀，而 exporter 看不到。子 mod 遷移注意：Newtonsoft 的 `[JsonProperty("x")]`須改為 STJ 的 `[JsonPropertyName("x")]`，`Newtonsoft.Json.JsonIgnoreAttribute` 須改為 `System.Text.Json.Serialization.JsonIgnoreAttribute` —— 遷移後舊標註會被靜默忽略。
   * 若 `JsonSchemaExporter` 在 RimWorld 的 Mono 環境不可用，產生器會記錄警告、永久降級回舊的反射實作，並強制關閉 `strict`。
 * 供應商專屬 SDK 絕不出現在 `RimLLMManager` 或公開 SDK facade 中；共用層只相依 `IChatClient`、`LLMProviderCapabilities` 與既有的 `ILLMProvider` API。API 金鑰一律來自加密設定，絕不寫入原始碼或一般日誌。
 
@@ -393,7 +393,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 本模組原始碼以 **MIT License** 釋出 —— Copyright (c) 2026 **mushroomTW**。詳見 [LICENSE](LICENSE)。
 
-隨附於 `Assemblies/` 的相依組件維持各自的授權：Microsoft.Extensions.AI、OpenAI .NET SDK 與 Newtonsoft.Json 為 MIT。RimWorld 本身的組件屬於 Ludeon Studios，本模組不予散布。
+隨附於 `Assemblies/` 的相依組件維持各自的授權：Microsoft.Extensions.AI 與 OpenAI .NET SDK 為 MIT。RimWorld 本身的組件屬於 Ludeon Studios，本模組不予散布。
 
 ---
 

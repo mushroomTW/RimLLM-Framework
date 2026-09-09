@@ -360,7 +360,7 @@ namespace RimLLM_Framework.Manager
             if (ex is ArgumentException ||
                 ex is NotSupportedException ||
                 ex is InvalidOperationException ||
-                ex is Newtonsoft.Json.JsonException)
+                ex is System.Text.Json.JsonException)
             {
                 return false;
             }

@@ -40,7 +40,12 @@
 
   <ItemGroup>
     <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4871" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!--
+      框架唯一的 JSON 引擎。版本刻意釘在 MEAI 已經帶進來的 10.0.11：
+      與 Caching.Memory 的做法相同，RimWorld 共用 AppDomain，組件識別必須與
+      出貨 DLL 一致，浮動只會製造衝突。
+    -->
+    <PackageReference Include="System.Text.Json" Version="10.0.11" />
     <!--
       AI 抽象層與 provider SDK 版本刻意固定。Mod 維持 net472，這些套件必須
       持續提供 netstandard2.0 資產，才能在 RimWorld Mono 執行環境中使用。

@@ -450,5 +450,118 @@ namespace RimLLM_Framework.Tests
             }
         }
 
+        /// <summary>
+        /// Newtonsoft 時代寫入磁碟的遙測檔，STJ 必須原樣讀回。
+        /// 下方字串是手刻的 Newtonsoft 13 輸出特徵（PascalCase 欄名、ISO 帶時區日期、
+        /// 明文 ChatHistory 舊欄位、顯式 null），不是本引擎產生的 —— 拿來釘住讀取相容性。
+        /// </summary>
+        [Test]
+        public void TestTelemetryLoadReadsNewtonsoftWrittenFile()
+        {
+            const string NewtonsoftGolden =
+                "{\"EncryptedChatHistory\":null," +
+                "\"ChatHistory\":[\"hello\"]," +
+                "\"RequestLogs\":[{" +
+                "\"Timestamp\":\"2026-01-02T03:04:05+08:00\"," +
+                "\"ModId\":\"golden.mod\"," +
+                "\"Provider\":\"Gemini\"," +
+                "\"Model\":\"gemini-2.5-flash\"," +
+                "\"Success\":true," +
+                "\"ErrorMessage\":null," +
+                "\"LatencyMs\":42}]," +
+                "\"TotalPromptTokens\":100," +
+                "\"TotalCompletionTokens\":20," +
+                "\"TotalEstimatedCost\":12.5," +
+                "\"DailyAccumulatedCost\":1.25," +
+                "\"DailyBudgetResetDate\":\"2026-09-09\"}";
+
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "RimLLMTelemetryTest_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "telemetry.json");
+
+            var previousResolver = RimLLMTelemetryStore.FilePathResolver;
+            RimLLMTelemetryStore.FilePathResolver = () => path;
+            try
+            {
+                System.IO.File.WriteAllText(path, NewtonsoftGolden);
+
+                var reloaded = new RimLLMTelemetryStore();
+                reloaded.Load();
+
+                ClassicAssert.IsTrue(reloaded.LoadedFromDisk, "舊格式檔案應成功載入");
+                CollectionAssert.AreEqual(new[] { "hello" }, reloaded.ChatHistory, "舊版明文歷史應讀回");
+                ClassicAssert.IsTrue(reloaded.IsDirty, "讀到明文歷史應標記待重寫以完成加密遷移");
+                ClassicAssert.AreEqual(100, reloaded.TotalPromptTokens);
+                ClassicAssert.AreEqual(20, reloaded.TotalCompletionTokens);
+                ClassicAssert.AreEqual(12.5f, reloaded.TotalEstimatedCost);
+                ClassicAssert.AreEqual(1.25f, reloaded.DailyAccumulatedCost);
+                ClassicAssert.AreEqual("2026-09-09", reloaded.DailyBudgetResetDate);
+
+                ClassicAssert.AreEqual(1, reloaded.RequestLogs.Count);
+                var entry = reloaded.RequestLogs[0];
+                ClassicAssert.AreEqual("golden.mod", entry.ModId);
+                ClassicAssert.AreEqual("gemini-2.5-flash", entry.Model);
+                ClassicAssert.IsTrue(entry.Success);
+                ClassicAssert.AreEqual(42, entry.LatencyMs);
+                // 兩引擎對時區的 Kind 處理不同，比 UTC 瞬間才是語意一致的斷言。
+                ClassicAssert.AreEqual(
+                    new DateTime(2026, 1, 1, 19, 4, 5, DateTimeKind.Utc),
+                    entry.Timestamp.ToUniversalTime(),
+                    "ISO 帶時區日期的瞬間必須一致");
+            }
+            finally
+            {
+                RimLLMTelemetryStore.FilePathResolver = previousResolver;
+                try { System.IO.Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// SettingsDto 的形狀集合（public field、string 鍵字典、數字、ISO 日期），
+        /// 以手刻 Newtonsoft 輸出驗證 RimLLMJson 的讀取寬容度。
+        /// </summary>
+        [Test]
+        public void TestRimLLMJsonReadsNewtonsoftFieldShapes()
+        {
+            const string NewtonsoftGolden =
+                "{\"FallbackChain\":[\"Gemini:gemini-2.5-flash\"]," +
+                "\"ModelLevelOverrides\":{\"Gemini:gemini-2.5-flash\":2}," +
+                "\"ApiTimeout\":30.0," +
+                "\"MaxRetries\":3," +
+                "\"DetailedLogging\":true," +
+                "\"EmbeddingProvider\":\"Google\"," +
+                "\"Stamp\":\"2026-01-02T03:04:05+08:00\"," +
+                "\"Count\":\"7\"}";
+
+            SettingsLikeDto dto = RimLLMJson.Deserialize<SettingsLikeDto>(NewtonsoftGolden);
+
+            ClassicAssert.IsNotNull(dto);
+            CollectionAssert.AreEqual(new[] { "Gemini:gemini-2.5-flash" }, dto.FallbackChain);
+            ClassicAssert.AreEqual(2, dto.ModelLevelOverrides["Gemini:gemini-2.5-flash"]);
+            ClassicAssert.AreEqual(30f, dto.ApiTimeout);
+            ClassicAssert.AreEqual(3, dto.MaxRetries);
+            ClassicAssert.IsTrue(dto.DetailedLogging);
+            ClassicAssert.AreEqual("Google", dto.EmbeddingProvider);
+            ClassicAssert.AreEqual(
+                new DateTime(2026, 1, 1, 19, 4, 5, DateTimeKind.Utc),
+                dto.Stamp.ToUniversalTime());
+            // Newtonsoft 會把字串 "7" 轉成數字，寬容度必須保留。
+            ClassicAssert.AreEqual(7, dto.Count);
+        }
+
+#pragma warning disable 0649 // 欄位僅由 JSON 反序列化賦值
+        private class SettingsLikeDto
+        {
+            public List<string> FallbackChain;
+            public Dictionary<string, int> ModelLevelOverrides;
+            public float ApiTimeout;
+            public int MaxRetries;
+            public bool DetailedLogging;
+            public string EmbeddingProvider;
+            public DateTime Stamp;
+            public int Count;
+        }
+#pragma warning restore 0649
+
     }
 }

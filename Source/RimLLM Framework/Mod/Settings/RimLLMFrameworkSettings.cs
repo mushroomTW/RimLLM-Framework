@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.AI;
-using Newtonsoft.Json;
 using Verse;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
@@ -290,7 +289,7 @@ namespace RimLLM_Framework.Mod
                         EmbeddingApiKey = null
                     };
      
-                    jsonStr = JsonConvert.SerializeObject(dto, Formatting.None);
+                    jsonStr = RimLLMJson.Serialize(dto);
                     Scribe_Values.Look(ref jsonStr, "SettingsData", "");
                 }
                 else if (Scribe.mode == LoadSaveMode.LoadingVars)
@@ -300,7 +299,7 @@ namespace RimLLM_Framework.Mod
                     {
                         try
                         {
-                            var dto = JsonConvert.DeserializeObject<SettingsDto>(jsonStr);
+                            var dto = RimLLMJson.Deserialize<SettingsDto>(jsonStr);
                             if (dto != null)
                             {
                                 if (dto.FallbackChain != null)

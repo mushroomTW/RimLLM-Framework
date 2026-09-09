@@ -4,7 +4,8 @@ using NUnit.Framework.Legacy;
 using System;
 using System.Reflection;
 using System.Collections.Generic;
-using Newtonsoft.Json.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
@@ -699,11 +700,11 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaGenerator()
         {
-            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure)));
-            ClassicAssert.AreEqual("object", schema["type"]?.ToString());
+            var schema = JsonNode.Parse(RimLLMSchemaBuilder.BuildJson(typeof(TestDataStructure))).AsObject();
+            ClassicAssert.AreEqual("object", (string)schema["type"]);
             ClassicAssert.IsNotNull(schema["properties"]);
-            ClassicAssert.AreEqual("integer", schema["properties"]?["Value"]?["type"]?.ToString());
-            ClassicAssert.AreEqual("string", schema["properties"]?["Message"]?["type"]?.ToString());
+            ClassicAssert.AreEqual("integer", (string)schema["properties"]?.AsObject()?["Value"]?.AsObject()?["type"]);
+            ClassicAssert.AreEqual("string", (string)schema["properties"]?.AsObject()?["Message"]?.AsObject()?["type"]);
             ClassicAssert.IsFalse((bool)schema["additionalProperties"]);
         }
 
@@ -711,13 +712,13 @@ namespace RimLLM_Framework.Tests
         public void TestJsonSchemaRecursiveTypeDoesNotStackOverflow()
         {
             // NestedData.SelfRef 指回 ComplexTestDataStructure，形成循環。
-            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)));
+            var schema = JsonNode.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure))).AsObject();
 
             ClassicAssert.IsNotNull(schema, "循環型別仍應產生可用的 schema，不得遞迴爆棧");
 
-            var nested = schema["properties"]?["Nested"];
+            var nested = schema["properties"]?.AsObject()?["Nested"];
             ClassicAssert.IsNotNull(nested, "非循環的巢狀成員應正常展開");
-            ClassicAssert.AreEqual("number", nested["properties"]?["Weight"]?["type"]?.ToString());
+            ClassicAssert.AreEqual("number", (string)nested["properties"]?.AsObject()?["Weight"]?.AsObject()?["type"]);
 
             // 循環的截斷點與收斂性由 SchemaBuilderTests 詳測，此處只確認整體有限且合法。
             ClassicAssert.Less(
@@ -729,12 +730,12 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaDictionaryBecomesOpenMap()
         {
-            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)));
-            var mapping = schema["properties"]?["Mapping"];
+            var schema = JsonNode.Parse(RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure))).AsObject();
+            var mapping = schema["properties"]?.AsObject()?["Mapping"];
 
             ClassicAssert.IsNotNull(mapping, "Dictionary 成員應出現在 schema 中");
-            ClassicAssert.AreEqual("object", mapping["type"]?.ToString());
-            ClassicAssert.AreEqual("integer", mapping["additionalProperties"]?["type"]?.ToString(),
+            ClassicAssert.AreEqual("object", (string)mapping["type"]);
+            ClassicAssert.AreEqual("integer", (string)mapping["additionalProperties"]?.AsObject()?["type"],
                 "Dictionary 應產生開放式 map schema 而非空物件");
             ClassicAssert.IsNull(mapping["properties"], "開放式 map 不應帶有固定的 properties 清單");
 
@@ -747,16 +748,16 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestJsonSchemaNullableIsRequiredButTypedAsUnion()
         {
-            var schema = JObject.Parse(RimLLMSchemaBuilder.BuildJson(typeof(NullableTestDataStructure)));
+            var schema = JsonNode.Parse(RimLLMSchemaBuilder.BuildJson(typeof(NullableTestDataStructure))).AsObject();
 
-            var optionalType = (JArray)schema["properties"]["OptionalCount"]["type"];
+            var optionalType = schema["properties"].AsObject()["OptionalCount"].AsObject()["type"].AsArray();
             CollectionAssert.AreEquivalent(
                 new[] { "integer", "null" },
-                optionalType.ToObject<string[]>(),
+                optionalType.Deserialize<string[]>(),
                 "Nullable<int> 的選填性應以聯集型別表達");
 
             var requiredNames = new List<string>();
-            foreach (var item in (JArray)schema["required"]) requiredNames.Add(item.ToString());
+            foreach (var item in schema["required"].AsArray()) requiredNames.Add((string)item);
 
             CollectionAssert.Contains(requiredNames, "Name");
             CollectionAssert.Contains(requiredNames, "OptionalCount", "OpenAI strict 要求 required 涵蓋所有 property");
@@ -777,24 +778,24 @@ namespace RimLLM_Framework.Tests
             // 陣列在物件內：必須先補 ] 再補 }
             string repairedArrayInObject = RimLLMJsonHelper.RepairJson("{\"items\":[1,2");
             ClassicAssert.AreEqual("{\"items\":[1,2]}", repairedArrayInObject, "巢狀括號必須依 LIFO 順序閉合");
-            Assert.DoesNotThrow(() => JObject.Parse(repairedArrayInObject));
+            Assert.DoesNotThrow(() => JsonNode.Parse(repairedArrayInObject));
 
             // 物件在陣列內：必須先補 } 再補 ]
             string repairedObjectInArray = RimLLMJsonHelper.RepairJson("[{\"a\":1");
             ClassicAssert.AreEqual("[{\"a\":1}]", repairedObjectInArray, "巢狀括號必須依 LIFO 順序閉合");
-            Assert.DoesNotThrow(() => JArray.Parse(repairedObjectInArray));
+            Assert.DoesNotThrow(() => JsonNode.Parse(repairedObjectInArray));
 
             // 多層交錯
             string repairedMixed = RimLLMJsonHelper.RepairJson("{\"a\":[{\"b\":[1");
-            Assert.DoesNotThrow(() => JObject.Parse(repairedMixed), "多層交錯巢狀修復後必須可解析");
+            Assert.DoesNotThrow(() => JsonNode.Parse(repairedMixed), "多層交錯巢狀修復後必須可解析");
         }
 
         [Test]
         public void TestRepairJsonClosesDanglingString()
         {
             string repaired = RimLLMJsonHelper.RepairJson("{\"message\":\"unterminated");
-            Assert.DoesNotThrow(() => JObject.Parse(repaired), "未閉合的字串必須先補上引號，補的括號才不會落在字串內部");
-            ClassicAssert.AreEqual("unterminated", JObject.Parse(repaired)["message"]?.ToString());
+            Assert.DoesNotThrow(() => JsonNode.Parse(repaired), "未閉合的字串必須先補上引號，補的括號才不會落在字串內部");
+            ClassicAssert.AreEqual("unterminated", (string)JsonNode.Parse(repaired).AsObject()["message"]);
         }
 
         [Test]
@@ -802,11 +803,11 @@ namespace RimLLM_Framework.Tests
         {
             // 截斷在鍵之後
             string afterColon = RimLLMJsonHelper.RepairJson("{\"a\":1,\"b\":");
-            Assert.DoesNotThrow(() => JObject.Parse(afterColon), "截斷於冒號後應補 null 使其可解析");
+            Assert.DoesNotThrow(() => JsonNode.Parse(afterColon), "截斷於冒號後應補 null 使其可解析");
 
             // 截斷在逗號之後
             string afterComma = RimLLMJsonHelper.RepairJson("{\"a\":1,");
-            Assert.DoesNotThrow(() => JObject.Parse(afterComma), "截斷於逗號後應移除懸空逗號");
+            Assert.DoesNotThrow(() => JsonNode.Parse(afterComma), "截斷於逗號後應移除懸空逗號");
         }
 
         [Test]

@@ -5,7 +5,7 @@ using NUnit.Framework.Legacy;
 using System;
 using System.Reflection;
 using System.Collections.Generic;
-using Newtonsoft.Json.Linq;
+using System.Text.Json.Nodes;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using OpenAI;
@@ -34,22 +34,22 @@ namespace RimLLM_Framework.Tests
             // 1. 測試單一模型
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
             provider.GenerateAsync(messages, null, "model-a").GetAwaiter().GetResult();
-            var payloadSingle = JObject.Parse(provider.InterceptedPayload);
-            ClassicAssert.AreEqual("model-a", payloadSingle["model"]?.ToString());
+            var payloadSingle = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+            ClassicAssert.AreEqual("model-a", (string)payloadSingle["model"]);
             ClassicAssert.IsNull(payloadSingle["models"]);
 
             // 2. 測試多個模型 (逗號分隔)
             provider.GenerateAsync(messages, null, "model-a, model-b , model-c").GetAwaiter().GetResult();
-            var payloadMultiple = JObject.Parse(provider.InterceptedPayload);
+            var payloadMultiple = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.IsNull(payloadMultiple["model"]);
             ClassicAssert.IsNotNull(payloadMultiple["models"]);
 
-            var modelsArray = payloadMultiple["models"] as Newtonsoft.Json.Linq.JArray;
+            var modelsArray = payloadMultiple["models"] as JsonArray;
             ClassicAssert.IsNotNull(modelsArray);
             ClassicAssert.AreEqual(3, modelsArray.Count);
-            ClassicAssert.AreEqual("model-a", modelsArray[0].ToString());
-            ClassicAssert.AreEqual("model-b", modelsArray[1].ToString());
-            ClassicAssert.AreEqual("model-c", modelsArray[2].ToString());
+            ClassicAssert.AreEqual("model-a", (string)modelsArray[0]);
+            ClassicAssert.AreEqual("model-b", (string)modelsArray[1]);
+            ClassicAssert.AreEqual("model-c", (string)modelsArray[2]);
         }
 
         [Test]
@@ -127,8 +127,8 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsTrue(result.Success);
             ClassicAssert.AreEqual("gemini-3.5-flash", result.Model);
             ClassicAssert.IsNotNull(provider.InterceptedPayload);
-            var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-            ClassicAssert.AreEqual("gemini-3.5-flash", payload["model"]?.ToString());
+            var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+            ClassicAssert.AreEqual("gemini-3.5-flash", (string)payload["model"]);
         }
 
         [Test]
@@ -159,12 +159,12 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsTrue(result.Success);
             ClassicAssert.AreEqual("openrouter/free", result.Model);
             ClassicAssert.IsNotNull(provider.InterceptedPayload);
-            var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-            ClassicAssert.AreEqual("openrouter/free", payload["model"]?.ToString());
+            var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+            ClassicAssert.AreEqual("openrouter/free", (string)payload["model"]);
 
             // 連線測試必須留足輸出額度並關閉思考：額度太低時思考型模型會把額度全花在內部推理上，
             // content 變成空的，明明連得上卻回報「回傳空白內容」。
-            ClassicAssert.AreEqual("none", (string)payload["reasoning"]["effort"]);
+            ClassicAssert.AreEqual("none", (string)payload["reasoning"].AsObject()["effort"]);
             ClassicAssert.GreaterOrEqual((int)payload["max_tokens"], 64);
         }
 
@@ -181,8 +181,8 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual("glm-4.5-flash", result.Model);
             ClassicAssert.AreEqual("https://api.z.ai/api/paas/v4/chat/completions", provider.InterceptedUrl);
             ClassicAssert.IsNotNull(provider.InterceptedPayload);
-            var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-            ClassicAssert.AreEqual("glm-4.5-flash", payload["model"]?.ToString());
+            var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+            ClassicAssert.AreEqual("glm-4.5-flash", (string)payload["model"]);
         }
 
         [Test]
@@ -214,8 +214,8 @@ namespace RimLLM_Framework.Tests
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
                 ClassicAssert.IsNotNull(provider.InterceptedPayload);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                ClassicAssert.AreEqual("medium", payload["reasoning_effort"]?.ToString());
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+                ClassicAssert.AreEqual("medium", (string)payload["reasoning_effort"]);
                 ClassicAssert.AreEqual(1500, (int)payload["max_completion_tokens"]);
                 ClassicAssert.IsNull(payload["temperature"]);
                 ClassicAssert.IsNull(payload["max_tokens"]);
@@ -232,7 +232,7 @@ namespace RimLLM_Framework.Tests
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "gpt-4o").GetAwaiter().GetResult();
                 ClassicAssert.IsNotNull(provider.InterceptedPayload);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
                 ClassicAssert.IsNull(payload["reasoning_effort"]);
                 ClassicAssert.AreEqual(0.7f, (float)payload["temperature"]);
                 ClassicAssert.AreEqual(1000, (int)payload["max_tokens"]);
@@ -250,9 +250,9 @@ namespace RimLLM_Framework.Tests
                 string response = provider.GenerateAsync(userMsgs, options, "gemini-2.5-flash").GetAwaiter().GetResult();
                 ClassicAssert.AreEqual("ok", response);
                 ClassicAssert.IsNotNull(provider.InterceptedPayload);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                ClassicAssert.AreEqual("low", payload["reasoning_effort"]?.ToString());
-                ClassicAssert.AreEqual("gemini-2.5-flash", payload["model"]?.ToString());
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+                ClassicAssert.AreEqual("low", (string)payload["reasoning_effort"]);
+                ClassicAssert.AreEqual("gemini-2.5-flash", (string)payload["model"]);
             }
 
             // 4b. Gemini：明確關閉思考對應 effort "none"，由服務端套用預設行為
@@ -261,8 +261,8 @@ namespace RimLLM_Framework.Tests
                 var options = new RimLLMChatOptions { DisableReasoning = true };
                 string response = provider.GenerateAsync(userMsgs, options, "gemini-2.5-flash").GetAwaiter().GetResult();
                 ClassicAssert.AreEqual("ok", response);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                ClassicAssert.AreEqual("none", payload["reasoning_effort"]?.ToString());
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+                ClassicAssert.AreEqual("none", (string)payload["reasoning_effort"]);
             }
 
             // 5. OpenRouter: DeepSeek R1 with ReasoningEffort.Medium
@@ -274,8 +274,8 @@ namespace RimLLM_Framework.Tests
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
                 ClassicAssert.IsNotNull(provider.InterceptedPayload);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                ClassicAssert.AreEqual("medium", (string)payload["reasoning"]["effort"]);
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+                ClassicAssert.AreEqual("medium", (string)payload["reasoning"].AsObject()["effort"]);
                 ClassicAssert.IsNull(payload["reasoning_effort"], "reasoning 與 reasoning_effort 只能擇一，否則服務端會看到矛盾設定。");
             }
 
@@ -288,8 +288,8 @@ namespace RimLLM_Framework.Tests
                     Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High }
                 };
                 string response = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                ClassicAssert.AreEqual("high", (string)payload["reasoning"]["effort"]);
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+                ClassicAssert.AreEqual("high", (string)payload["reasoning"].AsObject()["effort"]);
             }
 
             // 5c. OpenRouter: 明確關閉思考對應 effort "none"。
@@ -297,8 +297,8 @@ namespace RimLLM_Framework.Tests
                 var provider = new TestOpenRouterProvider(mockSettings);
                 var options = new RimLLMChatOptions { DisableReasoning = true };
                 string response = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
-                ClassicAssert.AreEqual("none", (string)payload["reasoning"]["effort"]);
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+                ClassicAssert.AreEqual("none", (string)payload["reasoning"].AsObject()["effort"]);
             }
 
             // 6. Test ReasoningEffort? = null (Auto) and DisableReasoning = true (None) payloads
@@ -309,7 +309,7 @@ namespace RimLLM_Framework.Tests
                 var options = new ChatOptions(); // Reasoning null
                 string response = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
                 ClassicAssert.IsNotNull(provider.InterceptedPayload);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
                 ClassicAssert.IsNull(payload["reasoning_effort"]);
             }
 
@@ -319,7 +319,7 @@ namespace RimLLM_Framework.Tests
                 var options = new ChatOptions(); // Reasoning null
                 string response = provider.GenerateAsync(userMsgs, options, "gemini-2.5-flash").GetAwaiter().GetResult();
                 ClassicAssert.AreEqual("ok", response);
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
                 ClassicAssert.IsNull(payload["reasoning_effort"]);
             }
 
@@ -328,7 +328,7 @@ namespace RimLLM_Framework.Tests
                 var provider = new TestOpenRouterProvider(mockSettings);
                 var options = new ChatOptions();
                 string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
-                var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+                var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
                 ClassicAssert.IsNull(payload["reasoning"]);
             }
         }
@@ -517,7 +517,7 @@ namespace RimLLM_Framework.Tests
                 new RimLLMChatOptions(),
                 "moonshot-v1-8k").GetAwaiter().GetResult();
 
-            var payload = JObject.Parse(provider.CapturedPayload);
+            var payload = JsonNode.Parse(provider.CapturedPayload).AsObject();
             ClassicAssert.IsNull(payload["response_format"],
                 "未宣告支援原生 schema 的衍生供應商不應收到 response_format");
         }
@@ -543,10 +543,10 @@ namespace RimLLM_Framework.Tests
             options.AdditionalProperties["strict"] = schema.StrictCompatible;
             provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
-            var payload = JObject.Parse(provider.CapturedPayload);
+            var payload = JsonNode.Parse(provider.CapturedPayload).AsObject();
             ClassicAssert.IsNotNull(payload["response_format"], "已驗證支援的衍生供應商應收到 response_format");
-            ClassicAssert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());
-            ClassicAssert.IsTrue(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == true,
+            ClassicAssert.AreEqual("custom_type", (string)payload["response_format"]?.AsObject()?["json_schema"]?.AsObject()?["name"]);
+            ClassicAssert.IsTrue(payload["response_format"]?.AsObject()?["json_schema"]?.AsObject()?["strict"]?.GetValue<bool>() == true,
                 "不含 Dictionary 的型別應維持 strict 模式");
         }
 
@@ -571,8 +571,8 @@ namespace RimLLM_Framework.Tests
             options.AdditionalProperties["strict"] = schema.StrictCompatible;
             provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
-            var payload = JObject.Parse(provider.CapturedPayload);
-            ClassicAssert.IsFalse(payload["response_format"]?["json_schema"]?["strict"]?.Value<bool>() == true,
+            var payload = JsonNode.Parse(provider.CapturedPayload).AsObject();
+            ClassicAssert.IsFalse(payload["response_format"]?.AsObject()?["json_schema"]?.AsObject()?["strict"]?.GetValue<bool>() == true,
                 "含 Dictionary 的型別必須關閉 strict，否則服務端會拒絕開放式 map");
         }
 
@@ -608,7 +608,7 @@ namespace RimLLM_Framework.Tests
                 client.GetResponseAsync(messages, requestOptions).GetAwaiter().GetResult();
             }
 
-            var payload = JObject.Parse(provider.CapturedPayload);
+            var payload = JsonNode.Parse(provider.CapturedPayload).AsObject();
             ClassicAssert.IsNotNull(payload["response_format"]?["json_schema"]?["schema"],
                 "response_format 仍必須完整出現在送出的 payload 中");
             ClassicAssert.AreEqual("custom_type", payload["response_format"]?["json_schema"]?["name"]?.ToString());

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Api;
 using RimLLM_Framework.Core;
@@ -192,9 +193,9 @@ namespace RimLLM_Framework.Tests
                 "gemini-2.5-flash").GetAwaiter().GetResult();
 
             ClassicAssert.AreEqual("ok", result);
-            var payload = Newtonsoft.Json.Linq.JObject.Parse(provider.InterceptedPayload);
+            var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.IsNotNull(payload["tools"], "工具定義應隨請求送出。");
-            ClassicAssert.AreEqual("gemini-2.5-flash", payload["model"]?.ToString());
+            ClassicAssert.AreEqual("gemini-2.5-flash", (string)payload["model"]);
         }
     }
 }

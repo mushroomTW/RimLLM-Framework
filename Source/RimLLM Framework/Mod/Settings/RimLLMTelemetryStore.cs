@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Newtonsoft.Json;
 using Verse;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
@@ -123,7 +122,7 @@ namespace RimLLM_Framework.Mod
             {
                 if (!File.Exists(path)) return false;
 
-                var dto = JsonConvert.DeserializeObject<TelemetryDto>(File.ReadAllText(path));
+                var dto = RimLLMJson.Deserialize<TelemetryDto>(File.ReadAllText(path));
                 if (dto == null) return false;
 
                 ChatHistory = ReadChatHistory(dto, out needsRewrite);
@@ -159,7 +158,7 @@ namespace RimLLM_Framework.Mod
 
                 try
                 {
-                    return JsonConvert.DeserializeObject<List<string>>(plain) ?? new List<string>();
+                    return RimLLMJson.Deserialize<List<string>>(plain) ?? new List<string>();
                 }
                 catch
                 {
@@ -207,7 +206,7 @@ namespace RimLLM_Framework.Mod
                     if (ChatHistory != null && ChatHistory.Count > 0)
                     {
                         encryptedHistory = EncryptionUtility.Encrypt(
-                            JsonConvert.SerializeObject(ChatHistory, Formatting.None));
+                            RimLLMJson.Serialize(ChatHistory));
                     }
 
                     var dto = new TelemetryDto
@@ -223,7 +222,7 @@ namespace RimLLM_Framework.Mod
                         DailyBudgetResetDate = DailyBudgetResetDate
                     };
 
-                    File.WriteAllText(tempPath, JsonConvert.SerializeObject(dto, Formatting.None));
+                    File.WriteAllText(tempPath, RimLLMJson.Serialize(dto));
                     ReplaceAtomically(tempPath, path, backupPath);
 
                     LoadedFromDisk = true;

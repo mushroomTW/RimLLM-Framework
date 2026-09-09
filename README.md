@@ -374,7 +374,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
   * Raw exporter output cannot be sent as-is: nullable members come out as `["string","null"]` unions that must be normalized before sending, and `$ref` pointers must be resolved — both covered by unit tests rather than left as claims in this document.
   * `$ref` is **not** only used for recursion — MEAI also emits it to deduplicate a repeated type, so blanket-truncating every `$ref` would silently delete ordinary members. The normalizer resolves the JSON pointer and only treats it as a cycle when it points at an ancestor on the current expansion path.
   * **Every member is listed in `required`**; optionality is carried by the type instead. OpenAI's strict structured output requires `required` to cover all properties, so the previous behaviour (leaving `Nullable<T>` out of `required` while still sending `strict: true`) was rejected server-side and silently downgraded to prompt-based JSON.
-  * Because the schema comes from System.Text.Json's exporter while deserialization is Newtonsoft's, a contract modifier aligns the two (fields included, `[JsonIgnore]` honoured, `[JsonProperty]` names applied, read-only members dropped), and a test asserts the member sets match. **Do not use a custom Newtonsoft `JsonConverter` on structured-output types** — it changes the wire shape in a way the exporter cannot see.
+  * Schema generation and deserialization both run on System.Text.Json under a single shared contract (fields included, `[JsonIgnore]`/`[JsonPropertyName]` honoured, read-only members dropped), and a test asserts the member sets match. **Do not use a custom `JsonConverter` on structured-output types** — it changes the wire shape in a way the exporter cannot see. Child-mod migration note: Newtonsoft's `[JsonProperty("x")]` must become STJ's `[JsonPropertyName("x")]`, and `Newtonsoft.Json.JsonIgnoreAttribute` must become `System.Text.Json.Serialization.JsonIgnoreAttribute` — old attributes are silently ignored after the migration.
   * If `JsonSchemaExporter` is ever unavailable in RimWorld's Mono runtime, the builder logs a warning, permanently falls back to the previous reflection implementation, and forces `strict` off.
 * Provider-specific SDKs never appear in `RimLLMManager` or the public SDK façade; the shared layer depends only on `IChatClient`, `LLMProviderCapabilities` and the existing `ILLMProvider` API. API keys always come from the encrypted settings and are never written into source code or ordinary logs.
 
@@ -394,7 +394,7 @@ To avoid misunderstanding, here is an honest description of what each security m
 
 This mod's source code is released under the **MIT License** — Copyright (c) 2026 **mushroomTW**. See [LICENSE](LICENSE).
 
-Redistributed dependency assemblies in `Assemblies/` keep their own licenses: Microsoft.Extensions.AI, the OpenAI .NET SDK and Newtonsoft.Json are MIT. RimWorld's own assemblies belong to Ludeon Studios and are not redistributed here.
+Redistributed dependency assemblies in `Assemblies/` keep their own licenses: Microsoft.Extensions.AI and the OpenAI .NET SDK are MIT. RimWorld's own assemblies belong to Ludeon Studios and are not redistributed here.
 
 ---
 
