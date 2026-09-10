@@ -177,4 +177,11 @@
   <RimLLM_ProviderSuccessCallsLabel>Success: {0} / Failure: {1}</RimLLM_ProviderSuccessCallsLabel>
   <RimLLM_ProviderSuccessRateLabel>Success Rate: {0}%</RimLLM_ProviderSuccessRateLabel>
   <RimLLM_ProviderApiCacheRateLabel>API Prompt Cache Hit Rate: {0}% (Saved {1} / {2} Tokens)</RimLLM_ProviderApiCacheRateLabel>
+  <RimLLM_AddToFallbackMenu>Add to Fallback Chain</RimLLM_AddToFallbackMenu>
+  <RimLLM_ClickToCopyMenu>Copy Model Name</RimLLM_ClickToCopyMenu>
+  <RimLLM_StatusNoApiKey>⚠ No API Key</RimLLM_StatusNoApiKey>
+  <RimLLM_ChatStop>Stop</RimLLM_ChatStop>
+  <RimLLM_ChatCopyMessage>Copy Reply</RimLLM_ChatCopyMessage>
+  <RimLLM_FilterAll>All</RimLLM_FilterAll>
+  <RimLLM_ClearFilter>Clear</RimLLM_ClearFilter>
 </LanguageData>

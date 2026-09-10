@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using UnityEngine;
 using Verse;
+using RimWorld;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 
@@ -68,7 +69,7 @@ namespace RimLLM_Framework.Mod
             {
                 if (index < chatHistory.Count)
                 {
-                    chatHistory[index] = "RimLLM_ChatAi".Translate() + " " + reply;
+                    chatHistory[index] = EntryPrefix("RimLLM_ChatAi") + reply;
                 }
                 if (persist)
                 {
@@ -129,22 +130,92 @@ namespace RimLLM_Framework.Mod
 
             float chatContentWidth = chatRect.width - 16f;
 
-            // 分隔用 Environment.NewLine 而非 "\n"：與原本的 StringBuilder.AppendLine 一致，
-            // 換行字元不同會讓 CalcHeight 的量測結果與實際繪製對不上。
-            string allChatText = string.Join(Environment.NewLine + Environment.NewLine, chatHistory.ToArray());
+            GUIStyle richLabelStyle = new GUIStyle(Text.CurFontStyle)
+            {
+                richText = true,
+                wordWrap = true
+            };
 
-            GUIStyle richLabelStyle = new GUIStyle(Text.CurFontStyle);
-            richLabelStyle.richText = true;
-            richLabelStyle.wordWrap = true;
+            float bubbleWidth = chatContentWidth - 8f;
+            float bubbleInnerWidth = bubbleWidth - 16f;
+            var bubbleLayouts = new List<(bool isUser, string label, string body, float height, float textHeight)>();
+            float totalBubblesHeight = 8f;
 
-            // 高度必須用同一個 rich text 樣式量測：Text.CalcHeight 會把標籤當成一般字元算進去，
-            // 又不認得 <size> 造成的行高變化，換成 Markdown 之後兩邊的誤差會更明顯。
-            float chatViewHeight = Math.Max(480f, richLabelStyle.CalcHeight(new GUIContent(allChatText), chatContentWidth - 8f) + 12f);
+            for (int i = 0; i < chatHistory.Count; i++)
+            {
+                string entry = chatHistory[i];
+                bool isUser = ParseMessage(entry, out string label, out string body);
+                float textHeight = richLabelStyle.CalcHeight(new GUIContent(body), bubbleInnerWidth);
+                float cardHeight = 24f + textHeight + (isUser ? 10f : 34f);
+                bubbleLayouts.Add((isUser, label, body, cardHeight, textHeight));
+                totalBubblesHeight += cardHeight + 8f;
+            }
+
+            float chatViewHeight = Math.Max(480f, totalBubblesHeight);
             Rect chatViewRect = new Rect(0f, 0f, chatContentWidth, chatViewHeight);
 
             Widgets.BeginScrollView(chatRect, ref chatScrollPosition, chatViewRect);
-            Rect allChatRect = new Rect(4f, 4f, chatContentWidth - 8f, chatViewHeight - 8f);
-            GUI.Label(allChatRect, allChatText, richLabelStyle);
+
+            if (chatHistory.Count == 0)
+            {
+                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+                {
+                    Widgets.Label(new Rect(0f, 0f, chatContentWidth, 480f), "<color=grey>（目前尚無對話記錄，請在下方輸入測試訊息）</color>");
+                }
+            }
+            else
+            {
+                float curY = 8f;
+                for (int i = 0; i < bubbleLayouts.Count; i++)
+                {
+                    var layout = bubbleLayouts[i];
+                    Rect bubbleRect = new Rect(4f, curY, bubbleWidth, layout.height);
+
+                    Color bgColor = layout.isUser ? RimLLMUIStyle.BubbleUserFill : RimLLMUIStyle.BubbleAiFill;
+                    Color borderColor = layout.isUser ? RimLLMUIStyle.BubbleUserBorder : RimLLMUIStyle.BubbleAiBorder;
+
+                    Widgets.DrawBoxSolid(bubbleRect, bgColor);
+                    Widgets.DrawBox(bubbleRect, 1);
+
+                    // 標題列
+                    Rect headerRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 4f, bubbleRect.width - 16f, 20f);
+                    if (layout.isUser)
+                    {
+                        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
+                        {
+                            Widgets.Label(headerRect, $"<color=#60a5fa><b>{layout.label}</b></color>");
+                        }
+                    }
+                    else
+                    {
+                        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
+                        {
+                            Widgets.Label(headerRect, $"<color=#4ade80><b>{layout.label}</b></color>");
+                        }
+                    }
+
+                    // 內文
+                    Rect bodyRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.textHeight + 2f);
+                    GUI.Label(bodyRect, layout.body, richLabelStyle);
+
+                    // AI 訊息底部工具列（單則一鍵複製）
+                    if (!layout.isUser)
+                    {
+                        float btnWidth = 80f;
+                        float btnHeight = 22f;
+                        Rect copyBtnRect = new Rect(bubbleRect.xMax - 8f - btnWidth, bubbleRect.yMax - 27f, btnWidth, btnHeight);
+
+                        if (!chatLoading && Widgets.ButtonText(copyBtnRect, "RimLLM_ChatCopyMessage".Translate()))
+                        {
+                            GUIUtility.systemCopyBuffer = StripRichTextForClipboard(layout.body);
+                            Messages.Message("RimLLM_CopiedToClipboard".Translate("AI"), MessageTypeDefOf.TaskCompletion, false);
+                        }
+                    }
+
+                    curY += layout.height + 8f;
+                }
+            }
+
             Widgets.EndScrollView();
 
             listing.Gap(6f);
@@ -173,7 +244,7 @@ namespace RimLLM_Framework.Mod
             }
             listing.Gap(6f);
 
-            // 輸入框、清空按鈕與發送按鈕
+            // 輸入框、清空按鈕與發送/停止按鈕
             Rect inputRowRect = listing.GetRect(30f);
             Rect textInputRect = new Rect(inputRowRect.x, inputRowRect.y, inputRowRect.width - 180f, inputRowRect.height);
             Rect clearBtnRect = new Rect(inputRowRect.x + inputRowRect.width - 170f, inputRowRect.y, 80f, inputRowRect.height);
@@ -202,12 +273,21 @@ namespace RimLLM_Framework.Mod
             }
 
             // Enter 僅在聊天輸入框取得焦點時才觸發送出。
-            // 先前是全域 KeyDown 偵測，在設定視窗任何位置按 Enter 都會送出請求。
             bool pressEnter = Event.current.type == EventType.KeyDown &&
                               Event.current.keyCode == KeyCode.Return &&
                               GUI.GetNameOfFocusedControl() == ChatInputControlName;
 
-            if (!chatLoading && (Widgets.ButtonText(sendBtnRect, "RimLLM_Send".Translate()) || pressEnter))
+            if (chatLoading)
+            {
+                Color origColor = GUI.color;
+                GUI.color = new Color(0.95f, 0.35f, 0.35f);
+                if (Widgets.ButtonText(sendBtnRect, "RimLLM_ChatStop".Translate()))
+                {
+                    CancelActiveChatRequest();
+                }
+                GUI.color = origColor;
+            }
+            else if (Widgets.ButtonText(sendBtnRect, "RimLLM_Send".Translate()) || pressEnter)
             {
                 // 消耗事件，避免同一個 Enter 被 RimWorld 視窗系統重複處理（重複送出或誤關視窗）。
                 if (pressEnter) Event.current.Use();
@@ -218,10 +298,10 @@ namespace RimLLM_Framework.Mod
                     CancelActiveChatRequest();
 
                     string userPrompt = chatInput.Trim();
-                    chatHistory.Add("RimLLM_ChatUser".Translate() + " " + userPrompt);
+                    chatHistory.Add(EntryPrefix("RimLLM_ChatUser") + userPrompt);
 
                     // 先新增一個 AI 回覆的佔位項目，以利後續串流更新
-                    chatHistory.Add("RimLLM_ChatAi".Translate() + " ");
+                    chatHistory.Add(EntryPrefix("RimLLM_ChatAi"));
                     int aiHistoryIndex = chatHistory.Count - 1;
 
                     PersistChatHistory();
@@ -283,8 +363,8 @@ namespace RimLLM_Framework.Mod
                         }
                         catch (Exception ex)
                         {
-                            string safeError = "RimLLM_ChatAiError".Translate() +
-                                " <color=#ef4444>" + RimLLMLog.SanitizeForLog(ex.Message, 240) + "</color>";
+                            string safeError = EntryPrefix("RimLLM_ChatAiError") +
+                                "<color=#ef4444>" + RimLLMLog.SanitizeForLog(ex.Message, 240) + "</color>";
                             RimLLMDispatcher.EnqueueOnMainThread(() =>
                             {
                                 if (aiHistoryIndex < chatHistory.Count)
@@ -368,6 +448,87 @@ namespace RimLLM_Framework.Mod
             string before = text.Substring(0, markerIndex);
             string after = text.Substring(markerIndex + markerLength);
             return before + $"\n<color=silver>{ThinkingLabel}\n{after} ...</color>";
+        }
+
+        /// <summary>
+        /// 對話紀錄項目的前綴（例如 "&lt;b&gt;[AI]:&lt;/b&gt; "）。
+        /// 一定要以 ToString() 取 RawText 再串接：TaggedString 隱含轉成 string 時會呼叫 StripTags()，
+        /// 把整條訊息裡所有 &lt;...&gt; 標籤（包含 Markdown 轉出的 color/size/b）一併剝掉，
+        /// 畫面上就只剩沒有任何格式的純文字。
+        /// </summary>
+        private static string EntryPrefix(string key)
+        {
+            return key.Translate().ToString() + " ";
+        }
+
+        /// <summary>
+        /// 嘗試剝掉 <paramref name="key"/> 對應的前綴。
+        /// 修正前持久化的舊紀錄前綴已被 StripTags 剝成純文字（"[AI]: "），兩種形式都要認得。
+        /// </summary>
+        private static bool TryStripPrefix(string entry, string key, out string label, out string body)
+        {
+            string raw = EntryPrefix(key);
+            string plain = raw.StripTags();
+            label = plain.Trim();
+            if (entry.StartsWith(raw, StringComparison.Ordinal))
+            {
+                body = entry.Substring(raw.Length);
+                return true;
+            }
+            if (entry.StartsWith(plain, StringComparison.Ordinal))
+            {
+                body = entry.Substring(plain.Length);
+                return true;
+            }
+            body = string.Empty;
+            return false;
+        }
+
+        private static bool ParseMessage(string entry, out string label, out string body)
+        {
+            if (string.IsNullOrEmpty(entry))
+            {
+                label = string.Empty;
+                body = string.Empty;
+                return false;
+            }
+
+            if (TryStripPrefix(entry, "RimLLM_ChatUser", out label, out body)) return true;
+            if (TryStripPrefix(entry, "RimLLM_ChatAiError", out label, out body)) return false;
+            if (TryStripPrefix(entry, "RimLLM_ChatAi", out label, out body)) return false;
+
+            // 舊格式或手動拼接的格式相容
+            if (entry.StartsWith("<b>[我]:</b>", StringComparison.Ordinal) || entry.StartsWith("<b>[Me]:</b>", StringComparison.Ordinal))
+            {
+                int endTag = entry.IndexOf("</b>", StringComparison.Ordinal);
+                label = entry.Substring(0, endTag + 4).Replace("<b>", "").Replace("</b>", "").Trim();
+                body = entry.Substring(endTag + 4).TrimStart();
+                return true;
+            }
+
+            if (entry.StartsWith("<b>[AI]:</b>", StringComparison.Ordinal))
+            {
+                int endTag = entry.IndexOf("</b>", StringComparison.Ordinal);
+                label = entry.Substring(0, endTag + 4).Replace("<b>", "").Replace("</b>", "").Trim();
+                body = entry.Substring(endTag + 4).TrimStart();
+                return false;
+            }
+
+            label = EntryPrefix("RimLLM_ChatAi").StripTags().Trim();
+            body = entry;
+            return false;
+        }
+
+        /// <summary>
+        /// 複製到剪貼簿前先移除真正的 rich text 標籤，再把 <see cref="RimLLMMarkdown.EscapeCode"/> 為了不被 Unity 解讀
+        /// 而改成全形的程式碼標籤（＜b＞、＜/color＞…）還原成 ASCII。只還原那六種標籤，
+        /// 中文回覆裡本來就是全形的「＜注意＞」不能被改掉。順序不能顛倒，否則還原後的程式碼標籤會被當成格式一起剝掉。
+        /// </summary>
+        private static string StripRichTextForClipboard(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            string cleaned = Regex.Replace(text, @"</?(?:b|i|size|color|material|quad)(?:=[^>]*)?>", "", RegexOptions.IgnoreCase);
+            return Regex.Replace(cleaned, @"＜(/?(?:b|i|size|color|material|quad)(?:=[^＞]*)?)＞", "<$1>", RegexOptions.IgnoreCase);
         }
     }
 #pragma warning restore S108, S1643, S2486, S8949

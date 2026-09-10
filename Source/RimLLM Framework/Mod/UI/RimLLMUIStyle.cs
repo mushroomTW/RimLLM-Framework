@@ -39,6 +39,21 @@ namespace RimLLM_Framework.Mod
         /// <summary>快取命中率條的填色。</summary>
         public static readonly Color BarFillCache = new Color(0.15f, 0.45f, 0.6f, 0.8f);
 
+        /// <summary>警告狀態文字/圖示色。</summary>
+        public static readonly Color Warning = new Color(0.96f, 0.62f, 0.04f);
+
+        /// <summary>對話測試中使用者發言氣泡的底色。</summary>
+        public static readonly Color BubbleUserFill = new Color(0.14f, 0.24f, 0.35f, 0.45f);
+
+        /// <summary>對話測試中使用者發言氣泡的外框色。</summary>
+        public static readonly Color BubbleUserBorder = new Color(0.28f, 0.48f, 0.70f, 0.65f);
+
+        /// <summary>對話測試中 AI 回覆氣泡的底色。</summary>
+        public static readonly Color BubbleAiFill = new Color(0.12f, 0.12f, 0.12f, 0.55f);
+
+        /// <summary>對話測試中 AI 回覆氣泡的外框色。</summary>
+        public static readonly Color BubbleAiBorder = new Color(0.32f, 0.32f, 0.32f, 0.65f);
+
         /// <summary>
         /// 暫時改變 <see cref="Text"/> 的全域繪製狀態，離開作用域自動還原。
         ///
@@ -150,6 +165,8 @@ namespace RimLLM_Framework.Mod
             {
                 Widgets.DrawBoxSolid(rect, SelectionFill);
                 Widgets.DrawBox(rect, 1);
+                // 左側高亮指示條，強化層次感
+                Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, 3f, rect.height), Success);
             }
             else if (Mouse.IsOver(rect))
             {

@@ -1,208 +1,401 @@
 using System;
-using System.Collections.Generic;
+using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
-#pragma warning disable S2479, S3878 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
+using Markdig;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
 
 namespace RimLLM_Framework.Mod
 {
 #pragma warning disable S101, S2342 // reason: RimLLM 為品牌縮寫，公開 API 重命名會破壞下游 Mod，維持現狀
     /// <summary>
-    /// 把模型輸出的 Markdown 轉成 Unity 舊版 IMGUI 能顯示的 rich text。
+    /// 基於 Markdig AST 解析引擎，把 Markdown 轉成 Unity 舊版 IMGUI 能顯示的 rich text。
     ///
-    /// 為什麼不用現成套件：Unity 舊版 rich text（RimWorld 的 <c>GUIStyle.richText</c> 走的就是這條）
-    /// 只認得 b、i、size、color、material、quad 六個標籤，沒有縮排、清單、表格、等寬字。
-    /// 現有的 Unity Markdown 套件（FancyTextRendering、UMarkdown、UAddMd）產出的都是
-    /// TextMeshPro 或 UI Toolkit 的標籤，那些標籤在這裡會被原樣印出來，反而更難讀。
-    /// 因此只能自己把 Markdown 映射到那六個標籤，用縮排與符號模擬結構。
-    ///
-    /// 刻意不支援的語法：
-    /// - 底線斜體（<c>_text_</c>）：與 snake_case 識別字衝突太嚴重，誤判成本高於收益。
-    /// - 表格：舊版 rich text 沒有等寬字也無法對齊欄位，原樣保留比硬轉好。
-    /// - 刪除線：舊版 rich text 沒有對應標籤，只去掉標記保留文字。
+    /// 舊版 IMGUI rich text 只認得 b、i、size、color、material、quad 六個標籤。
+    /// 本實作透過 Markdig 構建 CommonMark 語法樹，精準將各語法節點映射至支援的標籤與縮排符號。
     /// </summary>
     public static class RimLLMMarkdown
     {
-        /// <summary>行內程式碼與程式碼區塊的文字顏色。</summary>
-        private const string CodeColor = "#ce9178";
-
-        /// <summary>連結文字的顏色。</summary>
+        private const string CodeColor = "#4ec9b0";
         private const string LinkColor = "#6cb6ff";
-
-        /// <summary>引用區塊與水平分隔線的顏色。</summary>
         private const string MutedColor = "#9aa0a6";
 
-        /// <summary>各級標題的字級（像素）。四級以下只加粗不放大。</summary>
         private static readonly int[] HeadingSizes = { 20, 17, 15 };
 
-        // 佔位符使用控制字元，避免與模型輸出的內容碰撞。
-        private const string PlaceholderOpen = "\u0001";
-        private const string PlaceholderClose = "\u0002";
+        private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().Build();
 
-        private static readonly Regex FenceRegex = new Regex(@"^\s*(`{3,}|~{3,})", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex HorizontalRuleRegex = new Regex(@"^\s*([-*_])\s*(\1\s*){2,}$", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex HeadingRegex = new Regex(@"^\s*(#{1,6})\s+(.*)$", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex BlockQuoteRegex = new Regex(@"^\s*>\s?(.*)$", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex UnorderedItemRegex = new Regex(@"^(\s*)[-*+]\s+(.*)$", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex OrderedItemRegex = new Regex(@"^(\s*)(\d{1,3})[.)]\s+(.*)$", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex TableSeparatorRegex = new Regex(@"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$", RegexOptions.None, TimeSpan.FromSeconds(1));
-
-        private static readonly Regex InlineCodeRegex = new Regex(@"`([^`\n]+)`", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex LinkRegex = new Regex(@"\[([^\]\n]*)\]\(([^)\s]+)(?:\s+""[^""]*"")?\)", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex BoldRegex = new Regex(@"\*\*(?=\S)(.+?)(?<=\S)\*\*", RegexOptions.Singleline, TimeSpan.FromSeconds(1));
-        private static readonly Regex ItalicRegex = new Regex(@"(?<!\*)\*(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)", RegexOptions.None, TimeSpan.FromSeconds(1));
-        private static readonly Regex StrikeRegex = new Regex(@"~~(?=\S)(.+?)(?<=\S)~~", RegexOptions.Singleline, TimeSpan.FromSeconds(1));
-        private static readonly Regex PlaceholderRegex = new Regex("\u0001(\\d+)\u0002", RegexOptions.None, TimeSpan.FromSeconds(1));
+        private static readonly System.Text.RegularExpressions.Regex BoldPattern =
+            new System.Text.RegularExpressions.Regex(@"\*\*\s*([^\*\n]+?)\s*\*\*", System.Text.RegularExpressions.RegexOptions.Compiled);
 
         /// <summary>
-        /// 轉換整段文字。已經存在的 rich text 標籤（例如思考過程的灰色包裝）會原樣通過。
+        /// 粗體預轉換不得碰的區域：``` 或 ~~~ 圍籬（含串流中尚未閉合的尾巴）、行內碼、四空格／tab 縮排的程式碼行。
+        /// 這些地方的 ** 是程式碼（Python 的 **kwargs、a ** b），不是 Markdown 標記。
         /// </summary>
-        public static string ToRichText(string markdown)
+        private static readonly System.Text.RegularExpressions.Regex ProtectedRegion =
+            new System.Text.RegularExpressions.Regex(
+                @"(?:^|(?<=\n))(`{3,}|~{3,})[\s\S]*?(?:\n\1[ \t]*(?=\r?\n|\z)|\z)" +
+                @"|`+[^`\n]*`+" +
+                @"|(?:^|(?<=\n))(?:[ ]{4}|\t)[^\n]*",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static readonly System.Text.RegularExpressions.Regex UnityTagPattern =
+            new System.Text.RegularExpressions.Regex(@"<(/?(?:b|i|size|color|material|quad)(?:=[^>]*)?)>", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>
+        /// 預先處理 Markdown 中的粗體標記。
+        /// 繁簡中文環境下，全形括號或標點與粗體星號相鄰（例如 "**快速排序法（Quick Sort）**的"）時，
+        /// 會觸發 CommonMark 規範中關於標點符號側翼（flanking delimiter）的判定缺陷而拒絕閉合。
+        /// 本方法在排除 <see cref="ProtectedRegion"/>（圍籬、行內碼、縮排程式碼）後，
+        /// 將一般文本中的 **內容** 預先轉換為 Unity 原生支援的 &lt;b&gt;內容&lt;/b&gt;。
+        /// </summary>
+        private static string PreprocessMarkdown(string markdown)
         {
             if (string.IsNullOrEmpty(markdown)) return markdown;
 
-            // 必須用 char[] 多載：Split(char) 是 .NET Core 才有的簽章，
-            // 在 RimWorld 的 Mono 執行環境會直接丟 MissingMethodException。
-            string[] lines = markdown.Replace("\r\n", "\n").Split(new char[] { '\n' });
-            var output = new StringBuilder(markdown.Length + 64);
-            string fence = null;
-
-            for (int i = 0; i < lines.Length; i++)
+            var sb = new StringBuilder(markdown.Length + 32);
+            int last = 0;
+            foreach (System.Text.RegularExpressions.Match region in ProtectedRegion.Matches(markdown))
             {
-                string line = lines[i];
-                Match fenceMatch = FenceRegex.Match(line);
+                sb.Append(BoldPattern.Replace(markdown.Substring(last, region.Index - last), "<b>$1</b>"));
+                sb.Append(region.Value);
+                last = region.Index + region.Length;
+            }
+            sb.Append(BoldPattern.Replace(markdown.Substring(last), "<b>$1</b>"));
+            return sb.ToString();
+        }
 
-                if (fence != null)
+        /// <summary>
+        /// 把程式碼裡剛好長得像 Unity rich text 標籤的片段（&lt;b&gt;、&lt;/i&gt;、&lt;color=red&gt;…）改成全形角括號。
+        /// Unity 舊版 IMGUI 只認得 b/i/size/color/material/quad 六種標籤，其餘如 &lt;iostream&gt;、vector&lt;int&gt;、a &lt; b
+        /// 都會原樣顯示（實機驗證過），不需要也不該動它們；但程式碼裡的 HTML 標籤若不跳脫，會被當成格式套用，
+        /// 甚至提早關閉包住整段程式碼的 &lt;color&gt;。剪貼簿複製時會把全形角括號還原成 ASCII。
+        /// </summary>
+        public static string EscapeCode(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.IndexOf('<') < 0) return text;
+            return UnityTagPattern.Replace(text, "＜$1＞");
+        }
+
+        /// <summary>
+        /// 將 Markdown 文字轉換為 Unity IMGUI 支援的 rich text。
+        /// </summary>
+        public static string ToRichText(string markdown)
+        {
+            if (markdown == null) return null;
+            if (markdown.Length == 0) return string.Empty;
+
+            string preprocessed = PreprocessMarkdown(markdown);
+            MarkdownDocument document = Markdown.Parse(preprocessed, Pipeline);
+            var sb = new StringBuilder(preprocessed.Length + 64);
+            var renderer = new UnityRichTextRenderer(sb);
+            renderer.Render(document);
+            return sb.ToString().TrimEnd(new char[] { '\r', '\n' });
+        }
+
+        private sealed class UnityRichTextRenderer
+        {
+            private readonly StringBuilder _sb;
+            private int _listDepth;
+
+            public UnityRichTextRenderer(StringBuilder sb)
+            {
+                _sb = sb;
+            }
+
+            public void Render(MarkdownDocument document)
+            {
+                bool first = true;
+                foreach (Block block in document)
                 {
-                    // 區塊內：只有同種類的圍籬能收尾，其餘一律當程式碼。
-                    if (fenceMatch.Success && fenceMatch.Groups[1].Value[0] == fence[0])
+                    // 頂層區塊（段落、清單、標題、程式碼）之間留一行空白，與一般 Markdown 呈現一致；
+                    // 清單項目、引用行等區塊內部的換行由各自的 Render 方法處理。
+                    if (!first)
                     {
-                        fence = null;
+                        _sb.Append("\n\n");
+                    }
+                    RenderBlock(block);
+                    first = false;
+                }
+            }
+
+            private void RenderBlock(Block block)
+            {
+                switch (block)
+                {
+                    case HeadingBlock heading:
+                        RenderHeading(heading);
+                        break;
+                    case ParagraphBlock paragraph:
+                        RenderParagraph(paragraph);
+                        break;
+                    case QuoteBlock quote:
+                        RenderQuote(quote);
+                        break;
+                    case ListBlock list:
+                        RenderList(list);
+                        break;
+                    case ListItemBlock listItem:
+                        RenderListItem(listItem);
+                        break;
+                    case FencedCodeBlock fenced:
+                        RenderFencedCode(fenced);
+                        break;
+                    case CodeBlock code:
+                        RenderCodeBlock(code);
+                        break;
+                    case ThematicBreakBlock _:
+                        _sb.Append("<color=").Append(MutedColor).Append(">------------------------------------------------</color>");
+                        break;
+                    case HtmlBlock html:
+                        RenderHtmlBlock(html);
+                        break;
+                    default:
+                        if (block is ContainerBlock container)
+                        {
+                            foreach (Block child in container)
+                            {
+                                RenderBlock(child);
+                            }
+                        }
+                        break;
+                }
+            }
+
+            private void RenderHeading(HeadingBlock heading)
+            {
+                int level = heading.Level;
+                bool hasSize = level >= 1 && level <= HeadingSizes.Length;
+
+                if (hasSize)
+                {
+                    _sb.Append("<size=").Append(HeadingSizes[level - 1]).Append("><b>");
+                }
+                else
+                {
+                    _sb.Append("<b>");
+                }
+
+                if (heading.Inline != null)
+                {
+                    RenderInlines(heading.Inline);
+                }
+
+                if (hasSize)
+                {
+                    _sb.Append("</b></size>");
+                }
+                else
+                {
+                    _sb.Append("</b>");
+                }
+            }
+
+            private void RenderParagraph(ParagraphBlock paragraph)
+            {
+                if (paragraph.Inline != null)
+                {
+                    RenderInlines(paragraph.Inline);
+                }
+            }
+
+            private void RenderQuote(QuoteBlock quote)
+            {
+                var subSb = new StringBuilder();
+                var subRenderer = new UnityRichTextRenderer(subSb);
+                bool firstChild = true;
+                foreach (Block child in quote)
+                {
+                    if (!firstChild) subSb.Append('\n');
+                    subRenderer.RenderBlock(child);
+                    firstChild = false;
+                }
+
+                string content = subSb.ToString().TrimEnd(new char[] { '\r', '\n' });
+                string[] lines = content.Replace("\r\n", "\n").Split(new char[] { '\n' });
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    if (i > 0) _sb.Append('\n');
+                    _sb.Append("<color=").Append(MutedColor).Append(">| ").Append(lines[i]).Append("</color>");
+                }
+            }
+
+            private void RenderList(ListBlock list)
+            {
+                _listDepth++;
+                bool isOrdered = list.IsOrdered;
+                int itemIndex = 1;
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (i > 0) _sb.Append('\n');
+                    if (list[i] is ListItemBlock listItem)
+                    {
+                        RenderListItemInternal(listItem, isOrdered, itemIndex++);
+                    }
+                }
+                _listDepth--;
+            }
+
+            private void RenderListItem(ListItemBlock listItem)
+            {
+                RenderListItemInternal(listItem, false, 1);
+            }
+
+            private void RenderListItemInternal(ListItemBlock listItem, bool isOrdered, int index)
+            {
+                string indent = new string(' ', _listDepth * 2);
+                _sb.Append(indent);
+                if (isOrdered)
+                {
+                    _sb.Append(index).Append(". ");
+                }
+                else
+                {
+                    _sb.Append("• ");
+                }
+
+                bool firstChild = true;
+                foreach (Block child in listItem)
+                {
+                    if (!firstChild) _sb.Append('\n');
+                    if (child is ParagraphBlock p)
+                    {
+                        if (p.Inline != null) RenderInlines(p.Inline);
                     }
                     else
                     {
-                        AppendLine(output, WrapCode("  " + line));
+                        RenderBlock(child);
                     }
-                    continue;
+                    firstChild = false;
                 }
+            }
 
-                if (fenceMatch.Success)
+            private void RenderFencedCode(FencedCodeBlock fenced)
+            {
+                _sb.Append("<color=").Append(CodeColor).Append(">");
+                for (int i = 0; i < fenced.Lines.Count; i++)
                 {
-                    // 串流途中圍籬還沒閉合是常態，後續內容照樣以程式碼呈現。
-                    fence = fenceMatch.Groups[1].Value;
-                    continue;
+                    if (i > 0) _sb.Append('\n');
+                    _sb.Append("  ").Append(EscapeCode(fenced.Lines.Lines[i].Slice.ToString()));
+                }
+                _sb.Append("</color>");
+            }
+
+            private void RenderCodeBlock(CodeBlock code)
+            {
+                _sb.Append("<color=").Append(CodeColor).Append(">");
+                for (int i = 0; i < code.Lines.Count; i++)
+                {
+                    if (i > 0) _sb.Append('\n');
+                    _sb.Append("  ").Append(EscapeCode(code.Lines.Lines[i].Slice.ToString()));
+                }
+                _sb.Append("</color>");
+            }
+
+            private void RenderHtmlBlock(HtmlBlock html)
+            {
+                for (int i = 0; i < html.Lines.Count; i++)
+                {
+                    if (i > 0) _sb.Append('\n');
+                    _sb.Append(html.Lines.Lines[i].Slice.ToString());
+                }
+            }
+
+            private void RenderInlines(ContainerInline container)
+            {
+                foreach (Inline inline in container)
+                {
+                    RenderInline(inline);
+                }
+            }
+
+            private void RenderInline(Inline inline)
+            {
+                switch (inline)
+                {
+                    case LiteralInline literal:
+                        _sb.Append(literal.Content.ToString());
+                        break;
+                    case EmphasisInline emphasis:
+                        RenderEmphasis(emphasis);
+                        break;
+                    case CodeInline code:
+                        _sb.Append("<color=").Append(CodeColor).Append(">")
+                           .Append(EscapeCode(code.Content))
+                           .Append("</color>");
+                        break;
+                    case LinkInline link:
+                        RenderLink(link);
+                        break;
+                    case LineBreakInline _:
+                        _sb.Append('\n');
+                        break;
+                    case HtmlInline html:
+                        _sb.Append(html.Tag);
+                        break;
+                    default:
+                        if (inline is ContainerInline subContainer)
+                        {
+                            RenderInlines(subContainer);
+                        }
+                        break;
+                }
+            }
+
+            private void RenderEmphasis(EmphasisInline emphasis)
+            {
+                if (emphasis.DelimiterChar == '_')
+                {
+                    // 為了防止 snake_case（如 some_field_name）誤判，若是底線則原樣輸出其子內容
+                    foreach (Inline child in emphasis)
+                    {
+                        RenderInline(child);
+                    }
+                    return;
                 }
 
-                AppendLine(output, ConvertBlockLine(line));
+                bool isBold = emphasis.DelimiterCount >= 2;
+                if (isBold)
+                {
+                    _sb.Append("<b>");
+                }
+                else
+                {
+                    _sb.Append("<i>");
+                }
+
+                foreach (Inline child in emphasis)
+                {
+                    RenderInline(child);
+                }
+
+                if (isBold)
+                {
+                    _sb.Append("</b>");
+                }
+                else
+                {
+                    _sb.Append("</i>");
+                }
             }
 
-            return output.ToString();
-        }
-
-        /// <summary>
-        /// 轉換單一非程式碼行：先判斷區塊型語法，再對剩下的文字套用行內語法。
-        /// </summary>
-        private static string ConvertBlockLine(string line)
-        {
-            if (line.Trim().Length == 0) return line;
-
-            if (HorizontalRuleRegex.IsMatch(line))
+            private void RenderLink(LinkInline link)
             {
-                return "<color=" + MutedColor + ">" + new string('-', 48) + "</color>";
+                _sb.Append("<color=").Append(LinkColor).Append(">");
+                if (link.FirstChild != null)
+                {
+                    foreach (Inline child in link)
+                    {
+                        RenderInline(child);
+                    }
+                }
+                else
+                {
+                    _sb.Append(link.Url);
+                }
+                _sb.Append("</color>");
             }
-
-            // 表格分隔列在沒有等寬字的環境只是雜訊，整列去掉；資料列原樣保留。
-            if (TableSeparatorRegex.IsMatch(line)) return string.Empty;
-
-            Match heading = HeadingRegex.Match(line);
-            if (heading.Success)
-            {
-                int level = heading.Groups[1].Value.Length;
-                // TrimEnd(char) 同樣是 .NET Core 才有的多載，在 Mono 上會找不到方法。
-                string text = ConvertInline(heading.Groups[2].Value.TrimEnd(new char[] { '#' }).Trim());
-                return level <= HeadingSizes.Length
-                    ? $"<size={HeadingSizes[level - 1]}><b>{text}</b></size>"
-                    : $"<b>{text}</b>";
-            }
-
-            Match quote = BlockQuoteRegex.Match(line);
-            if (quote.Success)
-            {
-                return $"<color={MutedColor}>| {ConvertInline(quote.Groups[1].Value)}</color>";
-            }
-
-            Match ordered = OrderedItemRegex.Match(line);
-            if (ordered.Success)
-            {
-                return $"{Indent(ordered.Groups[1].Value)}{ordered.Groups[2].Value}. {ConvertInline(ordered.Groups[3].Value)}";
-            }
-
-            Match unordered = UnorderedItemRegex.Match(line);
-            if (unordered.Success)
-            {
-                return $"{Indent(unordered.Groups[1].Value)}• {ConvertInline(unordered.Groups[2].Value)}";
-            }
-
-            return ConvertInline(line);
-        }
-
-        /// <summary>
-        /// 行內語法轉換。先把行內程式碼換成佔位符，避免它的內容被其他規則再處理一次。
-        /// </summary>
-        private static string ConvertInline(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return text;
-
-            var codeSpans = new List<string>();
-            string result = InlineCodeRegex.Replace(text, m =>
-            {
-                codeSpans.Add(m.Groups[1].Value);
-                return PlaceholderOpen + (codeSpans.Count - 1).ToString() + PlaceholderClose;
-            });
-
-            result = LinkRegex.Replace(result, m =>
-            {
-                string label = m.Groups[1].Value;
-                string url = m.Groups[2].Value;
-                return string.IsNullOrEmpty(label)
-                    ? $"<color={LinkColor}>{url}</color>"
-                    : $"<color={LinkColor}>{label}</color>";
-            });
-            result = BoldRegex.Replace(result, "<b>$1</b>");
-            result = ItalicRegex.Replace(result, "<i>$1</i>");
-            result = StrikeRegex.Replace(result, "$1");
-
-            return PlaceholderRegex.Replace(result, m =>
-            {
-                int index = int.Parse(m.Groups[1].Value);
-                return index >= 0 && index < codeSpans.Count ? WrapCode(codeSpans[index]) : m.Value;
-            });
-        }
-
-        private static string WrapCode(string text)
-        {
-            return "<color=" + CodeColor + ">" + text + "</color>";
-        }
-
-        /// <summary>
-        /// 巢狀清單的縮排：每兩個空白（或一個 tab）算一層，每層兩個空白。
-        /// </summary>
-        private static string Indent(string leading)
-        {
-            int width = 0;
-            for (int i = 0; i < leading.Length; i++)
-            {
-                width += leading[i] == '\t' ? 2 : 1;
-            }
-            return new string(' ', 2 + (width / 2) * 2);
-        }
-
-        private static void AppendLine(StringBuilder builder, string line)
-        {
-            if (builder.Length > 0) builder.Append('\n');
-            builder.Append(line);
         }
     }
 #pragma warning restore S101, S2342
-#pragma warning restore S2479, S3878
-}
+}

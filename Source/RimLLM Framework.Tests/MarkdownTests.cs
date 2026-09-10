@@ -154,5 +154,95 @@ namespace RimLLM_Framework.Tests
             const string input = "這只是一段普通文字，沒有任何標記。";
             ClassicAssert.AreEqual(input, RimLLMMarkdown.ToRichText(input));
         }
+
+        [Test]
+        public void CppCodeAngleBracketsAreLeftAlone()
+        {
+            // Unity 舊版 IMGUI 只認得 b/i/size/color/material/quad，<iostream>、vector<int>、x < y 都會原樣顯示（實機驗證），
+            // 不需要跳脫；改成全形角括號反而讓程式碼看起來多了空格。
+            const string input = "```cpp\n#include <iostream>\nvector<int> arr;\nif (x < y) cout << x;\n```";
+            string result = RimLLMMarkdown.ToRichText(input);
+
+            StringAssert.StartsWith("<color=#4ec9b0>", result);
+            StringAssert.EndsWith("</color>", result);
+            StringAssert.Contains("#include <iostream>", result);
+            StringAssert.Contains("vector<int> arr;", result);
+            StringAssert.Contains("if (x < y) cout << x;", result);
+        }
+
+        [Test]
+        public void UnityTagsInsideCodeAreEscaped()
+        {
+            // 程式碼裡的 HTML 標籤若剛好是 Unity 認得的標籤，會被當成格式套用、甚至提早關掉包住程式碼的 <color>。
+            const string input = "```html\n<b>bold</b> <color=red>x</color> <span>ok</span>\n```\n\n行內 `<i>x</i>` 也一樣";
+            string result = RimLLMMarkdown.ToRichText(input);
+
+            StringAssert.Contains("＜b＞bold＜/b＞ ＜color=red＞x＜/color＞ <span>ok</span>", result);
+            StringAssert.Contains("＜i＞x＜/i＞", result);
+            // 只有程式碼區塊自己的 <color> 包裝與行內碼的包裝是真正的標籤
+            ClassicAssert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(result, "<color=#4ec9b0>").Count);
+        }
+
+        [Test]
+        public void TopLevelBlocksAreSeparatedByBlankLine()
+        {
+            string result = RimLLMMarkdown.ToRichText("第一段\n\n第二段\n\n- 項目");
+            ClassicAssert.AreEqual("第一段\n\n第二段\n\n  • 項目", result);
+        }
+
+        [Test]
+        public void QuoteWithMultipleParagraphsKeepsLineBreaks()
+        {
+            string result = RimLLMMarkdown.ToRichText("> 甲\n>\n> 乙");
+            StringAssert.Contains("| 甲</color>\n<color=", result);
+            StringAssert.Contains("| 乙</color>", result);
+        }
+
+        [Test]
+        public void BoldWithTrailingWhitespaceInDelimiterIsRendered()
+        {
+            const string input = "這是一個使用 C++ 實作**快速排序法 (Quick Sort) **的完整範例。";
+            string result = RimLLMMarkdown.ToRichText(input);
+            StringAssert.Contains("<b>快速排序法 (Quick Sort)</b>", result);
+            ClassicAssert.IsFalse(result.Contains("**"), "原始星號不應殘留。");
+        }
+
+        [Test]
+        public void BoldWithCjkPunctuationIsRendered()
+        {
+            const string input = "以下是用 C++ 實作**快速排序法（Quick Sort）**的程式碼";
+            string result = RimLLMMarkdown.ToRichText(input);
+            StringAssert.Contains("<b>快速排序法（Quick Sort）</b>", result);
+            ClassicAssert.IsFalse(result.Contains("**"), "原始星號不應殘留。");
+        }
+
+        [Test]
+        public void DoubleStarInInlineCodeIndentedCodeAndTildeFenceIsNotBold()
+        {
+            // Python 的 **kwargs、a ** b 是程式碼，不是粗體；預轉換必須放過行內碼、縮排程式碼與 ~~~ 圍籬。
+            string inlineCode = RimLLMMarkdown.ToRichText("使用 `**kwargs` 與 `**extra` 參數");
+            StringAssert.Contains("<color=#4ec9b0>**kwargs</color>", inlineCode);
+            StringAssert.Contains("<color=#4ec9b0>**extra</color>", inlineCode);
+
+            string indented = RimLLMMarkdown.ToRichText("    x = a ** b ** c");
+            StringAssert.Contains("x = a ** b ** c", indented);
+
+            string tilde = RimLLMMarkdown.ToRichText("~~~\na ** b ** c\n~~~");
+            StringAssert.Contains("a ** b ** c", tilde);
+
+            string unclosed = RimLLMMarkdown.ToRichText("```\na ** b ** c");
+            StringAssert.Contains("a ** b ** c", unclosed);
+
+            // 一般文字裡的粗體仍要正常
+            ClassicAssert.AreEqual("<b>粗</b>", RimLLMMarkdown.ToRichText("**粗**"));
+        }
+
+        [Test]
+        public void PointersInCodeBlocksAreNotTouchedByBold()
+        {
+            const string input = "```cpp\nint** ptr = nullptr;\n```";
+            string result = RimLLMMarkdown.ToRichText(input);
+            StringAssert.Contains("int** ptr = nullptr;", result);
+        }
     }
 }

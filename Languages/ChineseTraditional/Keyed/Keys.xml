@@ -178,4 +178,11 @@
   <RimLLM_ProviderSuccessCallsLabel>成功: {0} 次 / 失敗: {1} 次</RimLLM_ProviderSuccessCallsLabel>
   <RimLLM_ProviderSuccessRateLabel>呼叫成功率: {0}%</RimLLM_ProviderSuccessRateLabel>
   <RimLLM_ProviderApiCacheRateLabel>API 提示快取命中率: {0}% (已省下 {1} / {2} Tokens)</RimLLM_ProviderApiCacheRateLabel>
+  <RimLLM_AddToFallbackMenu>加至 Fallback 鏈</RimLLM_AddToFallbackMenu>
+  <RimLLM_ClickToCopyMenu>複製模型名稱</RimLLM_ClickToCopyMenu>
+  <RimLLM_StatusNoApiKey>⚠ 未設定金鑰</RimLLM_StatusNoApiKey>
+  <RimLLM_ChatStop>停止</RimLLM_ChatStop>
+  <RimLLM_ChatCopyMessage>複製回覆</RimLLM_ChatCopyMessage>
+  <RimLLM_FilterAll>全部</RimLLM_FilterAll>
+  <RimLLM_ClearFilter>清空</RimLLM_ClearFilter>
 </LanguageData>

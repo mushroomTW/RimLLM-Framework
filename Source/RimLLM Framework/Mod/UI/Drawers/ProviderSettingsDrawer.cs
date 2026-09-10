@@ -124,15 +124,28 @@ namespace RimLLM_Framework.Mod
             Widgets.Label(nameRect, nameText);
 
             bool enabled = Settings.IsProviderEnabled(providerId);
-            string statusText = enabled ? "RimLLM_StatusEnabled".Translate() : "RimLLM_StatusDisabled".Translate();
-            if (enabled)
+            string statusText;
+            Color statusColor;
+
+            if (!enabled)
+            {
+                statusText = "RimLLM_StatusDisabled".Translate();
+                statusColor = RimLLMUIStyle.Muted;
+            }
+            else if (providerId != ProviderIds.OpenAICompatible && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
+            {
+                statusText = "RimLLM_StatusNoApiKey".Translate();
+                statusColor = RimLLMUIStyle.Warning;
+            }
+            else
             {
                 int modelCount = Settings.GetModelList(providerId).Count;
-                statusText += " | " + "RimLLM_ModelsCount".Translate(modelCount);
+                statusText = "RimLLM_StatusEnabled".Translate() + " | " + "RimLLM_ModelsCount".Translate(modelCount);
+                statusColor = RimLLMUIStyle.Success;
             }
 
             Color oldColor = GUI.color;
-            GUI.color = enabled ? RimLLMUIStyle.Success : RimLLMUIStyle.Muted;
+            GUI.color = statusColor;
             using (RimLLMUIStyle.With(font: GameFont.Tiny))
             {
                 Widgets.Label(statusRect, statusText);

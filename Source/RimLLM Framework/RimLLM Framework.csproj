@@ -40,6 +40,7 @@
 
   <ItemGroup>
     <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4871" />
+    <PackageReference Include="Markdig" Version="1.3.2" />
     <!--
       框架唯一的 JSON 引擎。版本刻意釘在 MEAI 已經帶進來的 10.0.11：
       與 Caching.Memory 的做法相同，RimWorld 共用 AppDomain，組件識別必須與

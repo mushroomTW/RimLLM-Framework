@@ -35,21 +35,61 @@ namespace RimLLM_Framework.Mod
             Widgets.Label(new Rect(0f, 0f, inRect.width, 35f), "RimLLM_SelectModelTitle".Translate());
             Text.Font = GameFont.Small;
 
-            // 2. 搜尋框
+            // 2. 搜尋框與清空按鈕
             Rect searchLabelRect = new Rect(0f, 40f, 70f, 30f);
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
             {
                 Widgets.Label(searchLabelRect, "RimLLM_Search".Translate() + ": ");
             }
 
-            Rect filterRect = new Rect(75f, 40f, inRect.width - 75f, 30f);
+            bool hasFilter = !string.IsNullOrEmpty(_filter);
+            float clearBtnWidth = hasFilter ? 30f : 0f;
+            Rect filterRect = new Rect(75f, 40f, inRect.width - 75f - clearBtnWidth, 30f);
             _filter = Widgets.TextField(filterRect, _filter);
+
+            if (hasFilter)
+            {
+                Rect clearRect = new Rect(inRect.width - 28f, 41f, 28f, 28f);
+                if (Widgets.ButtonText(clearRect, "×"))
+                {
+                    _filter = "";
+                }
+                TooltipHandler.TipRegion(clearRect, "RimLLM_ClearFilter".Translate());
+            }
+
+            // 快捷過濾標籤 Chip
+            Rect quickFilterRow = new Rect(0f, 75f, inRect.width, 26f);
+            string[] presetFilters = { "", "gemini", "gpt", "claude", "deepseek", "qwen", "flash" };
+            float chipX = quickFilterRow.x;
+            for (int p = 0; p < presetFilters.Length; p++)
+            {
+                string tag = presetFilters[p];
+                string label = string.IsNullOrEmpty(tag) ? (string)"RimLLM_FilterAll".Translate() : tag;
+                float chipWidth = Text.CalcSize(label).x + 16f;
+                if (chipX + chipWidth > inRect.width) break;
+
+                Rect chipRect = new Rect(chipX, quickFilterRow.y, chipWidth, 24f);
+                bool isActive = (string.IsNullOrEmpty(tag) && string.IsNullOrEmpty(_filter)) ||
+                                (!string.IsNullOrEmpty(tag) && _filter.Equals(tag, StringComparison.OrdinalIgnoreCase));
+
+                RimLLMUIStyle.DrawSelectableFrame(chipRect, isActive);
+                if (Widgets.ButtonInvisible(chipRect))
+                {
+                    _filter = tag;
+                }
+                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny))
+                {
+                    Widgets.Label(chipRect, isActive ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>");
+                }
+
+                chipX += chipWidth + 6f;
+            }
 
             // 3. 過濾模型清單（與供應商設定頁共用同一份比對規則，避免兩處各自漂移）
             List<string> filteredModels = RimLLMUIStyle.FilterModels(_allModels, _filter);
 
             // 4. 滾動清單區
-            float topOffset = 80f;
+            float topOffset = 108f;
             float bottomOffset = 55f; // 為關閉按鈕留空間
             Rect listRect = new Rect(0f, topOffset, inRect.width, inRect.height - topOffset - bottomOffset);
             Widgets.DrawMenuSection(listRect);

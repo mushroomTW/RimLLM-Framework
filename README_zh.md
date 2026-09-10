@@ -292,7 +292,10 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 所有供應商（含 Gemini）都以 HTTP Header 傳遞金鑰，絕不放在請求 URL，避免金鑰進入代理或伺服器的存取日誌。
    * RimWorld 的所有 Mod 都在同一個遊戲行程內執行。本框架不宣稱能阻止惡意 Mod 讀取記憶體、對公開 API 使用反射，或以其他行程內手段繞過邊界。
 4. **精緻的可捲動多欄 GUI**
-   * 直覺的模型 chip 流式格線，選取項目高亮，完整模型名稱以 tooltip 顯示。
+   * 直覺的模型 chip 流式格線與點擊選單，支援一鍵加入 Fallback 容災鏈或複製模型名稱，完整名稱以 tooltip 顯示。
+   * 供應商選單具備當前項目聚焦側條，並即時以顏色標示「已啟用」、「未啟用」與「未配置金鑰」狀態。
+   * 對話測試頁升級為現代化卡片式對話氣泡，清楚分開使用者發言與 AI 回覆，支援基於 Markdig AST 的 Markdown 渲染、氣泡底部單則回覆一鍵複製，並能在生成中隨時一鍵中斷停止。
+   * 模型選擇彈窗具備一鍵清除按鈕與主流模型家族快捷過濾標籤（Gemini、GPT、Claude、DeepSeek 等）。
 5. **獨立除錯分頁與日誌開關**
    * 獨立的**除錯**設定分頁，含「詳細日誌」核取方塊，讓 Mod 開發者與玩家在排查問題時自由開關本 Mod 的日誌輸出。
 6. **一鍵連線測試**
@@ -307,7 +310,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * **推理強度控制**：預設為「自動」，維持服務端自己的預設行為（OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
    * **強度對所有供應商、所有模型都有效**。線上格式由各供應商自行宣告，框架不再靠模型名猜測：頂層 `reasoning_effort`（OpenAI、經 OpenAI 相容端點存取的 Gemini、xAI、Groq、MiniMax、NVIDIA、OpenAI 相容端點）、OpenRouter 的統一 `reasoning` 物件、`thinking: {type}` 加強度（DeepSeek、Z.ai、Kimi）、`enable_thinking` 搭配 `thinking_budget`（Qwen）。詞彙差異逐家對應 —— Kimi 只吃 low/high/max，xAI 的推理無法關閉，關閉請求在該家會被忽略而不是換來 400。
    * **未知模型先樂觀送出，再從服務端學習**。以模型名列白名單必然腐化：框架先前只對 `o1`/`o3` 開頭的模型送出強度，其餘一律靜默丟棄。現在除了少數已知不具思考能力的系列之外一律送出；若服務端以 400 拒絕該參數，框架會記下這組 (供應商, 模型)、去掉參數重打一次，並在本次遊戲執行期間不再送。漏掉一個模型的代價因此是一次重試，而不是永久失效。同一套機制也涵蓋 `temperature` —— GPT-5 等推理模型會直接拒絕它。記憶只存在於本次執行，模型日後支援了，重開遊戲就會重新嘗試。
-   * **Markdown 呈現**：對話測試頁會把模型回覆轉成 Unity 舊版 rich text，標題、粗體、斜體、清單、引用、連結與程式碼區塊會以結構呈現，而不是印出 `**`、`` ` `` 這些原始符號。舊版 IMGUI 只認得 `b`、`i`、`size`、`color`、`material`、`quad` 六個標籤，沒有對應標籤的結構（縮排、表格）以空白與符號近似。底線斜體刻意不支援，因為會與 `snake_case` 識別字衝突。
+   * **Markdown 呈現**：對話測試頁採用 **Markdig AST 解析器** 將模型回覆精準轉成 Unity 舊版 rich text，標題、粗體、斜體、清單、引用、連結與程式碼區塊會以結構呈現，而不是印出 `**`、`` ` `` 這些原始符號。舊版 IMGUI 只認得 `b`、`i`、`size`、`color`、`material`、`quad` 六個標籤，沒有對應標籤的結構（縮排、表格）以空白與符號近似。底線斜體刻意不支援，因為會與 `snake_case` 識別字衝突。
 9. **上下文快取與 Prompt 快取**
    * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位）並套用折扣費率估算成本，讓成本面板反映真實節省。

@@ -254,12 +254,34 @@ namespace RimLLM_Framework.Mod
                 }
                 TooltipHandler.TipRegion(chipRect, model + "\n\n" + "RimLLM_ClickToCopy".Translate());
 
-                // 先前只有 hover 高亮卻沒有任何點擊行為，看起來可點、按下去沒反應。
-                // 這份清單多半是要把名稱抄進 Fallback 設定，因此點擊複製到剪貼簿。
                 if (Widgets.ButtonInvisible(chipRect))
                 {
-                    GUIUtility.systemCopyBuffer = model;
-                    Messages.Message("RimLLM_CopiedToClipboard".Translate(model), MessageTypeDefOf.TaskCompletion, false);
+                    string capturedModel = model;
+                    var options = new List<FloatMenuOption>
+                    {
+                        new FloatMenuOption("RimLLM_ClickToCopyMenu".Translate(), () =>
+                        {
+                            GUIUtility.systemCopyBuffer = capturedModel;
+                            Messages.Message("RimLLM_CopiedToClipboard".Translate(capturedModel), MessageTypeDefOf.TaskCompletion, false);
+                        }),
+                        new FloatMenuOption("RimLLM_AddToFallbackMenu".Translate(), () =>
+                        {
+                            string entry = $"{providerId}:{capturedModel}";
+                            var chain = Settings.FallbackChain;
+                            if (chain.Contains(entry))
+                            {
+                                Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, false);
+                            }
+                            else
+                            {
+                                chain.Add(entry);
+                                Settings.FallbackChain = chain;
+                                Settings.Write();
+                                Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
+                            }
+                        })
+                    };
+                    Find.WindowStack.Add(new FloatMenu(options));
                 }
 
                 Rect textRect = chipRect.ContractedBy(4f);
