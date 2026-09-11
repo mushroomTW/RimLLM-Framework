@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Core;

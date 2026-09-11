@@ -1,6 +1,7 @@
 extern alias bclasync;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
@@ -78,11 +79,7 @@ namespace RimLLM_Framework.Manager
 
             if (last == null || last.Role != ChatRole.Tool) return false;
 
-            foreach (AIContent content in last.Contents)
-            {
-                if (content is FunctionResultContent) return true;
-            }
-            return false;
+            return last.Contents != null && last.Contents.Any(content => content is FunctionResultContent);
         }
     }
 #pragma warning restore S101

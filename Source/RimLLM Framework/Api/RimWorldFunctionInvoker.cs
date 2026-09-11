@@ -29,6 +29,9 @@ namespace RimLLM_Framework.Api
             {
                 MaximumIterationsPerRequest = maxIterations > 0 ? maxIterations : 10,
                 AllowConcurrentInvocation = false, // Unity 為單執行緒環境，禁止工具並行搶佔
+                // 工具擲出的例外訊息回給模型，讓它能修正引數重試；預設只回「Error: Function failed.」，
+                // 模型無從得知錯在哪裡。
+                IncludeDetailedErrors = true,
                 FunctionInvoker = async (FunctionInvocationContext context, CancellationToken cancellationToken) =>
                 {
                     if (context?.Function == null)

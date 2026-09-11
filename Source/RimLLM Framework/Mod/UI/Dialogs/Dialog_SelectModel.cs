@@ -36,6 +36,20 @@ namespace RimLLM_Framework.Mod
             Text.Font = GameFont.Small;
 
             // 2. 搜尋框與清空按鈕
+            DrawSearchBar(inRect);
+
+            // 快捷過濾標籤 Chip
+            DrawQuickFilters(inRect);
+
+            // 3. 過濾模型清單（與供應商設定頁共用同一份比對規則，避免兩處各自漂移）
+            List<string> filteredModels = RimLLMUIStyle.FilterModels(_allModels, _filter);
+
+            // 4. 滾動清單區
+            DrawModelList(inRect, filteredModels);
+        }
+
+        private void DrawSearchBar(Rect inRect)
+        {
             Rect searchLabelRect = new Rect(0f, 40f, 70f, 30f);
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
             {
@@ -56,8 +70,10 @@ namespace RimLLM_Framework.Mod
                 }
                 TooltipHandler.TipRegion(clearRect, "RimLLM_ClearFilter".Translate());
             }
+        }
 
-            // 快捷過濾標籤 Chip
+        private void DrawQuickFilters(Rect inRect)
+        {
             Rect quickFilterRow = new Rect(0f, 75f, inRect.width, 26f);
             string[] presetFilters = { "", "gemini", "gpt", "claude", "deepseek", "qwen", "flash" };
             float chipX = quickFilterRow.x;
@@ -84,11 +100,10 @@ namespace RimLLM_Framework.Mod
 
                 chipX += chipWidth + 6f;
             }
+        }
 
-            // 3. 過濾模型清單（與供應商設定頁共用同一份比對規則，避免兩處各自漂移）
-            List<string> filteredModels = RimLLMUIStyle.FilterModels(_allModels, _filter);
-
-            // 4. 滾動清單區
+        private void DrawModelList(Rect inRect, List<string> filteredModels)
+        {
             float topOffset = 108f;
             float bottomOffset = 55f; // 為關閉按鈕留空間
             Rect listRect = new Rect(0f, topOffset, inRect.width, inRect.height - topOffset - bottomOffset);

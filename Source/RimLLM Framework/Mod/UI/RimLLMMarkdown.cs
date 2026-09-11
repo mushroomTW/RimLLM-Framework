@@ -19,13 +19,16 @@ namespace RimLLM_Framework.Mod
         private const string CodeColor = "#4ec9b0";
         private const string LinkColor = "#6cb6ff";
         private const string MutedColor = "#9aa0a6";
+        private const string ColorTagOpen = "<color=";
+        private const string ColorTagClose = "</color>";
+        private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
         private static readonly int[] HeadingSizes = { 20, 17, 15 };
 
         private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().Build();
 
         private static readonly System.Text.RegularExpressions.Regex BoldPattern =
-            new System.Text.RegularExpressions.Regex(@"\*\*\s*([^\*\n]+?)\s*\*\*", System.Text.RegularExpressions.RegexOptions.Compiled);
+            new System.Text.RegularExpressions.Regex(@"\*\*\s*([^\*\n]+?)\s*\*\*", System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
 
         /// <summary>
         /// 粗體預轉換不得碰的區域：``` 或 ~~~ 圍籬（含串流中尚未閉合的尾巴）、行內碼、四空格／tab 縮排的程式碼行。
@@ -36,10 +39,10 @@ namespace RimLLM_Framework.Mod
                 @"(?:^|(?<=\n))(`{3,}|~{3,})[\s\S]*?(?:\n\1[ \t]*(?=\r?\n|\z)|\z)" +
                 @"|`+[^`\n]*`+" +
                 @"|(?:^|(?<=\n))(?:[ ]{4}|\t)[^\n]*",
-                System.Text.RegularExpressions.RegexOptions.Compiled);
+                System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
 
         private static readonly System.Text.RegularExpressions.Regex UnityTagPattern =
-            new System.Text.RegularExpressions.Regex(@"<(/?(?:b|i|size|color|material|quad)(?:=[^>]*)?)>", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+            new System.Text.RegularExpressions.Regex(@"<(/?(?:b|i|size|color|material|quad)(?:=[^>]*)?)>", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
 
         /// <summary>
         /// 預先處理 Markdown 中的粗體標記。
@@ -89,13 +92,14 @@ namespace RimLLM_Framework.Mod
             var sb = new StringBuilder(preprocessed.Length + 64);
             var renderer = new UnityRichTextRenderer(sb);
             renderer.Render(document);
-            return sb.ToString().TrimEnd(new char[] { '\r', '\n' });
+            return sb.ToString().TrimEnd('\r', '\n');
         }
 
         private sealed class UnityRichTextRenderer
         {
             private readonly StringBuilder _sb;
             private int _listDepth;
+            private static readonly char[] NewlineSeparator = { '\n' };
 
             public UnityRichTextRenderer(StringBuilder sb)
             {
@@ -144,7 +148,7 @@ namespace RimLLM_Framework.Mod
                         RenderCodeBlock(code);
                         break;
                     case ThematicBreakBlock _:
-                        _sb.Append("<color=").Append(MutedColor).Append(">------------------------------------------------</color>");
+                        _sb.Append(ColorTagOpen).Append(MutedColor).Append(">------------------------------------------------").Append(ColorTagClose);
                         break;
                     case HtmlBlock html:
                         RenderHtmlBlock(html);
@@ -210,12 +214,12 @@ namespace RimLLM_Framework.Mod
                     firstChild = false;
                 }
 
-                string content = subSb.ToString().TrimEnd(new char[] { '\r', '\n' });
-                string[] lines = content.Replace("\r\n", "\n").Split(new char[] { '\n' });
+                string content = subSb.ToString().TrimEnd('\r', '\n');
+                string[] lines = content.Replace("\r\n", "\n").Split(NewlineSeparator);
                 for (int i = 0; i < lines.Length; i++)
                 {
                     if (i > 0) _sb.Append('\n');
-                    _sb.Append("<color=").Append(MutedColor).Append(">| ").Append(lines[i]).Append("</color>");
+                    _sb.Append(ColorTagOpen).Append(MutedColor).Append(">| ").Append(lines[i]).Append(ColorTagClose);
                 }
             }
 
@@ -272,24 +276,24 @@ namespace RimLLM_Framework.Mod
 
             private void RenderFencedCode(FencedCodeBlock fenced)
             {
-                _sb.Append("<color=").Append(CodeColor).Append(">");
+                _sb.Append(ColorTagOpen).Append(CodeColor).Append(">");
                 for (int i = 0; i < fenced.Lines.Count; i++)
                 {
                     if (i > 0) _sb.Append('\n');
                     _sb.Append("  ").Append(EscapeCode(fenced.Lines.Lines[i].Slice.ToString()));
                 }
-                _sb.Append("</color>");
+                _sb.Append(ColorTagClose);
             }
 
             private void RenderCodeBlock(CodeBlock code)
             {
-                _sb.Append("<color=").Append(CodeColor).Append(">");
+                _sb.Append(ColorTagOpen).Append(CodeColor).Append(">");
                 for (int i = 0; i < code.Lines.Count; i++)
                 {
                     if (i > 0) _sb.Append('\n');
                     _sb.Append("  ").Append(EscapeCode(code.Lines.Lines[i].Slice.ToString()));
                 }
-                _sb.Append("</color>");
+                _sb.Append(ColorTagClose);
             }
 
             private void RenderHtmlBlock(HtmlBlock html)
@@ -320,9 +324,9 @@ namespace RimLLM_Framework.Mod
                         RenderEmphasis(emphasis);
                         break;
                     case CodeInline code:
-                        _sb.Append("<color=").Append(CodeColor).Append(">")
+                        _sb.Append(ColorTagOpen).Append(CodeColor).Append(">")
                            .Append(EscapeCode(code.Content))
-                           .Append("</color>");
+                           .Append(ColorTagClose);
                         break;
                     case LinkInline link:
                         RenderLink(link);
@@ -381,7 +385,7 @@ namespace RimLLM_Framework.Mod
 
             private void RenderLink(LinkInline link)
             {
-                _sb.Append("<color=").Append(LinkColor).Append(">");
+                _sb.Append(ColorTagOpen).Append(LinkColor).Append(">");
                 if (link.FirstChild != null)
                 {
                     foreach (Inline child in link)
@@ -393,7 +397,7 @@ namespace RimLLM_Framework.Mod
                 {
                     _sb.Append(link.Url);
                 }
-                _sb.Append("</color>");
+                _sb.Append(ColorTagClose);
             }
         }
     }

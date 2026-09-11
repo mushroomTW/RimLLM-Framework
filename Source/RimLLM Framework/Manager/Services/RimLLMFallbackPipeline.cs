@@ -69,22 +69,7 @@ namespace RimLLM_Framework.Manager
 
             // PreferredModelId（格式 "ProviderId:ModelName"）指定的話，於 fallback chain 前優先嘗試
             var effectiveChain = new List<string>(fallbackChain);
-            if (!string.IsNullOrEmpty(preferredModelId))
-            {
-                string preferredEntry = preferredModelId;
-                if (!ResolveFallbackEntry(preferredEntry, out string prefProvider, out string prefModel)
-                    || string.IsNullOrEmpty(prefModel))
-                {
-                    // 無 provider 前綴的純 model 名視為「不指定 provider」，忽略（交給 fallback chain）
-                    prefProvider = null;
-                }
-                if (prefProvider != null && (_providerResolver(prefProvider) is ILLMProvider prefProviderInstance)
-                    && IsProviderUsable(prefProvider, prefProviderInstance)
-                    && !effectiveChain.Exists(e => string.Equals(e, preferredEntry, StringComparison.OrdinalIgnoreCase)))
-                {
-                    effectiveChain.Insert(0, preferredEntry);
-                }
-            }
+            PrependPreferredModelIfUsable(effectiveChain, preferredModelId);
 
             // 1. 解析所有符合資格的供應商候選
             var candidates = new List<ResolvedCandidate>();
@@ -232,6 +217,26 @@ namespace RimLLM_Framework.Manager
         private static int NextRandomInt(int maxExclusive)
         {
             lock (RandomLock) { return SharedRandom.Next(maxExclusive); }
+        }
+
+        private void PrependPreferredModelIfUsable(List<string> effectiveChain, string preferredModelId)
+        {
+            if (string.IsNullOrEmpty(preferredModelId)) return;
+
+            string preferredEntry = preferredModelId;
+            if (!ResolveFallbackEntry(preferredEntry, out string prefProvider, out string prefModel)
+                || string.IsNullOrEmpty(prefModel))
+            {
+                // 無 provider 前綴的純 model 名視為「不指定 provider」，忽略（交給 fallback chain）
+                prefProvider = null;
+            }
+
+            if (prefProvider != null && (_providerResolver(prefProvider) is ILLMProvider prefProviderInstance)
+                && IsProviderUsable(prefProvider, prefProviderInstance)
+                && !effectiveChain.Exists(e => string.Equals(e, preferredEntry, StringComparison.OrdinalIgnoreCase)))
+            {
+                effectiveChain.Insert(0, preferredEntry);
+            }
         }
 
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)

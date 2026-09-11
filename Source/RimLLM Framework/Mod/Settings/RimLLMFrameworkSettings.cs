@@ -93,7 +93,8 @@ namespace RimLLM_Framework.Mod
         public bool EnableResponseCache { get; set; } = false;
         public float ResponseCacheTtlMinutes { get; set; } = 30f;
 
-        public string EmbeddingProvider { get; set; } = "Disabled";
+        public const string DisabledProvider = "Disabled";
+        public string EmbeddingProvider { get; set; } = DisabledProvider;
 
         public string EmbeddingModel
         {
@@ -242,7 +243,7 @@ namespace RimLLM_Framework.Mod
             public bool EnableResponseCache;
             public float ResponseCacheTtlMinutes = 30f;
             public string EncryptedEmbeddingApiKey;
-            public string EmbeddingProvider = "Disabled";
+            public string EmbeddingProvider = DisabledProvider;
             public string EmbeddingModel = "gemini-embedding-2";
             public string EmbeddingEndpoint = "";
             public string EmbeddingApiKey = "";
@@ -433,12 +434,12 @@ namespace RimLLM_Framework.Mod
                                 this.EnableJsonRepair = dto.EnableJsonRepair;
                                 this.EnableResponseCache = dto.EnableResponseCache;
                                 this.ResponseCacheTtlMinutes = dto.ResponseCacheTtlMinutes <= 0f ? 30f : dto.ResponseCacheTtlMinutes;
-                                this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? "Disabled" : dto.EmbeddingProvider;
+                                this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? DisabledProvider : dto.EmbeddingProvider;
                                 if (dto.EmbeddingModels != null)
                                 {
                                     foreach (var kvp in dto.EmbeddingModels) this._embeddingModels[kvp.Key] = kvp.Value;
                                 }
-                                else if (!string.IsNullOrEmpty(dto.EmbeddingModel) && this.EmbeddingProvider != "Disabled")
+                                else if (!string.IsNullOrEmpty(dto.EmbeddingModel) && this.EmbeddingProvider != DisabledProvider)
                                 {
                                     this._embeddingModels[this.EmbeddingProvider] = dto.EmbeddingModel;
                                 }
@@ -447,7 +448,7 @@ namespace RimLLM_Framework.Mod
                                 {
                                     foreach (var kvp in dto.EmbeddingEndpoints) this._embeddingEndpoints[kvp.Key] = kvp.Value;
                                 }
-                                else if (!string.IsNullOrEmpty(dto.EmbeddingEndpoint) && this.EmbeddingProvider != "Disabled")
+                                else if (!string.IsNullOrEmpty(dto.EmbeddingEndpoint) && this.EmbeddingProvider != DisabledProvider)
                                 {
                                     this._embeddingEndpoints[this.EmbeddingProvider] = dto.EmbeddingEndpoint;
                                 }
@@ -472,12 +473,12 @@ namespace RimLLM_Framework.Mod
                                 else if (!string.IsNullOrEmpty(dto.EncryptedEmbeddingApiKey))
                                 {
                                     string plain = EncryptionUtility.Decrypt(dto.EncryptedEmbeddingApiKey);
-                                    if (plain != null && this.EmbeddingProvider != "Disabled")
+                                    if (plain != null && this.EmbeddingProvider != DisabledProvider)
                                     {
                                         _embeddingApiKeys[this.EmbeddingProvider] = plain;
                                     }
                                 }
-                                else if (!string.IsNullOrEmpty(dto.EmbeddingApiKey) && this.EmbeddingProvider != "Disabled")
+                                else if (!string.IsNullOrEmpty(dto.EmbeddingApiKey) && this.EmbeddingProvider != DisabledProvider)
                                 {
                                     _embeddingApiKeys[this.EmbeddingProvider] = dto.EmbeddingApiKey;
                                 }

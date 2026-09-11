@@ -28,6 +28,8 @@ namespace RimLLM_Framework.Mod
 
         /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
         private const string ChatInputControlName = "RimLLM_ChatInput";
+        private const string ChatAiTag = "RimLLM_ChatAi";
+        private static readonly char[] SpaceTrimChars = { ' ' };
 
         /// <summary>目前進行中請求的取消來源，供「清空」按鈕中止長時間回應。</summary>
         private static System.Threading.CancellationTokenSource chatCts;
@@ -79,28 +81,49 @@ namespace RimLLM_Framework.Mod
                 return $"model={ModelId ?? ""}|ms={ElapsedMs}|tok={TotalTokens}|p={PromptTokens}|c={CompletionTokens}|est={(IsEstimatedTokens ? 1 : 0)}";
             }
 
+            private static readonly char[] PipeSeparator = { '|' };
+
             public static ChatEntryMeta Deserialize(string raw)
             {
                 if (string.IsNullOrEmpty(raw)) return null;
                 var meta = new ChatEntryMeta();
-                var parts = raw.Split(new char[] { '|' });
+                var parts = raw.Split(PipeSeparator);
                 foreach (var part in parts)
                 {
                     int eq = part.IndexOf('=');
                     if (eq <= 0) continue;
                     string key = part.Substring(0, eq).Trim();
                     string val = part.Substring(eq + 1).Trim();
-                    switch (key)
-                    {
-                        case "model": meta.ModelId = val; break;
-                        case "ms": if (long.TryParse(val, out long ms)) meta.ElapsedMs = ms; break;
-                        case "tok": if (int.TryParse(val, out int tok)) meta.TotalTokens = tok; break;
-                        case "p": if (int.TryParse(val, out int p)) meta.PromptTokens = p; break;
-                        case "c": if (int.TryParse(val, out int c)) meta.CompletionTokens = c; break;
-                        case "est": meta.IsEstimatedTokens = val == "1"; break;
-                    }
+                    ParseMetaField(meta, key, val);
                 }
                 return meta;
+            }
+
+            private static void ParseMetaField(ChatEntryMeta meta, string key, string val)
+            {
+                switch (key)
+                {
+                    case "model":
+                        meta.ModelId = val;
+                        break;
+                    case "ms":
+                        if (long.TryParse(val, out long ms)) { meta.ElapsedMs = ms; }
+                        break;
+                    case "tok":
+                        if (int.TryParse(val, out int tok)) { meta.TotalTokens = tok; }
+                        break;
+                    case "p":
+                        if (int.TryParse(val, out int p)) { meta.PromptTokens = p; }
+                        break;
+                    case "c":
+                        if (int.TryParse(val, out int c)) { meta.CompletionTokens = c; }
+                        break;
+                    case "est":
+                        meta.IsEstimatedTokens = val == "1";
+                        break;
+                    default:
+                        break;
+                }
             }
         }
 
@@ -115,7 +138,7 @@ namespace RimLLM_Framework.Mod
             {
                 if (index < chatHistory.Count)
                 {
-                    string entry = EntryPrefix("RimLLM_ChatAi") + reply;
+                    string entry = EntryPrefix(ChatAiTag) + reply;
                     if (meta != null)
                     {
                         entry += MetaPrefix + meta.Serialize() + MetaSuffix;
@@ -223,7 +246,6 @@ namespace RimLLM_Framework.Mod
                     Rect bubbleRect = new Rect(4f, curY, bubbleWidth, layout.height);
 
                     Color bgColor = layout.isUser ? RimLLMUIStyle.BubbleUserFill : RimLLMUIStyle.BubbleAiFill;
-                    Color borderColor = layout.isUser ? RimLLMUIStyle.BubbleUserBorder : RimLLMUIStyle.BubbleAiBorder;
 
                     Widgets.DrawBoxSolid(bubbleRect, bgColor);
                     Widgets.DrawBox(bubbleRect, 1);
@@ -360,7 +382,7 @@ namespace RimLLM_Framework.Mod
                     chatHistory.Add(EntryPrefix("RimLLM_ChatUser") + userPrompt);
 
                     // 先新增一個 AI 回覆的佔位項目，以利後續串流更新
-                    chatHistory.Add(EntryPrefix("RimLLM_ChatAi"));
+                    chatHistory.Add(EntryPrefix(ChatAiTag));
                     int aiHistoryIndex = chatHistory.Count - 1;
 
                     PersistChatHistory();
@@ -594,7 +616,7 @@ namespace RimLLM_Framework.Mod
             switch (key)
             {
                 case "RimLLM_ChatUser": return "<b>[Me]:</b> ";
-                case "RimLLM_ChatAi": return "<b>[AI]:</b> ";
+                case ChatAiTag: return "<b>[AI]:</b> ";
                 case "RimLLM_ChatAiError": return "<b>[AI Error]:</b> ";
                 default: return key + " ";
             }
@@ -648,14 +670,14 @@ namespace RimLLM_Framework.Mod
 
             if (TryStripPrefix(entry, "RimLLM_ChatUser", out label, out body)) return true;
             if (TryStripPrefix(entry, "RimLLM_ChatAiError", out label, out body)) return false;
-            if (TryStripPrefix(entry, "RimLLM_ChatAi", out label, out body)) return false;
+            if (TryStripPrefix(entry, ChatAiTag, out label, out body)) return false;
 
             // 舊格式或手動拼接的格式相容
             if (entry.StartsWith("<b>[我]:</b>", StringComparison.Ordinal) || entry.StartsWith("<b>[Me]:</b>", StringComparison.Ordinal))
             {
                 int endTag = entry.IndexOf("</b>", StringComparison.Ordinal);
                 label = entry.Substring(0, endTag + 4).Replace("<b>", "").Replace("</b>", "").Trim();
-                body = entry.Substring(endTag + 4).TrimStart(new char[] { ' ' });
+                body = entry.Substring(endTag + 4).TrimStart(SpaceTrimChars);
                 return true;
             }
 
@@ -663,11 +685,11 @@ namespace RimLLM_Framework.Mod
             {
                 int endTag = entry.IndexOf("</b>", StringComparison.Ordinal);
                 label = entry.Substring(0, endTag + 4).Replace("<b>", "").Replace("</b>", "").Trim();
-                body = entry.Substring(endTag + 4).TrimStart(new char[] { ' ' });
+                body = entry.Substring(endTag + 4).TrimStart(SpaceTrimChars);
                 return false;
             }
 
-            label = EntryPrefix("RimLLM_ChatAi").StripTags().Trim();
+            label = EntryPrefix(ChatAiTag).StripTags().Trim();
             body = entry;
             return false;
         }
@@ -706,88 +728,95 @@ namespace RimLLM_Framework.Mod
             float gap = 8f;
 
             // 1. 模型標籤（點擊可一鍵複製，懸停微高亮）
-            string modelDisplay = FormatModelDisplayName(meta.ModelId);
-            if (!string.IsNullOrEmpty(modelDisplay))
-            {
-                float textW;
-                using (RimLLMUIStyle.With(font: GameFont.Tiny))
-                {
-                    textW = Text.CalcSize(modelDisplay).x;
-                }
-
-                float modelW = Mathf.Min(textW + 6f, area.width * 0.6f);
-                Rect modelRect = new Rect(curX, area.y, modelW, area.height);
-
-                if (Mouse.IsOver(modelRect))
-                {
-                    Widgets.DrawHighlight(modelRect);
-                }
-
-                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
-                {
-                    Widgets.Label(modelRect, $"<color=#94a3b8>{modelDisplay.Truncate(modelRect.width)}</color>");
-                }
-
-                string modelTip = "RimLLM_ChatModelBadgeTooltip".Translate(meta.ModelId);
-                TooltipHandler.TipRegion(modelRect, modelTip);
-
-                if (Widgets.ButtonInvisible(modelRect))
-                {
-                    GUIUtility.systemCopyBuffer = meta.ModelId;
-                    Messages.Message("RimLLM_CopiedToClipboard".Translate(meta.ModelId), MessageTypeDefOf.TaskCompletion, false);
-                }
-
-                curX += modelW;
-
-                // 分隔點
-                if (area.xMax - curX > 50f)
-                {
-                    Rect dotRect = new Rect(curX, area.y, gap, area.height);
-                    using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny, wordWrap: false))
-                    {
-                        Widgets.Label(dotRect, "<color=#475569>•</color>");
-                    }
-                    curX += gap;
-                }
-            }
+            DrawModelBadge(ref curX, area, meta.ModelId, gap);
 
             // 2. 耗時與 Token 數（懸停顯示詳細分解 Tooltip）
-            float remainW = area.xMax - curX;
-            if (remainW > 40f)
+            DrawMetricsBadge(curX, area, meta);
+        }
+
+        private static void DrawModelBadge(ref float curX, Rect area, string modelId, float gap)
+        {
+            string modelDisplay = FormatModelDisplayName(modelId);
+            if (string.IsNullOrEmpty(modelDisplay)) return;
+
+            float textW;
+            using (RimLLMUIStyle.With(font: GameFont.Tiny))
             {
-                string timeStr = meta.ElapsedMs < 1000 ? $"{meta.ElapsedMs}ms" : $"{(meta.ElapsedMs / 1000f):F1}s";
-                string tokenStr = meta.TotalTokens > 0
-                    ? $"{(meta.IsEstimatedTokens ? "~" : "")}{meta.TotalTokens} tok"
-                    : "";
-
-                string statText = string.IsNullOrEmpty(tokenStr)
-                    ? $"<color=#64748b>{timeStr}</color>"
-                    : $"<color=#64748b>{timeStr}</color>  <color=#475569>•</color>  <color=#64748b>{tokenStr}</color>";
-
-                float statW;
-                using (RimLLMUIStyle.With(font: GameFont.Tiny))
-                {
-                    statW = Text.CalcSize(statText.StripTags()).x + 8f;
-                }
-                statW = Mathf.Min(statW, remainW);
-                Rect statRect = new Rect(curX, area.y, statW, area.height);
-
-                if (Mouse.IsOver(statRect))
-                {
-                    Widgets.DrawHighlight(statRect);
-                }
-
-                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
-                {
-                    Widgets.Label(statRect, statText);
-                }
-
-                float timeSec = meta.ElapsedMs / 1000f;
-                string statTip = meta.IsEstimatedTokens
-                    ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens)
-                    : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens, meta.PromptTokens, meta.CompletionTokens);
-                TooltipHandler.TipRegion(statRect, statTip);
+                textW = Text.CalcSize(modelDisplay).x;
             }
+
+            float modelW = Mathf.Min(textW + 6f, area.width * 0.6f);
+            Rect modelRect = new Rect(curX, area.y, modelW, area.height);
+
+            if (Mouse.IsOver(modelRect))
+            {
+                Widgets.DrawHighlight(modelRect);
+            }
+
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
+            {
+                Widgets.Label(modelRect, $"<color=#94a3b8>{modelDisplay.Truncate(modelRect.width)}</color>");
+            }
+
+            string modelTip = "RimLLM_ChatModelBadgeTooltip".Translate(modelId);
+            TooltipHandler.TipRegion(modelRect, modelTip);
+
+            if (Widgets.ButtonInvisible(modelRect))
+            {
+                GUIUtility.systemCopyBuffer = modelId;
+                Messages.Message("RimLLM_CopiedToClipboard".Translate(modelId), MessageTypeDefOf.TaskCompletion, false);
+            }
+
+            curX += modelW;
+
+            // 分隔點
+            if (area.xMax - curX > 50f)
+            {
+                Rect dotRect = new Rect(curX, area.y, gap, area.height);
+                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny, wordWrap: false))
+                {
+                    Widgets.Label(dotRect, "<color=#475569>•</color>");
+                }
+                curX += gap;
+            }
+        }
+
+        private static void DrawMetricsBadge(float curX, Rect area, ChatEntryMeta meta)
+        {
+            float remainW = area.xMax - curX;
+            if (remainW <= 40f) return;
+
+            string timeStr = meta.ElapsedMs < 1000 ? $"{meta.ElapsedMs}ms" : $"{(meta.ElapsedMs / 1000f):F1}s";
+            string tokenPrefix = meta.IsEstimatedTokens ? "~" : "";
+            string tokenStr = meta.TotalTokens > 0 ? $"{tokenPrefix}{meta.TotalTokens} tok" : "";
+
+            string statText = string.IsNullOrEmpty(tokenStr)
+                ? $"<color=#64748b>{timeStr}</color>"
+                : $"<color=#64748b>{timeStr}</color>  <color=#475569>•</color>  <color=#64748b>{tokenStr}</color>";
+
+            float statW;
+            using (RimLLMUIStyle.With(font: GameFont.Tiny))
+            {
+                statW = Text.CalcSize(statText.StripTags()).x + 8f;
+            }
+            statW = Mathf.Min(statW, remainW);
+            Rect statRect = new Rect(curX, area.y, statW, area.height);
+
+            if (Mouse.IsOver(statRect))
+            {
+                Widgets.DrawHighlight(statRect);
+            }
+
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
+            {
+                Widgets.Label(statRect, statText);
+            }
+
+            float timeSec = meta.ElapsedMs / 1000f;
+            string statTip = meta.IsEstimatedTokens
+                ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens)
+                : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens, meta.PromptTokens, meta.CompletionTokens);
+            TooltipHandler.TipRegion(statRect, statTip);
         }
 
         /// <summary>
@@ -798,9 +827,10 @@ namespace RimLLM_Framework.Mod
         private static string StripRichTextForClipboard(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;
-            string cleaned = Regex.Replace(text, @"<!--rimllm-meta:[\s\S]*?-->", "", RegexOptions.IgnoreCase);
-            cleaned = Regex.Replace(cleaned, @"</?(?:b|i|size|color|material|quad)(?:=[^>]*)?>", "", RegexOptions.IgnoreCase);
-            return Regex.Replace(cleaned, @"＜(/?(?:b|i|size|color|material|quad)(?:=[^＞]*)?)＞", "<$1>", RegexOptions.IgnoreCase);
+            var timeout = TimeSpan.FromSeconds(1);
+            string cleaned = Regex.Replace(text, @"<!--rimllm-meta:[\s\S]*?-->", "", RegexOptions.IgnoreCase, timeout);
+            cleaned = Regex.Replace(cleaned, @"</?(?:b|i|size|color|material|quad)(?:=[^>]*)?>", "", RegexOptions.IgnoreCase, timeout);
+            return Regex.Replace(cleaned, @"＜(/?(?:b|i|size|color|material|quad)(?:=[^＞]*)?)＞", "<$1>", RegexOptions.IgnoreCase, timeout);
         }
     }
 #pragma warning restore S108, S1643, S2486, S8949

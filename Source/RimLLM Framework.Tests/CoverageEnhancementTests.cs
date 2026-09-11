@@ -8,6 +8,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
+using RimLLM_Framework.Mod;
 using RimLLM_Framework.Providers;
 
 namespace RimLLM_Framework.Tests
@@ -623,6 +624,108 @@ namespace RimLLM_Framework.Tests
             tracker.CheckDailyReset();
             ClassicAssert.AreEqual(0f, settings.DailyAccumulatedCost);
             ClassicAssert.AreEqual(DateTime.Today.ToString("yyyy-MM-dd"), settings.DailyBudgetResetDate);
+        }
+
+        [Test]
+        public void TestAntiAbuseChatClientIsToolLoopContinuationDetailed()
+        {
+            // Null / empty cases
+            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(null));
+            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage>()));
+
+            // Message with null contents
+            var msgNullContents = new ChatMessage(ChatRole.User, (IList<AIContent>)null);
+            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgNullContents }));
+
+            // Message with empty contents
+            var msgEmptyContents = new ChatMessage(ChatRole.User, new List<AIContent>());
+            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgEmptyContents }));
+
+            // Message with non-tool contents (TextContent)
+            var msgTextOnly = new ChatMessage(ChatRole.User, new List<AIContent> { new TextContent("Hello") });
+            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgTextOnly }));
+
+            // Message with FunctionResultContent
+            var msgToolResult = new ChatMessage(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("call1", "result") });
+            ClassicAssert.IsTrue(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgTextOnly, msgToolResult }));
+
+            // Last message is not tool result even if previous was
+            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgToolResult, msgTextOnly }));
+        }
+
+        [Test]
+        public void TestChatEntryMetaDeserializeEdgeCases()
+        {
+            // Null or empty
+            ClassicAssert.IsNull(ChatTestDrawer.ChatEntryMeta.Deserialize(null));
+            ClassicAssert.IsNull(ChatTestDrawer.ChatEntryMeta.Deserialize(""));
+
+            // Malformed entry with no equals
+            var metaNoEquals = ChatTestDrawer.ChatEntryMeta.Deserialize("plain_text|no_equals");
+            ClassicAssert.IsNotNull(metaNoEquals);
+            ClassicAssert.AreEqual("", metaNoEquals.ModelId);
+
+            // Empty key or value
+            var metaEmptyKeyVal = ChatTestDrawer.ChatEntryMeta.Deserialize("=val|key=");
+            ClassicAssert.IsNotNull(metaEmptyKeyVal);
+
+            // Fully populated with unknown keys and invalid numbers
+            string raw = "unknown=ignored|model=test-model|ms=invalid|tok=50|p=20|c=30|est=1";
+            var meta = ChatTestDrawer.ChatEntryMeta.Deserialize(raw);
+            ClassicAssert.IsNotNull(meta);
+            ClassicAssert.AreEqual("test-model", meta.ModelId);
+            ClassicAssert.AreEqual(0, meta.ElapsedMs); // "invalid" defaults to 0
+            ClassicAssert.AreEqual(50, meta.TotalTokens);
+            ClassicAssert.AreEqual(20, meta.PromptTokens);
+            ClassicAssert.AreEqual(30, meta.CompletionTokens);
+            ClassicAssert.IsTrue(meta.IsEstimatedTokens);
+
+            // Round-trip serialize
+            string serialized = meta.Serialize();
+            ClassicAssert.IsTrue(serialized.Contains("model=test-model"));
+            ClassicAssert.IsTrue(serialized.Contains("est=1"));
+        }
+
+        [Test]
+        public void TestFallbackPipelinePrependPreferredModelEdgeCases()
+        {
+            var settings = new MockSettings();
+            var ledger = new RimLLMHealthLedger();
+            var tracker = new RimLLMUsageTracker(settings);
+            var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
+            var pipeline = new RimLLMFallbackPipeline(
+                settings,
+                ledger,
+                tracker,
+                id => providers.TryGetValue(id, out var p) ? p : null,
+                id => settings.EnabledProviders.TryGetValue(id, out bool enabled) && enabled);
+
+            var p1 = new MockTestProvider { ProviderId = "P1" };
+            providers["P1"] = p1;
+            settings.EnabledProviders["P1"] = true;
+            settings.ApiKeys["P1"] = "k1";
+            settings.FallbackChain = new List<string> { "P1:default-model" };
+
+            // Null or empty preferredModelId
+            var res = pipeline.ResolveCandidates(null, null);
+            ClassicAssert.AreEqual("default-model", res[0].ModelName);
+
+            res = pipeline.ResolveCandidates("", null);
+            ClassicAssert.AreEqual("default-model", res[0].ModelName);
+
+            // Preferred model without colon
+            res = pipeline.ResolveCandidates("invalidFormat", null);
+            ClassicAssert.AreEqual("default-model", res[0].ModelName);
+
+            // Preferred model already in chain at index 0
+            res = pipeline.ResolveCandidates("P1:default-model", null);
+            ClassicAssert.AreEqual(1, res.Count);
+            ClassicAssert.AreEqual("default-model", res[0].ModelName);
+
+            // Preferred model with disabled provider
+            settings.EnabledProviders["P2"] = false;
+            res = pipeline.ResolveCandidates("P2:some-model", null);
+            ClassicAssert.AreEqual("default-model", res[0].ModelName);
         }
 
 #pragma warning disable CS0649

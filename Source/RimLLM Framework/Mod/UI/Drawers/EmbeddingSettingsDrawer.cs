@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
 using Verse;
@@ -18,37 +19,44 @@ namespace RimLLM_Framework.Mod
     {
         private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
+        private const string ProviderGoogle = "Google";
+        private const string ProviderOpenAI = "OpenAI";
+        private const string ProviderOllama = "LocalAPI_Ollama";
+        private const string ProviderLocalOpenAI = "LocalAPI_OpenAI";
+        private const string ColorTagOpen = "<color=";
+        private const string ColorTagClose = "</color>";
+
         /// <summary>
         /// 中欄選單項目：後備顯示名稱與供應商代號。
         /// 實際顯示走 <c>RimLLM_EmbeddingProvider_{id}</c> 語系鍵，後備名稱只在語系未載入（單元測試）時使用。
         /// </summary>
-        public static readonly List<KeyValuePair<string, string>> MenuEntries = new List<KeyValuePair<string, string>>
+        private static readonly List<KeyValuePair<string, string>> MenuEntries = new List<KeyValuePair<string, string>>
         {
-            new KeyValuePair<string, string>("Google Gemini", "Google"),
-            new KeyValuePair<string, string>("OpenAI", "OpenAI"),
-            new KeyValuePair<string, string>("Ollama (本地)", "LocalAPI_Ollama"),
-            new KeyValuePair<string, string>("OpenAI 相容 (本地/自訂)", "LocalAPI_OpenAI")
+            new KeyValuePair<string, string>("Google Gemini", ProviderGoogle),
+            new KeyValuePair<string, string>("OpenAI", ProviderOpenAI),
+            new KeyValuePair<string, string>("Ollama (本地)", ProviderOllama),
+            new KeyValuePair<string, string>("OpenAI 相容 (本地/自訂)", ProviderLocalOpenAI)
         };
 
         private const float SubButtonHeight = 46f;
         private const float SubButtonGap = 4f;
 
         /// <summary>目前選中的 Embedding 供應商子分頁。</summary>
-        public static string ActiveEmbeddingSubTab { get; set; } = "Google";
+        public static string ActiveEmbeddingSubTab { get; set; } = ProviderGoogle;
 
         private static Vector2 _midScrollPosition = Vector2.zero;
 
         // 狀態與快取字典（各供應商獨立，避免切換子分頁時互相干擾）
-        public static readonly Dictionary<string, bool> Fetching = new Dictionary<string, bool>(StringComparer.Ordinal);
-        public static readonly Dictionary<string, string> FetchStatus = new Dictionary<string, string>(StringComparer.Ordinal);
-        public static readonly Dictionary<string, bool> Testing = new Dictionary<string, bool>(StringComparer.Ordinal);
-        public static readonly Dictionary<string, string> TestStatus = new Dictionary<string, string>(StringComparer.Ordinal);
-        public static readonly Dictionary<string, Vector2> ModelScrollPositions = new Dictionary<string, Vector2>(StringComparer.Ordinal);
-        public static readonly Dictionary<string, string> ModelFilters = new Dictionary<string, string>(StringComparer.Ordinal);
-        public static readonly Dictionary<string, bool> RevealedKeys = new Dictionary<string, bool>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, bool> Fetching = new Dictionary<string, bool>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> FetchStatus = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, bool> Testing = new Dictionary<string, bool>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> TestStatus = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, Vector2> ModelScrollPositions = new Dictionary<string, Vector2>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> ModelFilters = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, bool> RevealedKeys = new Dictionary<string, bool>(StringComparer.Ordinal);
 
-        public static readonly Dictionary<string, bool> Detecting = new Dictionary<string, bool>(StringComparer.Ordinal);
-        public static readonly Dictionary<string, string> DetectStatus = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, bool> Detecting = new Dictionary<string, bool>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> DetectStatus = new Dictionary<string, string>(StringComparer.Ordinal);
 
         private static readonly System.Net.Http.HttpClient DetectClient = new System.Net.Http.HttpClient
         {
@@ -89,22 +97,22 @@ namespace RimLLM_Framework.Mod
         /// 各供應商預先定義的真實存在推薦模型清單。
         /// 當尚未從遠端 API 抓取模型清單時，作為預設選項展示，供玩家即點即用。
         /// </summary>
-        public static readonly Dictionary<string, List<string>> DefaultPresetModels = new Dictionary<string, List<string>>(StringComparer.Ordinal)
+        public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> DefaultPresetModels = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
         {
             {
-                "Google",
+                ProviderGoogle,
                 new List<string> { "gemini-embedding-2", "gemini-embedding-001", "gemini-embedding-2-preview" }
             },
             {
-                "OpenAI",
+                ProviderOpenAI,
                 new List<string> { "text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002" }
             },
             {
-                "LocalAPI_Ollama",
+                ProviderOllama,
                 new List<string> { "nomic-embed-text", "bge-m3", "all-minilm", "mxbai-embed-large", "snowflake-arctic-embed" }
             },
             {
-                "LocalAPI_OpenAI",
+                ProviderLocalOpenAI,
                 new List<string> { "text-embedding-3-small", "text-embedding-3-large", "bge-m3", "nomic-embed-text" }
             }
         };
@@ -118,7 +126,7 @@ namespace RimLLM_Framework.Mod
                 modelCount = presets.Count;
             }
             float modelSectionHeight = modelCount > 0 ? 280f : 70f;
-            float localDetectHeight = (providerId == "LocalAPI_Ollama" || providerId == "LocalAPI_OpenAI") ? 40f : 0f;
+            float localDetectHeight = (providerId == ProviderOllama || providerId == ProviderLocalOpenAI) ? 40f : 0f;
             return 460f + modelSectionHeight + localDetectHeight;
         }
 
@@ -141,9 +149,9 @@ namespace RimLLM_Framework.Mod
             Listing_Standard listing = new Listing_Standard();
             listing.Begin(viewRect);
 
-            foreach (var entry in MenuEntries)
+            foreach (var providerId in MenuEntries.Select(entry => entry.Value))
             {
-                DrawEmbeddingSubButton(listing, GetProviderDisplayName(entry.Value), entry.Value);
+                DrawEmbeddingSubButton(listing, GetProviderDisplayName(providerId), providerId);
                 listing.Gap(SubButtonGap);
             }
             listing.End();
@@ -164,7 +172,7 @@ namespace RimLLM_Framework.Mod
             Rect nameRect = new Rect(btnRect.x + 8f, btnRect.y + 3f, btnRect.width - 16f, 22f);
             Rect statusRect = new Rect(btnRect.x + 8f, btnRect.y + 25f, btnRect.width - 16f, 18f);
             Text.Font = GameFont.Small;
-            string nameText = ActiveEmbeddingSubTab == providerId ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
+            string nameText = ActiveEmbeddingSubTab == providerId ? $"{ColorTagOpen}white><b>{label}</b>{ColorTagClose}" : $"{ColorTagOpen}silver>{label}{ColorTagClose}";
             Widgets.Label(nameRect, nameText);
 
             bool isActive = Settings.EmbeddingProvider == providerId;
@@ -328,10 +336,10 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static void DrawEndpointSection(Listing_Standard listing, string providerId)
         {
-            bool isLocal = providerId == "LocalAPI_Ollama" || providerId == "LocalAPI_OpenAI";
+            bool isLocal = providerId == ProviderOllama || providerId == ProviderLocalOpenAI;
             string defaultEndpoint = RimLLMFrameworkSettings.GetDefaultEmbeddingEndpoint(providerId);
 
-            listing.Label("RimLLM_EmbeddingEndpointLabel".Translate() + $" <color=grey>({defaultEndpoint})</color>");
+            listing.Label("RimLLM_EmbeddingEndpointLabel".Translate() + $" {ColorTagOpen}grey>({defaultEndpoint}){ColorTagClose}");
 
             // 欄位顯示原始輸入值；空白代表使用預設端點，不可回填預設值，否則玩家無法清空重打。
             string currentEndpoint = Settings.GetEmbeddingEndpointRaw(providerId);
@@ -383,7 +391,7 @@ namespace RimLLM_Framework.Mod
         {
             var ollama = ("Ollama", "http://localhost:11434/v1", "http://localhost:11434/v1/models");
             var ollamaRaw = ("Ollama (Raw)", "http://localhost:11434", "http://localhost:11434/api/tags");
-            if (providerId == "LocalAPI_Ollama")
+            if (providerId == ProviderOllama)
             {
                 return new[] { ollama, ollamaRaw };
             }
@@ -450,63 +458,21 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static void DrawModelSection(Listing_Standard listing, string providerId)
         {
-            listing.Label("RimLLM_EmbeddingModelLabel".Translate() + $" <color=grey>({RimLLMFrameworkSettings.GetDefaultEmbeddingModel(providerId)})</color>");
-            // 欄位顯示原始輸入值；空白代表使用預設模型，不可回填預設值，否則玩家無法清空重打。
-            string currentModel = Settings.GetEmbeddingModelRaw(providerId);
-            string newModel = listing.TextEntry(currentModel);
-            if (newModel != currentModel)
-            {
-                Settings.SetEmbeddingModel(providerId, newModel);
-                Settings.Write();
-            }
-            listing.Gap(4f);
+            DrawModelInputField(listing, providerId);
 
-            // 可用模型清單
             listing.Label("RimLLM_AvailableModelsTitle".Translate());
-            string cacheKey = RimLLMEmbeddingService.GetModelListKey(providerId);
-            List<string> cachedModels = Settings.GetModelList(cacheKey);
-            bool isPreset = false;
-            if (cachedModels.Count == 0 && DefaultPresetModels.TryGetValue(providerId, out var presets))
-            {
-                cachedModels = presets;
-                isPreset = true;
-            }
+            var availableModels = ResolveAvailableModels(providerId, out bool isPreset);
+            var modelList = availableModels as IList<string> ?? availableModels.ToList();
 
-            if (cachedModels.Count == 0)
+            if (modelList.Count == 0)
             {
                 listing.Label("RimLLM_EmbeddingNoModelList".Translate());
             }
             else
             {
-                Rect hintRect = listing.GetRect(18f);
-                using (RimLLMUIStyle.With(font: GameFont.Tiny))
-                {
-                    Color oldC = GUI.color;
-                    GUI.color = isPreset ? RimLLMUIStyle.Muted : RimLLMUIStyle.Success;
-                    Widgets.Label(hintRect, isPreset ? "RimLLM_EmbeddingPresetModelsHint".Translate() : "RimLLM_EmbeddingFetchedModelsHint".Translate());
-                    GUI.color = oldC;
-                }
-                listing.Gap(2f);
+                DrawModelFilterBar(listing, providerId, isPreset);
 
-                // 搜尋框
-                string filter = ModelFilters.TryGetValue(providerId, out string f) ? f : "";
-                Rect searchRowRect = listing.GetRect(28f);
-                float searchLabelWidth = Text.CalcSize("RimLLM_Search".Translate() + ": ").x;
-                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-                {
-                    Widgets.Label(
-                        new Rect(searchRowRect.x, searchRowRect.y, searchLabelWidth, searchRowRect.height),
-                        "RimLLM_Search".Translate() + ": ");
-                }
-                Rect searchFieldRect = new Rect(
-                    searchRowRect.x + searchLabelWidth + 4f,
-                    searchRowRect.y,
-                    searchRowRect.width - searchLabelWidth - 4f,
-                    searchRowRect.height);
-                ModelFilters[providerId] = Widgets.TextField(searchFieldRect, filter);
-                listing.Gap(4f);
-
-                List<string> visibleModels = RimLLMUIStyle.FilterModels(cachedModels, ModelFilters[providerId]);
+                List<string> visibleModels = RimLLMUIStyle.FilterModels(modelList, ModelFilters[providerId]);
                 Rect scrollRect = listing.GetRect(200f);
                 Widgets.DrawMenuSection(scrollRect);
 
@@ -514,79 +480,12 @@ namespace RimLLM_Framework.Mod
                 {
                     using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
                     {
-                        Widgets.Label(scrollRect, "<color=grey>" + "RimLLM_NoMatchingModels".Translate() + "</color>");
+                        Widgets.Label(scrollRect, $"{ColorTagOpen}grey>" + "RimLLM_NoMatchingModels".Translate() + ColorTagClose);
                     }
                 }
                 else
                 {
-                    float contentWidth = scrollRect.width - 16f;
-                    float chipHeight = 28f;
-                    float gap = 8f;
-                    RimLLMUIStyle.ComputeChipLayout(contentWidth, gap, 220f, out int cols, out float chipWidth);
-
-                    int rows = Mathf.CeilToInt((float)visibleModels.Count / cols);
-                    float viewHeight = Mathf.Max(200f, rows * (chipHeight + gap) + gap);
-                    Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
-
-                    if (!ModelScrollPositions.ContainsKey(providerId))
-                    {
-                        ModelScrollPositions[providerId] = Vector2.zero;
-                    }
-                    Vector2 scrollPos = ModelScrollPositions[providerId];
-
-                    Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
-                    ModelScrollPositions[providerId] = scrollPos;
-
-                    for (int i = 0; i < visibleModels.Count; i++)
-                    {
-                        string model = visibleModels[i];
-                        int col = i % cols;
-                        int row = i / cols;
-
-                        Rect chipRect = new Rect(
-                            col * (chipWidth + gap) + gap,
-                            row * (chipHeight + gap) + gap,
-                            chipWidth,
-                            chipHeight
-                        );
-
-                        Widgets.DrawBoxSolid(chipRect, RimLLMUIStyle.ChipFill);
-                        Widgets.DrawBox(chipRect, 1);
-
-                        if (Mouse.IsOver(chipRect))
-                        {
-                            Widgets.DrawHighlight(chipRect);
-                        }
-                        TooltipHandler.TipRegion(chipRect, model + "\n\n" + "RimLLM_ClickToCopy".Translate());
-
-                        if (Widgets.ButtonInvisible(chipRect))
-                        {
-                            string capturedModel = model;
-                            var options = new List<FloatMenuOption>
-                            {
-                                new FloatMenuOption("RimLLM_EmbeddingSetAsModel".Translate(), () =>
-                                {
-                                    Settings.SetEmbeddingModel(providerId, capturedModel);
-                                    Settings.Write();
-                                    Messages.Message("RimLLM_EmbeddingModelLabel".Translate() + capturedModel, MessageTypeDefOf.TaskCompletion, false);
-                                }),
-                                new FloatMenuOption("RimLLM_ClickToCopyMenu".Translate(), () =>
-                                {
-                                    GUIUtility.systemCopyBuffer = capturedModel;
-                                    Messages.Message("RimLLM_CopiedToClipboard".Translate(capturedModel), MessageTypeDefOf.TaskCompletion, false);
-                                })
-                            };
-                            Find.WindowStack.Add(new FloatMenu(options));
-                        }
-
-                        Rect textRect = chipRect.ContractedBy(4f);
-                        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
-                        {
-                            Widgets.Label(textRect, $"<color=silver>{model.Truncate(textRect.width)}</color>");
-                        }
-                    }
-
-                    Widgets.EndScrollView();
+                    DrawModelGrid(scrollRect, providerId, visibleModels);
                 }
             }
 
@@ -600,6 +499,139 @@ namespace RimLLM_Framework.Mod
                 "RimLLM_FetchModelsBtn".Translate(),
                 FetchStatus.TryGetValue(providerId, out string fs) ? fs : "RimLLM_FetchStatusNotRun".Translate().ToString(),
                 () => StartFetchEmbeddingModels(providerId));
+        }
+
+        private static void DrawModelInputField(Listing_Standard listing, string providerId)
+        {
+            listing.Label("RimLLM_EmbeddingModelLabel".Translate() + $" {ColorTagOpen}grey>({RimLLMFrameworkSettings.GetDefaultEmbeddingModel(providerId)}){ColorTagClose}");
+            string currentModel = Settings.GetEmbeddingModelRaw(providerId);
+            string newModel = listing.TextEntry(currentModel);
+            if (newModel != currentModel)
+            {
+                Settings.SetEmbeddingModel(providerId, newModel);
+                Settings.Write();
+            }
+            listing.Gap(4f);
+        }
+
+        private static IEnumerable<string> ResolveAvailableModels(string providerId, out bool isPreset)
+        {
+            string cacheKey = RimLLMEmbeddingService.GetModelListKey(providerId);
+            List<string> cachedModels = Settings.GetModelList(cacheKey);
+            isPreset = false;
+            if (cachedModels.Count == 0 && DefaultPresetModels.TryGetValue(providerId, out var presets))
+            {
+                isPreset = true;
+                return presets;
+            }
+            return cachedModels;
+        }
+
+        private static void DrawModelFilterBar(Listing_Standard listing, string providerId, bool isPreset)
+        {
+            Rect hintRect = listing.GetRect(18f);
+            using (RimLLMUIStyle.With(font: GameFont.Tiny))
+            {
+                Color oldC = GUI.color;
+                GUI.color = isPreset ? RimLLMUIStyle.Muted : RimLLMUIStyle.Success;
+                Widgets.Label(hintRect, isPreset ? "RimLLM_EmbeddingPresetModelsHint".Translate() : "RimLLM_EmbeddingFetchedModelsHint".Translate());
+                GUI.color = oldC;
+            }
+            listing.Gap(2f);
+
+            string filter = ModelFilters.TryGetValue(providerId, out string f) ? f : "";
+            Rect searchRowRect = listing.GetRect(28f);
+            float searchLabelWidth = Text.CalcSize("RimLLM_Search".Translate() + ": ").x;
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(
+                    new Rect(searchRowRect.x, searchRowRect.y, searchLabelWidth, searchRowRect.height),
+                    "RimLLM_Search".Translate() + ": ");
+            }
+            Rect searchFieldRect = new Rect(
+                searchRowRect.x + searchLabelWidth + 4f,
+                searchRowRect.y,
+                searchRowRect.width - searchLabelWidth - 4f,
+                searchRowRect.height);
+            ModelFilters[providerId] = Widgets.TextField(searchFieldRect, filter);
+            listing.Gap(4f);
+        }
+
+        private static void DrawModelGrid(Rect scrollRect, string providerId, List<string> visibleModels)
+        {
+            float contentWidth = scrollRect.width - 16f;
+            float chipHeight = 28f;
+            float gap = 8f;
+            RimLLMUIStyle.ComputeChipLayout(contentWidth, gap, 220f, out int cols, out float chipWidth);
+
+            int rows = Mathf.CeilToInt((float)visibleModels.Count / cols);
+            float viewHeight = Mathf.Max(200f, rows * (chipHeight + gap) + gap);
+            Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
+
+            if (!ModelScrollPositions.ContainsKey(providerId))
+            {
+                ModelScrollPositions[providerId] = Vector2.zero;
+            }
+            Vector2 scrollPos = ModelScrollPositions[providerId];
+
+            Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
+            ModelScrollPositions[providerId] = scrollPos;
+
+            for (int i = 0; i < visibleModels.Count; i++)
+            {
+                string model = visibleModels[i];
+                int col = i % cols;
+                int row = i / cols;
+
+                Rect chipRect = new Rect(
+                    col * (chipWidth + gap) + gap,
+                    row * (chipHeight + gap) + gap,
+                    chipWidth,
+                    chipHeight
+                );
+
+                Widgets.DrawBoxSolid(chipRect, RimLLMUIStyle.ChipFill);
+                Widgets.DrawBox(chipRect, 1);
+
+                if (Mouse.IsOver(chipRect))
+                {
+                    Widgets.DrawHighlight(chipRect);
+                }
+                TooltipHandler.TipRegion(chipRect, model + "\n\n" + "RimLLM_ClickToCopy".Translate());
+
+                if (Widgets.ButtonInvisible(chipRect))
+                {
+                    ShowModelMenu(providerId, model);
+                }
+
+                Rect textRect = chipRect.ContractedBy(4f);
+                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
+                {
+                    Widgets.Label(textRect, $"{ColorTagOpen}silver>{model.Truncate(textRect.width)}{ColorTagClose}");
+                }
+            }
+
+            Widgets.EndScrollView();
+        }
+
+        private static void ShowModelMenu(string providerId, string model)
+        {
+            string capturedModel = model;
+            var options = new List<FloatMenuOption>
+            {
+                new FloatMenuOption("RimLLM_EmbeddingSetAsModel".Translate(), () =>
+                {
+                    Settings.SetEmbeddingModel(providerId, capturedModel);
+                    Settings.Write();
+                    Messages.Message("RimLLM_EmbeddingModelLabel".Translate() + capturedModel, MessageTypeDefOf.TaskCompletion, false);
+                }),
+                new FloatMenuOption("RimLLM_ClickToCopyMenu".Translate(), () =>
+                {
+                    GUIUtility.systemCopyBuffer = capturedModel;
+                    Messages.Message("RimLLM_CopiedToClipboard".Translate(capturedModel), MessageTypeDefOf.TaskCompletion, false);
+                })
+            };
+            Find.WindowStack.Add(new FloatMenu(options));
         }
 
         private static void StartFetchEmbeddingModels(string providerId)
