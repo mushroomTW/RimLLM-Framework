@@ -158,20 +158,36 @@
   <RimLLM_MsgApiKeyDecryptFailed>無法解密 {0} 已儲存的 API 金鑰（可能已更換裝置）。原始密文已保留，請重新輸入金鑰。</RimLLM_MsgApiKeyDecryptFailed>
 
   <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
-  <RimLLM_TitleEmbedding>Embedding 向量設定</RimLLM_TitleEmbedding>
-  <RimLLM_EmbeddingExplanation>Embedding 會把文字轉換成數值向量，可用於語意檢索與分群比對，其他 Mod 能透過 RimLLM SDK 呼叫。選「停用」時不會產生向量。</RimLLM_EmbeddingExplanation>
-  <RimLLM_EmbeddingProviderLabel>Embedding 供應商: </RimLLM_EmbeddingProviderLabel>
+  <RimLLM_TitleEmbeddingSettings>Embedding 向量設定 - {0}</RimLLM_TitleEmbeddingSettings>
+  <RimLLM_EmbeddingProvidersTitle>Embedding 供應商</RimLLM_EmbeddingProvidersTitle>
+  <RimLLM_EmbeddingExplanation>Embedding 會把文字轉換成數值向量，可用於語意檢索與分群比對，其他 Mod 能透過 RimLLM SDK 取用。若未啟用任何供應商，將無法產生向量。</RimLLM_EmbeddingExplanation>
   <RimLLM_EmbeddingModelLabel>Embedding 模型名稱: </RimLLM_EmbeddingModelLabel>
-  <RimLLM_EmbeddingEndpointLabel>自訂服務端點: </RimLLM_EmbeddingEndpointLabel>
-  <RimLLM_EmbeddingApiKeyLabel>自訂 API 金鑰 (選填，為空時預設與主 API 相同): </RimLLM_EmbeddingApiKeyLabel>
+  <RimLLM_EmbeddingEndpointLabel>自訂服務端點 URL: </RimLLM_EmbeddingEndpointLabel>
+  <RimLLM_EmbeddingKeyHintDefault>自訂 API 金鑰 (選填，為空時自動繼承主 API 金鑰): </RimLLM_EmbeddingKeyHintDefault>
+  <RimLLM_EmbeddingKeyHintLocal>自訂 API 金鑰 (選填，若伺服器不需驗證可留空): </RimLLM_EmbeddingKeyHintLocal>
   <RimLLM_EmbeddingSelectModelBtn>從清單挑選 ({0})</RimLLM_EmbeddingSelectModelBtn>
-  <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;尚未抓取模型清單。可按上方按鈕抓取，或直接輸入模型名稱。&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
-
+  <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;尚未抓取模型清單。可按下方按鈕抓取，或直接於上方輸入模型名稱。&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
+  <RimLLM_EmbeddingPresetModelsHint>（展示官方常見推薦模型；亦可點擊下方按鈕從伺服器抓取完整清單）</RimLLM_EmbeddingPresetModelsHint>
+  <RimLLM_EmbeddingFetchedModelsHint>✓ 已從伺服器成功同步最新模型清單</RimLLM_EmbeddingFetchedModelsHint>
+  <RimLLM_EnableEmbeddingProvider>設為目前啟用的 Embedding 供應商</RimLLM_EnableEmbeddingProvider>
+  <RimLLM_EmbeddingActiveBadge>&lt;color=#4ade80&gt;&lt;b&gt;(目前作用中的向量運算服務)&lt;/b&gt;&lt;/color&gt;</RimLLM_EmbeddingActiveBadge>
+  <RimLLM_EmbeddingSetAsModel>設為此供應商的 Embedding 模型</RimLLM_EmbeddingSetAsModel>
+  <RimLLM_EmbeddingTestBtn>測試連線與向量生成</RimLLM_EmbeddingTestBtn>
+  <RimLLM_EmbeddingTesting>測試中...</RimLLM_EmbeddingTesting>
+  <RimLLM_EmbeddingTestSuccess>成功 (維度: {0} 維, 耗時: {1}ms)</RimLLM_EmbeddingTestSuccess>
+  <RimLLM_EmbeddingTestFailed>失敗 (錯誤: {0})</RimLLM_EmbeddingTestFailed>
+  <RimLLM_EmbeddingStatusActive>● 使用中</RimLLM_EmbeddingStatusActive>
+  <RimLLM_EmbeddingStatusActiveDetail>● 使用中 | {0}</RimLLM_EmbeddingStatusActiveDetail>
+  <RimLLM_EmbeddingStatusInactive>○ 未啟用</RimLLM_EmbeddingStatusInactive>
+  <RimLLM_EmbeddingInheritedKeyHint>&lt;color=grey&gt;✓ 已自動繼承主 API 金鑰&lt;/color&gt;</RimLLM_EmbeddingInheritedKeyHint>
+  <RimLLM_EmbeddingInheritKeyNotice>&lt;color=grey&gt;未設定自訂金鑰時將自動繼承主 API 金鑰&lt;/color&gt;</RimLLM_EmbeddingInheritKeyNotice>
+  <RimLLM_EmbeddingNoKeyWarning>&lt;color=#facc15&gt;⚠ 主 API 亦尚未設定金鑰&lt;/color&gt;</RimLLM_EmbeddingNoKeyWarning>
 
   <RimLLM_EmbeddingProvider_Disabled>停用（不使用 Embedding）</RimLLM_EmbeddingProvider_Disabled>
-  <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
-  <RimLLM_EmbeddingProvider_LocalAPI_Ollama>本地 Ollama API</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
-  <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>本地 OpenAI 相容 API</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
+  <RimLLM_EmbeddingProvider_Google>Google Gemini</RimLLM_EmbeddingProvider_Google>
+  <RimLLM_EmbeddingProvider_OpenAI>OpenAI</RimLLM_EmbeddingProvider_OpenAI>
+  <RimLLM_EmbeddingProvider_LocalAPI_Ollama>Ollama (本地)</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
+  <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>OpenAI 相容 (本地/自訂)</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
 
   <RimLLM_ProviderCallStatsTitle>供應商呼叫統計與成功率</RimLLM_ProviderCallStatsTitle>
   <RimLLM_ProviderTotalCallsLabel>累計呼叫次數: {0} 次</RimLLM_ProviderTotalCallsLabel>
@@ -185,4 +201,7 @@
   <RimLLM_ChatCopyMessage>複製回覆</RimLLM_ChatCopyMessage>
   <RimLLM_FilterAll>全部</RimLLM_FilterAll>
   <RimLLM_ClearFilter>清空</RimLLM_ClearFilter>
+  <RimLLM_ChatModelBadgeTooltip>實際應答模型：{0}&#10;點擊可複製模型名稱</RimLLM_ChatModelBadgeTooltip>
+  <RimLLM_ChatStatBadgeTooltip>耗時：{0}ms ({1}秒)&#10;Token 用量：{2} (提示: {3}, 產出: {4})</RimLLM_ChatStatBadgeTooltip>
+  <RimLLM_ChatStatBadgeTooltipEst>耗時：{0}ms ({1}秒)&#10;Token 用量：約 {2} (估算)</RimLLM_ChatStatBadgeTooltipEst>
 </LanguageData>

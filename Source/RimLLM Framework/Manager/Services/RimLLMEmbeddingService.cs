@@ -42,6 +42,7 @@ namespace RimLLM_Framework.Manager
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 { "Google", GoogleOpenAiCompatibleEndpoint },
+                { "OpenAI", "https://api.openai.com/v1" },
                 { "LocalAPI_Ollama", "http://localhost:11434/v1" },
                 { "LocalAPI_OpenAI", "http://localhost:1234/v1" },
             };
@@ -50,7 +51,7 @@ namespace RimLLM_Framework.Manager
         /// 查表取得供應商的預設服務根位址；不支援的供應商直接擲回例外，
         /// 呼叫端不再各自寫 switch 分派。
         /// </summary>
-        private static string ResolveDefaultEndpoint(string provider)
+        internal static string ResolveDefaultEndpoint(string provider)
         {
             string defaultEndpoint;
             if (!OpenAiCompatibleDefaultEndpoints.TryGetValue(provider ?? string.Empty, out defaultEndpoint))
@@ -58,6 +59,16 @@ namespace RimLLM_Framework.Manager
                 throw new RimLLMException(LLMError.Unknown, $"不支援的 Embedding 供應商：{provider}");
             }
             return defaultEndpoint;
+        }
+
+        /// <summary>
+        /// 同一張表的不擲例外版本，供設定頁顯示預設端點提示；不支援的供應商回傳空字串。
+        /// </summary>
+        public static string GetDefaultEndpointOrEmpty(string provider)
+        {
+            return OpenAiCompatibleDefaultEndpoints.TryGetValue(provider ?? string.Empty, out string defaultEndpoint)
+                ? defaultEndpoint
+                : string.Empty;
         }
 
         /// <summary>
@@ -142,27 +153,38 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>
         /// 取得目前 Embedding 供應商可用的模型清單。
+        /// </summary>
+        public Task<List<string>> FetchAvailableModelsAsync(CancellationToken cancellationToken = default)
+        {
+            string provider = _settings.EmbeddingProvider;
+            string apiKey = _settings.EmbeddingApiKey;
+            string endpoint = _settings.EmbeddingEndpoint;
+            return FetchAvailableModelsAsync(provider, endpoint, apiKey, cancellationToken);
+        }
+
+        /// <summary>
+        /// 取得指定 Embedding 供應商可用的模型清單。
         ///
         /// 各供應商皆走 OpenAI 相容的 <c>/v1/models</c>，該端點不回傳能力資訊，
         /// 因此不做精確過濾，只把看起來像 embedding 的名稱排到前面，
         /// 避免把使用者自行命名的模型藏起來。
         /// </summary>
-        public async Task<List<string>> FetchAvailableModelsAsync(CancellationToken cancellationToken = default)
+        public async Task<List<string>> FetchAvailableModelsAsync(
+            string provider, string endpoint, string apiKey, CancellationToken cancellationToken = default)
         {
-            string provider = _settings.EmbeddingProvider;
             if (string.IsNullOrEmpty(provider) || provider == DisabledProviderId)
             {
                 throw new RimLLMException(LLMError.Unknown, "Embedding 尚未設定供應商，無法取得模型清單。");
             }
 
-            string apiKey = string.IsNullOrEmpty(_settings.EmbeddingApiKey)
+            string effectiveApiKey = string.IsNullOrEmpty(apiKey)
                 ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
-                : _settings.EmbeddingApiKey;
+                : apiKey;
 
             try
             {
                 return await FetchOpenAiCompatibleModelsAsync(
-                    apiKey, _settings.EmbeddingEndpoint, ResolveDefaultEndpoint(provider)).ConfigureAwait(false);
+                    effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider)).ConfigureAwait(false);
             }
             catch (ClientResultException ex)
             {
@@ -178,6 +200,57 @@ namespace RimLLM_Framework.Manager
             catch (Exception ex)
             {
                 throw WrapUnknownEmbeddingError("Embedding 模型清單", ex);
+            }
+        }
+
+        /// <summary>
+        /// 測試指定供應商的連線與向量生成能力。
+        /// </summary>
+        public async Task<RimLLMEmbeddingResult> TestEmbeddingAsync(
+            string provider, string model, string endpoint, string apiKey, string text = "RimWorld LLM Embedding Test", CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(provider) || provider == DisabledProviderId)
+            {
+                throw new RimLLMException(LLMError.Unknown, "請先選擇 Embedding 供應商。");
+            }
+
+            if (string.IsNullOrEmpty(model))
+            {
+                throw new RimLLMException(LLMError.Unknown, "請先指定 Embedding 模型名稱。");
+            }
+
+            string effectiveApiKey = string.IsNullOrEmpty(apiKey)
+                ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
+                : apiKey;
+
+            float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
+            using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
+            using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
+            {
+                try
+                {
+                    return await ComputeOpenAiCompatibleEmbeddingAsync(
+                        text, model, effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider), linkedCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new RimLLMException(LLMError.Timeout, $"Embedding 連線測試逾時（{timeoutSeconds} 秒）。");
+                }
+                catch (ClientResultException ex)
+                {
+                    throw LLMErrorMapper.CreateException(
+                        ex.Status,
+                        $"Embedding 測試失敗：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                        innerException: ex);
+                }
+                catch (RimLLMException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    throw WrapUnknownEmbeddingError("Embedding 測試", ex);
+                }
             }
         }
 
@@ -317,12 +390,14 @@ namespace RimLLM_Framework.Manager
             return normalized.Length == 0 ? null : normalized;
         }
 
-        private static string GetMainProviderIdForEmbedding(string embeddingProvider)
+        public static string GetMainProviderIdForEmbedding(string embeddingProvider)
         {
             switch (embeddingProvider)
             {
                 case "Google": return ProviderIds.Gemini;
+                case "OpenAI": return ProviderIds.OpenAI;
                 case "LocalAPI_OpenAI": return ProviderIds.OpenAICompatible;
+                case "LocalAPI_Ollama": return ProviderIds.OpenAICompatible;
                 default: return ProviderIds.OpenAI;
             }
         }

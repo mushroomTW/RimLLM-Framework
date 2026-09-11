@@ -294,7 +294,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 4. **精緻的可捲動多欄 GUI**
    * 直覺的模型 chip 流式格線與點擊選單，支援一鍵加入 Fallback 容災鏈或複製模型名稱，完整名稱以 tooltip 顯示。
    * 供應商選單具備當前項目聚焦側條，並即時以顏色標示「已啟用」、「未啟用」與「未配置金鑰」狀態。
-   * 對話測試頁升級為現代化卡片式對話氣泡，清楚分開使用者發言與 AI 回覆，支援基於 Markdig AST 的 Markdown 渲染、氣泡底部單則回覆一鍵複製，並能在生成中隨時一鍵中斷停止。
+   * 對話測試頁升級為現代化卡片式對話氣泡，清楚分開使用者發言與 AI 回覆，支援基於 Markdig AST 的 Markdown 渲染、氣泡底部單則回覆一鍵複製，並能在生成中隨時一鍵中斷停止。每則 AI 氣泡底部另有微型標籤顯示實際應答的模型（點擊可複製）、耗時與 Token 用量 —— 供應商有回報用量時為精確值，否則以 `~` 標示為估算值 —— 並隨對話歷史一併保存。
+   * Embedding 設定改採與供應商頁相同的三欄式版面：每個 Embedding 供應商（Google Gemini、OpenAI、Ollama、OpenAI 相容）各自一個子分頁，擁有獨立的模型、端點與選填金鑰；尚未抓取清單時顯示已知 embedding 模型的預設清單；兩個本地供應商提供本地伺服器自動探測按鈕；並提供「測試連線與向量生成」按鈕，回報向量維度與耗時。
    * 模型選擇彈窗具備一鍵清除按鈕與主流模型家族快捷過濾標籤（Gemini、GPT、Claude、DeepSeek 等）。
 5. **獨立除錯分頁與日誌開關**
    * 獨立的**除錯**設定分頁，含「詳細日誌」核取方塊，讓 Mod 開發者與玩家在排查問題時自由開關本 Mod 的日誌輸出。
@@ -316,8 +317,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位）並套用折扣費率估算成本，讓成本面板反映真實節省。
    * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 每一則訊息（角色、文字，以及工具結果之類的非文字內容）、目標模型、最低相容等級、快取上下文、temperature、最大輸出 Token、思考強度、是否關閉思考、結構化輸出型別，以及所有會原樣送達供應商的取樣參數（`TopP`、`TopK`、`FrequencyPenalty`、`PresencePenalty`、`Seed`、`StopSequences`）—— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰由內部輕量化機制管理（256 筆上限，先進先出與 TTL 淘汰），避免依賴外部快取套件造成 RimWorld AppDomain 組件版本衝突，框架只負責判定「什麼算同一個請求」。只存在記憶體中，不寫入存檔。
 10. **Embedding SDK**
-    * 框架公開由 Google、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
-    * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。
+    * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
+    * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini，OpenAI 走其原生端點；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。模型、端點與金鑰依 Embedding 供應商分別保存，切換啟用的供應商不會遺失其他供應商的設定；模型或端點留空代表使用該供應商預設值，金鑰留空則繼承對應對話供應商的金鑰。
     * 設定頁可直接抓取可用模型清單，不必憑記憶輸入名稱。OpenAI 相容端點的 `/v1/models` 不回傳能力資訊，因此該清單只**排序**（把像 embedding 的名稱排前面）而不過濾 —— 伺服器的模型名可能由使用者自訂，過濾會把合法選項藏起來。沒有 `/v1/models` 的伺服器仍可手動輸入。
     * Embedding 屬計費 API，因此與一般生成請求共用同一套防濫用檢查；其金鑰採用與供應商金鑰相同的 AES 加密。
 11. **原生 Tool Calling（函式呼叫）**

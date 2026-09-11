@@ -158,19 +158,36 @@
   <RimLLM_MsgApiKeyDecryptFailed>Could not decrypt the saved API key for {0} (the device may have changed). The original ciphertext is preserved; please re-enter the key.</RimLLM_MsgApiKeyDecryptFailed>
 
   <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
-  <RimLLM_TitleEmbedding>Embedding Vector Settings</RimLLM_TitleEmbedding>
-  <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and clustering. Other mods can call them through the RimLLM SDK. When set to Disabled, no vectors are produced.</RimLLM_EmbeddingExplanation>
-  <RimLLM_EmbeddingProviderLabel>Embedding Provider: </RimLLM_EmbeddingProviderLabel>
+  <RimLLM_TitleEmbeddingSettings>Embedding Vector Settings - {0}</RimLLM_TitleEmbeddingSettings>
+  <RimLLM_EmbeddingProvidersTitle>Embedding Providers</RimLLM_EmbeddingProvidersTitle>
+  <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and clustering. Other mods can call them through the RimLLM SDK. If no provider is enabled, no vectors will be generated.</RimLLM_EmbeddingExplanation>
   <RimLLM_EmbeddingModelLabel>Embedding Model Name: </RimLLM_EmbeddingModelLabel>
   <RimLLM_EmbeddingEndpointLabel>Custom Endpoint URL: </RimLLM_EmbeddingEndpointLabel>
-  <RimLLM_EmbeddingApiKeyLabel>Custom API Key (optional, defaults to provider key if empty): </RimLLM_EmbeddingApiKeyLabel>
+  <RimLLM_EmbeddingKeyHintDefault>Custom API Key (optional, defaults to main API key if empty): </RimLLM_EmbeddingKeyHintDefault>
+  <RimLLM_EmbeddingKeyHintLocal>Custom API Key (optional, leave blank if no authentication required): </RimLLM_EmbeddingKeyHintLocal>
   <RimLLM_EmbeddingSelectModelBtn>Pick from list ({0})</RimLLM_EmbeddingSelectModelBtn>
-  <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;No model list fetched yet. Fetch one, or type the model name above.&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
+  <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;No model list fetched yet. Fetch one below, or type the model name above.&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
+  <RimLLM_EmbeddingPresetModelsHint>(Showing verified preset models; you can also fetch the full list from your server below)</RimLLM_EmbeddingPresetModelsHint>
+  <RimLLM_EmbeddingFetchedModelsHint>✓ Model list synchronized from server</RimLLM_EmbeddingFetchedModelsHint>
+  <RimLLM_EnableEmbeddingProvider>Set as active Embedding provider</RimLLM_EnableEmbeddingProvider>
+  <RimLLM_EmbeddingActiveBadge>&lt;color=#4ade80&gt;&lt;b&gt;(Active Embedding Service)&lt;/b&gt;&lt;/color&gt;</RimLLM_EmbeddingActiveBadge>
+  <RimLLM_EmbeddingSetAsModel>Set as Embedding Model</RimLLM_EmbeddingSetAsModel>
+  <RimLLM_EmbeddingTestBtn>Test Connection &amp; Embedding</RimLLM_EmbeddingTestBtn>
+  <RimLLM_EmbeddingTesting>Testing...</RimLLM_EmbeddingTesting>
+  <RimLLM_EmbeddingTestSuccess>Success ({0} dims, {1}ms)</RimLLM_EmbeddingTestSuccess>
+  <RimLLM_EmbeddingTestFailed>Failed (Error: {0})</RimLLM_EmbeddingTestFailed>
+  <RimLLM_EmbeddingStatusActive>● Active</RimLLM_EmbeddingStatusActive>
+  <RimLLM_EmbeddingStatusActiveDetail>● Active | {0}</RimLLM_EmbeddingStatusActiveDetail>
+  <RimLLM_EmbeddingStatusInactive>○ Inactive</RimLLM_EmbeddingStatusInactive>
+  <RimLLM_EmbeddingInheritedKeyHint>&lt;color=grey&gt;✓ Inherited main API key&lt;/color&gt;</RimLLM_EmbeddingInheritedKeyHint>
+  <RimLLM_EmbeddingInheritKeyNotice>&lt;color=grey&gt;Will inherit main API key when no custom key is configured&lt;/color&gt;</RimLLM_EmbeddingInheritKeyNotice>
+  <RimLLM_EmbeddingNoKeyWarning>&lt;color=#facc15&gt;⚠ Main API has no key configured either&lt;/color&gt;</RimLLM_EmbeddingNoKeyWarning>
 
   <RimLLM_EmbeddingProvider_Disabled>Disabled (no embeddings)</RimLLM_EmbeddingProvider_Disabled>
-  <RimLLM_EmbeddingProvider_Google>Google Gemini API</RimLLM_EmbeddingProvider_Google>
-  <RimLLM_EmbeddingProvider_LocalAPI_Ollama>Local Ollama API (Ollama)</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
-  <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>Local OpenAI Compatible (LM Studio/Local)</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
+  <RimLLM_EmbeddingProvider_Google>Google Gemini</RimLLM_EmbeddingProvider_Google>
+  <RimLLM_EmbeddingProvider_OpenAI>OpenAI</RimLLM_EmbeddingProvider_OpenAI>
+  <RimLLM_EmbeddingProvider_LocalAPI_Ollama>Ollama (Local)</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
+  <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>OpenAI Compatible (Local/Custom)</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
 
   <RimLLM_ProviderCallStatsTitle>Provider Call Statistics &amp; Success Rate</RimLLM_ProviderCallStatsTitle>
   <RimLLM_ProviderTotalCallsLabel>Total Calls: {0}</RimLLM_ProviderTotalCallsLabel>
@@ -184,4 +201,7 @@
   <RimLLM_ChatCopyMessage>Copy Reply</RimLLM_ChatCopyMessage>
   <RimLLM_FilterAll>All</RimLLM_FilterAll>
   <RimLLM_ClearFilter>Clear</RimLLM_ClearFilter>
+  <RimLLM_ChatModelBadgeTooltip>Actual Model: {0}&#10;Click to copy model name</RimLLM_ChatModelBadgeTooltip>
+  <RimLLM_ChatStatBadgeTooltip>Latency: {0}ms ({1}s)&#10;Tokens: {2} (Prompt: {3}, Completion: {4})</RimLLM_ChatStatBadgeTooltip>
+  <RimLLM_ChatStatBadgeTooltipEst>Latency: {0}ms ({1}s)&#10;Tokens: ~{2} (Estimated)</RimLLM_ChatStatBadgeTooltipEst>
 </LanguageData>

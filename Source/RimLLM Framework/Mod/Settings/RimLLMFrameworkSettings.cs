@@ -94,9 +94,24 @@ namespace RimLLM_Framework.Mod
         public float ResponseCacheTtlMinutes { get; set; } = 30f;
 
         public string EmbeddingProvider { get; set; } = "Disabled";
-        public string EmbeddingModel { get; set; } = "text-embedding-004";
-        public string EmbeddingEndpoint { get; set; } = "";
-        public string EmbeddingApiKey { get; set; } = "";
+
+        public string EmbeddingModel
+        {
+            get => GetEmbeddingModel(EmbeddingProvider);
+            set => SetEmbeddingModel(EmbeddingProvider, value);
+        }
+
+        public string EmbeddingEndpoint
+        {
+            get => GetEmbeddingEndpoint(EmbeddingProvider);
+            set => SetEmbeddingEndpoint(EmbeddingProvider, value);
+        }
+
+        public string EmbeddingApiKey
+        {
+            get => GetEmbeddingApiKey(EmbeddingProvider);
+            set => SetEmbeddingApiKey(EmbeddingProvider, value);
+        }
 
         public float DailyAccumulatedCost
         {
@@ -153,6 +168,11 @@ namespace RimLLM_Framework.Mod
         private readonly Dictionary<string, int> _apiKeyIndices = new Dictionary<string, int>();
         private readonly Dictionary<string, string> _endpoints = new Dictionary<string, string>();
         private readonly Dictionary<string, int> _modelLevelOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        private readonly Dictionary<string, string> _embeddingModels = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _embeddingEndpoints = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _embeddingApiKeys = new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _undecryptableEmbeddingApiKeys = new Dictionary<string, string>(StringComparer.Ordinal);
         
         /// <summary>中國端點切換旗標。鍵由 <see cref="ProviderIds.HasChinaEndpoint"/> 決定，不另外手寫一份清單。</summary>
         private readonly Dictionary<string, bool> _chinaModeProviders = BuildChinaModeMap();
@@ -223,9 +243,12 @@ namespace RimLLM_Framework.Mod
             public float ResponseCacheTtlMinutes = 30f;
             public string EncryptedEmbeddingApiKey;
             public string EmbeddingProvider = "Disabled";
-            public string EmbeddingModel = "text-embedding-004";
+            public string EmbeddingModel = "gemini-embedding-2";
             public string EmbeddingEndpoint = "";
             public string EmbeddingApiKey = "";
+            public Dictionary<string, string> EmbeddingModels;
+            public Dictionary<string, string> EmbeddingEndpoints;
+            public Dictionary<string, string> EncryptedEmbeddingApiKeys;
         }
 #pragma warning restore 0649
 #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
@@ -252,6 +275,19 @@ namespace RimLLM_Framework.Mod
                         if (!encryptedKeys.ContainsKey(kvp.Key))
                         {
                             encryptedKeys[kvp.Key] = kvp.Value;
+                        }
+                    }
+
+                    var encryptedEmbeddingKeys = new Dictionary<string, string>();
+                    foreach (var kvp in _embeddingApiKeys)
+                    {
+                        encryptedEmbeddingKeys[kvp.Key] = EncryptionUtility.Encrypt(kvp.Value);
+                    }
+                    foreach (var kvp in _undecryptableEmbeddingApiKeys)
+                    {
+                        if (!encryptedEmbeddingKeys.ContainsKey(kvp.Key))
+                        {
+                            encryptedEmbeddingKeys[kvp.Key] = kvp.Value;
                         }
                     }
 
@@ -286,7 +322,10 @@ namespace RimLLM_Framework.Mod
                         EmbeddingEndpoint = this.EmbeddingEndpoint,
                         // Embedding 金鑰與 provider 金鑰採同一套加密；明文欄位明確寫 null 以清除舊資料。
                         EncryptedEmbeddingApiKey = EncryptionUtility.Encrypt(this.EmbeddingApiKey ?? ""),
-                        EmbeddingApiKey = null
+                        EmbeddingApiKey = null,
+                        EmbeddingModels = new Dictionary<string, string>(this._embeddingModels),
+                        EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
+                        EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys
                     };
      
                     jsonStr = RimLLMJson.Serialize(dto);
@@ -395,9 +434,53 @@ namespace RimLLM_Framework.Mod
                                 this.EnableResponseCache = dto.EnableResponseCache;
                                 this.ResponseCacheTtlMinutes = dto.ResponseCacheTtlMinutes <= 0f ? 30f : dto.ResponseCacheTtlMinutes;
                                 this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? "Disabled" : dto.EmbeddingProvider;
-                                this.EmbeddingModel = string.IsNullOrEmpty(dto.EmbeddingModel) ? "text-embedding-004" : dto.EmbeddingModel;
-                                this.EmbeddingEndpoint = dto.EmbeddingEndpoint ?? "";
-                                this.EmbeddingApiKey = dto.EmbeddingApiKey ?? "";
+                                if (dto.EmbeddingModels != null)
+                                {
+                                    foreach (var kvp in dto.EmbeddingModels) this._embeddingModels[kvp.Key] = kvp.Value;
+                                }
+                                else if (!string.IsNullOrEmpty(dto.EmbeddingModel) && this.EmbeddingProvider != "Disabled")
+                                {
+                                    this._embeddingModels[this.EmbeddingProvider] = dto.EmbeddingModel;
+                                }
+
+                                if (dto.EmbeddingEndpoints != null)
+                                {
+                                    foreach (var kvp in dto.EmbeddingEndpoints) this._embeddingEndpoints[kvp.Key] = kvp.Value;
+                                }
+                                else if (!string.IsNullOrEmpty(dto.EmbeddingEndpoint) && this.EmbeddingProvider != "Disabled")
+                                {
+                                    this._embeddingEndpoints[this.EmbeddingProvider] = dto.EmbeddingEndpoint;
+                                }
+
+                                _embeddingApiKeys.Clear();
+                                _undecryptableEmbeddingApiKeys.Clear();
+                                if (dto.EncryptedEmbeddingApiKeys != null)
+                                {
+                                    foreach (var kvp in dto.EncryptedEmbeddingApiKeys)
+                                    {
+                                        string plain = EncryptionUtility.Decrypt(kvp.Value);
+                                        if (plain == null)
+                                        {
+                                            _undecryptableEmbeddingApiKeys[kvp.Key] = kvp.Value;
+                                        }
+                                        else
+                                        {
+                                            _embeddingApiKeys[kvp.Key] = plain;
+                                        }
+                                    }
+                                }
+                                else if (!string.IsNullOrEmpty(dto.EncryptedEmbeddingApiKey))
+                                {
+                                    string plain = EncryptionUtility.Decrypt(dto.EncryptedEmbeddingApiKey);
+                                    if (plain != null && this.EmbeddingProvider != "Disabled")
+                                    {
+                                        _embeddingApiKeys[this.EmbeddingProvider] = plain;
+                                    }
+                                }
+                                else if (!string.IsNullOrEmpty(dto.EmbeddingApiKey) && this.EmbeddingProvider != "Disabled")
+                                {
+                                    _embeddingApiKeys[this.EmbeddingProvider] = dto.EmbeddingApiKey;
+                                }
                             }
                         }
                         catch (Exception ex)
@@ -582,6 +665,97 @@ namespace RimLLM_Framework.Mod
                 {
                     _modelLevelOverrides[modelName] = Math.Min(level, 3);
                 }
+            }
+        }
+
+        public static string GetDefaultEmbeddingModel(string provider)
+        {
+            switch (provider)
+            {
+                case "Google": return "gemini-embedding-2";
+                case "OpenAI": return "text-embedding-3-small";
+                case "LocalAPI_Ollama": return "nomic-embed-text";
+                case "LocalAPI_OpenAI": return "text-embedding-3-small";
+                default: return "gemini-embedding-2";
+            }
+        }
+
+        /// <summary>預設端點的唯一來源在 <see cref="RimLLMEmbeddingService"/>，這裡只是轉呼叫，避免兩張表各自漂移。</summary>
+        public static string GetDefaultEmbeddingEndpoint(string provider)
+        {
+            return RimLLMEmbeddingService.GetDefaultEndpointOrEmpty(provider);
+        }
+
+        public string GetEmbeddingModel(string provider)
+        {
+            lock (_settingsLock)
+            {
+                if (!string.IsNullOrEmpty(provider) && _embeddingModels.TryGetValue(provider, out string val) && !string.IsNullOrEmpty(val))
+                    return val;
+                return GetDefaultEmbeddingModel(provider);
+            }
+        }
+
+        /// <summary>玩家實際輸入的模型名稱（未設定時為空字串），供設定欄位顯示；使用端請改用 <see cref="GetEmbeddingModel"/>。</summary>
+        public string GetEmbeddingModelRaw(string provider)
+        {
+            lock (_settingsLock)
+            {
+                return !string.IsNullOrEmpty(provider) && _embeddingModels.TryGetValue(provider, out string val) ? val ?? "" : "";
+            }
+        }
+
+        public void SetEmbeddingModel(string provider, string model)
+        {
+            if (string.IsNullOrEmpty(provider)) return;
+            lock (_settingsLock)
+            {
+                _embeddingModels[provider] = model;
+            }
+        }
+
+        public string GetEmbeddingEndpoint(string provider)
+        {
+            lock (_settingsLock)
+            {
+                if (!string.IsNullOrEmpty(provider) && _embeddingEndpoints.TryGetValue(provider, out string val) && !string.IsNullOrEmpty(val))
+                    return val;
+                return GetDefaultEmbeddingEndpoint(provider);
+            }
+        }
+
+        /// <summary>玩家實際輸入的端點（未設定時為空字串），供設定欄位顯示；使用端請改用 <see cref="GetEmbeddingEndpoint"/>。</summary>
+        public string GetEmbeddingEndpointRaw(string provider)
+        {
+            lock (_settingsLock)
+            {
+                return !string.IsNullOrEmpty(provider) && _embeddingEndpoints.TryGetValue(provider, out string val) ? val ?? "" : "";
+            }
+        }
+
+        public void SetEmbeddingEndpoint(string provider, string endpoint)
+        {
+            if (string.IsNullOrEmpty(provider)) return;
+            lock (_settingsLock)
+            {
+                _embeddingEndpoints[provider] = endpoint;
+            }
+        }
+
+        public string GetEmbeddingApiKey(string provider)
+        {
+            lock (_settingsLock)
+            {
+                return !string.IsNullOrEmpty(provider) && _embeddingApiKeys.TryGetValue(provider, out string val) ? val : "";
+            }
+        }
+
+        public void SetEmbeddingApiKey(string provider, string key)
+        {
+            if (string.IsNullOrEmpty(provider)) return;
+            lock (_settingsLock)
+            {
+                _embeddingApiKeys[provider] = key;
             }
         }
     }

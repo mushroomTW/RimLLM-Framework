@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
@@ -78,6 +78,16 @@ namespace RimLLM_Framework.Mod
                 Rect midColRect = new Rect(leftColRect.xMax + gap, inRect.y, midWidth, height);
                 Widgets.DrawMenuSection(midColRect);
                 ProviderSettingsDrawer.DrawMiddleProviderMenu(midColRect);
+
+                Rect rightColRect = new Rect(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
+                Widgets.DrawMenuSection(rightColRect);
+                DrawRightDetailContent(rightColRect);
+            }
+            else if (activeMainCategory == "Embedding")
+            {
+                Rect midColRect = new Rect(leftColRect.xMax + gap, inRect.y, midWidth, height);
+                Widgets.DrawMenuSection(midColRect);
+                EmbeddingSettingsDrawer.DrawMiddleEmbeddingMenu(midColRect);
 
                 Rect rightColRect = new Rect(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
                 Widgets.DrawMenuSection(rightColRect);
@@ -178,9 +188,11 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static string GetDetailPageKey()
         {
-            return activeMainCategory == ProvidersCategoryId
-                ? ProvidersCategoryId + "/" + ProviderSettingsDrawer.ActiveProviderSubTab
-                : activeMainCategory;
+            if (activeMainCategory == ProvidersCategoryId)
+                return ProvidersCategoryId + "/" + ProviderSettingsDrawer.ActiveProviderSubTab;
+            if (activeMainCategory == "Embedding")
+                return "Embedding/" + EmbeddingSettingsDrawer.ActiveEmbeddingSubTab;
+            return activeMainCategory;
         }
 
         private static float GetDetailViewHeight(float width)
@@ -242,8 +254,12 @@ namespace RimLLM_Framework.Mod
             {
                 Id = "Embedding",
                 MenuLabelKey = "RimLLM_TabEmbedding",
-                Title = () => "RimLLM_TitleEmbedding".Translate(),
-                Draw = EmbeddingSettingsDrawer.DrawEmbeddingSettings,
+                Title = () =>
+                {
+                    string tabName = EmbeddingSettingsDrawer.GetProviderDisplayName(EmbeddingSettingsDrawer.ActiveEmbeddingSubTab);
+                    return "RimLLM_TitleEmbeddingSettings".Translate(tabName);
+                },
+                Draw = EmbeddingSettingsDrawer.DrawRightDetailContent,
                 EstimateHeight = EmbeddingSettingsDrawer.GetHeight
             },
             new DetailPage
