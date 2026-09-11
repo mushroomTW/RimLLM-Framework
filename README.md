@@ -187,6 +187,16 @@ Log.Message(response.Text);
 
 If your mod wants full manual control over each turn, skip the wrapper and pass `ChatOptions.Tools` straight to `client.GetResponseAsync()`. The response then carries `FunctionCallContent` with `FinishReason = ChatFinishReason.ToolCalls`, and you drive the loop yourself exactly as MEAI documents it. Note that nothing is dispatched onto the Unity main thread on this path — that is what the wrapper above exists for.
 
+#### 3. Notes for agent authors
+
+Things that matter once a request turns into a multi-turn tool loop:
+
+* **Anti-abuse throttling counts outer requests, not loop iterations.** The per-mod throttle (default 10 requests per 10 s, then a 60 s cooldown) sees every call the `FunctionInvokingChatClient` makes, but a call whose last message is a `ChatRole.Tool` result is treated as a continuation of the request that started the loop and is not counted toward the window. A mod that is already in cooldown is still blocked, continuations included. The rule keys on message shape, so it applies equally to MEAI's own `FunctionInvokingChatClient`.
+* **Check up front whether tools will reach the model.** A provider without native function calling has the request's `Tools` removed before the call. `RimLLMProvider.GetEffectiveCapabilities()` returns the intersection of the capabilities of every candidate the current fallback chain could route to — if `SupportsFunctionCalling` is `true` there, no candidate can drop your tools. Pass the same `"Provider:Model"` string you would put in `ChatOptions.ModelId` to narrow it.
+* **When tools were dropped anyway, the response says so.** `response.WereToolsStripped()` (and the same method on every `ChatResponseUpdate` of a stream) is `true` when the answering provider never saw the tool definitions. Treat that differently from a model that chose not to call a tool.
+* **Fallback can change providers between iterations.** Each iteration is its own request, so iteration 3 may be answered by a different provider than iteration 1, carrying the earlier provider's `tool_call_id`s in the history. Every built-in provider speaks the OpenAI protocol, so this round-trips; check `response.ModelId` (`"Provider:Model"`) if your logic depends on which model is answering.
+* **The framework keeps no conversation state.** History, context-window trimming and token budgeting are the caller's job; the framework only maps an overflow to `LLMError.ContextWindowExceeded`.
+
 ### Embeddings
 
 Same shape — one framework call, then standard MEAI:
@@ -265,7 +275,7 @@ This is the point of the framework. All of the following already happens behind 
 
 | Tier | Types | Needed when |
 |---|---|---|
-| **Calling a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError`, `RimLLMClientExtensions`, `RimWorldFunctionInvoker` | Always — this is the whole consumer API |
+| **Calling a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError`, `RimLLMClientExtensions` (`GetResponseObjectAsync<T>`, `WereToolsStripped`), `RimWorldFunctionInvoker` | Always — this is the whole consumer API |
 | **Supplying a provider** | `ILLMProvider`, `LLMProviderCapabilities`, `IRimLLMSettings` | Only if you register your own LLM backend via `RimLLMProvider.RegisterProvider` (`ILLMProvider` produces standard `Microsoft.Extensions.AI.IChatClient`) |
 | **Diagnostics** | `TestResult`, `ProviderIds`, `LLMErrorMapper` | Connection tests, built-in provider id constants, HTTP-status mapping |
 

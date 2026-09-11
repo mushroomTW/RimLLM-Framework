@@ -83,6 +83,18 @@ namespace RimLLM_Framework
         {
             return Manager.GetRegisteredProviderIds();
         }
+
+        /// <summary>
+        /// 依目前設定解析出一個請求可能落到的所有候選，回傳它們能力的交集——
+        /// 不論 fallback 最後由誰回答，這裡為 true 的能力都保證成立。
+        /// Agent 端在送出帶 Tools 的請求前可據此判斷工具是否會被送達。
+        /// </summary>
+        /// <param name="preferredModelId">同 ChatOptions.ModelId，格式 "ProviderId:ModelName"，可為 null。</param>
+        /// <exception cref="RimLLMException">備援鏈未設定或沒有任何可用候選（<see cref="LLMError.ProviderOffline"/>）。</exception>
+        public static LLMProviderCapabilities GetEffectiveCapabilities(string preferredModelId = null)
+        {
+            return Manager.GetEffectiveCapabilities(preferredModelId);
+        }
     }
 #pragma warning restore S101, S2342
 }

@@ -186,6 +186,16 @@ Log.Message(response.Text);
 
 若你的 Mod 希望手動掌控每一輪，就不要套用上面那層包裝，直接把 `ChatOptions.Tools` 傳給 `client.GetResponseAsync()`。回應會帶著 `FunctionCallContent` 與 `FinishReason = ChatFinishReason.ToolCalls`，之後的迴圈完全依 MEAI 文件的標準寫法自行驅動。注意這條路徑不會有任何主執行緒派送 —— 那正是上面那層包裝存在的理由。
 
+#### 3. Agent 作者須知
+
+當一個請求變成多輪工具迴圈時，下列幾點會影響你的設計：
+
+* **防濫用節流以外層請求計數，不以迴圈輪次計數。** 每個 Mod 的節流（預設 10 秒內 10 次，超過冷卻 60 秒）看得到 `FunctionInvokingChatClient` 發出的每一次呼叫，但最後一則訊息是 `ChatRole.Tool` 工具結果的呼叫會被視為「啟動這個迴圈的那個請求」的延續，不計入時間視窗。已在冷卻中的 Mod 仍然會被擋，續輪也不例外。判定靠訊息形狀，因此直接用 MEAI 自己的 `FunctionInvokingChatClient` 也適用。
+* **送出前先確認工具到得了模型。** 不支援原生函式呼叫的供應商會在呼叫前把請求的 `Tools` 移除。`RimLLMProvider.GetEffectiveCapabilities()` 回傳目前備援鏈可能路由到的所有候選能力的**交集** —— 那裡的 `SupportsFunctionCalling` 為 `true`，就沒有任何候選會丟掉你的工具。傳入與 `ChatOptions.ModelId` 相同格式的 `"Provider:Model"` 字串可以縮小範圍。
+* **工具仍被丟掉時，回應會告訴你。** `response.WereToolsStripped()`（串流的每個 `ChatResponseUpdate` 也有同名方法）為 `true` 代表實際回答的供應商根本沒看過工具定義。這和「模型決定不呼叫工具」是兩回事，要分開處理。
+* **fallback 可能在迴圈中途換供應商。** 每一輪都是獨立請求，第 3 輪可能由第 1 輪之外的供應商回答，歷史裡帶著前一家產生的 `tool_call_id`。所有內建供應商都走 OpenAI 協議，因此可以互通；若你的邏輯依賴實際回答的模型，檢查 `response.ModelId`（`"Provider:Model"`）。
+* **框架不保存任何對話狀態。** 歷史、上下文修剪與 token 預算都由呼叫端負責；框架只負責把溢位對應成 `LLMError.ContextWindowExceeded`。
+
 ### Embedding 向量
 
 形狀一樣：一行框架呼叫，之後全是標準 MEAI：
@@ -264,7 +274,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 | 分層 | 型別 | 什麼時候需要 |
 | --- | --- | --- |
-| **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError`、`RimLLMClientExtensions`、`RimWorldFunctionInvoker` | 一定會用到 —— 這就是全部的使用端 API |
+| **呼叫模型** | `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException`、`LLMError`、`RimLLMClientExtensions`（`GetResponseObjectAsync<T>`、`WereToolsStripped`）、`RimWorldFunctionInvoker` | 一定會用到 —— 這就是全部的使用端 API |
 | **提供供應商** | `ILLMProvider`、`LLMProviderCapabilities`、`IRimLLMSettings` | 只有要用 `RimLLMProvider.RegisterProvider` 註冊自己的 LLM 後端時（`ILLMProvider` 直接產出標準 `Microsoft.Extensions.AI.IChatClient`） |
 | **診斷** | `TestResult`、`ProviderIds`、`LLMErrorMapper` | 連線測試、內建供應商 ID 常數、HTTP 狀態碼對照 |
 

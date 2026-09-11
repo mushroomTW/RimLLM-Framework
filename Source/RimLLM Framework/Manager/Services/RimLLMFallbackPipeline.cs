@@ -55,7 +55,11 @@ namespace RimLLM_Framework.Manager
         /// 只做「選誰、依什麼順序」的決策；實際的嘗試、重試與健康記錄由
         /// <see cref="RimLLMFailoverChatClient"/> 負責。
         /// </remarks>
-        internal List<ResolvedCandidate> ResolveCandidates(string preferredModelId, string minFallbackLevel)
+        /// <param name="includeCoolingDown">
+        /// 為 true 時不過濾冷卻中的候選。能力查詢用：冷卻會到期，查詢當下被過濾掉的候選
+        /// 仍可能在稍後的請求中被路由到。
+        /// </param>
+        internal List<ResolvedCandidate> ResolveCandidates(string preferredModelId, string minFallbackLevel, bool includeCoolingDown = false)
         {
             var fallbackChain = GetFallbackChainSnapshot();
             if (fallbackChain == null || fallbackChain.Count == 0)
@@ -98,7 +102,9 @@ namespace RimLLM_Framework.Manager
             }
 
             // 2. 過濾處於故障冷卻期的候選（若全部都在冷卻中，則破例放行）
-            var activeCandidates = candidates.FindAll(c => !_healthLedger.IsInCooldown(HealthKey(c)));
+            var activeCandidates = includeCoolingDown
+                ? candidates
+                : candidates.FindAll(c => !_healthLedger.IsInCooldown(HealthKey(c)));
             if (activeCandidates.Count == 0)
             {
                 activeCandidates = candidates;

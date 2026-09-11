@@ -39,7 +39,7 @@ namespace RimLLM_Framework.Manager
             ChatOptions options = null,
             CancellationToken cancellationToken = default)
         {
-            Check();
+            Check(messages);
             return base.GetResponseAsync(messages, options, cancellationToken);
         }
 
@@ -51,14 +51,38 @@ namespace RimLLM_Framework.Manager
             // 刻意在建立列舉器之前就檢查，與非串流路徑同時計入同一個視窗：
             // 若延後到第一次 MoveNextAsync 才檢查，尚未開始列舉的請求就不會計數，
             // 送出大量請求卻不列舉即可繞過節流。
-            Check();
+            Check(messages);
             return base.GetStreamingResponseAsync(messages, options, cancellationToken);
         }
 
-        private void Check()
+        private void Check(IEnumerable<ChatMessage> messages)
         {
             if (!_settings.EnableAntiAbuse) return;
-            _throttleStore.CheckAntiAbuse(_modId);
+            _throttleStore.CheckAntiAbuse(_modId, countTowardWindow: !IsToolLoopContinuation(messages));
+        }
+
+        /// <summary>
+        /// 最後一則訊息是工具結果，代表這是工具迴圈的續輪而非新請求。
+        /// 以訊息形狀判定而非依賴框架自己的包裝器，呼叫端直接使用 MEAI 的
+        /// FunctionInvokingChatClient 時同樣適用。
+        /// </summary>
+        internal static bool IsToolLoopContinuation(IEnumerable<ChatMessage> messages)
+        {
+            if (messages == null) return false;
+
+            ChatMessage last = null;
+            foreach (ChatMessage message in messages)
+            {
+                last = message;
+            }
+
+            if (last == null || last.Role != ChatRole.Tool) return false;
+
+            foreach (AIContent content in last.Contents)
+            {
+                if (content is FunctionResultContent) return true;
+            }
+            return false;
         }
     }
 #pragma warning restore S101

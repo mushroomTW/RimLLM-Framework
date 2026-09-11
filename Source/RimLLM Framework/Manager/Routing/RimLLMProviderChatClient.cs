@@ -46,7 +46,7 @@ namespace RimLLM_Framework.Manager
             ChatOptions options = null,
             CancellationToken cancellationToken = default)
         {
-            ChatOptions effective = StripUnsupportedTools(_provider, options);
+            ChatOptions effective = StripUnsupportedTools(_provider, options, out bool toolsStripped);
             var messageList = new List<ChatMessage>(messages ?? new List<ChatMessage>());
 
             ChatResponse response = await GenerateAsync(messageList, effective, cancellationToken).ConfigureAwait(false);
@@ -54,6 +54,10 @@ namespace RimLLM_Framework.Manager
             // 只覆寫框架真正要改的欄位：把 ModelId 換成 "供應商:模型" 複合識別，
             // 讓呼叫端在 fallback 之後仍分辨得出實際是誰回的。其餘一律原樣放行。
             response.ModelId = ComposeModelId(_provider.ProviderId, _model);
+            if (toolsStripped)
+            {
+                MarkToolsStripped(response.AdditionalProperties ??= new AdditionalPropertiesDictionary());
+            }
             return response;
         }
 
@@ -177,7 +181,7 @@ namespace RimLLM_Framework.Manager
                 System.Threading.Channels.ChannelWriter<ChatResponseUpdate> writer,
                 CancellationToken cancellationToken)
             {
-                ChatOptions effective = StripUnsupportedTools(_client._provider, _options);
+                ChatOptions effective = StripUnsupportedTools(_client._provider, _options, out bool toolsStripped);
                 var messageList = new List<ChatMessage>(_messages ?? new List<ChatMessage>());
                 Type responseType = RimLLMChatOptions.GetResponseType(effective);
                 bool useNativeSchema = responseType != null && _client.IsNativeStructuredProvider(_client._provider);
@@ -211,6 +215,10 @@ namespace RimLLM_Framework.Manager
                                     // update 自己帶著，框架不再另外合成一個收尾 update——
                                     // 那個收尾 update 過去正是 ResponseId 等欄位消失的地方。
                                     update.ModelId = composedModelId;
+                                    if (toolsStripped)
+                                    {
+                                        MarkToolsStripped(update.AdditionalProperties ??= new AdditionalPropertiesDictionary());
+                                    }
                                     writer.TryWrite(update);
                                 },
                                 _client._settings.ApiTimeout,
@@ -322,11 +330,15 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 供應商不支援原生工具呼叫時移除 Tools/ToolMode，並留下警告。
         /// 直接把 tools 送給不認得的供應商會被靜默忽略，呼叫端只會拿到一段散文而不知道工具沒送出去。
+        /// 回應上會額外標記 <see cref="RimLLMClientExtensions.ToolsStrippedKey"/>：
+        /// 只寫 log 的話 Agent 端拿到的是一個永遠不呼叫工具的回應，程式上無從分辨。
         /// </summary>
-        private static ChatOptions StripUnsupportedTools(ILLMProvider provider, ChatOptions options)
+        private static ChatOptions StripUnsupportedTools(ILLMProvider provider, ChatOptions options, out bool stripped)
         {
+            stripped = false;
             if (options?.Tools == null || options.Tools.Count == 0) return options;
             if (provider?.Capabilities?.SupportsFunctionCalling == true) return options;
+            stripped = true;
 
             RimLLMLog.Warning(
                 $"[RimLLM] 供應商 {provider?.ProviderId} 不支援原生工具呼叫，本次請求的 {options.Tools.Count} 個工具已被移除。");
@@ -335,6 +347,11 @@ namespace RimLLM_Framework.Manager
             clone.Tools = null;
             clone.ToolMode = null;
             return clone;
+        }
+
+        private static void MarkToolsStripped(AdditionalPropertiesDictionary properties)
+        {
+            properties[RimLLMClientExtensions.ToolsStrippedKey] = true;
         }
 
         /// <summary>

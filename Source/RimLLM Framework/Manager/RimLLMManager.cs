@@ -145,6 +145,34 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
+        /// 所有符合資格候選能力的交集。與 <see cref="RimLLMFailoverChatClient"/> 用同一套
+        /// 候選解析，但不做冷卻過濾：冷卻會到期，查詢當下被濾掉的候選仍可能在稍後的
+        /// 請求中被路由到，交集若漏掉它就會過度樂觀。候選為空時例外原樣上拋。
+        /// </summary>
+        internal LLMProviderCapabilities GetEffectiveCapabilities(string preferredModelId)
+        {
+            List<RimLLMFallbackPipeline.ResolvedCandidate> candidates =
+                _fallbackPipeline.ResolveCandidates(preferredModelId, null, includeCoolingDown: true);
+
+            var effective = new LLMProviderCapabilities
+            {
+                SupportsNativeStructuredOutput = true,
+                SupportsStreaming = true,
+                SupportsUsageMetadata = true,
+                SupportsFunctionCalling = true
+            };
+            foreach (RimLLMFallbackPipeline.ResolvedCandidate candidate in candidates)
+            {
+                LLMProviderCapabilities caps = candidate.Provider?.Capabilities ?? new LLMProviderCapabilities();
+                effective.SupportsNativeStructuredOutput &= caps.SupportsNativeStructuredOutput;
+                effective.SupportsStreaming &= caps.SupportsStreaming;
+                effective.SupportsUsageMetadata &= caps.SupportsUsageMetadata;
+                effective.SupportsFunctionCalling &= caps.SupportsFunctionCalling;
+            }
+            return effective;
+        }
+
+        /// <summary>
         /// 取得指定供應商的能力描述。
         /// </summary>
         public LLMProviderCapabilities GetProviderCapabilities(string providerId)

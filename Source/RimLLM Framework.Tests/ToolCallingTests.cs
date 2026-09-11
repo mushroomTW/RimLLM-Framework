@@ -172,6 +172,249 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(2, round, "應該執行 2 輪對話");
         }
 
+        /// <summary>組出「第 1 輪回工具呼叫、之後回最終文字」的處理器，供多個迴圈測試共用。</summary>
+        private static Func<IEnumerable<ChatMessage>, ChatOptions, Task<ChatResponse>> ToolLoopHandler(
+            string modelId, Action<int, IEnumerable<ChatMessage>, ChatOptions> onRound = null)
+        {
+            int round = 0;
+            return (messages, options) =>
+            {
+                round++;
+                onRound?.Invoke(round, messages, options);
+                if (round == 1)
+                {
+                    var call = new FunctionCallContent("call_1", "Ping", new Dictionary<string, object>());
+                    return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, new List<AIContent> { call }))
+                    {
+                        FinishReason = ChatFinishReason.ToolCalls,
+                        ModelId = modelId
+                    });
+                }
+                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "done"))
+                {
+                    FinishReason = ChatFinishReason.Stop,
+                    ModelId = modelId
+                });
+            };
+        }
+
+        private static RimLLMManager BuildManager(MockSettings settings, params ILLMProvider[] providers)
+        {
+            foreach (ILLMProvider provider in providers)
+            {
+                settings.EnabledProviders[provider.ProviderId] = true;
+                settings.ApiKeys[provider.ProviderId] = "mock-key";
+            }
+            var manager = new RimLLMManager(settings);
+            foreach (ILLMProvider provider in providers)
+            {
+                manager.RegisterProvider(provider);
+            }
+            return manager;
+        }
+
+        private static List<ChatMessage> UserSays(string text)
+        {
+            return new List<ChatMessage> { new ChatMessage(ChatRole.User, text) };
+        }
+
+        private static ChatOptions WithPingTool()
+        {
+            return new ChatOptions { Tools = new List<AITool> { AIFunctionFactory.Create(() => "pong", "Ping") } };
+        }
+
+        [Test]
+        public async Task ToolLoopContinuations_DoNotCountTowardAntiAbuseWindow()
+        {
+            // 視窗上限 2 次：若每輪都計數，一個 3 輪的工具迴圈第 3 輪就會被判濫用。
+            var settings = new MockSettings
+            {
+                FallbackChain = new List<string> { "ToolMock:mock-model" },
+                MaxRequestsPerWindow = 2,
+                ThrottlingWindowSeconds = 60,
+                CoolDownDurationSeconds = 60
+            };
+            int round = 0;
+            var provider = new MockToolCallingProvider
+            {
+                GetResponseHandler = (messages, options) =>
+                {
+                    round++;
+                    if (round < 3)
+                    {
+                        var call = new FunctionCallContent("call_" + round, "Ping", new Dictionary<string, object>());
+                        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, new List<AIContent> { call }))
+                        {
+                            FinishReason = ChatFinishReason.ToolCalls
+                        });
+                    }
+                    return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "done")));
+                }
+            };
+            var manager = BuildManager(settings, provider);
+            var client = manager.CreateChatClient("test.throttle.loop").AsMainThreadFunctionInvokingClient(maxIterations: 5);
+
+            var response = await client.GetResponseAsync(UserSays("go"), WithPingTool());
+            ClassicAssert.AreEqual("done", response.Text);
+            ClassicAssert.AreEqual(3, round, "3 輪迴圈應全部完成而不觸發節流");
+
+            // 只有第 1 輪計入視窗：再送一個新請求（第 2 次）仍可過，第 3 次才被擋。
+            var plain = manager.CreateChatClient("test.throttle.loop");
+            await plain.GetResponseAsync(UserSays("again"));
+            var ex = Assert.ThrowsAsync<RimLLMException>(() => plain.GetResponseAsync(UserSays("third")));
+            ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error);
+        }
+
+        [Test]
+        public void ToolLoopContinuation_StillBlockedDuringCooldown()
+        {
+            var settings = new MockSettings
+            {
+                FallbackChain = new List<string> { "ToolMock:mock-model" },
+                MaxRequestsPerWindow = 1,
+                ThrottlingWindowSeconds = 60,
+                CoolDownDurationSeconds = 60
+            };
+            var manager = BuildManager(settings, new MockToolCallingProvider());
+            var client = manager.CreateChatClient("test.throttle.cooldown");
+
+            client.GetResponseAsync(UserSays("a")).GetAwaiter().GetResult();
+            Assert.ThrowsAsync<RimLLMException>(() => client.GetResponseAsync(UserSays("a"))); // 進入冷卻
+
+            var continuation = new List<ChatMessage>
+            {
+                new ChatMessage(ChatRole.User, "a"),
+                new ChatMessage(ChatRole.Assistant, new List<AIContent> { new FunctionCallContent("c1", "Ping", null) }),
+                new ChatMessage(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("c1", "pong") })
+            };
+            ClassicAssert.IsTrue(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(continuation));
+            var ex = Assert.ThrowsAsync<RimLLMException>(() => client.GetResponseAsync(continuation));
+            ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error, "冷卻中的續輪也要擋");
+        }
+
+        [Test]
+        public async Task FrameworkOptions_SurviveFunctionInvokingLoop()
+        {
+            var settings = new MockSettings { FallbackChain = new List<string> { "ToolMock:mock-model" } };
+            var seen = new List<int>();
+            var provider = new MockToolCallingProvider
+            {
+                GetResponseHandler = ToolLoopHandler("ToolMock:mock-model",
+                    (round, messages, options) => seen.Add(RimLLMChatOptions.GetPriority(options)))
+            };
+            var manager = BuildManager(settings, provider);
+            var client = manager.CreateChatClient("test.options.loop").AsMainThreadFunctionInvokingClient();
+
+            var options = new RimLLMChatOptions
+            {
+                Priority = 7,
+                Tools = new List<AITool> { AIFunctionFactory.Create(() => "pong", "Ping") }
+            };
+            await client.GetResponseAsync(UserSays("go"), options);
+
+            ClassicAssert.AreEqual(new List<int> { 7, 7 }, seen, "框架選項在工具迴圈每一輪都要抵達供應商");
+        }
+
+        [Test]
+        public async Task FallbackMidToolLoop_NextProviderReceivesForeignToolCallId()
+        {
+            var settings = new MockSettings
+            {
+                FallbackChain = new List<string> { "ProviderA:model-a", "ProviderB:model-b" },
+                RetryDelay = 0f
+            };
+            int roundA = 0;
+            var providerA = new MockToolCallingProvider
+            {
+                ProviderId = "ProviderA",
+                GetResponseHandler = (messages, options) =>
+                {
+                    roundA++;
+                    if (roundA == 1)
+                    {
+                        var call = new FunctionCallContent("call_from_A", "Ping", new Dictionary<string, object>());
+                        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, new List<AIContent> { call }))
+                        {
+                            FinishReason = ChatFinishReason.ToolCalls
+                        });
+                    }
+                    // 第 2 輪 A 掛掉（非重試類錯誤，直接換手）
+                    throw new RimLLMException(LLMError.InvalidKey, "A is down");
+                }
+            };
+            string idSeenByB = null;
+            var providerB = new MockToolCallingProvider
+            {
+                ProviderId = "ProviderB",
+                GetResponseHandler = (messages, options) =>
+                {
+                    var last = messages.LastOrDefault();
+                    idSeenByB = last?.Contents.OfType<FunctionResultContent>().FirstOrDefault()?.CallId;
+                    return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "B finished")));
+                }
+            };
+            var manager = BuildManager(settings, providerA, providerB);
+            var client = manager.CreateChatClient("test.fallback.loop").AsMainThreadFunctionInvokingClient();
+
+            var response = await client.GetResponseAsync(UserSays("go"), WithPingTool());
+
+            ClassicAssert.AreEqual("B finished", response.Text);
+            ClassicAssert.AreEqual("ProviderB:model-b", response.ModelId);
+            ClassicAssert.AreEqual("call_from_A", idSeenByB, "B 應收到 A 產生的 tool_call_id 對應的工具結果");
+        }
+
+        [Test]
+        public async Task ToolsStripped_FlaggedOnResponse_WhenProviderLacksFunctionCalling()
+        {
+            var settings = new MockSettings { FallbackChain = new List<string> { "NoTools:m" } };
+            ChatOptions seenOptions = null;
+            var provider = new MockToolCallingProvider
+            {
+                ProviderId = "NoTools",
+                Capabilities = new LLMProviderCapabilities { SupportsStreaming = true, SupportsFunctionCalling = false },
+                GetResponseHandler = (messages, options) =>
+                {
+                    seenOptions = options;
+                    return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "prose")));
+                }
+            };
+            var manager = BuildManager(settings, provider);
+            var client = manager.CreateChatClient("test.strip");
+
+            var response = await client.GetResponseAsync(UserSays("go"), WithPingTool());
+
+            ClassicAssert.IsTrue(response.WereToolsStripped());
+            ClassicAssert.IsTrue(seenOptions?.Tools == null || seenOptions.Tools.Count == 0);
+
+            var plain = await client.GetResponseAsync(UserSays("go"));
+            ClassicAssert.IsFalse(plain.WereToolsStripped(), "沒帶工具的請求不該被標記");
+        }
+
+        [Test]
+        public void GetEffectiveCapabilities_IsIntersectionAcrossEligibleCandidates()
+        {
+            var settings = new MockSettings { FallbackChain = new List<string> { "WithTools:m", "NoTools:m" } };
+            var withTools = new MockToolCallingProvider { ProviderId = "WithTools" };
+            var noTools = new MockToolCallingProvider
+            {
+                ProviderId = "NoTools",
+                Capabilities = new LLMProviderCapabilities { SupportsStreaming = true, SupportsFunctionCalling = false }
+            };
+            var manager = BuildManager(settings, withTools, noTools);
+
+            LLMProviderCapabilities effective = manager.GetEffectiveCapabilities(null);
+            ClassicAssert.IsFalse(effective.SupportsFunctionCalling, "任一候選不支援即視為不可依賴");
+            ClassicAssert.IsTrue(effective.SupportsStreaming);
+
+            // 只剩支援工具的候選時，交集就是它自己。
+            settings.FallbackChain = new List<string> { "WithTools:m" };
+            ClassicAssert.IsTrue(manager.GetEffectiveCapabilities(null).SupportsFunctionCalling);
+
+            settings.FallbackChain = new List<string>();
+            var ex = Assert.Throws<RimLLMException>(() => manager.GetEffectiveCapabilities(null));
+            ClassicAssert.AreEqual(LLMError.ProviderOffline, ex.Error);
+        }
+
         [Test]
         public void GeminiSendsToolDefinitionsThroughOpenAiCompatibleEndpoint()
         {

@@ -13,6 +13,31 @@ namespace RimLLM_Framework
     public static class RimLLMClientExtensions
     {
         /// <summary>
+        /// 回應上的標記鍵：本次請求的 Tools 因實際回答的供應商不支援工具呼叫而被框架移除。
+        /// </summary>
+        internal const string ToolsStrippedKey = "rimllm_tools_stripped";
+
+        /// <summary>
+        /// 本次回應是否由一個不支援工具呼叫的供應商產生，且請求上的 Tools 已被框架移除。
+        /// 為 true 時模型從未看過工具定義，Agent 端不應把「沒有 FunctionCallContent」解讀成
+        /// 模型決定不呼叫工具。
+        /// </summary>
+        public static bool WereToolsStripped(this ChatResponse response)
+        {
+            return response?.AdditionalProperties != null &&
+                   response.AdditionalProperties.TryGetValue(ToolsStrippedKey, out object value) &&
+                   value is bool flag && flag;
+        }
+
+        /// <summary>串流版本：每個 update 都帶同一個標記，檢查任一個即可。</summary>
+        public static bool WereToolsStripped(this ChatResponseUpdate update)
+        {
+            return update?.AdditionalProperties != null &&
+                   update.AdditionalProperties.TryGetValue(ToolsStrippedKey, out object value) &&
+                   value is bool flag && flag;
+        }
+
+        /// <summary>
         /// 結構化輸出：以目標型別 T 產生 JSON Schema 送出，並回傳反序列化結果。
         /// client 為 RimLLMProvider.CreateChatClient 回傳的 facade 時走完整路徑
         /// （含 JSON repair）；其他 IChatClient 走簡化路徑（schema + repair）。

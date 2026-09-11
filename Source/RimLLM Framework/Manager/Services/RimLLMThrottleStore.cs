@@ -31,7 +31,13 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 檢查並記錄一次請求。超出視窗上限時讓該 Mod 進入冷卻並擲出 <see cref="LLMError.RateLimit"/>。
         /// </summary>
-        public void CheckAntiAbuse(string modId)
+        /// <param name="modId">呼叫端 Mod 識別。</param>
+        /// <param name="countTowardWindow">
+        /// 是否把這次呼叫計入時間視窗。工具迴圈的續輪傳 false：它們是同一個外層請求的
+        /// 延續，逐輪計數會讓一個 10 輪的 Agent 迴圈在幾秒內就被判成濫用。
+        /// 冷卻檢查不受此參數影響——已在冷卻中的 Mod 連續輪也一併擋下。
+        /// </param>
+        public void CheckAntiAbuse(string modId, bool countTowardWindow = true)
         {
             if (string.IsNullOrEmpty(modId)) return;
 
@@ -40,6 +46,8 @@ namespace RimLLM_Framework.Manager
             {
                 throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' is in anti-abuse cooldown until {cdTime.ToLocalTime()}.");
             }
+
+            if (!countTowardWindow) return;
 
             var list = _requestTimestamps.GetOrAdd(modId, _ => new List<DateTime>());
             lock (list)
