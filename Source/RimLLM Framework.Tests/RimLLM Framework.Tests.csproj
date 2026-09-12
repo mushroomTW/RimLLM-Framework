@@ -45,6 +45,11 @@
     <!-- 讓測試也驗證 provider SDK 與 net472 載入依賴。 -->
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
+    <!-- 與主專案一致：測試必須跑在出貨的 netstandard2.0 版 Abstractions 上，而非 NuGet 自動挑的 net462 版。 -->
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.9.0" ExcludeAssets="compile;runtime" />
+    <Reference Include="Microsoft.Extensions.AI.Abstractions">
+      <HintPath>$(NuGetPackageRoot)microsoft.extensions.ai.abstractions\10.9.0\lib\netstandard2.0\Microsoft.Extensions.AI.Abstractions.dll</HintPath>
+    </Reference>
     <PackageReference Include="OpenAI" Version="2.13.0" />
     <PackageReference Include="System.ClientModel" Version="1.15.0" />
     <!-- 明確引用並以 alias 隔離 Microsoft.Bcl.AsyncInterfaces 的 IAsyncEnumerable<T>，

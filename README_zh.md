@@ -149,11 +149,11 @@ PawnIncidentDecision decision = await client.GetResponseObjectAsync<PawnIncident
 ```
 
 > [!NOTE]
-> 請用這個而不是 MEAI 自己的 `GetResponseAsync<T>`。MEAI 的 `AIJsonUtilities.CreateJsonSchema` 在 RimWorld 的 Mono 環境根本無法執行（它會拉進該環境沒有的 `System.ComponentModel.DataAnnotations`），而且 MEAI 沒有 JSON 修復路徑。RimLLM 驅動的是同一個底層 `JsonSchemaExporter`，但在其上加了正規化層。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
+> 請用這個而不是 MEAI 自己的 `GetResponseAsync<T>`。MEAI 的原始 schema 形狀（union 型別、`$ref`、無上限巢狀）會被多家供應商的 strict structured output 拒絕，而且 MEAI 沒有 JSON 修復路徑。RimLLM 驅動的是同一個底層 `JsonSchemaExporter`，但在其上加了正規化層與單一 OpenAI 相容方言。詳見[架構設計 §6](#6-官方-sdk-與供應商職責)。
 
 ### 原生 Tool Calling（函式呼叫）
 
-RimLLM Framework 原生支援 Microsoft.Extensions.AI 的 Tool Calling（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`）。所有供應商經共用的 OpenAI 協定路徑支援完整工具呼叫。
+RimLLM Framework 原生支援 Microsoft.Extensions.AI 的 Tool Calling（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`）。所有內建供應商都走 OpenAI 協定，工具定義與呼叫只有一種 wire 形狀。`AIFunctionFactory.Create` 在遊戲內可正常使用：框架出貨的是 `Microsoft.Extensions.AI.Abstractions` 的 `netstandard2.0` 版本，讓 MEAI 的 schema 產生不再碰 RimWorld Mono 沒有的 `System.ComponentModel.DataAnnotations` 組件（詳見[架構設計 §6](#6-官方-sdk-與供應商職責)）。
 
 #### 1. 自動迴圈執行模式（推薦，內建 Unity 主執行緒安全調度）
 
@@ -374,13 +374,14 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 ### 6. 官方 SDK 與供應商職責
 
-* 主專案與測試專案維持 `net472`；RimWorld Mod 不需要遷移到 .NET 8。官方 SDK 的相依 DLL 隨 Mod 發佈，並由 `ProviderSdkIntegrationTests` 逐一載入並反射，讓遺漏的間接相依組件在建置階段就失敗而不是在遊戲裡。要注意這項檢查跑在真正的 .NET Framework 上，因此拓不到「在這裡存在、但 RimWorld 的 Mono BCL 沒有」的型別 ——下方的 `DataAnnotations` 就是這種失敗，只能靠實際啟動遊戲才抓得到。雖然 .NET Framework 將 `System.ValueTuple` 視為框架組件，建置仍明確部署其 `4.0.5.0` DLL，以避免 RimWorld 的 Mono 反射 MEAI 時發生 `ReflectionTypeLoadException`。
+* 主專案與測試專案維持 `net472`；RimWorld Mod 不需要遷移到 .NET 8。官方 SDK 的相依 DLL 隨 Mod 發佈，並由 `ProviderSdkIntegrationTests` 逐一載入並反射，讓遺漏的間接相依組件在建置階段就失敗而不是在遊戲裡。要注意這項檢查跑在真正的 .NET Framework 上，因此拓不到「在這裡存在、但 RimWorld 的 Mono BCL 沒有」的型別 ——下方的 `DataAnnotations` 就是這種失敗，因此改以檢查出貨組件的參考清單來釘住，而不是靠執行程式碼。雖然 .NET Framework 將 `System.ValueTuple` 視為框架組件，建置仍明確部署其 `4.0.5.0` DLL，以避免 RimWorld 的 Mono 反射 MEAI 時發生 `ReflectionTypeLoadException`。
 * **OpenAI** 使用 `OpenAI` SDK `2.13.0` 搭配 `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.9.0`。針對 OpenAI SDK 2.13.0 與 `System.ClientModel` 1.15.0 在實驗性 `ChatCompletionOptions.Patch` API 內部因 `PropagateSet` 缺乏 null 防護而擲出 `NullReferenceException` 的問題，框架透過 `OpenAIPatchExtensions.DisablePatchPropagators()` 清除傳播委派，安全恢復底層 JSON Patch 寫入機制以注入 `reasoning_effort`、`response_format`、`max_tokens` 與 `models` 欄位。內建的 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用 manager。只有真正實作 OpenAI Chat Completions 協定的端點（LM Studio、Ollama、vLLM…）才適合 OpenAI 相容轉接。
 * **Gemini** 經 Google 官方 OpenAI 相容端點（`https://generativelanguage.googleapis.com/v1beta/openai/`）存取，文字、串流、原生 Schema、思考與工具呼叫全數重用共用的 `OpenAIProvider` 實作。Gemini 只是宣告端點與預設測試模型的薄子類 —— 與 Groq、Qwen 等供應商同形。
 * **所有內建供應商都走 OpenAI SDK**：整個家族（OpenAI、Gemini、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）使用 `OpenAI` SDK `2.13.0` 加 MEAI 的 `IChatClient`。模型清單使用 `OpenAIModelClient.GetModelsAsync()`，而非自行拼 `/models` URL 再解析 JSON。
 * **框架已無任何 raw HTTP 路徑，也不再有第二套 SDK。** 移除最後的原生 `Google.GenAI` 路徑後，整個第二套傳輸層、認證處理，以及 Google `cachedContents` 顯式快取機制一併刪除：`CachedContext` 一律以系統訊息內文送達，快取與否由供應商在服務端對重複前綴自行處理。
 * **JSON Schema 產生走 `System.Text.Json` 的 `JsonSchemaExporter` 加一層正規化**（`RimLLMSchemaBuilder`），分三階段。**Stage A** 由 exporter 匯出完整 JSON Schema。**Stage B** 正規化成所有供應商都接受的受限子集：解析並展開 `$ref` 指標、截斷循環與過深巢狀、把可為 null 的聯集收斂成單一 `type`、只保留關鍵字白名單。**Stage C** 套用唯一的 OpenAI 相容方言，選填成員寫成 `["integer","null"]` 聯集。
-  * **直接呼叫 exporter，不經過 MEAI 的 `AIJsonUtilities.CreateJsonSchema` 包裝層。** 該包裝層出貨的是 `net462` 資產，會參考 `System.ComponentModel.DataAnnotations`（用來讀 `[EmailAddress]`、`[Range]` 之類的驗證屬性豐富 schema）。RimWorld 的 Mono BCL 沒有那個組件，所以實機上會拋 `TypeLoadException: Could not resolve type … 'EmailAddressAttribute' in assembly 'System.ComponentModel.DataAnnotations, Version=4.0.0.0'`，整份 schema 產生靜默降級成舊的反射實作 —— 而單元測試跑在有 GAC 的真 .NET Framework 上，完全看不出來。`System.Text.Json` 沒有該參考，而且它就是 MEAI 內部使用的同一個引擎，直呼不損失任何能力。MEAI 唯一多做而仍需要的 `[Description]`，改由 Stage B 自行讀取。這條限制由 `SchemaGenerationEngineHasNoDataAnnotationsDependency` 釘住。
+  * **`Microsoft.Extensions.AI.Abstractions` 出貨的是 `netstandard2.0` 版本，而不是 NuGet 依 `net472` 自動挑的 `net462` 版本。** `net462` 版會讀 `[EmailAddress]`、`[Range]` 之類的驗證屬性豐富 schema，那段程式碼參考框架內建的 `System.ComponentModel.DataAnnotations`。RimWorld 的 Unity Mono 沒有出貨那顆 DLL，所以遊戲內 `AIFunctionFactory.Create` 與 `AIJsonUtilities.CreateJsonSchema` 曾擲出 `TypeLoadException: Could not resolve type … 'EmailAddressAttribute' in assembly 'System.ComponentModel.DataAnnotations, Version=4.0.0.0'` —— 連無參數的工具也炸，而單元測試跑在有 GAC 的真 .NET Framework 上完全看不出來。`netstandard2.0` 版整段以 `#if NET || NETFRAMEWORK` 排除，相依只剩 `System.Text.Json`，組件版本同為 `10.9.0.0`，因此 `Microsoft.Extensions.AI` 與 `Microsoft.Extensions.AI.OpenAI` 的綁定不受影響。csproj 顯式引用該版本；`ShippedAbstractionsHasNoDataAnnotationsDependency` 檢查出貨 DLL 的參考清單，選擇一旦被改回就會失敗。下游 Mod 不受影響：它們對套件編譯、對框架出貨的 DLL 執行。
+  * **仍然直接呼叫 exporter，不經過 MEAI 的 `AIJsonUtilities.CreateJsonSchema` 包裝層。** 它就是 MEAI 內部使用的同一個引擎；直呼讓 Stage B 拿到未經包裝層改寫的原始輸出，正規化只需要對付一種形狀。MEAI 唯一多做而仍需要的 `[Description]`，由 Stage B 自行讀取。
   * 直呼 exporter 有兩個後果：列舉只會輸出 `{"enum":[…]}` 而不帶 `type`（Stage B 由列舉值反推型別，否則所有列舉成員都會消失），而且它完全沒有 `description` 的概念（Stage B 自行讀取成員與類別上的 `[Description]`）。
   * **循環在 CLR 型別層截斷，而非 JSON pointer 層。** exporter 會把遞迴成員先完整展開一輪、其中才出現指回祖先的 `$ref`，只靠 pointer 偵測就會多送一整層 —— 實測遞迴測試型別從 789 字元漲到 3119 字元，而那是每次請求都要付的 prompt token。由 `RecursiveSchemaStaysCompact` 守住。
   * **巢狀深度上限跟隨 strict structured output 的上限。** OpenAI 的 strict structured output 最多允許 5 層巢狀（另有全域 100 個 property 的上限），超過會被服務端拒絕並靜默降級成提示式 JSON，因此產生器在 5 層截斷。注意 100 個 property 的上限目前**尚未**強制。

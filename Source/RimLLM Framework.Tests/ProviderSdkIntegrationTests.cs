@@ -131,18 +131,17 @@ namespace RimLLM_Framework.Tests
         }
 
         /// <summary>
-        /// Schema 產生不得經由 MEAI 的 <c>AIJsonUtilities.CreateJsonSchema</c> 包裝層。
+        /// 出貨的 <c>Microsoft.Extensions.AI.Abstractions.dll</c> 必須是 netstandard2.0 資產，
+        /// 不得參考 <c>System.ComponentModel.DataAnnotations</c>。
         ///
-        /// 該包裝層出貨的是 net462 資產，會參考 <c>System.ComponentModel.DataAnnotations</c>
-        /// （用來讀 <c>[EmailAddress]</c> 等驗證屬性豐富 schema）。RimWorld 的 Mono BCL 沒有那個組件，
-        /// 實機上會拋 <c>TypeLoadException</c>，整份 schema 產生靜默降級成舊的反射實作 ——
-        /// 而單元測試跑在有 GAC 的真 .NET Framework 上，完全看不出來。
-        ///
-        /// 因此改直呼 <c>System.Text.Json.Schema.JsonSchemaExporter</c>（MEAI 內部用的同一個引擎）。
-        /// 本測試釘住這個相依差異：哪天 MEAI 拿掉該參考，這裡會失敗，屆時才可以考慮改回包裝層。
+        /// NuGet 依 net472 自動挑的是 net462 資產，它為了讀 <c>[EmailAddress]</c> 等驗證屬性
+        /// 參考框架內建的 DataAnnotations；RimWorld 的 Unity Mono 沒有出貨那顆 DLL，
+        /// <c>AIFunctionFactory.Create</c> 與 <c>AIJsonUtilities.CreateJsonSchema</c> 在遊戲內會擲出
+        /// <c>TypeLoadException</c>（實機探針證實，連無參數的工具也炸）。單元測試跑在有 GAC 的
+        /// 真 .NET Framework 上看不出來，因此改以組件參考清單釘住：csproj 若被改回自動資產，這裡先失敗。
         /// </summary>
         [Test]
-        public void SchemaGenerationEngineHasNoDataAnnotationsDependency()
+        public void ShippedAbstractionsHasNoDataAnnotationsDependency()
         {
             const string dataAnnotations = "System.ComponentModel.DataAnnotations";
 
@@ -151,10 +150,15 @@ namespace RimLLM_Framework.Tests
                 dataAnnotations,
                 "System.Text.Json 不得相依 DataAnnotations —— 這是 schema 產生引擎能在 RimWorld Mono 上執行的前提。");
 
-            CollectionAssert.Contains(
-                ReferencedAssemblyNames("Microsoft.Extensions.AI.Abstractions.dll"),
+            System.Collections.Generic.List<string> abstractionsRefs = ReferencedAssemblyNames("Microsoft.Extensions.AI.Abstractions.dll");
+            CollectionAssert.DoesNotContain(
+                abstractionsRefs,
                 dataAnnotations,
-                "MEAI 仍相依 DataAnnotations，所以仍不可改用 AIJsonUtilities.CreateJsonSchema。若此處失敗代表限制已解除。");
+                "出貨的 MEAI.Abstractions 參考了 DataAnnotations，代表 csproj 又回到 net462 資產；AIFunctionFactory.Create 在遊戲內會炸。");
+            CollectionAssert.Contains(
+                abstractionsRefs,
+                "netstandard",
+                "出貨的 MEAI.Abstractions 應為 netstandard2.0 資產。");
         }
 
         private static System.Collections.Generic.List<string> ReferencedAssemblyNames(string fileName)

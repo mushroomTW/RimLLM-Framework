@@ -253,15 +253,15 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// Stage A：由 System.Text.Json 的 <see cref="JsonSchemaExporter"/> 產生完整 JSON Schema。
         ///
-        /// 刻意直接呼叫 exporter，而不是 MEAI 的 <c>AIJsonUtilities.CreateJsonSchema</c> 包裝 ——
-        /// 後者出貨的是 net462 資產，其中含 <c>System.ComponentModel.DataAnnotations</c> 參考
-        /// （用來讀 <c>[EmailAddress]</c> / <c>[Range]</c> 之類的驗證屬性豐富 schema）。
-        /// RimWorld 的 Mono BCL 沒有那個組件，實機上會拋：
-        ///   <c>TypeLoadException: Could not resolve type ... 'EmailAddressAttribute' in assembly
-        ///   'System.ComponentModel.DataAnnotations, Version=4.0.0.0'</c>
-        /// 而整份 schema 產生就靜默降級。<c>System.Text.Json</c> 本身完全沒有該參考，
-        /// 且 exporter 正是 MEAI 內部使用的同一個引擎，所以直呼它既能繞開地雷又不損失能力。
-        /// MEAI 唯一多做而我們仍需要的是 <c>[Description]</c>，由 Stage B 自行讀取補上。
+        /// 刻意直接呼叫 exporter，而不是 MEAI 的 <c>AIJsonUtilities.CreateJsonSchema</c> 包裝：
+        /// exporter 正是 MEAI 內部使用的同一個引擎，直呼它讓 Stage B/C 拿到未經包裝層改寫的
+        /// 原始輸出，正規化只需要對付一種形狀。MEAI 包裝層多做而我們仍需要的只有
+        /// <c>[Description]</c>，由 Stage B 自行讀取補上。
+        ///
+        /// 歷史備註：包裝層的 net462 資產曾因參考 <c>System.ComponentModel.DataAnnotations</c>
+        /// 在 RimWorld Mono 上擲出 TypeLoadException；框架現已改出貨 netstandard2.0 資產
+        /// （見 csproj 與 <c>ShippedAbstractionsHasNoDataAnnotationsDependency</c>），該問題不再存在，
+        /// 直呼 exporter 純粹是正規化管線的設計選擇。
         /// </summary>
         internal static JsonObject ExportRaw(Type type)
         {
@@ -484,9 +484,9 @@ namespace RimLLM_Framework.Manager
         /// 把成員上的 <see cref="DescriptionAttribute"/> 寫進 schema。
         ///
         /// System.Text.Json 的 exporter 沒有 description 的概念 —— 這是 MEAI 包裝層多做的事，
-        /// 而那層因為 DataAnnotations 相依在 RimWorld 的 Mono 上無法載入（見 <see cref="ExportRaw"/>）。
+        /// 而框架不經過那層（見 <see cref="ExportRaw"/>）。
         /// 只讀 <c>System.ComponentModel.DescriptionAttribute</c>，它在 mscorlib 旁的 System.dll 內，
-        /// 任何 .NET 執行環境都有，不會重蹈覆轍。
+        /// 任何 .NET 執行環境都有。
         /// </summary>
         private static void ApplyMemberDescription(JsonObject memberSchema, JsonPropertyInfo memberInfo)
         {

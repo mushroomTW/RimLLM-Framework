@@ -33,6 +33,8 @@
          換得的是與 MEAI 一致的路由語意，代價是 MEAI 升版時這一層可能需要跟著改。
          升級 Microsoft.Extensions.AI 前務必檢查 RimLLMFailoverChatClient 是否仍能編譯。 -->
     <NoWarn>$(NoWarn);SCME0001;NU1608;MEAI001</NoWarn>
+    <!-- 直接 Reference 的組件預設會連 .xml 文件檔一起複製到 Assemblies/，出貨不需要。 -->
+    <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
     <Authors>mushroomTW</Authors>
     <!-- SonarQube / Coverlet 覆蓋率排除非邏輯核心的 RimWorld UI 繪製與 Mod 進入點 -->
     <SonarQubeCoverageExclusions>**/Mod/UI/**;**/Mod/RimLLMFrameworkMod.cs</SonarQubeCoverageExclusions>
@@ -59,6 +61,19 @@
     -->
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
+    <!--
+      Abstractions 刻意出貨 netstandard2.0 資產而非 NuGet 依 net472 自動挑選的 net462 資產。
+      net462 版把 [EmailAddress]、[Range] 等驗證屬性讀進 schema，該段程式碼參考框架內建的
+      System.ComponentModel.DataAnnotations —— RimWorld 的 Unity Mono 沒有出貨這顆 DLL，
+      AIFunctionFactory.Create / AIJsonUtilities.CreateJsonSchema 在遊戲內會擲出 TypeLoadException
+      （實機探針證實，連無參數的工具也炸）。netstandard2.0 版整段以 #if NET || NETFRAMEWORK 排除，
+      相依只剩 System.Text.Json；組件版本同為 10.9.0.0，MEAI 與 MEAI.OpenAI 的 net462 資產綁定不受影響。
+      ProviderSdkIntegrationTests.ShippedAbstractionsHasNoDataAnnotationsDependency 鎖住此選擇。
+    -->
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.9.0" ExcludeAssets="compile;runtime" />
+    <Reference Include="Microsoft.Extensions.AI.Abstractions">
+      <HintPath>$(NuGetPackageRoot)microsoft.extensions.ai.abstractions\10.9.0\lib\netstandard2.0\Microsoft.Extensions.AI.Abstractions.dll</HintPath>
+    </Reference>
     <!--
       OpenAI SDK 升級至 2.13.0。
       2.13.0 內部生成的 ChatCompletionOptions.PropagateSet 存在未做 null 檢查的 bug，
