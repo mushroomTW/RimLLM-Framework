@@ -3,6 +3,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
@@ -15,6 +16,37 @@ namespace RimLLM_Framework.Tests
     [TestFixture]
     public class SettingsAndTelemetryTests
     {
+        private string _encryptionKeyDirectory;
+
+        [SetUp]
+        public void SetUpEncryptionKeyStore()
+        {
+            _encryptionKeyDirectory = Path.Combine(
+                Path.GetTempPath(),
+                "RimLLMSettingsEncryptionTest_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(_encryptionKeyDirectory);
+            EncryptionUtility.ResetSecureKeyForTests();
+            EncryptionUtility.SecureKeyPathResolver = () =>
+                Path.Combine(_encryptionKeyDirectory, "RimLLM_EncryptionKey.dat");
+            EncryptionUtility.CustomSalt = null;
+            EncryptionUtility.InitializeKeyAndIv();
+        }
+
+        [TearDown]
+        public void TearDownEncryptionKeyStore()
+        {
+            EncryptionUtility.CustomSalt = null;
+            EncryptionUtility.InitializeKeyAndIv();
+            EncryptionUtility.ResetSecureKeyForTests();
+            try
+            {
+                Directory.Delete(_encryptionKeyDirectory, true);
+            }
+            catch
+            {
+            }
+        }
+
         [Test]
         public void TestClearLogs()
         {
@@ -322,6 +354,74 @@ namespace RimLLM_Framework.Tests
             {
                 RimLLMTelemetryStore.FilePathResolver = previousResolver;
                 try { System.IO.Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        [Test]
+        public void TestTelemetryKeepsEncryptedHistoryWhenProtectedKeyIsUnavailable()
+        {
+            string dir = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "RimLLMTelemetryKeyMigrationTest_" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "telemetry.json");
+            string originalKeyPath = System.IO.Path.Combine(dir, "original-key.dat");
+            string replacementKeyPath = System.IO.Path.Combine(dir, "replacement-key.dat");
+
+            var previousResolver = RimLLMTelemetryStore.FilePathResolver;
+            var previousKeyResolver = EncryptionUtility.SecureKeyPathResolver;
+            try
+            {
+                EncryptionUtility.ResetSecureKeyForTests();
+                EncryptionUtility.SecureKeyPathResolver = () => originalKeyPath;
+                RimLLMTelemetryStore.FilePathResolver = () => path;
+
+                var store = new RimLLMTelemetryStore();
+                store.ChatHistory.Add("PROTECTED-HISTORY");
+                store.Save();
+
+                string originalCipher =
+                    System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(path))
+                        .RootElement.GetProperty("EncryptedChatHistory").GetString();
+                ClassicAssert.IsNotEmpty(originalCipher);
+
+                EncryptionUtility.ResetSecureKeyForTests();
+                EncryptionUtility.SecureKeyPathResolver = () => replacementKeyPath;
+                var reloaded = new RimLLMTelemetryStore();
+                reloaded.Load();
+                ClassicAssert.IsEmpty(reloaded.ChatHistory,
+                    "沒有原本的 per-user key 時不能把無法解密的歷史當成可用明文");
+
+                reloaded.TotalPromptTokens = 42;
+                reloaded.Save();
+
+                string preservedCipher =
+                    System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(path))
+                        .RootElement.GetProperty("EncryptedChatHistory").GetString();
+                ClassicAssert.AreEqual(originalCipher, preservedCipher,
+                    "更新其他遙測欄位時必須保留無法解密的原始密文");
+
+                reloaded.ClearChatHistory();
+                reloaded.Save();
+                EncryptionUtility.ResetSecureKeyForTests();
+                EncryptionUtility.SecureKeyPathResolver = () => originalKeyPath;
+                var cleared = new RimLLMTelemetryStore();
+                cleared.Load();
+                ClassicAssert.IsEmpty(cleared.ChatHistory,
+                    "使用者明確清空歷史時，不能再恢復先前無法解密的密文");
+            }
+            finally
+            {
+                RimLLMTelemetryStore.FilePathResolver = previousResolver;
+                EncryptionUtility.ResetSecureKeyForTests();
+                EncryptionUtility.SecureKeyPathResolver = previousKeyResolver;
+                try
+                {
+                    System.IO.Directory.Delete(dir, true);
+                }
+                catch
+                {
+                }
             }
         }
 

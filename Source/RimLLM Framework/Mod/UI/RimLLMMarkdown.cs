@@ -21,6 +21,8 @@ namespace RimLLM_Framework.Mod
         private const string MutedColor = "#9aa0a6";
         private const string ColorTagOpen = "<color=";
         private const string ColorTagClose = "</color>";
+        private const string BoldOpenMarker = "\uE000";
+        private const string BoldCloseMarker = "\uE001";
         private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
         private static readonly int[] HeadingSizes = { 20, 17, 15 };
@@ -44,6 +46,12 @@ namespace RimLLM_Framework.Mod
         private static readonly System.Text.RegularExpressions.Regex UnityTagPattern =
             new System.Text.RegularExpressions.Regex(@"<(/?(?:b|i|size|color|material|quad)(?:=[^>]*)?)>", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
 
+        private static readonly System.Text.RegularExpressions.Regex RawHtmlTagPattern =
+            new System.Text.RegularExpressions.Regex(
+                @"</?[A-Za-z][^>\r\n]*>|<!--[\s\S]*?-->|<![^>\r\n]*>|<\?[^>\r\n]*\?>",
+                System.Text.RegularExpressions.RegexOptions.Compiled,
+                RegexTimeout);
+
         /// <summary>
         /// 預先處理 Markdown 中的粗體標記。
         /// 繁簡中文環境下，全形括號或標點與粗體星號相鄰（例如 "**快速排序法（Quick Sort）**的"）時，
@@ -59,11 +67,11 @@ namespace RimLLM_Framework.Mod
             int last = 0;
             foreach (System.Text.RegularExpressions.Match region in ProtectedRegion.Matches(markdown))
             {
-                sb.Append(BoldPattern.Replace(markdown.Substring(last, region.Index - last), "<b>$1</b>"));
+                sb.Append(BoldPattern.Replace(markdown.Substring(last, region.Index - last), BoldOpenMarker + "$1" + BoldCloseMarker));
                 sb.Append(region.Value);
                 last = region.Index + region.Length;
             }
-            sb.Append(BoldPattern.Replace(markdown.Substring(last), "<b>$1</b>"));
+            sb.Append(BoldPattern.Replace(markdown.Substring(last), BoldOpenMarker + "$1" + BoldCloseMarker));
             return sb.ToString();
         }
 
@@ -80,6 +88,82 @@ namespace RimLLM_Framework.Mod
         }
 
         /// <summary>
+        /// 將 Markdown 的 raw HTML 當成不受信任文字處理。
+        /// ChatTest 在 Markdown 前會自行加入灰色思考標記，因此只允許這兩個
+        /// 內部產生的標籤；其餘角括號一律改成全形，避免 provider 回應注入 Unity rich text。
+        /// </summary>
+        private static string SanitizeRawHtml(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.IndexOf('<') < 0)
+            {
+                return text;
+            }
+
+            return RawHtmlTagPattern.Replace(text, match =>
+            {
+                string tag = match.Value;
+                if (IsTrustedColorTag(tag))
+                {
+                    return tag;
+                }
+
+                return "＜" + tag.Substring(1, tag.Length - 2) + "＞";
+            });
+        }
+
+        private static bool IsTrustedColorTag(string tag)
+        {
+            return string.Equals(tag, "<color=silver>", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(tag, "</color>", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string SanitizeUnityTags(string markdown, bool preserveTrustedColorWrapper)
+        {
+            if (string.IsNullOrEmpty(markdown) || markdown.IndexOf('<') < 0)
+            {
+                return markdown;
+            }
+
+            var sb = new StringBuilder(markdown.Length);
+            int last = 0;
+            bool trustedColorOpen = false;
+            foreach (System.Text.RegularExpressions.Match match in UnityTagPattern.Matches(markdown))
+            {
+                sb.Append(markdown, last, match.Index - last);
+                string tag = match.Value;
+                bool trustedOpen = preserveTrustedColorWrapper &&
+                                   string.Equals(tag, "<color=silver>", StringComparison.OrdinalIgnoreCase);
+                bool trustedClose = preserveTrustedColorWrapper &&
+                                    string.Equals(tag, "</color>", StringComparison.OrdinalIgnoreCase) && trustedColorOpen;
+                if (trustedOpen)
+                {
+                    trustedColorOpen = true;
+                }
+                else if (trustedClose)
+                {
+                    trustedColorOpen = false;
+                }
+
+                sb.Append(trustedOpen || trustedClose
+                    ? tag
+                    : "＜" + tag.Substring(1, tag.Length - 2) + "＞");
+                last = match.Index + match.Length;
+            }
+
+            sb.Append(markdown, last, markdown.Length - last);
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 跳脫供應商或其他不受信任輸入中的 Unity rich-text 標籤。
+        /// 與 <see cref="ToRichText"/> 不同，這條路徑不允許任何預先存在的灰色 wrapper。
+        /// </summary>
+        internal static string EscapeUntrustedUnityTags(string text)
+        {
+            return SanitizeUnityTags(text, preserveTrustedColorWrapper: false);
+        }
+
+        /// <summary>
         /// 將 Markdown 文字轉換為 Unity IMGUI 支援的 rich text。
         /// </summary>
         public static string ToRichText(string markdown)
@@ -87,12 +171,15 @@ namespace RimLLM_Framework.Mod
             if (markdown == null) return null;
             if (markdown.Length == 0) return string.Empty;
 
-            string preprocessed = PreprocessMarkdown(markdown);
+            string preprocessed = PreprocessMarkdown(SanitizeUnityTags(markdown, preserveTrustedColorWrapper: true));
             MarkdownDocument document = Markdown.Parse(preprocessed, Pipeline);
             var sb = new StringBuilder(preprocessed.Length + 64);
             var renderer = new UnityRichTextRenderer(sb);
             renderer.Render(document);
-            return sb.ToString().TrimEnd('\r', '\n');
+            return sb.ToString()
+                .Replace(BoldOpenMarker, "<b>")
+                .Replace(BoldCloseMarker, "</b>")
+                .TrimEnd('\r', '\n');
         }
 
         private sealed class UnityRichTextRenderer
@@ -301,7 +388,7 @@ namespace RimLLM_Framework.Mod
                 for (int i = 0; i < html.Lines.Count; i++)
                 {
                     if (i > 0) _sb.Append('\n');
-                    _sb.Append(html.Lines.Lines[i].Slice.ToString());
+                    _sb.Append(SanitizeRawHtml(html.Lines.Lines[i].Slice.ToString()));
                 }
             }
 
@@ -335,7 +422,7 @@ namespace RimLLM_Framework.Mod
                         _sb.Append('\n');
                         break;
                     case HtmlInline html:
-                        _sb.Append(html.Tag);
+                        _sb.Append(SanitizeRawHtml(html.Tag));
                         break;
                     default:
                         if (inline is ContainerInline subContainer)
@@ -402,4 +489,4 @@ namespace RimLLM_Framework.Mod
         }
     }
 #pragma warning restore S101, S2342
-}
+}

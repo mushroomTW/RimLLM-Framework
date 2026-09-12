@@ -1058,6 +1058,18 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestUnknownChatFinishReasonIsRetryable()
+        {
+            // OpenRouter 回 finish_reason: "error" 時，OpenAI SDK 以此形式擲出例外；屬暫時性錯誤，應同模型重試。
+            var finishReasonEx = new ArgumentOutOfRangeException("value", "error", "Unknown ChatFinishReason value.");
+            ClassicAssert.IsTrue(RimLLMFallbackPipeline.IsRetryableException(finishReasonEx));
+
+            // 其他 ArgumentOutOfRangeException 仍維持非可重試。
+            var otherEx = new ArgumentOutOfRangeException("count", 5, "Count must be non-negative.");
+            ClassicAssert.IsFalse(RimLLMFallbackPipeline.IsRetryableException(otherEx));
+        }
+
+        [Test]
         public void TestEmptyStreamErrorIsRetryable()
         {
             var mockSettings = new MockSettings

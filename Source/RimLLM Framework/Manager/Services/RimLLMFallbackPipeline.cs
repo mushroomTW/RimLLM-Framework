@@ -367,6 +367,15 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
+            // OpenRouter 偶爾回傳 finish_reason: "error"（上游供應商暫時性錯誤），OpenAI SDK 解析該值時
+            // 擲出 ArgumentOutOfRangeException。這不是呼叫參數有問題，同模型重試通常會成功，
+            // 必須在下方的 ArgumentException 判定之前放行。
+            if (ex is ArgumentOutOfRangeException &&
+                ex.Message.IndexOf("Unknown ChatFinishReason value", StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
             // 參數、狀態與解析類例外代表呼叫本身有問題，以相同輸入重試必然再次失敗。
             if (ex is ArgumentException ||
                 ex is NotSupportedException ||

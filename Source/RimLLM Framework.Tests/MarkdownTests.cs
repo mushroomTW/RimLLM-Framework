@@ -126,6 +126,48 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void UntrustedRawUnityTagsAreEscaped()
+        {
+            const string input = "<color=red>外部標記</color> <size=999>過大文字</size>";
+            string result = RimLLMMarkdown.ToRichText(input);
+
+            StringAssert.Contains("＜color=red＞外部標記＜/color＞", result);
+            StringAssert.Contains("＜size=999＞過大文字＜/size＞", result);
+            ClassicAssert.IsFalse(result.Contains("<color=red>"));
+            ClassicAssert.IsFalse(result.Contains("<size=999>"));
+        }
+
+        [Test]
+        public void UntrustedSilverWrapperIsEscapedBeforeChatTestWrapping()
+        {
+            const string input = "<color=silver>供應商內容</color>";
+            string result = RimLLMMarkdown.EscapeUntrustedUnityTags(input);
+
+            StringAssert.Contains("＜color=silver＞供應商內容＜/color＞", result);
+            ClassicAssert.IsFalse(result.Contains("<color=silver>"));
+        }
+
+        [Test]
+        public void RawHtmlSanitizerPreservesOrdinaryGreaterThanText()
+        {
+            string result = RimLLMMarkdown.ToRichText("<div>HTML</div> a > b");
+
+            StringAssert.Contains("a > b", result);
+            ClassicAssert.IsFalse(result.Contains("<div>"));
+            ClassicAssert.IsFalse(result.Contains("</div>"));
+        }
+
+        [Test]
+        public void EncodedUnityTagsDoNotBecomeRichText()
+        {
+            string result = RimLLMMarkdown.ToRichText(
+                "&lt;color=red&gt;外部標記&lt;/color&gt;");
+
+            ClassicAssert.IsFalse(result.Contains("<color=red>"));
+            ClassicAssert.IsFalse(result.Contains("</color>"));
+        }
+
+        [Test]
         public void OnlyLegacySupportedTagsAreEmitted()
         {
             // 舊版 IMGUI 只認得 b/i/size/color/material/quad，其餘標籤會被原樣印出來。

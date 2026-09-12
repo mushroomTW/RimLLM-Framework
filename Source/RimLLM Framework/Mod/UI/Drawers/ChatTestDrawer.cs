@@ -348,7 +348,7 @@ namespace RimLLM_Framework.Mod
             {
                 CancelActiveChatRequest();
                 chatHistory.Clear();
-                Settings.ChatHistory.Clear();
+                Settings.ClearChatHistory();
                 Settings.SaveTelemetry();
                 chatInput = "";
             }
@@ -545,6 +545,10 @@ namespace RimLLM_Framework.Mod
         private static string FormatThinkProcess(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;
+
+            // 先跳脫供應商內容中的 Unity 標籤，再加入框架自行產生的灰色 thinking wrapper；
+            // 否則供應商可以用同名的 </color> 提早關閉框架標籤。
+            text = RimLLMMarkdown.EscapeUntrustedUnityTags(text);
 
             // 註：此處原本在 DetailedLogging 下記錄完整的模型輸出。
             // 該日誌未經 SanitizeForLog、未截斷，且因為由 OnChunkReceived 觸發，

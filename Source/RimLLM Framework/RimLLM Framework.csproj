@@ -27,7 +27,7 @@
     <!-- 啟用 C# 8.0 語言版本，以支援非同步資料流 (IAsyncEnumerable) -->
     <LangVersion>8.0</LangVersion>
     <!-- ChatCompletionOptions.Patch 為實驗性 API (SCME0001)，本專案刻意使用它以補救 wire 差異。
-         NU1608: MEAI.OpenAI 10.9.0 定義 OpenAI (< 2.13.0)，本專案升級至 2.13.0 並透過 OpenAIPatchExtensions 修復 PropagateSet NRE。
+         NU1608: MEAI.OpenAI 10.10.0 定義 OpenAI (< 2.13.0)，本專案使用 2.13.0 並透過 OpenAIPatchExtensions 修復 PropagateSet NRE。
          MEAI001: FailoverChatClient / RoutingContext / FailoverChatClientAttempt 被 Microsoft 標記為
          「僅供評估之用，可能在未來更新中變更或移除」。備援路由建構在它們之上是刻意的取捨——
          換得的是與 MEAI 一致的路由語意，代價是 MEAI 升版時這一層可能需要跟著改。
@@ -50,29 +50,29 @@
     <PackageReference Include="Krafs.Rimworld.Ref" Version="1.6.4871" />
     <PackageReference Include="Markdig" Version="1.3.2" />
     <!--
-      框架唯一的 JSON 引擎。版本刻意釘在 MEAI 已經帶進來的 10.0.11：
+      框架唯一的 JSON 引擎。版本刻意釘在 MEAI 已經帶進來的 10.0.12：
       與 Caching.Memory 的做法相同，RimWorld 共用 AppDomain，組件識別必須與
       出貨 DLL 一致，浮動只會製造衝突。
     -->
-    <PackageReference Include="System.Text.Json" Version="10.0.11" />
+    <PackageReference Include="System.Text.Json" Version="10.0.12" />
     <!--
       AI 抽象層與 provider SDK 版本刻意固定。Mod 維持 net472，這些套件必須
       持續提供 netstandard2.0 資產，才能在 RimWorld Mono 執行環境中使用。
     -->
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.9.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.10.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.0" />
     <!--
       Abstractions 刻意出貨 netstandard2.0 資產而非 NuGet 依 net472 自動挑選的 net462 資產。
       net462 版把 [EmailAddress]、[Range] 等驗證屬性讀進 schema，該段程式碼參考框架內建的
       System.ComponentModel.DataAnnotations —— RimWorld 的 Unity Mono 沒有出貨這顆 DLL，
       AIFunctionFactory.Create / AIJsonUtilities.CreateJsonSchema 在遊戲內會擲出 TypeLoadException
       （實機探針證實，連無參數的工具也炸）。netstandard2.0 版整段以 #if NET || NETFRAMEWORK 排除，
-      相依只剩 System.Text.Json；組件版本同為 10.9.0.0，MEAI 與 MEAI.OpenAI 的 net462 資產綁定不受影響。
+      相依只剩 System.Text.Json；組件版本同為 10.10.0.0，MEAI 與 MEAI.OpenAI 的 net462 資產綁定不受影響。
       ProviderSdkIntegrationTests.ShippedAbstractionsHasNoDataAnnotationsDependency 鎖住此選擇。
     -->
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.9.0" ExcludeAssets="compile;runtime" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.10.0" ExcludeAssets="compile;runtime" />
     <Reference Include="Microsoft.Extensions.AI.Abstractions">
-      <HintPath>$(NuGetPackageRoot)microsoft.extensions.ai.abstractions\10.9.0\lib\netstandard2.0\Microsoft.Extensions.AI.Abstractions.dll</HintPath>
+      <HintPath>$(NuGetPackageRoot)microsoft.extensions.ai.abstractions\10.10.0\lib\netstandard2.0\Microsoft.Extensions.AI.Abstractions.dll</HintPath>
     </Reference>
     <!--
       OpenAI SDK 升級至 2.13.0。
@@ -81,6 +81,7 @@
       安全恢復底層 JsonPatch 寫入行為。
     -->
     <PackageReference Include="OpenAI" Version="2.13.0" />
+    <PackageReference Include="System.ClientModel" Version="1.15.0" />
 
     <!--
       升級 System.Threading.Tasks.Extensions 至 4.6.3，並以 alias 隔離其 ValueTask，
@@ -91,7 +92,7 @@
       以 alias 隔離 Microsoft.Bcl.AsyncInterfaces 的 IAsyncEnumerable<T>，避免與
       mscorlib (net472) 提供的同名介面衝突 (CS0433)。測試專案亦採相同做法。
     -->
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.11" Aliases="bclasync" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.12" Aliases="bclasync" />
   </ItemGroup>
 
   <Target Name="CopyRimWorldMonoRuntimeDependencies" AfterTargets="Build">

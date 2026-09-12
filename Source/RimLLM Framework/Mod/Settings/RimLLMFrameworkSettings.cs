@@ -140,6 +140,14 @@ namespace RimLLM_Framework.Mod
         }
 
         /// <summary>
+        /// 清空對話歷史；若先前因 key 不可用而保留了密文，也一併明確捨棄。
+        /// </summary>
+        public void ClearChatHistory()
+        {
+            _telemetry.ClearChatHistory();
+        }
+
+        /// <summary>
         /// 標記遙測有未寫入的變更（供節流路徑呼叫）。
         /// </summary>
         public void MarkTelemetryDirty()
@@ -163,7 +171,7 @@ namespace RimLLM_Framework.Mod
 
         /// <summary>
         /// 載入時無法解密的 provider 金鑰密文（providerId → 原始密文）。
-        /// 存檔時原樣寫回，避免換裝置導致使用者的金鑰被靜默清空。
+        /// 存檔時原樣寫回，避免無法取得原使用者的 OS 保護金鑰時被靜默清空。
         /// </summary>
         private readonly Dictionary<string, string> _undecryptableApiKeys = new Dictionary<string, string>();
         private readonly Dictionary<string, int> _apiKeyIndices = new Dictionary<string, int>();
@@ -174,6 +182,8 @@ namespace RimLLM_Framework.Mod
         private readonly Dictionary<string, string> _embeddingEndpoints = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _embeddingApiKeys = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _undecryptableEmbeddingApiKeys = new Dictionary<string, string>(StringComparer.Ordinal);
+        private string _undecryptableEmbeddingApiKey;
+        private string _undecryptableEmbeddingApiKeyProvider;
         
         /// <summary>中國端點切換旗標。鍵由 <see cref="ProviderIds.HasChinaEndpoint"/> 決定，不另外手寫一份清單。</summary>
         private readonly Dictionary<string, bool> _chinaModeProviders = BuildChinaModeMap();
@@ -291,6 +301,24 @@ namespace RimLLM_Framework.Mod
                             encryptedEmbeddingKeys[kvp.Key] = kvp.Value;
                         }
                     }
+                    if (!string.IsNullOrEmpty(_undecryptableEmbeddingApiKey) &&
+                        !string.IsNullOrEmpty(_undecryptableEmbeddingApiKeyProvider) &&
+                        !_embeddingApiKeys.ContainsKey(_undecryptableEmbeddingApiKeyProvider) &&
+                        !encryptedEmbeddingKeys.ContainsKey(_undecryptableEmbeddingApiKeyProvider))
+                    {
+                        // 舊版只有一個 active provider 欄位；切換 provider 後改放入 map，避免密文遺失。
+                        encryptedEmbeddingKeys[_undecryptableEmbeddingApiKeyProvider] = _undecryptableEmbeddingApiKey;
+                    }
+
+                    bool preserveUndecryptableEmbeddingApiKey =
+                        !string.IsNullOrEmpty(_undecryptableEmbeddingApiKey) &&
+                        !string.IsNullOrEmpty(_undecryptableEmbeddingApiKeyProvider) &&
+                        string.Equals(this.EmbeddingProvider, _undecryptableEmbeddingApiKeyProvider, StringComparison.Ordinal) &&
+                        !string.IsNullOrEmpty(this.EmbeddingProvider) &&
+                        !_embeddingApiKeys.ContainsKey(this.EmbeddingProvider);
+                    string encryptedEmbeddingApiKey = preserveUndecryptableEmbeddingApiKey
+                        ? _undecryptableEmbeddingApiKey
+                        : EncryptionUtility.Encrypt(this.EmbeddingApiKey ?? "");
 
                     var dto = new SettingsDto
                     {
@@ -322,7 +350,7 @@ namespace RimLLM_Framework.Mod
                         EmbeddingModel = this.EmbeddingModel,
                         EmbeddingEndpoint = this.EmbeddingEndpoint,
                         // Embedding 金鑰與 provider 金鑰採同一套加密；明文欄位明確寫 null 以清除舊資料。
-                        EncryptedEmbeddingApiKey = EncryptionUtility.Encrypt(this.EmbeddingApiKey ?? ""),
+                        EncryptedEmbeddingApiKey = encryptedEmbeddingApiKey,
                         EmbeddingApiKey = null,
                         EmbeddingModels = new Dictionary<string, string>(this._embeddingModels),
                         EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
@@ -455,6 +483,8 @@ namespace RimLLM_Framework.Mod
 
                                 _embeddingApiKeys.Clear();
                                 _undecryptableEmbeddingApiKeys.Clear();
+                                _undecryptableEmbeddingApiKey = null;
+                                _undecryptableEmbeddingApiKeyProvider = null;
                                 if (dto.EncryptedEmbeddingApiKeys != null)
                                 {
                                     foreach (var kvp in dto.EncryptedEmbeddingApiKeys)
@@ -472,10 +502,18 @@ namespace RimLLM_Framework.Mod
                                 }
                                 else if (!string.IsNullOrEmpty(dto.EncryptedEmbeddingApiKey))
                                 {
+                                    string embeddingProvider = this.EmbeddingProvider;
                                     string plain = EncryptionUtility.Decrypt(dto.EncryptedEmbeddingApiKey);
-                                    if (plain != null && this.EmbeddingProvider != DisabledProvider)
+                                    if (plain != null && embeddingProvider != DisabledProvider)
                                     {
-                                        _embeddingApiKeys[this.EmbeddingProvider] = plain;
+                                        _embeddingApiKeys[embeddingProvider] = plain;
+                                    }
+                                    else if (plain == null &&
+                                             !string.IsNullOrEmpty(embeddingProvider) &&
+                                             embeddingProvider != DisabledProvider)
+                                    {
+                                        _undecryptableEmbeddingApiKey = dto.EncryptedEmbeddingApiKey;
+                                        _undecryptableEmbeddingApiKeyProvider = embeddingProvider;
                                     }
                                 }
                                 else if (!string.IsNullOrEmpty(dto.EmbeddingApiKey) && this.EmbeddingProvider != DisabledProvider)

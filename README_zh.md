@@ -46,17 +46,17 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 <ItemGroup>
   <!-- IChatClient / ChatMessage / ChatResponse / IEmbeddingGenerator。
        ExcludeAssets="runtime" 保留參考但不把 DLL 複製到你的 Assemblies 資料夾。 -->
-  <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" ExcludeAssets="runtime" />
+  <PackageReference Include="Microsoft.Extensions.AI" Version="10.10.0" ExcludeAssets="runtime" />
 </ItemGroup>
 ```
 
-* [`Microsoft.Extensions.AI` 10.9.0](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.9.0) —— 使用端 Mod 只需要這一個。它會帶進 `Microsoft.Extensions.AI.Abstractions`，`IChatClient` 就在裡面。
-* [`Microsoft.Extensions.AI.OpenAI` 10.9.0](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.9.0) —— 框架另外會一併發佈這一顆。只有在你要自己建構 OpenAI SDK 用戶端時才需要參考；單純呼叫 `RimLLMProvider.CreateChatClient` 的 Mod 不需要。
+* [`Microsoft.Extensions.AI` 10.10.0](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.10.0) —— 使用端 Mod 只需要這一個。它會帶進 `Microsoft.Extensions.AI.Abstractions`，`IChatClient` 就在裡面。
+* [`Microsoft.Extensions.AI.OpenAI` 10.10.0](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.10.0) —— 框架另外會一併發佈這一顆。只有在你要自己建構 OpenAI SDK 用戶端時才需要參考；單純呼叫 `RimLLMProvider.CreateChatClient` 的 Mod 不需要。
 
 > [!IMPORTANT]
-> **版本必須釘死在 `10.9.0`。** 組件識別必須與框架載入的那一份完全一致。使用端 Mod 也不要把 `CopyLocalLockFileAssemblies` 設成 `true` —— 那正是造成上述 DLL 重複問題的原因。
+> **版本必須釘死在 `10.10.0`。** 組件識別必須與框架載入的那一份完全一致。使用端 Mod 也不要把 `CopyLocalLockFileAssemblies` 設成 `true` —— 那正是造成上述 DLL 重複問題的原因。
 >
-> **從舊版框架升上來要注意：**MEAI 的組件版本是跟著 `major.minor` 走的，`10.8.3` 產生的是 `10.8.0.0`，`10.9.0` 產生的是 `10.9.0.0`。因此對著 `10.8.3` 編譯的使用端 Mod 必須把這行的版本改掉並重新編譯 —— 這不是原始碼層的破壞性變更，但舊的二進位已經對不上框架載入的那一份。
+> **從舊版框架升上來要注意：**MEAI 的組件版本是跟著 `major.minor` 走的，`10.8.3` 產生的是 `10.8.0.0`，`10.10.0` 產生的是 `10.10.0.0`。因此對著舊版 MEAI 編譯的使用端 Mod 必須把這行的版本改掉並重新編譯 —— 這不是原始碼層的破壞性變更，但舊的二進位已經對不上框架載入的那一份。
 
 框架本身的組件不在 NuGet 上，那部分請看方案 B。
 
@@ -97,7 +97,7 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 ## 💻 SDK 使用方式
 
-**如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.9.0)，你就已經會用這套 API。**
+**如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.10.0)，你就已經會用這套 API。**
 
 RimLLM Framework 的全部工作，就是交給你一個標準的 MEAI `IChatClient`。從那一行之後全是純 Microsoft.Extensions.AI，因此本文件只寫本框架專屬的部分；MEAI 本身的語法請看 [Microsoft 官方文件](https://learn.microsoft.com/zh-tw/dotnet/ai/microsoft-extensions-ai)。
 
@@ -255,7 +255,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 | 你可以省略 | 因為框架已經做了 |
 | --- | --- |
-| API 金鑰的儲存與 UI | AES-256 加密設定，所有 Mod 共用同一份 |
+| API 金鑰的儲存與 UI | 使用 OS 每使用者保護金鑰的 AES-256 加密設定，所有 Mod 共用同一份 |
 | 挑選供應商或模型 | 玩家設定的 Fallback 鏈，項目為 `Provider:Model` 形式 |
 | 重試與 `Retry-After` | 逾時／429／連線錯誤自動重試，兩種標頭格式都支援 |
 | 供應商之間的容錯切換 | 回應開始輸出之前，自動沿 Fallback 鏈降級 |
@@ -297,7 +297,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * **一次請求只記一次失敗。**同一次請求的所有重試合計只計一次失敗。逐次記錄的話，單一次網路抖動（預設設定下共 4 次嘗試）就能把健康的目標推過熔斷門檻，冤枉凍結數分鐘。
    * **路由策略**：`PriorityFailover`（依鏈順序）、`MinLatency`、`RoundRobin` 與 `LowestCost`。`LowestCost` 直接沿用框架已經依 API 費率自動判定的模型分級排序，不需要另外維護一份價格表。所有排序都是穩定的，同級的候選會保留鏈本身的順序。
 3. **AES-256 設定加密**
-   * API 金鑰以 AES-256 對稱加密儲存，降低設定檔中出現明文金鑰的風險。這是混淆等級的保護 —— 詳見下方[安全性說明](#-安全性說明)。
+   * API 金鑰以 AES-256 對稱加密儲存，金鑰由目前 OS 使用者的保護機制包裝。新資料使用 `v3:` 格式；`v1`／`v2` 的裝置衍生密文僅供遷移，下一次存檔時會改寫成受保護金鑰格式。
    * 設定介面預設也會**遮罩金鑰**（只留頭尾，仍可辨認自己設定了哪一把），每一列另有切換鈕可暫時顯示以便編輯。這防的是與加密不同的外洩途徑：截圖、回報問題與直播。
    * 所有供應商（含 Gemini）都以 HTTP Header 傳遞金鑰，絕不放在請求 URL，避免金鑰進入代理或伺服器的存取日誌。
    * RimWorld 的所有 Mod 都在同一個遊戲行程內執行。本框架不宣稱能阻止惡意 Mod 讀取記憶體、對公開 API 使用反射，或以其他行程內手段繞過邊界。
@@ -375,12 +375,12 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 ### 6. 官方 SDK 與供應商職責
 
 * 主專案與測試專案維持 `net472`；RimWorld Mod 不需要遷移到 .NET 8。官方 SDK 的相依 DLL 隨 Mod 發佈，並由 `ProviderSdkIntegrationTests` 逐一載入並反射，讓遺漏的間接相依組件在建置階段就失敗而不是在遊戲裡。要注意這項檢查跑在真正的 .NET Framework 上，因此拓不到「在這裡存在、但 RimWorld 的 Mono BCL 沒有」的型別 ——下方的 `DataAnnotations` 就是這種失敗，因此改以檢查出貨組件的參考清單來釘住，而不是靠執行程式碼。雖然 .NET Framework 將 `System.ValueTuple` 視為框架組件，建置仍明確部署其 `4.0.5.0` DLL，以避免 RimWorld 的 Mono 反射 MEAI 時發生 `ReflectionTypeLoadException`。
-* **OpenAI** 使用 `OpenAI` SDK `2.13.0` 搭配 `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.9.0`。針對 OpenAI SDK 2.13.0 與 `System.ClientModel` 1.15.0 在實驗性 `ChatCompletionOptions.Patch` API 內部因 `PropagateSet` 缺乏 null 防護而擲出 `NullReferenceException` 的問題，框架透過 `OpenAIPatchExtensions.DisablePatchPropagators()` 清除傳播委派，安全恢復底層 JSON Patch 寫入機制以注入 `reasoning_effort`、`response_format`、`max_tokens` 與 `models` 欄位。內建的 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用 manager。只有真正實作 OpenAI Chat Completions 協定的端點（LM Studio、Ollama、vLLM…）才適合 OpenAI 相容轉接。
+* **OpenAI** 使用 `OpenAI` SDK `2.13.0` 搭配 `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.10.0`。針對 OpenAI SDK 2.13.0 與 `System.ClientModel` 1.15.0 在實驗性 `ChatCompletionOptions.Patch` API 內部因 `PropagateSet` 缺乏 null 防護而擲出 `NullReferenceException` 的問題，框架透過 `OpenAIPatchExtensions.DisablePatchPropagators()` 清除傳播委派，安全恢復底層 JSON Patch 寫入機制以注入 `reasoning_effort`、`response_format`、`max_tokens` 與 `models` 欄位。內建的 `OpenAIProvider` 透過 `ChatClient.AsIChatClient()` 進入共用 manager。只有真正實作 OpenAI Chat Completions 協定的端點（LM Studio、Ollama、vLLM…）才適合 OpenAI 相容轉接。
 * **Gemini** 經 Google 官方 OpenAI 相容端點（`https://generativelanguage.googleapis.com/v1beta/openai/`）存取，文字、串流、原生 Schema、思考與工具呼叫全數重用共用的 `OpenAIProvider` 實作。Gemini 只是宣告端點與預設測試模型的薄子類 —— 與 Groq、Qwen 等供應商同形。
 * **所有內建供應商都走 OpenAI SDK**：整個家族（OpenAI、Gemini、OpenRouter、DeepSeek、Groq、Grok、Z.ai、Kimi、MiniMax、Qwen、NVIDIA、OpenAICompatible）使用 `OpenAI` SDK `2.13.0` 加 MEAI 的 `IChatClient`。模型清單使用 `OpenAIModelClient.GetModelsAsync()`，而非自行拼 `/models` URL 再解析 JSON。
 * **框架已無任何 raw HTTP 路徑，也不再有第二套 SDK。** 移除最後的原生 `Google.GenAI` 路徑後，整個第二套傳輸層、認證處理，以及 Google `cachedContents` 顯式快取機制一併刪除：`CachedContext` 一律以系統訊息內文送達，快取與否由供應商在服務端對重複前綴自行處理。
 * **JSON Schema 產生走 `System.Text.Json` 的 `JsonSchemaExporter` 加一層正規化**（`RimLLMSchemaBuilder`），分三階段。**Stage A** 由 exporter 匯出完整 JSON Schema。**Stage B** 正規化成所有供應商都接受的受限子集：解析並展開 `$ref` 指標、截斷循環與過深巢狀、把可為 null 的聯集收斂成單一 `type`、只保留關鍵字白名單。**Stage C** 套用唯一的 OpenAI 相容方言，選填成員寫成 `["integer","null"]` 聯集。
-  * **`Microsoft.Extensions.AI.Abstractions` 出貨的是 `netstandard2.0` 版本，而不是 NuGet 依 `net472` 自動挑的 `net462` 版本。** `net462` 版會讀 `[EmailAddress]`、`[Range]` 之類的驗證屬性豐富 schema，那段程式碼參考框架內建的 `System.ComponentModel.DataAnnotations`。RimWorld 的 Unity Mono 沒有出貨那顆 DLL，所以遊戲內 `AIFunctionFactory.Create` 與 `AIJsonUtilities.CreateJsonSchema` 曾擲出 `TypeLoadException: Could not resolve type … 'EmailAddressAttribute' in assembly 'System.ComponentModel.DataAnnotations, Version=4.0.0.0'` —— 連無參數的工具也炸，而單元測試跑在有 GAC 的真 .NET Framework 上完全看不出來。`netstandard2.0` 版整段以 `#if NET || NETFRAMEWORK` 排除，相依只剩 `System.Text.Json`，組件版本同為 `10.9.0.0`，因此 `Microsoft.Extensions.AI` 與 `Microsoft.Extensions.AI.OpenAI` 的綁定不受影響。csproj 顯式引用該版本；`ShippedAbstractionsHasNoDataAnnotationsDependency` 檢查出貨 DLL 的參考清單，選擇一旦被改回就會失敗。下游 Mod 不受影響：它們對套件編譯、對框架出貨的 DLL 執行。
+  * **`Microsoft.Extensions.AI.Abstractions` 出貨的是 `netstandard2.0` 版本，而不是 NuGet 依 `net472` 自動挑的 `net462` 版本。** `net462` 版會讀 `[EmailAddress]`、`[Range]` 之類的驗證屬性豐富 schema，那段程式碼參考框架內建的 `System.ComponentModel.DataAnnotations`。RimWorld 的 Unity Mono 沒有出貨那顆 DLL，所以遊戲內 `AIFunctionFactory.Create` 與 `AIJsonUtilities.CreateJsonSchema` 曾擲出 `TypeLoadException: Could not resolve type … 'EmailAddressAttribute' in assembly 'System.ComponentModel.DataAnnotations, Version=4.0.0.0'` —— 連無參數的工具也炸，而單元測試跑在有 GAC 的真 .NET Framework 上完全看不出來。`netstandard2.0` 版整段以 `#if NET || NETFRAMEWORK` 排除，相依只剩 `System.Text.Json`，組件版本同為 `10.10.0.0`，因此 `Microsoft.Extensions.AI` 與 `Microsoft.Extensions.AI.OpenAI` 的綁定不受影響。csproj 顯式引用該版本；`ShippedAbstractionsHasNoDataAnnotationsDependency` 檢查出貨 DLL 的參考清單，選擇一旦被改回就會失敗。下游 Mod 不受影響：它們對套件編譯、對框架出貨的 DLL 執行。
   * **仍然直接呼叫 exporter，不經過 MEAI 的 `AIJsonUtilities.CreateJsonSchema` 包裝層。** 它就是 MEAI 內部使用的同一個引擎；直呼讓 Stage B 拿到未經包裝層改寫的原始輸出，正規化只需要對付一種形狀。MEAI 唯一多做而仍需要的 `[Description]`，由 Stage B 自行讀取。
   * 直呼 exporter 有兩個後果：列舉只會輸出 `{"enum":[…]}` 而不帶 `type`（Stage B 由列舉值反推型別，否則所有列舉成員都會消失），而且它完全沒有 `description` 的概念（Stage B 自行讀取成員與類別上的 `[Description]`）。
   * **循環在 CLR 型別層截斷，而非 JSON pointer 層。** exporter 會把遞迴成員先完整展開一輪、其中才出現指回祖先的 `$ref`，只靠 pointer 偵測就會多送一整層 —— 實測遞迴測試型別從 789 字元漲到 3119 字元，而那是每次請求都要付的 prompt token。由 `RecursiveSchemaStaysCompact` 守住。
@@ -398,9 +398,10 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 為避免誤解，以下誠實說明每項安全機制實際防護的範圍：
 
-* **API 金鑰加密屬混淆等級保護。** 金鑰在設定檔中以 AES-256 加密，加密金鑰由固定種子與裝置識別碼（`deviceUniqueIdentifier`）衍生。這能防止設定檔被複製到其他機器後被讀出明文，也避免同步或分享設定時意外外洩 —— 但**無法**防禦在同一台機器上執行的程式碼（包含其他 Mod），因為加密邏輯與素材都在同一個行程內，有心人可還原明文。請把它視為防呆與防止意外揭露，而不是保險箱。
-* **刻意不做呼叫者驗證。** 舊版會把每個 `modId` 綁定到一個呼叫端組件。這個檢查擋不住惡意 Mod —— 全部都在同一行程內，反射就能繞過 —— 而且是先到先贏，載入較早的 Mod 可以占用某個 id，讓正牌擁有者在啟動時直接擲出例外。因此移除：它把可忽略的偽造風險換成了真實的阻斷服務風險。
+* **API 金鑰加密使用 OS 每使用者保護金鑰。** 新資料使用 AES-256 與隨機儲存金鑰，該金鑰由目前使用者的 OS 保護機制包裝。舊版 `v1`／`v2` 密文仍以裝置衍生素材解密，但只用於遷移；新資料不再從原始碼固定種子或 `deviceUniqueIdentifier` 衍生儲存金鑰。這能防止其他使用者或其他機器直接解密複製的設定，但**無法**防禦以相同使用者身分或在同一 RimWorld 行程內執行的程式碼（包含其他 Mod），因為框架必須使用金鑰才能提供請求服務。
+* **`modId` 是歸屬標籤，不是身份驗證。** 每 Mod 節流仍用來維持合作型 Mod 之間的公平性；另外加上「每 Mod 視窗上限十倍」的共享安全上限，每個實際供應商呼叫（包含工具迴圈續輪）都會計入，避免輪換標籤建立無限供應商請求。同一個 RimWorld 行程內的 Mod 仍沒有隔離，請勿把 SDK 當成惡意 Mod 沙盒。
 * **金鑰不會進入 URL 或日誌。** 所有供應商都以 HTTP Header 傳遞金鑰；日誌輸出一律經過 `SanitizeForLog` 並截斷長度，診斷匯出中的裝置識別碼也會遮罩。
+* **供應商輸出視為不受信任的 UI 輸入。** ChatTest 只保留框架自行產生的灰色思考色彩標籤；供應商回應中的 raw HTML 標籤會以文字顯示，再交給 Markdown/Unity IMGUI。
 
 ---
 

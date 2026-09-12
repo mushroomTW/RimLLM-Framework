@@ -2,22 +2,35 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using Verse;
 
 namespace RimLLM_Framework.Core
 {
     /// <summary>
-    /// 提供統一的 AES-256 對稱加密與解密工具，用於加密設定檔中的敏感金鑰（API Keys）。
+    /// 提供統一的 AES-256 對稱加密與解密工具，用於保護設定檔與遙測中的敏感資料。
+    /// 新資料的 AES 金鑰以每使用者的 OS 保護秘密保存；舊版裝置衍生金鑰僅供遷移既有密文。
     /// </summary>
     public static class EncryptionUtility
     {
-        // 混淆金鑰與初始化向量
+        // 舊版由裝置識別值衍生的金鑰，僅供既有密文遷移解密。
         private static byte[] Key;
         private static byte[] Iv;
         private static byte[] MacKey;
+        private static byte[] _secureKey;
         private static readonly object CryptLock = new object();
-        private const string VersionPrefix = "v2:";
+        private const string SecureVersionPrefix = "v3:";
+        private const string LegacyVersionPrefix = "v2:";
+        private const string LegacyKeySeed = "RimLLMSecretKeySeed2026";
+        private const string LegacyIvSeed = "RimLLMSecretIvSeed2026";
+        private const string SecureKeyFileName = "RimLLM_EncryptionKey.dat";
+        private const int AesKeyLength = 32;
+        private static readonly byte[] SecureKeyEntropy =
+            Encoding.UTF8.GetBytes("GreenMushroom.RimLLMFramework");
 
-        // 允許單元測試注入自訂的 Salt
+        // 讓測試使用隔離的 key 檔案；正式環境固定走每使用者的 OS 保護儲存。
+        internal static Func<string> SecureKeyPathResolver = GetDefaultSecureKeyPath;
+
+        // 允許單元測試注入舊版 Salt；不參與新的安全格式。
         private static string _customSalt;
         public static string CustomSalt
         {
@@ -37,6 +50,15 @@ namespace RimLLM_Framework.Core
             }
         }
 
+        internal static void ResetSecureKeyForTests()
+        {
+            lock (CryptLock)
+            {
+                _secureKey = null;
+                SecureKeyPathResolver = GetDefaultSecureKeyPath;
+            }
+        }
+
         static EncryptionUtility()
         {
             InitializeKeyAndIv();
@@ -46,9 +68,9 @@ namespace RimLLM_Framework.Core
         {
             lock (CryptLock)
             {
-                // 使用固定的混淆字串與 SHA256/MD5 來產生金鑰與 IV，避免程式碼中直接存在明文 Byte 陣列
-                string rawKeySeed = "RimLLMSecretKeySeed2026";
-                string rawIvSeed = "RimLLMSecretIvSeed2026";
+                // 僅為解開既有 v1/v2 密文保留；新資料不再使用這些值產生金鑰。
+                string rawKeySeed = LegacyKeySeed;
+                string rawIvSeed = LegacyIvSeed;
 
                 string hardwareSalt;
                 try
@@ -88,6 +110,123 @@ namespace RimLLM_Framework.Core
                 }
             }
         }
+
+        private static void GetSecureKeySnapshot(out byte[] key, out byte[] macKey)
+        {
+            lock (CryptLock)
+            {
+                if (_secureKey == null)
+                {
+                    _secureKey = LoadOrCreateSecureKey();
+                }
+
+                key = (byte[])_secureKey.Clone();
+            }
+
+            macKey = DeriveSecureMacKey(key);
+        }
+
+        private static byte[] LoadOrCreateSecureKey()
+        {
+            string path = SecureKeyPathResolver();
+            if (string.IsNullOrEmpty(path))
+            {
+                throw new CryptographicException("Secure key path is unavailable.");
+            }
+
+            string directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory))
+            {
+                throw new CryptographicException("Secure key directory is unavailable.");
+            }
+
+            Directory.CreateDirectory(directory);
+            if (File.Exists(path))
+            {
+                return UnprotectStoredKey(File.ReadAllBytes(path));
+            }
+
+            byte[] key = new byte[AesKeyLength];
+            using (RandomNumberGenerator random = RandomNumberGenerator.Create())
+            {
+                random.GetBytes(key);
+            }
+
+            byte[] protectedKey = ProtectedData.Protect(
+                key,
+                SecureKeyEntropy,
+                DataProtectionScope.CurrentUser);
+
+            try
+            {
+                using (FileStream stream = new FileStream(
+                    path,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None))
+                {
+                    stream.Write(protectedKey, 0, protectedKey.Length);
+                }
+
+                return key;
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                // 另一個程序可能同時建立了同一個使用者的 key；採用先成功寫入的版本。
+                return UnprotectStoredKey(File.ReadAllBytes(path));
+            }
+        }
+
+        private static byte[] UnprotectStoredKey(byte[] protectedKey)
+        {
+            if (protectedKey == null || protectedKey.Length == 0)
+            {
+                throw new CryptographicException("Stored secure key is empty.");
+            }
+
+            byte[] key = ProtectedData.Unprotect(
+                protectedKey,
+                SecureKeyEntropy,
+                DataProtectionScope.CurrentUser);
+            if (key == null || key.Length != AesKeyLength)
+            {
+                throw new CryptographicException("Stored secure key has an invalid length.");
+            }
+
+            return key;
+        }
+
+        private static string GetDefaultSecureKeyPath()
+        {
+            try
+            {
+                string configFolder = GenFilePaths.ConfigFolderPath;
+                if (!string.IsNullOrEmpty(configFolder))
+                {
+                    return Path.Combine(configFolder, SecureKeyFileName);
+                }
+            }
+            catch
+            {
+                // 測試或 headless 環境可能尚未初始化 Verse，改用同一使用者的應用程式資料夾。
+            }
+
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrEmpty(localAppData))
+            {
+                throw new CryptographicException("Per-user application data path is unavailable.");
+            }
+
+            return Path.Combine(localAppData, "RimLLM Framework", SecureKeyFileName);
+        }
+
+        private static byte[] DeriveSecureMacKey(byte[] key)
+        {
+            using (HMACSHA256 hmac = new HMACSHA256(key))
+            {
+                return hmac.ComputeHash(Encoding.UTF8.GetBytes("RimLLM Framework secure storage v3"));
+            }
+        }
  
         private static void GetKeySnapshot(out byte[] key, out byte[] iv, out byte[] macKey)
         {
@@ -111,13 +250,15 @@ namespace RimLLM_Framework.Core
             if (string.IsNullOrEmpty(plainText))
                 return string.Empty;
 
-            GetKeySnapshot(out byte[] key, out _, out byte[] macKey);
-
             try
             {
+                GetSecureKeySnapshot(out byte[] key, out byte[] macKey);
+
                 using (Aes aes = Aes.Create())
                 {
                     aes.Key = key;
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
                     aes.GenerateIV();
 
                     using (ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
@@ -133,7 +274,7 @@ namespace RimLLM_Framework.Core
                         byte[] cipherBytes = ms.ToArray();
                         byte[] payload = Combine(aes.IV, cipherBytes);
                         byte[] mac = ComputeMac(payload, macKey);
-                        return VersionPrefix + Convert.ToBase64String(Combine(payload, mac));
+                        return SecureVersionPrefix + Convert.ToBase64String(Combine(payload, mac));
                     }
                 }
             }
@@ -149,8 +290,8 @@ namespace RimLLM_Framework.Core
         /// </summary>
         /// <remarks>
         /// 解密失敗時回傳 <c>null</c>（而非空字串），讓呼叫端能區分「金鑰本來就是空的」
-        /// 與「金鑰存在但解不開」。金鑰派生使用 deviceUniqueIdentifier 作為 salt，
-        /// 換硬體或換平台會使既有密文全部解不開；若此時回傳空字串，
+        /// 與「金鑰存在但解不開」。新格式使用每使用者的 OS 保護金鑰，
+        /// 舊格式仍以 deviceUniqueIdentifier 作為遷移 salt；換硬體、換使用者或換平台可能使既有密文解不開；若此時回傳空字串，
         /// 呼叫端下次存檔就會以 Encrypt("") 覆寫，造成金鑰靜默永久遺失。
         /// </remarks>
         public static string Decrypt(string cipherText)
@@ -158,21 +299,28 @@ namespace RimLLM_Framework.Core
             if (string.IsNullOrEmpty(cipherText))
                 return string.Empty;
 
-            GetKeySnapshot(out byte[] key, out byte[] defaultIv, out byte[] macKey);
-
             try
             {
-                if (cipherText.StartsWith(VersionPrefix, StringComparison.Ordinal))
+                if (cipherText.StartsWith(SecureVersionPrefix, StringComparison.Ordinal))
                 {
-                    return DecryptV2(cipherText.Substring(VersionPrefix.Length), key, macKey);
+                    GetSecureKeySnapshot(out byte[] key, out byte[] macKey);
+                    return DecryptV2(cipherText.Substring(SecureVersionPrefix.Length), key, macKey);
+                }
+
+                GetKeySnapshot(out byte[] legacyKey, out byte[] legacyIv, out byte[] legacyMacKey);
+                if (cipherText.StartsWith(LegacyVersionPrefix, StringComparison.Ordinal))
+                {
+                    return DecryptV2(cipherText.Substring(LegacyVersionPrefix.Length), legacyKey, legacyMacKey);
                 }
 
                 byte[] buffer = Convert.FromBase64String(cipherText);
 
                 using (Aes aes = Aes.Create())
                 {
-                    aes.Key = key;
-                    aes.IV = defaultIv;
+                    aes.Key = legacyKey;
+                    aes.IV = legacyIv;
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
 
                     using (ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
                     using (MemoryStream ms = new MemoryStream(buffer))
@@ -225,6 +373,8 @@ namespace RimLLM_Framework.Core
             {
                 aes.Key = key;
                 aes.IV = iv;
+                aes.Mode = CipherMode.CBC;
+                aes.Padding = PaddingMode.PKCS7;
 
                 using (ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
                 using (MemoryStream ms = new MemoryStream(cipherBytes))

@@ -21,6 +21,7 @@ namespace RimLLM_Framework.Mod
         private const int MaxChatHistoryEntries = 100;
 
         private readonly object _ioLock = new object();
+        private string _undecryptableEncryptedChatHistory;
 
         /// <summary>
         /// 檔案路徑解析器。抽為可替換的委派，讓單元測試能指向暫存目錄，
@@ -78,6 +79,23 @@ namespace RimLLM_Framework.Mod
         }
 
         /// <summary>
+        /// 清空記憶體中的對話歷史，並同時捨棄解密失敗時保留的原始密文。
+        /// </summary>
+        public void ClearChatHistory()
+        {
+            lock (_ioLock)
+            {
+                if (ChatHistory != null)
+                {
+                    ChatHistory.Clear();
+                }
+
+                _undecryptableEncryptedChatHistory = null;
+                IsDirty = true;
+            }
+        }
+
+        /// <summary>
         /// 從磁碟載入遙測資料。檔案不存在或格式錯誤時保留預設空值；
         /// 主檔損毀時會嘗試從 .bak 備份還原。
         /// </summary>
@@ -125,7 +143,10 @@ namespace RimLLM_Framework.Mod
                 var dto = RimLLMJson.Deserialize<TelemetryDto>(File.ReadAllText(path));
                 if (dto == null) return false;
 
-                ChatHistory = ReadChatHistory(dto, out needsRewrite);
+                ChatHistory = ReadChatHistory(
+                    dto,
+                    out needsRewrite,
+                    out _undecryptableEncryptedChatHistory);
                 TrimChatHistory();
                 RequestLogs = dto.RequestLogs ?? new List<RimLLMManager.RequestLogEntry>();
                 TotalPromptTokens = dto.TotalPromptTokens;
@@ -142,17 +163,23 @@ namespace RimLLM_Framework.Mod
             }
         }
 
-        private static List<string> ReadChatHistory(TelemetryDto dto, out bool needsRewrite)
+        private static List<string> ReadChatHistory(
+            TelemetryDto dto,
+            out bool needsRewrite,
+            out string undecryptableEncryptedChatHistory)
         {
             needsRewrite = false;
+            undecryptableEncryptedChatHistory = null;
 
             if (!string.IsNullOrEmpty(dto.EncryptedChatHistory))
             {
                 string plain = EncryptionUtility.Decrypt(dto.EncryptedChatHistory);
                 if (plain == null)
                 {
-                    // 換裝置導致解不開：以空歷史起始即可，不得讓整份遙測載入失敗。
-                    RimLLMLog.Warning("[RimLLM] 對話歷史無法解密（可能已更換裝置），將以空白歷史起始。");
+                    // 無法取得原使用者的受保護 key 時，以空歷史起始，但保留密文，
+                    // 避免本次程序的其他遙測變更將歷史永久覆寫掉。
+                    undecryptableEncryptedChatHistory = dto.EncryptedChatHistory;
+                    RimLLMLog.Warning("[RimLLM] 對話歷史無法解密（可能已更換裝置或使用者），將以空白歷史起始並保留原始密文。");
                     return new List<string>();
                 }
 
@@ -162,6 +189,8 @@ namespace RimLLM_Framework.Mod
                 }
                 catch
                 {
+                    // 明文格式損毀時同樣保留原始密文，避免把未知資料靜默改成空值。
+                    undecryptableEncryptedChatHistory = dto.EncryptedChatHistory;
                     return new List<string>();
                 }
             }
@@ -208,6 +237,11 @@ namespace RimLLM_Framework.Mod
                         encryptedHistory = EncryptionUtility.Encrypt(
                             RimLLMJson.Serialize(ChatHistory));
                     }
+                    else
+                    {
+                        // 解密失敗時不能以 null 覆寫原始歷史；若使用者新增內容，上方的新密文則優先。
+                        encryptedHistory = _undecryptableEncryptedChatHistory;
+                    }
 
                     var dto = new TelemetryDto
                     {
@@ -227,6 +261,10 @@ namespace RimLLM_Framework.Mod
 
                     LoadedFromDisk = true;
                     IsDirty = false;
+                    if (ChatHistory != null && ChatHistory.Count > 0)
+                    {
+                        _undecryptableEncryptedChatHistory = null;
+                    }
                 }
                 catch (Exception ex)
                 {

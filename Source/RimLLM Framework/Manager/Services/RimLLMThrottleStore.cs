@@ -16,12 +16,19 @@ namespace RimLLM_Framework.Manager
     /// </remarks>
     internal sealed class RimLLMThrottleStore
     {
+        // modId 是公開 SDK 的相容性標籤，不能視為不可偽造的身份。
+        // 共享上限防止呼叫端輪換 modId 無限消耗共用的 API 金鑰，
+        // 同時保留原本每個 Mod 的獨立視窗，避免改變正常模組間的公平性。
+        private const int GlobalRequestLimitMultiplier = 10;
         private readonly IRimLLMSettings _settings;
 
         private readonly ConcurrentDictionary<string, List<DateTime>> _requestTimestamps =
             new ConcurrentDictionary<string, List<DateTime>>(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, DateTime> _coolDownUntil =
             new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _globalLock = new object();
+        private readonly List<DateTime> _globalRequestTimestamps = new List<DateTime>();
+        private DateTime _globalCoolDownUntil = DateTime.MinValue;
 
         public RimLLMThrottleStore(IRimLLMSettings settings)
         {
@@ -33,8 +40,9 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         /// <param name="modId">呼叫端 Mod 識別。</param>
         /// <param name="countTowardWindow">
-        /// 是否把這次呼叫計入時間視窗。工具迴圈的續輪傳 false：它們是同一個外層請求的
-        /// 延續，逐輪計數會讓一個 10 輪的 Agent 迴圈在幾秒內就被判成濫用。
+        /// 是否把這次呼叫計入 per-Mod 時間視窗。工具迴圈的續輪傳 false：它們是同一個外層請求的
+        /// 延續，逐輪計數會讓一個 10 輪的 Agent 迴圈在幾秒內就被判成濫用；但每個實際供應商呼叫
+        /// 仍會計入共享 API safety ceiling，避免呼叫端偽造工具結果來繞過全域保護。
         /// 冷卻檢查不受此參數影響——已在冷卻中的 Mod 連續輪也一併擋下。
         /// </param>
         public void CheckAntiAbuse(string modId, bool countTowardWindow = true)
@@ -45,6 +53,34 @@ namespace RimLLM_Framework.Manager
             if (_coolDownUntil.TryGetValue(modId, out DateTime cdTime) && now < cdTime)
             {
                 throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' is in anti-abuse cooldown until {cdTime.ToLocalTime()}.");
+            }
+
+            lock (_globalLock)
+            {
+                if (now < _globalCoolDownUntil)
+                {
+                    throw new RimLLMException(
+                        LLMError.RateLimit,
+                        $"[RimLLM] Shared API anti-abuse cooldown is active until {_globalCoolDownUntil.ToLocalTime()}.");
+                }
+
+                DateTime globalLimit = now.AddSeconds(-_settings.ThrottlingWindowSeconds);
+                _globalRequestTimestamps.RemoveAll(t => t < globalLimit);
+
+                int globalMaxRequests = GetGlobalMaxRequests();
+                if (_globalRequestTimestamps.Count >= globalMaxRequests)
+                {
+                    _globalCoolDownUntil = now.AddSeconds(_settings.CoolDownDurationSeconds);
+                    RimLLMLog.Warning(
+                        $"[RimLLM] Shared API anti-abuse limit reached ({globalMaxRequests} requests). " +
+                        $"Cooling down until {_globalCoolDownUntil.ToLocalTime()}.");
+                    throw new RimLLMException(
+                        LLMError.RateLimit,
+                        $"[RimLLM] Shared API anti-abuse limit reached. " +
+                        $"Cooling down until {_globalCoolDownUntil.ToLocalTime()}.");
+                }
+
+                _globalRequestTimestamps.Add(now);
             }
 
             if (!countTowardWindow) return;
@@ -66,10 +102,22 @@ namespace RimLLM_Framework.Manager
             }
         }
 
+        private int GetGlobalMaxRequests()
+        {
+            long perModLimit = Math.Max(1, _settings.MaxRequestsPerWindow);
+            long globalLimit = perModLimit * GlobalRequestLimitMultiplier;
+            return globalLimit > int.MaxValue ? int.MaxValue : (int)globalLimit;
+        }
+
         public void ClearCooldowns()
         {
             _requestTimestamps.Clear();
             _coolDownUntil.Clear();
+            lock (_globalLock)
+            {
+                _globalRequestTimestamps.Clear();
+                _globalCoolDownUntil = DateTime.MinValue;
+            }
         }
     }
 #pragma warning restore S101

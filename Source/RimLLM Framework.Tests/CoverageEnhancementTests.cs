@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,6 +17,37 @@ namespace RimLLM_Framework.Tests
     [TestFixture]
     public class CoverageEnhancementTests
     {
+        private string _encryptionKeyDirectory;
+
+        [SetUp]
+        public void SetUpEncryptionKeyStore()
+        {
+            _encryptionKeyDirectory = Path.Combine(
+                Path.GetTempPath(),
+                "RimLLMCoverageEncryptionTest_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(_encryptionKeyDirectory);
+            EncryptionUtility.ResetSecureKeyForTests();
+            EncryptionUtility.SecureKeyPathResolver = () =>
+                Path.Combine(_encryptionKeyDirectory, "RimLLM_EncryptionKey.dat");
+            EncryptionUtility.CustomSalt = null;
+            EncryptionUtility.InitializeKeyAndIv();
+        }
+
+        [TearDown]
+        public void TearDownEncryptionKeyStore()
+        {
+            EncryptionUtility.CustomSalt = null;
+            EncryptionUtility.InitializeKeyAndIv();
+            EncryptionUtility.ResetSecureKeyForTests();
+            try
+            {
+                Directory.Delete(_encryptionKeyDirectory, true);
+            }
+            catch
+            {
+            }
+        }
+
         [Test]
         public void TestHealthLedger()
         {
@@ -156,7 +188,7 @@ namespace RimLLM_Framework.Tests
 
                 string plain = "secret-api-key-value-12345";
                 string encrypted = EncryptionUtility.Encrypt(plain);
-                ClassicAssert.IsTrue(encrypted.StartsWith("v2:"));
+                ClassicAssert.IsTrue(encrypted.StartsWith("v3:"));
                 string decrypted = EncryptionUtility.Decrypt(encrypted);
                 ClassicAssert.AreEqual(plain, decrypted);
 
@@ -168,6 +200,11 @@ namespace RimLLM_Framework.Tests
                 string legacyV1 = EncryptLegacyV1(plain);
                 string decryptedV1 = EncryptionUtility.Decrypt(legacyV1);
                 ClassicAssert.AreEqual(plain, decryptedV1);
+
+                // 舊版 V2（隨機 IV + HMAC）也只能走 legacy key migration 路徑。
+                string legacyV2 = EncryptLegacyV2(plain);
+                string decryptedV2 = EncryptionUtility.Decrypt(legacyV2);
+                ClassicAssert.AreEqual(plain, decryptedV2);
             }
             finally
             {
@@ -197,6 +234,49 @@ namespace RimLLM_Framework.Tests
                             sw.Write(plainText);
                         }
                         return Convert.ToBase64String(ms.ToArray());
+                    }
+                }
+            }
+        }
+
+        private static string EncryptLegacyV2(string plainText)
+        {
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] key = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(
+                    "RimLLMSecretKeySeed2026UnitTestSalt2026"));
+                byte[] macKey = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(
+                    "RimLLMSecretKeySeed2026UnitTestSalt2026:mac"));
+
+                using (Aes aes = Aes.Create())
+                {
+                    aes.Key = key;
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
+                    aes.GenerateIV();
+
+                    using (var encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
+                    using (var ms = new System.IO.MemoryStream())
+                    {
+                        using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+                        using (var sw = new System.IO.StreamWriter(cs))
+                        {
+                            sw.Write(plainText);
+                        }
+
+                        byte[] cipherBytes = ms.ToArray();
+                        byte[] payload = new byte[aes.IV.Length + cipherBytes.Length];
+                        Buffer.BlockCopy(aes.IV, 0, payload, 0, aes.IV.Length);
+                        Buffer.BlockCopy(cipherBytes, 0, payload, aes.IV.Length, cipherBytes.Length);
+
+                        using (var hmac = new HMACSHA256(macKey))
+                        {
+                            byte[] mac = hmac.ComputeHash(payload);
+                            byte[] allBytes = new byte[payload.Length + mac.Length];
+                            Buffer.BlockCopy(payload, 0, allBytes, 0, payload.Length);
+                            Buffer.BlockCopy(mac, 0, allBytes, payload.Length, mac.Length);
+                            return "v2:" + Convert.ToBase64String(allBytes);
+                        }
                     }
                 }
             }
@@ -507,6 +587,27 @@ namespace RimLLM_Framework.Tests
             // 冷卻中再次呼叫也拋出限流
             Assert.Throws<RimLLMException>(() => throttleStore.CheckAntiAbuse("test-abuse-mod"));
             throttleStore.ClearCooldowns();
+
+            // 即使呼叫端輪換 modId，也必須受到共享安全上限保護。
+            settings.MaxRequestsPerWindow = 1;
+            var rotatingIdStore = new RimLLMThrottleStore(settings);
+            for (int i = 0; i < 10; i++)
+            {
+                rotatingIdStore.CheckAntiAbuse("rotating-mod-" + i);
+            }
+            Assert.Throws<RimLLMException>(
+                () => rotatingIdStore.CheckAntiAbuse("rotating-mod-overflow"));
+            rotatingIdStore.ClearCooldowns();
+
+            // 工具續輪不增加 per-Mod 視窗，但每個實際呼叫仍須消耗共享安全上限。
+            var toolLoopStore = new RimLLMThrottleStore(settings);
+            for (int i = 0; i < 10; i++)
+            {
+                toolLoopStore.CheckAntiAbuse("tool-loop-mod", countTowardWindow: false);
+            }
+            Assert.Throws<RimLLMException>(
+                () => toolLoopStore.CheckAntiAbuse("tool-loop-mod", countTowardWindow: false));
+            toolLoopStore.ClearCooldowns();
 
             // 7. HardBlock 預算政策 (BudgetPolicy = 0)：改由預算中介層負責攔阻。
             settings.BudgetPolicy = 0;

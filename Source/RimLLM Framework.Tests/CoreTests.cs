@@ -2,6 +2,7 @@ extern alias bclasync;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using System;
+using System.IO;
 using System.Reflection;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
@@ -12,11 +13,36 @@ namespace RimLLM_Framework.Tests
     [TestFixture]
     public class CoreTests
     {
+        private string _encryptionKeyDirectory;
+
+        [SetUp]
+        public void SetUpEncryptionKeyStore()
+        {
+            _encryptionKeyDirectory = Path.Combine(
+                Path.GetTempPath(),
+                "RimLLMEncryptionTest_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(_encryptionKeyDirectory);
+
+            EncryptionUtility.ResetSecureKeyForTests();
+            EncryptionUtility.SecureKeyPathResolver = () =>
+                Path.Combine(_encryptionKeyDirectory, "RimLLM_EncryptionKey.dat");
+            EncryptionUtility.CustomSalt = null;
+            EncryptionUtility.InitializeKeyAndIv();
+        }
+
         [TearDown]
         public void TearDown()
         {
             EncryptionUtility.CustomSalt = null;
             EncryptionUtility.InitializeKeyAndIv();
+            EncryptionUtility.ResetSecureKeyForTests();
+            try
+            {
+                Directory.Delete(_encryptionKeyDirectory, true);
+            }
+            catch
+            {
+            }
         }
 
         [Test]
@@ -26,6 +52,7 @@ namespace RimLLM_Framework.Tests
             string cipher = EncryptionUtility.Encrypt(original);
             ClassicAssert.IsNotEmpty(cipher);
             ClassicAssert.AreNotEqual(original, cipher);
+            ClassicAssert.IsTrue(cipher.StartsWith("v3:"));
 
             string decrypted = EncryptionUtility.Decrypt(cipher);
             ClassicAssert.AreEqual(original, decrypted);
@@ -34,8 +61,8 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual("", EncryptionUtility.Decrypt(""));
         }
 
-                [Test]
-        public void TestDynamicHardwareSalt()
+        [Test]
+        public void TestSecureEncryptionIsIndependentOfLegacyHardwareSalt()
         {
             string original = "sensitive-api-key";
             
@@ -51,14 +78,36 @@ namespace RimLLM_Framework.Tests
 
             ClassicAssert.AreNotEqual(cipherA, cipherB); // 不同 Salt 加密出的結果應該不同
 
-            // 3. 驗證同 Salt 可以解密，異 Salt 會解密失敗或解出空字串
-            EncryptionUtility.CustomSalt = "SaltA";
+            // 新格式的秘密不應隨 legacy Salt 改變；Salt 只保留給舊密文遷移。
+            EncryptionUtility.CustomSalt = "SaltB";
             EncryptionUtility.InitializeKeyAndIv();
             string decryptedA = EncryptionUtility.Decrypt(cipherA);
             ClassicAssert.AreEqual(original, decryptedA);
 
             string decryptedB = EncryptionUtility.Decrypt(cipherB);
-            ClassicAssert.AreNotEqual(original, decryptedB); // 異 Salt 解密失敗
+            ClassicAssert.AreEqual(original, decryptedB);
+        }
+
+        [Test]
+        public void TestSecureKeyStoreSurvivesReloadAndIsNotDerivedFromLegacySalt()
+        {
+            const string original = "persisted-secret";
+            string keyPath = Path.Combine(_encryptionKeyDirectory, "RimLLM_EncryptionKey.dat");
+            string cipher = EncryptionUtility.Encrypt(original);
+
+            ClassicAssert.IsTrue(File.Exists(keyPath), "新的加密格式必須建立受保護的 per-user key 檔案");
+            ClassicAssert.IsNotEmpty(File.ReadAllBytes(keyPath));
+
+            EncryptionUtility.ResetSecureKeyForTests();
+            EncryptionUtility.SecureKeyPathResolver = () => keyPath;
+            ClassicAssert.AreEqual(original, EncryptionUtility.Decrypt(cipher),
+                "重新載入同一個受保護 key 後仍應能解密");
+
+            string differentKeyPath = Path.Combine(_encryptionKeyDirectory, "different-key.dat");
+            EncryptionUtility.ResetSecureKeyForTests();
+            EncryptionUtility.SecureKeyPathResolver = () => differentKeyPath;
+            ClassicAssert.IsNull(EncryptionUtility.Decrypt(cipher),
+                "沒有原本的 per-user key 時不得以 legacy seed 推導出新格式的金鑰");
         }
 
         [Test]
