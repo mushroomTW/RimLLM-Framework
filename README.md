@@ -94,6 +94,10 @@ Declare the dependency in your mod's `About/About.xml` so the framework initiali
 </loadAfter>
 ```
 
+The framework itself requires [Harmony](https://steamcommunity.com/sharedfiles/filedetails/?id=2009463077)
+(`brrainz.harmony`) for its third-party integration layer; it is declared in `About.xml` as a hard dependency.
+`0Harmony.dll` is **not** shipped in `Assemblies/` — the Harmony mod provides it at run time.
+
 ---
 
 ## 💻 SDK Usage
@@ -332,11 +336,16 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
     * All online sources go through the OpenAI SDK: Google reaches Gemini through its official OpenAI-compatible endpoint, OpenAI uses its native endpoint; Ollama and self-hosted services use the OpenAI SDK's `EmbeddingClient` (Ollama via its OpenAI-compatible `/v1` endpoint). The *Embedding endpoint* field therefore takes a **service root address** such as `http://localhost:11434/v1`; a full `/embeddings` path is normalized automatically. Model, endpoint and key are stored per embedding provider, so switching the active provider does not lose the others' settings; a blank model or endpoint means "use the provider default", and a blank key inherits the matching chat provider's key.
     * The settings page can fetch the available model list instead of requiring the name to be typed from memory. OpenAI-compatible `/v1/models` reports no capability information, so that list is **ordered** (embedding-looking names first) rather than filtered — a server's model names may be user-defined, and filtering would hide valid choices. Manual entry always remains available for servers with no `/v1/models` endpoint.
     * Embeddings are a billed API, so they share the same anti-abuse checks as ordinary generation requests. Their keys use the same AES encryption as provider keys.
-10. **Native Tool Calling (Function Calling)**
+11. **Native Tool Calling (Function Calling)**
     * Full support for Microsoft.Extensions.AI Tool Calling (`AIFunction`, `ChatOptions.Tools`, `FunctionCallContent`, `FunctionResultContent`).
     * Full support for Microsoft.Extensions.AI Tool Calling (`AIFunction`, `ChatOptions.Tools`, `FunctionCallContent`, `FunctionResultContent`) on every provider through the shared OpenAI-protocol path.
     * Main-thread safety scheduling via `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`, automatically dispatching tool execution onto the Unity main thread to prevent RimWorld threading crashes.
     * Automatically bypasses local response cache when tools are present to ensure execution consistency.
+12. **Third-party integration (force other mods through RimLLM)**
+    * The *Integrations* settings tab lists mods whose LLM traffic RimLLM can take over — currently **RimTalk** (`cj.rimtalk`). With the toggle on, every RimTalk request (streaming dialogue, structured queries, vision) is redirected into RimLLM's fallback chain, budget, throttling, response cache and usage statistics, attributed to `cj.rimtalk`. RimTalk's own API key / model / endpoint settings are ignored while it is on; the toggle takes effect immediately without a restart, and defaults to **off**.
+    * RimTalk's prompt engineering is untouched: its messages (including the "Output JSONL" instruction) are forwarded verbatim, and streamed text is fed chunk-by-chunk into RimTalk's own `JsonStreamParser`, so speech bubbles still appear one line at a time exactly as they do natively. Reasoning content is kept out of the JSONL stream, and thinking is disabled for these requests to match RimTalk's own default.
+    * Two Harmony hooks, both fail-soft: `AIClientFactory.GetAIClientAsync` (the single transport choke point) is replaced by the adapter, and `RimTalkSettings.GetActiveConfig` is given a synthetic config only when RimTalk has none of its own, so a player who never configured RimTalk still gets dialogue. If RimTalk is not installed the hooks are never applied; if its API has drifted the hook fails to attach and the settings tab says so. If RimLLM has no usable provider at request time (empty fallback chain, missing keys) the request falls back to RimTalk's native path with a throttled warning — offline/Player2 users who flip the switch by mistake are not left silent.
+    * Adding another mod is a registry entry plus one `RimLLMCompatTarget` subclass; the RimTalk adapter compiles against a checked-in reference copy of `RimTalk.dll` (`Source/Libs/RimTalk/`) that is not shipped.
 
 ---
 

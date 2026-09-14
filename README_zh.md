@@ -93,6 +93,9 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 </loadAfter>
 ```
 
+框架本身的第三方整合層需要 [Harmony](https://steamcommunity.com/sharedfiles/filedetails/?id=2009463077)（`brrainz.harmony`），
+已在 `About.xml` 宣告為必要相依。`0Harmony.dll` **不會**隨 `Assemblies/` 出貨，執行期由 Harmony Mod 提供。
+
 ---
 
 ## 💻 SDK 使用方式
@@ -336,6 +339,11 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
     * 完整支援 Microsoft.Extensions.AI Tool Calling 標準（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`、`FunctionResultContent`），所有供應商經共用的 OpenAI 協定路徑提供。
     * 提供 `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`，自動將工具叫用委派排入 Unity 主執行緒執行，杜絕 RimWorld 跨執行緒崩潰風險。
     * 當請求中包含工具時，自動繞過本地回應快取以確保狀態副作用一致性。
+12. **第三方整合（強制其他 Mod 改走 RimLLM）**
+    * 設定頁新增「第三方整合」分頁，列出 RimLLM 可以接管 LLM 流量的 Mod——目前是 **RimTalk**（`cj.rimtalk`）。開關開啟後，RimTalk 的所有請求（串流對話、結構化查詢、視覺）一律導入 RimLLM 的備援鏈、預算、節流、回應快取與用量統計，歸屬記為 `cj.rimtalk`。開啟期間 RimTalk 自己的 API 金鑰／模型／端點設定會被忽略；開關即時生效不需重啟，預設**關閉**。
+    * RimTalk 的提示工程完全不動：它的訊息（含「Output JSONL」指示）原樣轉送，串流文字逐塊餵進 RimTalk 自己的 `JsonStreamParser`，因此氣泡仍然像原生一樣一行一行冒出來。推理內容不會混進 JSONL 串流，且這類請求關閉思考以對齊 RimTalk 自身的預設。
+    * 兩個 Harmony 攔截點，皆 fail-soft：`AIClientFactory.GetAIClientAsync`（唯一的傳輸 choke point）換成轉接器；`RimTalkSettings.GetActiveConfig` 只在 RimTalk 自己沒有任何設定時補一個合成設定，讓從未設定過 RimTalk 的玩家也能直接有對話。RimTalk 未安裝時攔截根本不會套用；其 API 若漂移導致掛載失敗，設定頁會直接顯示原因。請求當下 RimLLM 沒有可用供應商（備援鏈為空、缺金鑰）時，自動退回 RimTalk 原生路徑並記一筆節流過的警告——離線／Player2 使用者誤開開關不會直接沒聲音。
+    * 新增其他 Mod 只需一筆登錄＋一個 `RimLLMCompatTarget` 子類；RimTalk 轉接器對著簽入版本庫的參考用 `RimTalk.dll`（`Source/Libs/RimTalk/`）編譯，該 DLL 不隨包出貨。
 
 ---
 

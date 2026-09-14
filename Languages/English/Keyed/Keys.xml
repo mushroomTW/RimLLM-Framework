@@ -204,4 +204,15 @@
   <RimLLM_ChatModelBadgeTooltip>Actual Model: {0}&#10;Click to copy model name</RimLLM_ChatModelBadgeTooltip>
   <RimLLM_ChatStatBadgeTooltip>Latency: {0}ms ({1}s)&#10;Tokens: {2} (Prompt: {3}, Completion: {4})</RimLLM_ChatStatBadgeTooltip>
   <RimLLM_ChatStatBadgeTooltipEst>Latency: {0}ms ({1}s)&#10;Tokens: ~{2} (Estimated)</RimLLM_ChatStatBadgeTooltipEst>
+  <!-- Third-Party Integration (Compat) -->
+  <RimLLM_TabCompat>Integrations</RimLLM_TabCompat>
+  <RimLLM_TitleCompat>Third-Party Integration</RimLLM_TitleCompat>
+  <RimLLM_CompatIntro>Route another mod's LLM traffic through RimLLM's fallback chain, budget, throttling and usage statistics — without that mod having to support RimLLM itself. Toggles take effect immediately; no restart needed.</RimLLM_CompatIntro>
+  <RimLLM_CompatTakeoverLabel>Force {0} to use RimLLM</RimLLM_CompatTakeoverLabel>
+  <RimLLM_CompatTakeoverWarning>⚠ While enabled, {0}'s own API key / model / endpoint settings are ignored — every request goes to RimLLM's fallback chain. Offline or local-only users (e.g. Player2, a local server configured inside {0}) will be switched to whatever RimLLM has configured.</RimLLM_CompatTakeoverWarning>
+  <RimLLM_CompatOfflineFallbackNote>If RimLLM has no usable provider at request time (empty fallback chain, missing keys), the request silently falls back to the mod's native path and a warning is logged.</RimLLM_CompatOfflineFallbackNote>
+  <RimLLM_CompatStatusNotInstalled>Not installed / not active in the mod list</RimLLM_CompatStatusNotInstalled>
+  <RimLLM_CompatStatusInstalled>Installed — takeover off (native path)</RimLLM_CompatStatusInstalled>
+  <RimLLM_CompatStatusActive>Takeover active — traffic routed through RimLLM</RimLLM_CompatStatusActive>
+  <RimLLM_CompatStatusPatchFailed>Installed, but the hook failed to attach (mod version mismatch?): {0}</RimLLM_CompatStatusPatchFailed>
 </LanguageData>

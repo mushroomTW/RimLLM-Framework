@@ -3,7 +3,7 @@
   <name>RimLLM Framework</name>
   <author>綠菇</author>
   <packageId>GreenMushroom.RimLLMFramework</packageId>
-  <modVersion>2026.09.12.6</modVersion>
+  <modVersion>2026.09.14.1</modVersion>
   <supportedVersions>
     <li>1.6</li>
   </supportedVersions>
@@ -21,10 +21,20 @@ This mod provides a stable and flexible foundation for managing API keys, model 
 7. <b>Embedding SDK</b>: A public embedding API backed by Google Gemini, OpenAI, Ollama, or OpenAI-compatible endpoints, so other mods can build semantic search and clustering on top of the framework.
 8. <b>Provider Stats</b>: Each provider settings page shows a request success-rate progress bar and an API-side prompt cache hit-rate chart (supports server-side prompt caching, including Gemini via its OpenAI-compatible endpoint).
 9. <b>Local Response Cache</b> (optional, off by default): Byte-identical repeat requests are answered from an in-memory cache with no API call at all — zero cost and zero latency. Exact matching only, so identical input always yields identical output; the lifetime is player-configurable and nothing is written to the save. Automatically bypassed when Tools are present.
-10. <b>Developer SDK</b>: Everything crossing the boundary is a standard Microsoft.Extensions.AI type (IChatClient, IEmbeddingGenerator) — no bespoke client interface to learn, and no registration step. Includes dynamic streaming control and a cached JSON Schema pipeline that normalizes Microsoft.Extensions.AI schema output into a single OpenAI-compatible dialect, so other mods can integrate LLM services and build Agent tools quickly and reliably.]]>
+10. <b>Developer SDK</b>: Everything crossing the boundary is a standard Microsoft.Extensions.AI type (IChatClient, IEmbeddingGenerator) — no bespoke client interface to learn, and no registration step. Includes dynamic streaming control and a cached JSON Schema pipeline that normalizes Microsoft.Extensions.AI schema output into a single OpenAI-compatible dialect, so other mods can integrate LLM services and build Agent tools quickly and reliably.
+11. <b>Third-Party Integration</b>: An Integrations settings tab can force other AI mods to route their LLM traffic through RimLLM — currently RimTalk (cj.rimtalk). Off by default; when enabled, RimTalk's requests use RimLLM's fallback chain, budget, throttling and usage stats while its own API settings are ignored, and speech bubbles still stream line by line. Requires Harmony.]]>
   </description>
+  <modDependencies>
+    <li>
+      <packageId>brrainz.harmony</packageId>
+      <displayName>Harmony</displayName>
+      <steamWorkshopUrl>steam://url/CommunityFilePage/2009463077</steamWorkshopUrl>
+      <downloadUrl>https://github.com/pardeike/HarmonyRimWorld/releases/latest</downloadUrl>
+    </li>
+  </modDependencies>
   <loadAfter>
     <li>brrainz.harmony</li>
     <li>Ludeon.RimWorld</li>
+    <li>cj.rimtalk</li>
   </loadAfter>
 </ModMetaData>

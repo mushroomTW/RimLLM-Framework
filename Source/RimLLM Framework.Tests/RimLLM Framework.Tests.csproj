@@ -9,6 +9,8 @@
     <RimWorldManagedDir Condition="'$(RimWorldManagedDir)' == '' and '$(RIMWORLD_MANAGED_DIR)' != ''">$(RIMWORLD_MANAGED_DIR)</RimWorldManagedDir>
     <RimWorldManagedDir Condition="'$(RimWorldManagedDir)' == ''">$(DefaultRimWorldManagedDir)</RimWorldManagedDir>
     <NoWarn>$(NoWarn);SCME0001;NU1608</NoWarn>
+    <!-- 與主專案相同：RimTalk.dll 是 net48 組件，忽略 MSB3274 版本檢查。 -->
+    <ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>true</ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>
   </PropertyGroup>
 
   <ItemGroup>
@@ -56,5 +58,10 @@
          避免與 .NET Framework 4.8 mscorlib 內建型別產生 CS0433 歧義。 -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.12" Aliases="bclasync" />
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" Aliases="ste" />
+    <!-- 相容層轉接器測試需要 RimTalk 的 Role / Payload 型別；主專案 Private=false 不會帶進來，這裡另外複製到測試輸出。 -->
+    <Reference Include="RimTalk">
+      <HintPath>..\Libs\RimTalk\RimTalk.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 </Project>

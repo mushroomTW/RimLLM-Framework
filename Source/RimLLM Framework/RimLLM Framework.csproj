@@ -35,14 +35,19 @@
     <NoWarn>$(NoWarn);SCME0001;NU1608;MEAI001</NoWarn>
     <!-- 直接 Reference 的組件預設會連 .xml 文件檔一起複製到 Assemblies/，出貨不需要。 -->
     <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
+    <!--
+      RimTalk.dll 以 net48 建置，而本專案是 net472；MSBuild 預設拒絕解析「比目標更高」的參考 (MSB3274)。
+      兩者在遊戲內跑的是同一個 Mono 執行環境，這個版本差異沒有實際意義，因此忽略。
+    -->
+    <ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>true</ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>
     <Authors>mushroomTW</Authors>
-    <!-- SonarQube / Coverlet 覆蓋率排除非邏輯核心的 RimWorld UI 繪製與 Mod 進入點 -->
-    <SonarQubeCoverageExclusions>**/Mod/UI/**;**/Mod/RimLLMFrameworkMod.cs</SonarQubeCoverageExclusions>
+    <!-- SonarQube / Coverlet 覆蓋率排除非邏輯核心的 RimWorld UI 繪製、Mod 進入點與需要遊戲執行期的 Harmony 掛載 -->
+    <SonarQubeCoverageExclusions>**/Mod/UI/**;**/Mod/RimLLMFrameworkMod.cs;**/Compat/RimLLMCompatBootstrap.cs;**/Compat/RimTalk/RimTalkCompatPatch.cs</SonarQubeCoverageExclusions>
   </PropertyGroup>
 
   <ItemGroup>
     <SonarQubeSetting Include="sonar.coverage.exclusions">
-      <Value>**/Mod/UI/**,**/Mod/RimLLMFrameworkMod.cs</Value>
+      <Value>**/Mod/UI/**,**/Mod/RimLLMFrameworkMod.cs,**/Compat/RimLLMCompatBootstrap.cs,**/Compat/RimTalk/RimTalkCompatPatch.cs</Value>
     </SonarQubeSetting>
   </ItemGroup>
 
@@ -93,6 +98,20 @@
       mscorlib (net472) 提供的同名介面衝突 (CS0433)。測試專案亦採相同做法。
     -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.12" Aliases="bclasync" />
+
+    <!--
+      第三方相容層（Compat/）的 Harmony 攔截。0Harmony.dll 由 brrainz.harmony Mod 於執行期提供
+      （About.xml 列為必要相依），這裡只做編譯期參考、不隨包出貨，避免與其他 Mod 重複載入。
+    -->
+    <PackageReference Include="Lib.Harmony" Version="2.3.6" ExcludeAssets="runtime" PrivateAssets="all" />
+    <!--
+      RimTalk 編譯期參考（Source/Libs/RimTalk/README.md）。Private=false 不出貨；
+      執行期綁定的是玩家實際安裝的 RimTalk.dll。
+    -->
+    <Reference Include="RimTalk">
+      <HintPath>..\Libs\RimTalk\RimTalk.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <Target Name="CopyRimWorldMonoRuntimeDependencies" AfterTargets="Build">

@@ -272,6 +272,14 @@ namespace RimLLM_Framework.Mod
             },
             new DetailPage
             {
+                Id = "Compat",
+                MenuLabelKey = "RimLLM_TabCompat",
+                Title = () => "RimLLM_TitleCompat".Translate(),
+                Draw = CompatSettingsDrawer.DrawCompatSettings,
+                EstimateHeight = CompatSettingsDrawer.GetHeight
+            },
+            new DetailPage
+            {
                 Id = "ChatTest",
                 MenuLabelKey = "RimLLM_TabChatTest",
                 Title = () => "RimLLM_ChatTitle".Translate(),

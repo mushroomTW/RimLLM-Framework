@@ -206,6 +206,12 @@ namespace RimLLM_Framework.Mod
 
         private readonly Dictionary<string, List<string>> _providerModels = BuildBuiltInMap(_ => new List<string>());
 
+        /// <summary>
+        /// 第三方 Mod 強制接管登錄表（packageId → 是否把該 Mod 的 LLM 流量導向 RimLLM）。
+        /// 預設全關；沒有登錄的 Mod 一律視為關閉。鍵由 Compat 層各目標自行宣告。
+        /// </summary>
+        private readonly Dictionary<string, bool> _compatTakeovers = new Dictionary<string, bool>(StringComparer.Ordinal);
+
         private static Dictionary<string, TValue> BuildBuiltInMap<TValue>(Func<string, TValue> valueFactory)
         {
             var map = new Dictionary<string, TValue>();
@@ -260,6 +266,7 @@ namespace RimLLM_Framework.Mod
             public Dictionary<string, string> EmbeddingModels;
             public Dictionary<string, string> EmbeddingEndpoints;
             public Dictionary<string, string> EncryptedEmbeddingApiKeys;
+            public Dictionary<string, bool> CompatTakeovers;
         }
 #pragma warning restore 0649
 #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
@@ -354,7 +361,8 @@ namespace RimLLM_Framework.Mod
                         EmbeddingApiKey = null,
                         EmbeddingModels = new Dictionary<string, string>(this._embeddingModels),
                         EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
-                        EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys
+                        EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys,
+                        CompatTakeovers = new Dictionary<string, bool>(this._compatTakeovers)
                     };
      
                     jsonStr = RimLLMJson.Serialize(dto);
@@ -479,6 +487,12 @@ namespace RimLLM_Framework.Mod
                                 else if (!string.IsNullOrEmpty(dto.EmbeddingEndpoint) && this.EmbeddingProvider != DisabledProvider)
                                 {
                                     this._embeddingEndpoints[this.EmbeddingProvider] = dto.EmbeddingEndpoint;
+                                }
+
+                                _compatTakeovers.Clear();
+                                if (dto.CompatTakeovers != null)
+                                {
+                                    foreach (var kvp in dto.CompatTakeovers) _compatTakeovers[kvp.Key] = kvp.Value;
                                 }
 
                                 _embeddingApiKeys.Clear();
@@ -623,6 +637,24 @@ namespace RimLLM_Framework.Mod
             lock (_settingsLock)
             {
                 _endpoints[providerId] = val;
+            }
+        }
+
+        /// <summary>指定第三方 Mod 是否被強制接管。未登錄一律 false。</summary>
+        public bool IsCompatTakeoverEnabled(string modId)
+        {
+            lock (_settingsLock)
+            {
+                return !string.IsNullOrEmpty(modId) && _compatTakeovers.TryGetValue(modId, out bool enabled) && enabled;
+            }
+        }
+
+        public void SetCompatTakeoverEnabled(string modId, bool enabled)
+        {
+            if (string.IsNullOrEmpty(modId)) return;
+            lock (_settingsLock)
+            {
+                _compatTakeovers[modId] = enabled;
             }
         }
 
