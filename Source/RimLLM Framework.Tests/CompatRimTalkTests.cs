@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
@@ -8,6 +9,7 @@ using NUnit.Framework.Legacy;
 using RimLLM_Framework.Compat;
 using RimLLM_Framework.Mod;
 using RimTalk.Client;
+using RimTalk.Client.OpenAI;
 using RimTalk.Data;
 using RimTalk.Error;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
@@ -151,7 +153,7 @@ namespace RimLLM_Framework.Tests
             var prefix = new List<(Role role, string message)> { (Role.System, "Output JSONL."), (Role.User, "talk") };
             Payload prepared = null;
 
-            Payload payload = await client.GetStreamingChatCompletionAsync<TalkResponse>(prefix, new List<(Role, string)>(),
+            Payload payload = await StreamParsed<TalkResponse>(client, prefix, new List<(Role, string)>(),
                 onResponseParsed: r => seen.Add(r.Name),
                 onRequestPrepared: p => prepared = p);
 
@@ -181,7 +183,7 @@ namespace RimLLM_Framework.Tests
 
             var client = new RimTalkCompatClient(fake);
             var names = new List<string>();
-            Payload payload = await client.GetStreamingChatCompletionAsync<TalkResponse>(null, null, r => names.Add(r.Name));
+            Payload payload = await StreamParsed<TalkResponse>(client, null, null, r => names.Add(r.Name));
 
             CollectionAssert.AreEqual(new[] { "Real" }, names);
             StringAssert.DoesNotContain("Ghost", payload.Response);
@@ -201,7 +203,7 @@ namespace RimLLM_Framework.Tests
             var client = new RimTalkCompatClient(fake);
 
             Payload payload = await client.GetChatCompletionAsync(
-                new List<(Role role, string message)> { (Role.User, "q") }, new List<(Role, string)>());
+                new List<(Role role, string message)> { (Role.User, "q") }, new List<(Role, string)>(), null, null);
 
             ClassicAssert.AreEqual("fake-model", payload.Model);
             ClassicAssert.AreEqual(42, payload.TokenCount);
@@ -214,18 +216,143 @@ namespace RimLLM_Framework.Tests
         {
             var fake = new CapturingChatClient
             {
-                ResponseException = new RimLLMException(LLMError.RateLimit, "slow down")
+                // 帶 InnerException：Wrap 必須拿到 RimLLMException 本身，不能被挖到內層的 socket 例外。
+                ResponseException = new RimLLMException(LLMError.RateLimit, "slow down", new InvalidOperationException("socket closed"))
             };
             var client = new RimTalkCompatClient(fake);
 
             var ex = Assert.ThrowsAsync<AIRequestException>(async () =>
-                await client.GetChatCompletionAsync(null, new List<(Role role, string message)> { (Role.User, "q") }));
+                await client.GetChatCompletionAsync(null, new List<(Role role, string message)> { (Role.User, "q") }, null, null));
 
             StringAssert.Contains("RateLimit", ex.Message);
             StringAssert.Contains("slow down", ex.Message);
             ClassicAssert.IsNotNull(ex.Payload);
             ClassicAssert.AreEqual(ex.Message, ex.Payload.ErrorMessage);
             StringAssert.Contains("\"q\"", ex.Payload.Request);
+        }
+
+        /// <summary>
+        /// 攔截只認哨兵：RimTalk 交來的 OpenAIClient 若是我們在掛載時建的那一個就改走 RimLLM，
+        /// 玩家自己的原生 client 一律放行。這是接管不干擾「開關關閉」情境的關鍵。
+        /// </summary>
+        [Test]
+        public async Task Prefixes_RouteOnlyTheSentinelInstance()
+        {
+            var fake = new CapturingChatClient
+            {
+                ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "routed"))
+            };
+            fake.StreamUpdates.Add(new ChatResponseUpdate(ChatRole.Assistant, "chunk"));
+            RimTalkCompatClient previousClient = RimTalkCompatPatch.Client;
+            object previousSentinel = RimTalkCompatPatch.Sentinel;
+            try
+            {
+                RimTalkCompatPatch.Client = new RimTalkCompatClient(fake);
+                var sentinel = new OpenAIClient(null, "RimLLM");
+                var native = new OpenAIClient(null, "native");
+                RimTalkCompatPatch.Sentinel = sentinel;
+                var messages = new List<(Role role, string message)> { (Role.User, "q") };
+
+                Task<Payload> completion = null;
+                ClassicAssert.IsTrue(RimTalkCompatPatch.GetChatCompletionAsyncPrefix(native, null, messages, null, null, ref completion));
+                ClassicAssert.IsNull(completion);
+                ClassicAssert.IsFalse(RimTalkCompatPatch.GetChatCompletionAsyncPrefix(sentinel, null, messages, null, null, ref completion));
+                ClassicAssert.AreEqual("routed", (await completion).Response);
+
+                Task<Payload> stream = null;
+                var chunks = new List<string>();
+                ClassicAssert.IsTrue(RimTalkCompatPatch.StreamAsyncPrefix(native, null, messages, null, chunks.Add, null, ref stream));
+                ClassicAssert.IsNull(stream);
+                ClassicAssert.IsFalse(RimTalkCompatPatch.StreamAsyncPrefix(sentinel, null, messages, null, chunks.Add, null, ref stream));
+                ClassicAssert.AreEqual("chunk", (await stream).Response);
+                CollectionAssert.AreEqual(new[] { "chunk" }, chunks);
+            }
+            finally
+            {
+                RimTalkCompatPatch.Client = previousClient;
+                RimTalkCompatPatch.Sentinel = previousSentinel;
+            }
+        }
+
+        /// <summary>
+        /// 鎖住相容層的型別載入防線：框架 DLL 裡任何型別（含編譯器生成的 async 狀態機、closure、快取的 lambda
+        /// 委派）都不得以 RimTalk 型別當基底類別、介面或欄位型別。
+        /// 前兩者由 RimWorld 載入 DLL 時的 Assembly.GetTypes() 解析，RimTalk 缺席時整顆框架被拒載；
+        /// 欄位由 DevMode 啟動時 StaticConstructorOnStartupUtility.ReportProbablyMissingAttributes 的 GetFields()
+        /// 解析（Mono 會解析全部欄位型別），RimTalk 缺席時每次啟動一條紅字。
+        /// 方法簽章與本體延遲到 JIT 才解析，允許出現。
+        /// </summary>
+        [Test]
+        public void FrameworkAssembly_HasNoRimTalkTypesInBaseInterfacesOrFields()
+        {
+            var offenders = new List<string>();
+            foreach (Type type in typeof(RimTalkCompatPatch).Assembly.GetTypes())
+            {
+                foreach ((string where, Type dependency) in TypeLoadDependencies(type))
+                {
+                    if (dependency.Assembly.GetName().Name == "RimTalk")
+                    {
+                        offenders.Add(type.FullName + " " + where + " -> " + dependency.FullName);
+                    }
+                }
+            }
+
+            ClassicAssert.IsEmpty(offenders,
+                "這些型別在基底／介面／欄位層級參考了 RimTalk，RimTalk 未安裝時框架會被 RimWorld 拒載或在 DevMode 啟動時報錯。" +
+                "async 方法的 RimTalk 型別參數與區域變數會變成狀態機欄位，改成非 async 薄殼（見 RimTalkCompatClient）。");
+        }
+
+        private static IEnumerable<(string where, Type type)> TypeLoadDependencies(Type type)
+        {
+            const BindingFlags allFields = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+
+            if (type.BaseType != null)
+            {
+                foreach (Type t in Expand(type.BaseType)) yield return ("base", t);
+            }
+            foreach (Type iface in type.GetInterfaces())
+            {
+                foreach (Type t in Expand(iface)) yield return ("interface", t);
+            }
+            foreach (FieldInfo field in type.GetFields(allFields))
+            {
+                foreach (Type t in Expand(field.FieldType)) yield return ("field " + field.Name, t);
+            }
+        }
+
+        /// <summary>一個型別及其陣列元素／泛型引數（遞迴）——Mono 解析欄位型別時會一路解析到底。</summary>
+        private static IEnumerable<Type> Expand(Type type)
+        {
+            yield return type;
+            if (type.HasElementType)
+            {
+                foreach (Type t in Expand(type.GetElementType())) yield return t;
+            }
+            if (type.IsGenericType && !type.IsGenericTypeDefinition)
+            {
+                foreach (Type argument in type.GetGenericArguments())
+                {
+                    foreach (Type t in Expand(argument)) yield return t;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 對應 RimTalk OpenAIClient.GetStreamingChatCompletionAsync&lt;T&gt; 的包裝：JSONL 解析在 RimTalk 那層，
+        /// 轉接器只吐文字塊。測試在這裡重現該包裝，驗證逐塊餵 parser 的行為。
+        /// </summary>
+        private static Task<Payload> StreamParsed<T>(
+            RimTalkCompatClient client,
+            List<(Role role, string message)> prefix,
+            List<(Role role, string message)> messages,
+            Action<T> onResponseParsed,
+            Action<Payload> onRequestPrepared = null) where T : class
+        {
+            var parser = new RimTalk.Util.JsonStreamParser<T>();
+            return client.StreamAsync(prefix, messages, null, chunk =>
+            {
+                foreach (T item in parser.Parse(chunk)) onResponseParsed?.Invoke(item);
+            }, onRequestPrepared);
         }
 
         [Test]

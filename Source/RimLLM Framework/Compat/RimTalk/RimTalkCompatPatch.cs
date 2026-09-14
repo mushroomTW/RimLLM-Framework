@@ -1,26 +1,41 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Threading.Tasks;
 using HarmonyLib;
 using RimLLM_Framework.Mod;
 using RimTalk;
 using RimTalk.Client;
+using RimTalk.Client.OpenAI;
+using RimTalk.Data;
 using Verse;
 
 namespace RimLLM_Framework.Compat
 {
     /// <summary>
-    /// 攔截 RimTalk 的唯一傳輸 choke point：<c>AIClientFactory.GetAIClientAsync</c>。
-    /// RimTalk 的串流對話（ChatStreaming）與結構化查詢（Query&lt;T&gt;）都經由
-    /// <c>AIService.ExecuteWithRetry</c> 呼叫它取得 <see cref="IAIClient"/>，
-    /// 因此只要在這裡換成 <see cref="RimTalkCompatClient"/>，RimTalk 全部 LLM 流量
-    /// （含 OpenAI／Gemini／Custom／Local／Player2）都會改走 RimLLM 的 fallback 鏈。
+    /// 純 Harmony 接管 RimTalk 的 LLM 流量，框架本身不實作任何 RimTalk 介面。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 目標方法是 <c>async</c>：Harmony 攔的是產生狀態機的 stub，所以 Prefix 攔下時
-    /// 必須把 <c>__result</c> 設成已完成的 <see cref="Task{TResult}"/>。
-    /// Prefix 完全繞過 RimTalk 自己的 client 快取，因此轉接器單例由這裡自行持有。
+    /// 三個攔截點：
+    /// <list type="number">
+    /// <item><c>AIClientFactory.GetAIClientAsync</c>（唯一的 client 取得點）：接管生效時回傳一個由本類別持有的
+    /// RimTalk 原生 <see cref="OpenAIClient"/> 哨兵實例。RimTalk 的串流對話（ChatStreaming）與結構化查詢
+    /// （Query&lt;T&gt;）都經由 <c>AIService.ExecuteWithRetry</c> 取得 client，因此 OpenAI／Gemini／Custom／
+    /// Local／Player2 全部流量都會落到哨兵上。</item>
+    /// <item><see cref="OpenAIClient"/> 的兩個非泛型漏斗 <c>GetChatCompletionAsync(prefix, messages, imageBase64, onRequestPrepared)</c>
+    /// 與私有 <c>StreamAsync(…, onChunk, onRequestPrepared)</c>：<c>__instance</c> 是哨兵時改呼叫
+    /// <see cref="RimTalkCompatClient"/>，不是哨兵（玩家自己的原生 client）則原樣放行。RimTalk 的泛型
+    /// <c>GetStreamingChatCompletionAsync&lt;T&gt;</c> 與三參數 <c>GetChatCompletionAsync</c> 都是這兩個方法的包裝，
+    /// 不必碰泛型方法的 Harmony 攔截。</item>
+    /// </list>
+    /// 為什麼不直接讓 <see cref="RimTalkCompatClient"/> 實作 <see cref="IAIClient"/>：那是型別定義層級的參考，
+    /// RimWorld 載入 DLL 時的 <c>Assembly.GetTypes()</c> 會在 RimTalk 缺席時整顆拒載框架。哨兵是 RimTalk 自己的型別，
+    /// 建構它只是方法本體裡的一次 <c>newobj</c>，只在 RimTalk 存在時才會被 JIT。
+    /// </para>
+    /// <para>
+    /// 目標方法都是 <c>async</c>：Harmony 攔的是產生狀態機的 stub，所以 Prefix 攔下時
+    /// 必須把 <c>__result</c> 設成一個 <see cref="Task{TResult}"/>。
     /// </para>
     /// <para>
     /// 第二個攔截點 <c>RimTalkSettings.GetActiveConfig</c>：RimTalk 在 <c>TalkService</c> 與
@@ -36,6 +51,19 @@ namespace RimLLM_Framework.Compat
         private const string SyntheticModel = "RimLLM";
 
         private static RimTalkCompatClient _client;
+
+        /// <summary>
+        /// 交給 RimTalk 的哨兵 client（RimTalk 原生 <see cref="OpenAIClient"/>）。欄位型別刻意用 <see cref="object"/>，
+        /// 讓這個類別的欄位描述完全不含 RimTalk 型別。只以參考相等判定，永遠不會真的對它發請求。
+        /// </summary>
+        private static object _sentinel;
+
+        /// <summary>轉接器；測試可注入帶假 <c>IChatClient</c> 的實例。</summary>
+        internal static RimTalkCompatClient Client
+        {
+            get => _client ?? (_client = new RimTalkCompatClient());
+            set => _client = value;
+        }
         private static DateTime _lastOfflineWarning = DateTime.MinValue;
         private static readonly TimeSpan OfflineWarningInterval = TimeSpan.FromMinutes(1);
 
@@ -50,19 +78,52 @@ namespace RimLLM_Framework.Compat
 
         public static void Apply(Harmony harmony)
         {
+            // 先把全部目標方法與哨兵都準備好，確認無誤才開始 Patch：
+            // 任何一步失敗都不能留下「GetAIClientAsync 已被攔、哨兵卻是 null」的半掛載狀態，否則 RimTalk 會拿到 null client。
             MethodInfo target = AccessTools.Method(typeof(AIClientFactory), nameof(AIClientFactory.GetAIClientAsync));
             if (target == null)
             {
                 throw new MissingMethodException("RimTalk.Client.AIClientFactory.GetAIClientAsync 不存在（RimTalk 版本可能已變動）。");
             }
-            harmony.Patch(target, prefix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(GetAIClientAsyncPrefix)));
 
             MethodInfo activeConfig = AccessTools.Method(typeof(RimTalkSettings), nameof(RimTalkSettings.GetActiveConfig));
             if (activeConfig == null)
             {
                 throw new MissingMethodException("RimTalk.RimTalkSettings.GetActiveConfig 不存在（RimTalk 版本可能已變動）。");
             }
+
+            Type messages = typeof(List<(Role role, string message)>);
+            MethodInfo completion = AccessTools.Method(typeof(OpenAIClient), nameof(OpenAIClient.GetChatCompletionAsync),
+                new[] { messages, messages, typeof(string), typeof(Action<Payload>) });
+            if (completion == null)
+            {
+                throw new MissingMethodException("RimTalk.Client.OpenAI.OpenAIClient.GetChatCompletionAsync(prefix, messages, imageBase64, onRequestPrepared) 不存在（RimTalk 版本可能已變動）。");
+            }
+
+            MethodInfo stream = AccessTools.Method(typeof(OpenAIClient), "StreamAsync",
+                new[] { messages, messages, typeof(string), typeof(Action<string>), typeof(Action<Payload>) });
+            if (stream == null)
+            {
+                throw new MissingMethodException("RimTalk.Client.OpenAI.OpenAIClient.StreamAsync 不存在（RimTalk 版本可能已變動）。");
+            }
+
+            // 哨兵在掛載階段就建好：RimTalk 建構子簽章若漂移，MissingMethodException 會落在 TryApply 裡、顯示在設定頁，
+            // 而不是等到第一次對話才炸。baseUrl 給 null 讓 OpenAIClient 跳過 Uri 解析。
+            object sentinel = new OpenAIClient(null, SyntheticModel, null, null, null, AIProvider.Local);
+
+            // 漏斗先掛、入口最後掛：GetAIClientAsync 的 Prefix 一旦生效就會交出哨兵，此時兩個漏斗必須已經就位。
+            harmony.Patch(completion, prefix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(GetChatCompletionAsyncPrefix)));
+            harmony.Patch(stream, prefix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(StreamAsyncPrefix)));
             harmony.Patch(activeConfig, postfix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(GetActiveConfigPostfix)));
+            _sentinel = sentinel;
+            harmony.Patch(target, prefix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(GetAIClientAsyncPrefix)));
+        }
+
+        /// <summary>目前的哨兵。setter 僅供測試不經 Harmony 掛載就驗證路由。</summary>
+        internal static object Sentinel
+        {
+            get => _sentinel;
+            set => _sentinel = value;
         }
 
         /// <summary>
@@ -91,8 +152,41 @@ namespace RimLLM_Framework.Compat
             // RimTalk 接著對 null 呼叫方法。開關仍開著時這種情況交給轉接器，讓它以清楚的 ProviderOffline 錯誤結束；
             // 開關已被關掉則一律放行，尊重玩家的選擇。
             if (!ShouldTakeOver() && (!IsToggleEnabled() || Settings.Get()?.GetActiveConfig() != null)) return true;
+            // 沒有哨兵（掛載未完成）時寧可放行原生路徑，也不能交出 null client。
+            if (_sentinel == null) return true;
 
-            __result = Task.FromResult<IAIClient>(_client ?? (_client = new RimTalkCompatClient()));
+            __result = Task.FromResult((IAIClient)_sentinel);
+            return false;
+        }
+
+        /// <summary>非串流漏斗：哨兵實例改走 RimLLM，其他實例放行。</summary>
+        public static bool GetChatCompletionAsyncPrefix(
+            OpenAIClient __instance,
+            List<(Role role, string message)> prefixMessages,
+            List<(Role role, string message)> messages,
+            string imageBase64,
+            Action<Payload> onRequestPrepared,
+            ref Task<Payload> __result)
+        {
+            if (!ReferenceEquals(__instance, _sentinel)) return true;
+
+            __result = Client.GetChatCompletionAsync(prefixMessages, messages, imageBase64, onRequestPrepared);
+            return false;
+        }
+
+        /// <summary>串流漏斗：哨兵實例改走 RimLLM，文字塊交回 RimTalk 自己的 JSONL parser。</summary>
+        public static bool StreamAsyncPrefix(
+            OpenAIClient __instance,
+            List<(Role role, string message)> prefixMessages,
+            List<(Role role, string message)> messages,
+            string imageBase64,
+            Action<string> onChunk,
+            Action<Payload> onRequestPrepared,
+            ref Task<Payload> __result)
+        {
+            if (!ReferenceEquals(__instance, _sentinel)) return true;
+
+            __result = Client.StreamAsync(prefixMessages, messages, imageBase64, onChunk, onRequestPrepared);
             return false;
         }
 

@@ -4,5 +4,7 @@
 
 **僅供編譯期參考，不隨 Mod 出貨**（csproj 中 `Private=false`）。執行期一律使用玩家實際安裝的 RimTalk；
 `Compat/RimTalk/` 下的程式碼只在偵測到 RimTalk 啟用時才會被 JIT，RimTalk 缺席時不會觸發型別載入。
+**RimTalk 型別只能出現在方法簽章與方法本體**，不得當任何類別的基底或介面——那是 `Assembly.GetTypes()`
+就會解析的層級，RimTalk 缺席時整顆框架 DLL 會被 RimWorld 拒載（`FrameworkAssembly_HasNoTypeLevelRimTalkReferences` 測試鎖住）。
 
 RimTalk 更新且 `IAIClient` / `Payload` / `JsonStreamParser` 簽名變動時，換掉這顆 DLL 並修正轉接器。
