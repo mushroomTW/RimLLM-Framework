@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Reflection;
 using HarmonyLib;
 using ModCompatChecker.AI;
@@ -46,6 +47,10 @@ namespace RimLLM_Framework.Compat
             set => _client = value;
         }
 
+        /// <summary>取消／逾時時回給 UI 的提示文字（不經原生，避免依賴原生 endpoint 設定）。</summary>
+        private const string CancelledText = "分析已取消。(Analysis cancelled.)";
+        private const string TimeoutTextFormat = "[RimLLM] 分析逾時（{0} 秒），未再嘗試原生路徑。(Timed out after {0}s via RimLLM; native path skipped.)";
+
         public static void Apply(Harmony harmony)
         {
             // 1. 攔截 AIService.CallAPIWithTimeout——所有 AI 請求的唯一出口
@@ -76,17 +81,29 @@ namespace RimLLM_Framework.Compat
                 harmony.Patch(isConfigured,
                     postfix: new HarmonyMethod(typeof(ModCompatCheckerCompatPatch), nameof(IsAIConfiguredPostfix)));
             }
+            else
+            {
+                Log.Warning("[RimLLM] 相容層：找不到 ModCompatSettings.IsAIConfigured（ModCompatChecker 版本可能已變動），AI 按鈕啟用覆寫未掛載；接管開啟時仍需填原生金鑰才能按鈕分析。");
+            }
 
             if (checkBalance != null)
             {
                 harmony.Patch(checkBalance,
                     prefix: new HarmonyMethod(typeof(ModCompatCheckerCompatPatch), nameof(CheckBalancePrefix)));
             }
+            else
+            {
+                Log.Warning("[RimLLM] 相容層：找不到 ApiBalanceChecker.CheckBalance（ModCompatChecker 版本可能已變動），餘額檢查短路未掛載；接管開啟且無原生金鑰時可能出現 401 提示。");
+            }
         }
 
         /// <summary>
         /// 攔截 AIService.CallAPIWithTimeout：接管開啟時由 RimLLM 處理並填入結果。
         /// </summary>
+        /// <remarks>
+        /// 例外分流：取消／逾時直接回提示文字並跳過原生——原生會再用同樣的
+        /// <c>timeoutSeconds</c> 跑一次，總等待時間翻倍；離線等其他失敗才退回原生。
+        /// </remarks>
         public static bool CallAPIWithTimeoutPrefix(
             string endpoint,
             string apiKey,
@@ -107,15 +124,17 @@ namespace RimLLM_Framework.Compat
                 __result = Client.CallAPI(userMessage, timeoutSeconds, ref cancelFlag);
                 return false; // 跳過原生
             }
+            catch (Exception ex) when (ex is OperationCanceledException || ex is TimeoutException)
+            {
+                __result = cancelFlag
+                    ? CancelledText
+                    : string.Format(CultureInfo.InvariantCulture, TimeoutTextFormat, timeoutSeconds);
+                return false;
+            }
             catch (Exception ex)
             {
                 // 呼叫失敗時退回原生路徑
-                DateTime now = DateTime.UtcNow;
-                if (now - _lastOfflineWarning >= OfflineWarningInterval)
-                {
-                    _lastOfflineWarning = now;
-                    Log.Warning($"[RimLLM] 相容層：ModCompatChecker 接管請求失敗，退回原生路徑。原因：{ex.Message}");
-                }
+                WarnThrottled($"ModCompatChecker 接管請求失敗，退回原生路徑。原因：{ex.Message}");
                 return true;
             }
         }
@@ -152,6 +171,24 @@ namespace RimLLM_Framework.Compat
             return _cachedTakeOver;
         }
 
+        /// <summary>測試隔離用：還原判定快取與警告節流，避免測試間順序相依。</summary>
+        internal static void ResetCacheForTests()
+        {
+            _cachedTakeOver = false;
+            _cachedAt = DateTime.MinValue;
+            _lastOfflineWarning = DateTime.MinValue;
+        }
+
+        /// <summary>
+        /// 測試用：直接指定接管判定結果（繞過開關＋供應商檢查）。
+        /// 生產程式不得呼叫。
+        /// </summary>
+        internal static void SetTakeOverCacheForTests(bool value)
+        {
+            _cachedTakeOver = value;
+            _cachedAt = DateTime.UtcNow;
+        }
+
         private static bool IsToggleEnabled()
         {
             RimLLMFrameworkSettings settings = RimLLMFrameworkMod.Settings;
@@ -172,13 +209,33 @@ namespace RimLLM_Framework.Compat
             }
             catch (RimLLMException ex)
             {
-                DateTime now = DateTime.UtcNow;
-                if (now - _lastOfflineWarning >= OfflineWarningInterval)
-                {
-                    _lastOfflineWarning = now;
-                    Log.Warning($"[RimLLM] 相容層：ModCompatChecker 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 ModCompatChecker 原生路徑。原因：{ex.Message}");
-                }
+                WarnThrottled($"ModCompatChecker 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 ModCompatChecker 原生路徑。原因：{ex.Message}");
                 return false;
+            }
+            catch (Exception ex)
+            {
+                // Manager 尚未初始化（InvalidOperationException）等啟動順序異常：
+                // 視為不接管，避免例外從 IsAIConfiguredPostfix（UI 執行緒）等處外洩。
+                WarnThrottled($"ModCompatChecker 接管已開啟，但框架尚未就緒，本次退回 ModCompatChecker 原生路徑。原因：{ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static void WarnThrottled(string reason)
+        {
+            DateTime now = DateTime.UtcNow;
+            if (now - _lastOfflineWarning >= OfflineWarningInterval)
+            {
+                _lastOfflineWarning = now;
+                try
+                {
+                    Log.Warning($"[RimLLM] 相容層：{reason}");
+                }
+                catch (Exception)
+                {
+                    // 警告屬 best-effort：單元測試環境沒有 Unity ECall，Verse.Log 會擲錯；
+                    // 不可讓記警告本身拖累退回原生的 fallback 路徑。
+                }
             }
         }
     }

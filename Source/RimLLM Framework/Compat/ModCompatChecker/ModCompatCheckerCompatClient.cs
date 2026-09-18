@@ -38,10 +38,18 @@ namespace RimLLM_Framework.Compat
         /// <summary>
         /// 同步執行 AI 診斷分析並回傳模型回覆的純文字。
         /// </summary>
+        /// <remarks>
+        /// 取消語意比照原生 <c>AIService.CallAPIWithTimeout</c>（約 100ms 粒度輪詢 <c>cancelFlag</c>）：
+        /// 偵測到取消即 signal 並擲出 <see cref="OperationCanceledException"/>，不再等到逾時，
+        /// 避免取消後繼續燒 token 且 UI 看似卡死。呼叫端（<c>CallAPIWithTimeoutPrefix</c>）
+        /// 會把取消／逾時轉為提示文字並跳過原生，不再跑第二次等待。
+        /// </remarks>
         /// <param name="userMessage">使用者問題或診斷提示詞（已由 PromptBuilder 建構）。</param>
-        /// <param name="timeoutSeconds">逾時秒數。</param>
+        /// <param name="timeoutSeconds">逾時秒數；小於等於 0 視為無限等待（仍響應取消）。</param>
         /// <param name="cancelFlag">來自原 Mod 的取消旗標參照。</param>
         /// <returns>模型回覆的純文字內容。</returns>
+        /// <exception cref="OperationCanceledException">偵測到 <c>cancelFlag</c>，或等待中的請求被取消。</exception>
+        /// <exception cref="TimeoutException">超過 <c>timeoutSeconds</c> 仍未完成（含供應商無視取消 token 的兜底）。</exception>
         public string CallAPI(string userMessage, int timeoutSeconds, ref bool cancelFlag)
         {
             var messages = new List<ChatMessage>
@@ -51,18 +59,37 @@ namespace RimLLM_Framework.Compat
 
             ChatOptions options = BuildOptions();
 
-            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
+            TimeSpan? limit = timeoutSeconds > 0 ? TimeSpan.FromSeconds(timeoutSeconds) : (TimeSpan?)null;
+            using (var cts = limit.HasValue ? new CancellationTokenSource(limit.Value) : new CancellationTokenSource())
             {
-                ChatResponse response;
-                try
+                Task<ChatResponse> task = Task.Run(() => Chat.GetResponseAsync(messages, options, cts.Token));
+
+                DateTime start = DateTime.UtcNow;
+                while (!task.IsCompleted)
                 {
-                    response = Task.Run(() => Chat.GetResponseAsync(messages, options, cts.Token)).GetAwaiter().GetResult();
-                }
-                catch (AggregateException agg) when (agg.InnerExceptions.Count > 0)
-                {
-                    throw agg.Flatten().InnerExceptions[0];
+                    if (cancelFlag)
+                    {
+                        try
+                        {
+                            cts.Cancel();
+                        }
+                        catch (Exception)
+                        {
+                            // 取消 signal 盡力而為；取消語意由下面的例外保證。
+                        }
+                        throw new OperationCanceledException("ModCompatChecker 分析已由使用者取消，不再等待 RimLLM 回應。");
+                    }
+                    if (limit.HasValue && DateTime.UtcNow - start >= limit.Value)
+                    {
+                        // 供應商無視取消 token 時 cts 不會讓 task 失敗，此處兜底超時，不無限等待。
+                        throw new TimeoutException($"ModCompatChecker 分析經 RimLLM 請求逾時（{timeoutSeconds} 秒）。");
+                    }
+                    Thread.Sleep(50);
                 }
 
+                // GetAwaiter().GetResult() 直接解包內層例外（不會是 AggregateException，
+                // 那是 .Wait()／.Result 的行為），原始堆疊得以保留，無需轉拋。
+                ChatResponse response = task.GetAwaiter().GetResult();
                 return response.Text ?? string.Empty;
             }
         }

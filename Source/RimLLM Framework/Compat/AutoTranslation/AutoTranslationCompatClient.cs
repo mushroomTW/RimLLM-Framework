@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
@@ -57,12 +58,14 @@ namespace RimLLM_Framework.Compat
             }
             catch (AggregateException agg) when (agg.InnerExceptions.Count > 0)
             {
-                throw agg.Flatten().InnerExceptions[0];
+                // 保留原始堆疊：直接 throw 會遺失跨執行緒的呼叫資訊。
+                ExceptionDispatchInfo.Capture(agg.Flatten().InnerExceptions[0]).Throw();
+                throw;
             }
 
             string responseText = response.Text ?? string.Empty;
-            int inputTokens = (int)(response.Usage?.InputTokenCount ?? 0);
-            int outputTokens = (int)(response.Usage?.OutputTokenCount ?? 0);
+            int inputTokens = ToInt32Saturating(response.Usage?.InputTokenCount);
+            int outputTokens = ToInt32Saturating(response.Usage?.OutputTokenCount);
 
             return System.Text.Json.JsonSerializer.Serialize(new
             {
@@ -72,10 +75,17 @@ namespace RimLLM_Framework.Compat
             }, SharedJsonOptions);
         }
 
-        private static readonly System.Text.Json.JsonSerializerOptions SharedJsonOptions = new System.Text.Json.JsonSerializerOptions
+        internal static readonly System.Text.Json.JsonSerializerOptions SharedJsonOptions = new System.Text.Json.JsonSerializerOptions
         {
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
+
+        /// <summary>用量 token 轉 int：飽和截斷，避免 unchecked 靜默溢位。</summary>
+        private static int ToInt32Saturating(long? value)
+        {
+            if (!value.HasValue || value.Value <= 0) return 0;
+            return value.Value > int.MaxValue ? int.MaxValue : (int)value.Value;
+        }
 
         /// <summary>
         /// 翻譯任務著重精準度與低延遲，預設關閉思考鏈（DisableReasoning）並使用溫和的溫度（0.3）。

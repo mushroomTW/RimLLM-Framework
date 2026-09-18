@@ -13,7 +13,7 @@ namespace RimLLM_Framework.Compat
 
         public override string ModId => PackageId;
 
-        public override string DisplayName => "Mod 兼容性检查器 (Mod Compatibility Checker)";
+        public override string DisplayName => "Mod 兼容性檢查器 (Mod Compatibility Checker)";
 
         protected override void ApplyPatch(Harmony harmony)
         {

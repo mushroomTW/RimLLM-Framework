@@ -1,7 +1,11 @@
+extern alias bclasync;
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using ModCompatChecker.AI;
 using NUnit.Framework;
@@ -24,7 +28,7 @@ namespace RimLLM_Framework.Tests
         {
             var target = new ModCompatCheckerCompatTarget();
             ClassicAssert.AreEqual("modcompatchecker.main", target.ModId);
-            ClassicAssert.AreEqual("Mod 兼容性检查器 (Mod Compatibility Checker)", target.DisplayName);
+            ClassicAssert.AreEqual("Mod 兼容性檢查器 (Mod Compatibility Checker)", target.DisplayName);
             ClassicAssert.IsFalse(target.IsPatched);
         }
 
@@ -106,13 +110,8 @@ namespace RimLLM_Framework.Tests
             {
                 ModCompatCheckerCompatPatch.Client = new ModCompatCheckerCompatClient(fake);
 
-                // 強制快取為接管開啟
-                typeof(ModCompatCheckerCompatPatch)
-                    .GetField("_cachedTakeOver", BindingFlags.NonPublic | BindingFlags.Static)
-                    .SetValue(null, true);
-                typeof(ModCompatCheckerCompatPatch)
-                    .GetField("_cachedAt", BindingFlags.NonPublic | BindingFlags.Static)
-                    .SetValue(null, DateTime.UtcNow);
+                // 經測試接縫強制判定為接管開啟，不經開關＋供應商檢查
+                ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(true);
 
                 string result = null;
                 bool cancel = false;
@@ -127,6 +126,7 @@ namespace RimLLM_Framework.Tests
             finally
             {
                 ModCompatCheckerCompatPatch.Client = previousClient;
+                ModCompatCheckerCompatPatch.ResetCacheForTests();
             }
         }
 
@@ -137,13 +137,8 @@ namespace RimLLM_Framework.Tests
 
             try
             {
-                // 強制快取為接管關閉
-                typeof(ModCompatCheckerCompatPatch)
-                    .GetField("_cachedTakeOver", BindingFlags.NonPublic | BindingFlags.Static)
-                    .SetValue(null, false);
-                typeof(ModCompatCheckerCompatPatch)
-                    .GetField("_cachedAt", BindingFlags.NonPublic | BindingFlags.Static)
-                    .SetValue(null, DateTime.UtcNow);
+                // 經測試接縫強制判定為接管關閉
+                ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(false);
 
                 string result = null;
                 bool cancel = false;
@@ -157,55 +152,242 @@ namespace RimLLM_Framework.Tests
             finally
             {
                 ModCompatCheckerCompatPatch.Client = previousClient;
+                ModCompatCheckerCompatPatch.ResetCacheForTests();
             }
+        }
+
+        [Test]
+        public void Prefix_CallAPIWithTimeout_ReturnsCancelledTextWithoutRunningNative()
+        {
+            var fake = new CapturingChatClient
+            {
+                ResponseException = new OperationCanceledException("已取消")
+            };
+
+            ModCompatCheckerCompatClient previousClient = ModCompatCheckerCompatPatch.Client;
+
+            try
+            {
+                ModCompatCheckerCompatPatch.Client = new ModCompatCheckerCompatClient(fake);
+                ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(true);
+
+                string result = null;
+                bool cancel = true;
+                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix(
+                    "http://example.com", "key", "model", "診斷內容",
+                    ModelConfig.ApiProvider.OpenAI, 30, ref cancel, ref result);
+
+                ClassicAssert.IsFalse(runOriginal, "取消時不應再跑一次原生");
+                ClassicAssert.IsNotNull(result);
+                StringAssert.Contains("取消", result);
+            }
+            finally
+            {
+                ModCompatCheckerCompatPatch.Client = previousClient;
+                ModCompatCheckerCompatPatch.ResetCacheForTests();
+            }
+        }
+
+        [Test]
+        public void Prefix_CallAPIWithTimeout_ReturnsTimeoutTextWithoutRunningNative()
+        {
+            var fake = new CapturingChatClient
+            {
+                ResponseException = new TimeoutException("逾時")
+            };
+
+            ModCompatCheckerCompatClient previousClient = ModCompatCheckerCompatPatch.Client;
+
+            try
+            {
+                ModCompatCheckerCompatPatch.Client = new ModCompatCheckerCompatClient(fake);
+                ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(true);
+
+                string result = null;
+                bool cancel = false;
+                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix(
+                    "http://example.com", "key", "model", "診斷內容",
+                    ModelConfig.ApiProvider.OpenAI, 30, ref cancel, ref result);
+
+                ClassicAssert.IsFalse(runOriginal, "逾時時不應再跑一次原生（等待翻倍）");
+                ClassicAssert.IsNotNull(result);
+                StringAssert.Contains("30", result);
+            }
+            finally
+            {
+                ModCompatCheckerCompatPatch.Client = previousClient;
+                ModCompatCheckerCompatPatch.ResetCacheForTests();
+            }
+        }
+
+        [Test]
+        public void Prefix_CallAPIWithTimeout_FallsBackToNativeOnOffline()
+        {
+            var fake = new CapturingChatClient
+            {
+                ResponseException = new RimLLMException(LLMError.ProviderOffline, "無可用供應商")
+            };
+
+            ModCompatCheckerCompatClient previousClient = ModCompatCheckerCompatPatch.Client;
+
+            try
+            {
+                ModCompatCheckerCompatPatch.Client = new ModCompatCheckerCompatClient(fake);
+                ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(true);
+
+                string result = null;
+                bool cancel = false;
+                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix(
+                    "http://example.com", "key", "model", "診斷內容",
+                    ModelConfig.ApiProvider.OpenAI, 30, ref cancel, ref result);
+
+                ClassicAssert.IsTrue(runOriginal, "離線時應退回原生路徑");
+                ClassicAssert.IsNull(result);
+            }
+            finally
+            {
+                ModCompatCheckerCompatPatch.Client = previousClient;
+                ModCompatCheckerCompatPatch.ResetCacheForTests();
+            }
+        }
+
+        [Test]
+        public void Client_PreSetCancelFlag_ThrowsImmediately()
+        {
+            var client = new ModCompatCheckerCompatClient(new HangingChatClient());
+
+            bool cancel = true;
+            ClassicAssert.Throws<OperationCanceledException>(() => client.CallAPI("診斷內容", 30, ref cancel));
+        }
+
+        [Test]
+        public void Client_NonPositiveTimeout_TreatedAsInfiniteStillCancellable()
+        {
+            var client = new ModCompatCheckerCompatClient(new HangingChatClient());
+
+            // 0 與負數不得擲 ArgumentOutOfRangeException，且仍響應取消
+            bool cancelZero = true;
+            ClassicAssert.Throws<OperationCanceledException>(() => client.CallAPI("診斷內容", 0, ref cancelZero));
+
+            bool cancelNegative = true;
+            ClassicAssert.Throws<OperationCanceledException>(() => client.CallAPI("診斷內容", -5, ref cancelNegative));
+        }
+
+        [Test]
+        public void Client_IgnoringProvider_HitsTimeoutGuard()
+        {
+            var client = new ModCompatCheckerCompatClient(new NeverCompletingChatClient());
+
+            bool cancel = false;
+            ClassicAssert.Throws<TimeoutException>(() => client.CallAPI("診斷內容", 1, ref cancel));
         }
 
         [Test]
         public void Postfix_IsAIConfigured_OverridesWhenTakeoverEnabled()
         {
-            // 強制快取為接管開啟
-            typeof(ModCompatCheckerCompatPatch)
-                .GetField("_cachedTakeOver", BindingFlags.NonPublic | BindingFlags.Static)
-                .SetValue(null, true);
-            typeof(ModCompatCheckerCompatPatch)
-                .GetField("_cachedAt", BindingFlags.NonPublic | BindingFlags.Static)
-                .SetValue(null, DateTime.UtcNow);
+            try
+            {
+                // 經測試接縫強制判定為接管開啟
+                ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(true);
 
-            bool result = false; // 原生回傳 false（未設 API Key）
-            ModCompatCheckerCompatPatch.IsAIConfiguredPostfix(ref result);
+                bool result = false; // 原生回傳 false（未設 API Key）
+                ModCompatCheckerCompatPatch.IsAIConfiguredPostfix(ref result);
 
-            ClassicAssert.IsTrue(result, "接管開啟時應強制為 true");
+                ClassicAssert.IsTrue(result, "接管開啟時應強制為 true");
+            }
+            finally
+            {
+                ModCompatCheckerCompatPatch.ResetCacheForTests();
+            }
         }
 
         [Test]
         public void Postfix_IsAIConfigured_DoesNotOverrideWhenDisabled()
         {
-            // 強制快取為接管關閉
-            typeof(ModCompatCheckerCompatPatch)
-                .GetField("_cachedTakeOver", BindingFlags.NonPublic | BindingFlags.Static)
-                .SetValue(null, false);
-            typeof(ModCompatCheckerCompatPatch)
-                .GetField("_cachedAt", BindingFlags.NonPublic | BindingFlags.Static)
-                .SetValue(null, DateTime.UtcNow);
+            try
+            {
+                // 經測試接縫強制判定為接管關閉
+                ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(false);
 
-            bool result = false;
-            ModCompatCheckerCompatPatch.IsAIConfiguredPostfix(ref result);
+                bool result = false;
+                ModCompatCheckerCompatPatch.IsAIConfiguredPostfix(ref result);
 
-            ClassicAssert.IsFalse(result, "接管關閉時不應覆蓋");
+                ClassicAssert.IsFalse(result, "接管關閉時不應覆蓋");
+            }
+            finally
+            {
+                ModCompatCheckerCompatPatch.ResetCacheForTests();
+            }
         }
 
         [Test]
         public void Prefix_CheckBalance_SkipsWhenTakeoverEnabled()
         {
-            typeof(ModCompatCheckerCompatPatch)
-                .GetField("_cachedTakeOver", BindingFlags.NonPublic | BindingFlags.Static)
-                .SetValue(null, true);
-            typeof(ModCompatCheckerCompatPatch)
-                .GetField("_cachedAt", BindingFlags.NonPublic | BindingFlags.Static)
-                .SetValue(null, DateTime.UtcNow);
+            try
+            {
+                ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(true);
 
-            bool runOriginal = ModCompatCheckerCompatPatch.CheckBalancePrefix();
-            ClassicAssert.IsFalse(runOriginal, "接管開啟時應跳過餘額檢查");
+                bool runOriginal = ModCompatCheckerCompatPatch.CheckBalancePrefix();
+                ClassicAssert.IsFalse(runOriginal, "接管開啟時應跳過餘額檢查");
+            }
+            finally
+            {
+                ModCompatCheckerCompatPatch.ResetCacheForTests();
+            }
+        }
+
+        /// <summary>尊重取消 token 但永不主動完成的假 client，模擬正常供應商的等待行為。</summary>
+        private sealed class HangingChatClient : IChatClient
+        {
+            public Task<ChatResponse> GetResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                CancellationToken cancellationToken = default)
+            {
+                var tcs = new TaskCompletionSource<ChatResponse>();
+                cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
+                return tcs.Task;
+            }
+
+            public bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                CancellationToken cancellationToken = default)
+            {
+                throw new NotImplementedException();
+            }
+
+            public object GetService(Type serviceType, object serviceKey = null) => null;
+
+            public void Dispose()
+            {
+            }
+        }
+
+        /// <summary>無視取消 token 且永不完成的假 client，驗證逾時兜底守衛。</summary>
+        private sealed class NeverCompletingChatClient : IChatClient
+        {
+            public Task<ChatResponse> GetResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                CancellationToken cancellationToken = default)
+            {
+                return new TaskCompletionSource<ChatResponse>().Task;
+            }
+
+            public bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+                IEnumerable<ChatMessage> messages,
+                ChatOptions options = null,
+                CancellationToken cancellationToken = default)
+            {
+                throw new NotImplementedException();
+            }
+
+            public object GetService(Type serviceType, object serviceKey = null) => null;
+
+            public void Dispose()
+            {
+            }
         }
 
         /// <summary>

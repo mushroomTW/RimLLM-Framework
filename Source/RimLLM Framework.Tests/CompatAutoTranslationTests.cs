@@ -112,8 +112,8 @@ namespace RimLLM_Framework.Tests
                 var native = new Translator_OpenAICompatible();
                 AutoTranslationCompatPatch.Sentinel = sentinel;
 
-                // 模擬開啟接管
-                AutoTranslationCompatPatch.OnTakeoverToggled(true);
+                // 模擬接管生效：經測試接縫直接指定判定結果，不經開關＋供應商檢查
+                AutoTranslationCompatPatch.SetTakeOverCacheForTests(true);
 
                 // 原生實例：應放行（回傳 true）且 __result 為空
                 string nativeResult = null;
@@ -132,7 +132,127 @@ namespace RimLLM_Framework.Tests
             {
                 AutoTranslationCompatPatch.Client = previousClient;
                 AutoTranslationCompatPatch.Sentinel = previousSentinel;
+                AutoTranslationCompatPatch.ResetCacheForTests();
             }
+        }
+
+        [Test]
+        public void Prefix_WhenOffline_ReturnsEchoInsteadOfHittingNativeNetwork()
+        {
+            var fake = new CapturingChatClient
+            {
+                ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "不應被呼叫"))
+            };
+
+            AutoTranslationCompatClient previousClient = AutoTranslationCompatPatch.Client;
+            object previousSentinel = AutoTranslationCompatPatch.Sentinel;
+
+            try
+            {
+                AutoTranslationCompatPatch.Client = new AutoTranslationCompatClient(fake);
+
+                var sentinel = new Translator_OpenAICompatible();
+                AutoTranslationCompatPatch.Sentinel = sentinel;
+
+                // 模擬離線：判定為 false 時當下這筆應回原文 echo，而非放行哨兵原生網路
+                AutoTranslationCompatPatch.SetTakeOverCacheForTests(false);
+
+                string result = null;
+                bool handled = AutoTranslationCompatPatch.GetResponseUnsafePrefix(sentinel, "原文內容", "prompt", ref result);
+                ClassicAssert.IsFalse(handled);
+                ClassicAssert.IsNotNull(result);
+                StringAssert.Contains("原文內容", result);
+                ClassicAssert.IsEmpty(fake.ReceivedMessages);
+            }
+            finally
+            {
+                AutoTranslationCompatPatch.Client = previousClient;
+                AutoTranslationCompatPatch.Sentinel = previousSentinel;
+                AutoTranslationCompatPatch.ResetCacheForTests();
+            }
+        }
+
+        [Test]
+        public void Prefix_ClientThrows_PropagatesForRetry()
+        {
+            var fake = new CapturingChatClient
+            {
+                ResponseException = new InvalidOperationException("瞬斷")
+            };
+
+            AutoTranslationCompatClient previousClient = AutoTranslationCompatPatch.Client;
+            object previousSentinel = AutoTranslationCompatPatch.Sentinel;
+
+            try
+            {
+                AutoTranslationCompatPatch.Client = new AutoTranslationCompatClient(fake);
+
+                var sentinel = new Translator_OpenAICompatible();
+                AutoTranslationCompatPatch.Sentinel = sentinel;
+                AutoTranslationCompatPatch.SetTakeOverCacheForTests(true);
+
+                string result = null;
+                ClassicAssert.Throws<InvalidOperationException>(() =>
+                    AutoTranslationCompatPatch.GetResponseUnsafePrefix(sentinel, "text", "prompt", ref result));
+            }
+            finally
+            {
+                AutoTranslationCompatPatch.Client = previousClient;
+                AutoTranslationCompatPatch.Sentinel = previousSentinel;
+                AutoTranslationCompatPatch.ResetCacheForTests();
+            }
+        }
+
+        [Test]
+        public void OnTakeoverToggled_OnlyInvalidatesCache()
+        {
+            object previousSentinel = AutoTranslationCompatPatch.Sentinel;
+            ITranslator previousCurrent = AutoTranslation.Services.TranslatorManager.CurrentTranslator;
+            bool previousReady = AutoTranslation.Services.TranslatorManager.Ready;
+
+            try
+            {
+                // CurrentTranslator 不放哨兵，避免 Sync 觸發置換副作用，只觀察快取行為
+                var sentinel = new Translator_OpenAICompatible();
+                var other = new Translator_OpenAICompatible();
+                AutoTranslationCompatPatch.Sentinel = sentinel;
+                AutoTranslation.Services.TranslatorManager.CurrentTranslator = other;
+
+                // 先強制判定為 true，再切換開關：若實作仍直寫快取，判定會維持 true；
+                // 正確行為是失效重算（測試環境開關關閉 → false）
+                AutoTranslationCompatPatch.SetTakeOverCacheForTests(true);
+                AutoTranslationCompatPatch.OnTakeoverToggled(true);
+                ClassicAssert.IsFalse(AutoTranslationCompatPatch.ShouldTakeOver());
+            }
+            finally
+            {
+                AutoTranslationCompatPatch.Sentinel = previousSentinel;
+                AutoTranslation.Services.TranslatorManager.CurrentTranslator = previousCurrent;
+                AutoTranslation.Services.TranslatorManager.Ready = previousReady;
+                AutoTranslationCompatPatch.ResetCacheForTests();
+            }
+        }
+
+        [Test]
+        public void Client_LargeUsage_SaturatesToIntMax()
+        {
+            var fake = new CapturingChatClient
+            {
+                ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "OK"))
+                {
+                    Usage = new UsageDetails
+                    {
+                        InputTokenCount = (long)int.MaxValue + 100,
+                        OutputTokenCount = long.MaxValue
+                    }
+                }
+            };
+            var client = new AutoTranslationCompatClient(fake);
+
+            string json = client.GetResponseUnsafe("t", "p");
+
+            StringAssert.Contains($"\"prompt_tokens\":{int.MaxValue}", json.Replace(" ", string.Empty));
+            StringAssert.Contains($"\"completion_tokens\":{int.MaxValue}", json.Replace(" ", string.Empty));
         }
 
         [Test]
@@ -147,17 +267,20 @@ namespace RimLLM_Framework.Tests
             {
                 var sentinel = new Translator_OpenAICompatible();
                 var native = new Translator_OpenAICompatible();
+                native.Ready = true;
                 AutoTranslationCompatPatch.Sentinel = sentinel;
                 AutoTranslationCompatPatch.NativeTranslator = native;
                 AutoTranslation.Services.TranslatorManager.CurrentTranslator = native;
 
                 // 開啟接管：應置換為哨兵
-                AutoTranslationCompatPatch.OnTakeoverToggled(true);
+                AutoTranslationCompatPatch.SetTakeOverCacheForTests(true);
+                AutoTranslationCompatPatch.SyncCurrentTranslator();
                 ClassicAssert.AreSame(sentinel, AutoTranslation.Services.TranslatorManager.CurrentTranslator);
                 ClassicAssert.IsTrue(AutoTranslation.Services.TranslatorManager.Ready);
 
                 // 關閉接管：應還原為原生
-                AutoTranslationCompatPatch.OnTakeoverToggled(false);
+                AutoTranslationCompatPatch.SetTakeOverCacheForTests(false);
+                AutoTranslationCompatPatch.SyncCurrentTranslator();
                 ClassicAssert.AreSame(native, AutoTranslation.Services.TranslatorManager.CurrentTranslator);
             }
             finally
@@ -166,6 +289,7 @@ namespace RimLLM_Framework.Tests
                 AutoTranslationCompatPatch.NativeTranslator = previousNative;
                 AutoTranslation.Services.TranslatorManager.CurrentTranslator = previousCurrent;
                 AutoTranslation.Services.TranslatorManager.Ready = previousReady;
+                AutoTranslationCompatPatch.ResetCacheForTests();
             }
         }
 

@@ -84,15 +84,16 @@ namespace RimLLM_Framework.Compat
                 throw new MissingMethodException("AutoTranslation.Services.TranslatorManager.Translate 不存在（Auto Translation 版本可能已變動）。");
             }
 
-            // 建構哨兵實例：啟用批次翻譯與 RimLLM 模型標識
+            // 建構哨兵實例：啟用批次翻譯與 RimLLM 模型標識。
+            // 注意：RequestTimeoutSeconds 刻意不設——哨兵的 GetResponseUnsafe 全數被 Prefix 攔走，
+            // 從不走原生網路，RimLLM 側實際走框架自己的超時；在此設值只會誤導。
             var sentinel = new Translator_OpenAICompatible
             {
                 Settings = new TranslatorSettings_AIModel
                 {
                     UserSelectedModel = "RimLLM",
                     EnableBatchTranslation = true,
-                    BatchSizeTokens = 2000,
-                    RequestTimeoutSeconds = 60
+                    BatchSizeTokens = 2000
                 }
             };
             sentinel.Prepare();
@@ -103,21 +104,46 @@ namespace RimLLM_Framework.Compat
             harmony.Patch(getResponse, prefix: new HarmonyMethod(typeof(AutoTranslationCompatPatch), nameof(GetResponseUnsafePrefix)));
             harmony.Patch(translate, prefix: new HarmonyMethod(typeof(AutoTranslationCompatPatch), nameof(TranslatePrefix)));
 
-            // 啟動階段初始同步
-            SyncCurrentTranslator();
+            // 啟動階段初始同步：fail-soft，避免 Manager 尚未初始化時把半掛載留給 TryApply。
+            // Harmony Prefix 此時已掛上，Sync 失敗不應讓 Apply 跟著炸。
+            try
+            {
+                SyncCurrentTranslator();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"[RimLLM] 相容層：Auto Translation 啟動同步略過（稍後第一次 Translate 會重試）。原因：{ex.Message}");
+            }
         }
 
         /// <summary>
         /// 文本入列翻譯隊列時觸發，確保 CurrentTranslator 狀態最新。
+        /// fail-soft：啟動期 Manager 可能尚未初始化，不可把例外丟回遊戲執行緒。
         /// </summary>
         public static void TranslatePrefix()
         {
-            SyncCurrentTranslator();
+            try
+            {
+                SyncCurrentTranslator();
+            }
+            catch (Exception)
+            {
+                // EvaluateTakeOver 已把供應商缺席轉為 false 並節流警告；
+                // 這裡只吞掉啟動順序異常等非預期路徑，避免每次入列都拋。
+            }
         }
 
         /// <summary>
         /// 攔截哨兵實例的底層連線請求，改走 RimLLM 管道。
         /// </summary>
+        /// <remarks>
+        /// 離線退回注意：此時已在哨兵的 <c>TryTranslate</c> 內部（背景執行緒），無法把「當下這筆」
+        /// 改派給原生翻譯器——原生可能是 DeepL／Google 等異構型別，其 <c>GetResponseUnsafe</c>
+        /// 是受保護方法且回傳格式不同。因此退回策略是：後續入列經 <see cref="SyncCurrentTranslator"/>
+        /// 切回原生；當下這筆回傳原文 echo JSON，讓哨兵的佔位符還原直接通過、快速回原文，
+        /// 而非放行哨兵原生網路（預設打 localhost，超時可達數十秒）。
+        /// Client 拋出（瞬斷、限流）時則原樣上拋，交給哨兵 <c>TryTranslate</c> 自帶的重試／回原文機制。
+        /// </remarks>
         public static bool GetResponseUnsafePrefix(
             Translator_OpenAICompatible __instance,
             string text,
@@ -131,22 +157,90 @@ namespace RimLLM_Framework.Compat
 
             if (!ShouldTakeOver())
             {
-                SyncCurrentTranslator();
-                return true;
+                try
+                {
+                    SyncCurrentTranslator();
+                }
+                catch (Exception)
+                {
+                }
+                __result = BuildEchoResponse(text);
+                return false;
             }
 
-            __result = Client.GetResponseUnsafe(text, prompt);
-            return false;
+            try
+            {
+                __result = Client.GetResponseUnsafe(text, prompt);
+                return false;
+            }
+            catch (Exception)
+            {
+                // 下一筆起有機會切回原生；當下這筆由 Auto Translation 重試／回原文。
+                try
+                {
+                    SyncCurrentTranslator();
+                }
+                catch (Exception)
+                {
+                }
+                throw;
+            }
         }
 
         /// <summary>
         /// 玩家在設定分頁切換接管開關時即時呼叫。
+        /// 只做快取失效再同步，讓 <see cref="ShouldTakeOver"/> 重走開關＋供應商判定，
+        /// 避免無供應商時開啟開關仍有約 1 秒誤接管空窗。
         /// </summary>
         public static void OnTakeoverToggled(bool enabled)
         {
-            _cachedTakeOver = enabled;
+            _ = enabled;
+            InvalidateTakeOverCache();
+            try
+            {
+                SyncCurrentTranslator();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>使接管判定快取失效，下次 <see cref="ShouldTakeOver"/> 重算。</summary>
+        internal static void InvalidateTakeOverCache()
+        {
+            _cachedAt = DateTime.MinValue;
+        }
+
+        /// <summary>測試隔離用：還原判定快取與警告節流，避免測試間順序相依。</summary>
+        internal static void ResetCacheForTests()
+        {
+            _cachedTakeOver = false;
+            _cachedAt = DateTime.MinValue;
+            _lastOfflineWarning = DateTime.MinValue;
+        }
+
+        /// <summary>
+        /// 測試用：直接指定接管判定結果（繞過開關＋供應商檢查）。
+        /// 生產程式不得呼叫；離線降級分支請用 <c>false</c> 覆蓋。
+        /// </summary>
+        internal static void SetTakeOverCacheForTests(bool value)
+        {
+            _cachedTakeOver = value;
             _cachedAt = DateTime.UtcNow;
-            SyncCurrentTranslator();
+        }
+
+        /// <summary>
+        /// 構造原文 echo 回應：content 取原文，讓哨兵的佔位符還原通過並回原文。
+        /// 單條與批次皆適用——批次時 text 即 batch XML，ParseBatchXml 會把它還原為原文清單。
+        /// </summary>
+        private static string BuildEchoResponse(string text)
+        {
+            return System.Text.Json.JsonSerializer.Serialize(new
+            {
+                content = text ?? string.Empty,
+                prompt_tokens = 0,
+                completion_tokens = 0
+            }, AutoTranslationCompatClient.SharedJsonOptions);
         }
 
         /// <summary>
@@ -174,10 +268,25 @@ namespace RimLLM_Framework.Compat
             {
                 if (ReferenceEquals(TranslatorManager.CurrentTranslator, _sentinel))
                 {
-                    ITranslator native = _nativeTranslator as ITranslator
-                                         ?? TranslatorManager.GetTranslator(global::AutoTranslation.Settings.TranslatorName);
+                    // 還原優先用即時查詢：接管期間玩家可能在 Auto Translation 自家設定改了翻譯器，
+                    // 快照此時已陳舊。快照僅作後備；兩者皆 null 則不寫入，避免 CurrentTranslator=null 停擺。
+                    ITranslator live = null;
+                    try
+                    {
+                        live = TranslatorManager.GetTranslator(global::AutoTranslation.Settings.TranslatorName);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    ITranslator snap = _nativeTranslator as ITranslator;
+                    ITranslator native = PickRestoreTranslator(live, snap);
+                    if (native == null)
+                    {
+                        Log.Warning("[RimLLM] 相容層：Auto Translation 還原原生翻譯器失敗（即時查詢與快照皆為 null），保留哨兵避免停擺。");
+                        return;
+                    }
                     TranslatorManager.CurrentTranslator = native;
-                    TranslatorManager.Ready = native != null;
+                    TranslatorManager.Ready = native.Ready;
                 }
             }
         }
@@ -201,6 +310,14 @@ namespace RimLLM_Framework.Compat
             return settings != null && settings.IsCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId);
         }
 
+        /// <summary>還原用翻譯器挑選：就緒者優先，其次即時值，最後快照。</summary>
+        private static ITranslator PickRestoreTranslator(ITranslator live, ITranslator snap)
+        {
+            if (live != null && live.Ready) return live;
+            if (snap != null && snap.Ready) return snap;
+            return live ?? snap;
+        }
+
         private static bool EvaluateTakeOver()
         {
             if (!IsToggleEnabled())
@@ -215,13 +332,25 @@ namespace RimLLM_Framework.Compat
             }
             catch (RimLLMException ex)
             {
-                DateTime now = DateTime.UtcNow;
-                if (now - _lastOfflineWarning >= OfflineWarningInterval)
-                {
-                    _lastOfflineWarning = now;
-                    Log.Warning($"[RimLLM] 相容層：Auto Translation 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 Auto Translation 原生路徑。原因：{ex.Message}");
-                }
+                WarnOfflineThrottled($"RimLLM 目前沒有可用的供應商，本次退回 Auto Translation 原生路徑。原因：{ex.Message}");
                 return false;
+            }
+            catch (Exception ex)
+            {
+                // Manager 尚未初始化（InvalidOperationException）等啟動順序異常：
+                // 視為不接管，避免例外從 TranslatePrefix（遊戲執行緒）外洩。
+                WarnOfflineThrottled($"框架尚未就緒，本次退回 Auto Translation 原生路徑。原因：{ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static void WarnOfflineThrottled(string reason)
+        {
+            DateTime now = DateTime.UtcNow;
+            if (now - _lastOfflineWarning >= OfflineWarningInterval)
+            {
+                _lastOfflineWarning = now;
+                Log.Warning($"[RimLLM] 相容層：Auto Translation 接管已開啟，但{reason}");
             }
         }
     }
