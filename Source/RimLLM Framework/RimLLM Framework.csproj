@@ -42,12 +42,12 @@
     <ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>true</ResolveAssemblyReferenceIgnoreTargetFrameworkAttributeVersionMismatch>
     <Authors>mushroomTW</Authors>
     <!-- SonarQube / Coverlet 覆蓋率排除非邏輯核心的 RimWorld UI 繪製、Mod 進入點與需要遊戲執行期的 Harmony 掛載 -->
-    <SonarQubeCoverageExclusions>**/Mod/UI/**;**/Mod/RimLLMFrameworkMod.cs;**/Compat/RimLLMCompatBootstrap.cs;**/Compat/RimTalk/RimTalkCompatPatch.cs</SonarQubeCoverageExclusions>
+    <SonarQubeCoverageExclusions>**/Mod/UI/**;**/Mod/RimLLMFrameworkMod.cs;**/Compat/RimLLMCompatBootstrap.cs;**/Compat/RimTalk/RimTalkCompatPatch.cs;**/Compat/AutoTranslation/AutoTranslationCompatPatch.cs</SonarQubeCoverageExclusions>
   </PropertyGroup>
 
   <ItemGroup>
     <SonarQubeSetting Include="sonar.coverage.exclusions">
-      <Value>**/Mod/UI/**,**/Mod/RimLLMFrameworkMod.cs,**/Compat/RimLLMCompatBootstrap.cs,**/Compat/RimTalk/RimTalkCompatPatch.cs</Value>
+      <Value>**/Mod/UI/**,**/Mod/RimLLMFrameworkMod.cs,**/Compat/RimLLMCompatBootstrap.cs,**/Compat/RimTalk/RimTalkCompatPatch.cs,**/Compat/AutoTranslation/AutoTranslationCompatPatch.cs</Value>
     </SonarQubeSetting>
   </ItemGroup>
 
@@ -110,6 +110,14 @@
     -->
     <Reference Include="RimTalk">
       <HintPath>..\Libs\RimTalk\RimTalk.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!--
+      AutoTranslation 編譯期參考（Source/Libs/AutoTranslation/README.md）。Private=false 不出貨；
+      執行期綁定的是玩家實際安裝的 AutoTranslation.dll。
+    -->
+    <Reference Include="AutoTranslation">
+      <HintPath>..\Libs\AutoTranslation\AutoTranslation.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

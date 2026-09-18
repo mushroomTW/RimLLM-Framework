@@ -340,10 +340,11 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
     * 提供 `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`，自動將工具叫用委派排入 Unity 主執行緒執行，杜絕 RimWorld 跨執行緒崩潰風險。
     * 當請求中包含工具時，自動繞過本地回應快取以確保狀態副作用一致性。
 12. **第三方整合（強制其他 Mod 改走 RimLLM）**
-    * 設定頁新增「第三方整合」分頁，列出 RimLLM 可以接管 LLM 流量的 Mod——目前是 **RimTalk**（`cj.rimtalk`）。開關開啟後，RimTalk 的所有請求（串流對話、結構化查詢、視覺）一律導入 RimLLM 的備援鏈、預算、節流、回應快取與用量統計，歸屬記為 `cj.rimtalk`。開啟期間 RimTalk 自己的 API 金鑰／模型／端點設定會被忽略；開關即時生效不需重啟，預設**關閉**。
-    * RimTalk 的提示工程完全不動：它的訊息（含「Output JSONL」指示）原樣轉送，串流文字逐塊餵進 RimTalk 自己的 `JsonStreamParser`，因此氣泡仍然像原生一樣一行一行冒出來。推理內容不會混進 JSONL 串流，且這類請求關閉思考以對齊 RimTalk 自身的預設。
-    * 純 Harmony、全部 fail-soft，框架不實作任何 RimTalk 介面：`AIClientFactory.GetAIClientAsync`（唯一的傳輸 choke point）交給 RimTalk 一個由框架持有的 RimTalk 原生 `OpenAIClient` *哨兵*實例；每個請求都會經過的兩個非泛型漏斗（`OpenAIClient.GetChatCompletionAsync` 與私有 `StreamAsync`）掛上 Prefix，只有哨兵實例會被改導進 RimLLM，玩家自己的原生 client 原樣放行。`RimTalkSettings.GetActiveConfig` 只在 RimTalk 自己沒有任何設定時補一個合成設定，讓從未設定過 RimTalk 的玩家也能直接有對話。刻意不實作 `IAIClient`：介面實作是型別定義層級的參考，RimWorld 載入 DLL 時就會解析，RimTalk 缺席時會讓整顆框架組件被拒載（方法簽章與本體要到 JIT 才解析，可以出現 RimTalk 型別）。RimTalk 未安裝時攔截根本不會套用；其 API 若漂移導致掛載失敗，設定頁會直接顯示原因。請求當下 RimLLM 沒有可用供應商（備援鏈為空、缺金鑰）時，自動退回 RimTalk 原生路徑並記一筆節流過的警告——離線／Player2 使用者誤開開關不會直接沒聲音。
-    * 新增其他 Mod 只需一筆登錄＋一個 `RimLLMCompatTarget` 子類；RimTalk 轉接器對著簽入版本庫的參考用 `RimTalk.dll`（`Source/Libs/RimTalk/`）編譯，該 DLL 不隨包出貨。
+    * 設定頁新增「第三方整合」分頁，列出 RimLLM 可以接管 LLM 流量的 Mod——目前包含 **RimTalk**（`cj.rimtalk`）與 **Auto Translation**（`seohyeon.autotranslation`）。開關開啟後，目標 Mod 的所有請求一律導入 RimLLM 的備援鏈、預算、節流、回應快取與用量統計。開啟期間目標 Mod 自己的 API 金鑰／模型／端點設定會被忽略；開關即時生效不需重啟，預設**關閉**。
+    * **RimTalk**：提示工程完全不動，訊息（含「Output JSONL」指示）原樣轉送，串流文字逐塊餵進 RimTalk 自己的 `JsonStreamParser`，氣泡仍然像原生一樣一行一行冒出來。推理內容不會混進 JSONL 串流，且這類請求關閉思考以對齊 RimTalk 自身的預設。
+    * **Auto Translation**：完整支援單條與 XML 批次翻譯。以原生具備批次能力與佔位符防護的 `Translator_OpenAICompatible` 作為哨兵轉接，佔位符（`__PH0__` 等）防護、XML 批次打包與解析均沿用 Auto Translation 自身邏輯。開關開啟時自動同步當前翻譯器為哨兵，關閉或 RimLLM 缺金鑰/離線時自動退回原生翻譯引擎並節流警告。
+    * 純 Harmony、全部 fail-soft，框架不實作任何第三方介面，也絕不在類別繼承、介面或欄位層級引用第三方型別，第三方 Mod 未安裝時框架組件仍可安全載入。其 API 若漂移導致掛載失敗，設定頁會直接顯示原因。請求當下 RimLLM 沒有可用供應商（備援鏈為空、缺金鑰）時，自動退回原生路徑並記一筆節流過的警告。
+    * 新增其他 Mod 只需一筆登錄＋一個 `RimLLMCompatTarget` 子類；轉接器對著簽入版本庫的參考用 DLL（`Source/Libs/`）編譯，該 DLL 不隨包出貨。
 
 ---
 

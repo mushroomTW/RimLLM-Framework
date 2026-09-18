@@ -47,6 +47,7 @@ namespace RimLLM_Framework.Mod
             {
                 Settings.SetCompatTakeoverEnabled(target.ModId, enabled);
                 Settings.Write();
+                target.OnTakeoverToggled(enabled);
             }
 
             listing.Gap(4f);

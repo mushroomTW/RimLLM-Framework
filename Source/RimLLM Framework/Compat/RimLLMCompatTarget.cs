@@ -69,6 +69,10 @@ namespace RimLLM_Framework.Compat
                 Log.Warning($"[RimLLM] 相容層：掛載 {DisplayName} ({ModId}) 攔截失敗，該 Mod 將維持原生路徑。原因：{ex.Message}");
             }
         }
+        /// <summary>玩家在設定頁切換接管開關時觸發，供需要即時同步狀態的目標覆寫。</summary>
+        public virtual void OnTakeoverToggled(bool enabled)
+        {
+        }
     }
 #pragma warning restore S101
 }

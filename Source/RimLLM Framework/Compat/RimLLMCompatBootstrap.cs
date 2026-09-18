@@ -24,7 +24,8 @@ namespace RimLLM_Framework.Compat
         /// <summary>所有已知的接管目標（依設定頁顯示順序）。</summary>
         public static readonly IReadOnlyList<RimLLMCompatTarget> Targets = new RimLLMCompatTarget[]
         {
-            new RimTalkCompatTarget()
+            new RimTalkCompatTarget(),
+            new AutoTranslationCompatTarget()
         };
 
         static RimLLMCompatBootstrap()
