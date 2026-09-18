@@ -25,7 +25,8 @@ namespace RimLLM_Framework.Compat
         public static readonly IReadOnlyList<RimLLMCompatTarget> Targets = new RimLLMCompatTarget[]
         {
             new RimTalkCompatTarget(),
-            new AutoTranslationCompatTarget()
+            new AutoTranslationCompatTarget(),
+            new ModCompatCheckerCompatTarget()
         };
 
         static RimLLMCompatBootstrap()

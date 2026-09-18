@@ -68,5 +68,10 @@
       <HintPath>..\Libs\AutoTranslation\AutoTranslation.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <!-- 相容層轉接器測試需要 ModCompatChecker 相關型別；主專案 Private=false 不會帶進來，這裡另外複製到測試輸出。 -->
+    <Reference Include="ModCompatChecker">
+      <HintPath>..\Libs\ModCompatChecker\ModCompatChecker.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 </Project>
