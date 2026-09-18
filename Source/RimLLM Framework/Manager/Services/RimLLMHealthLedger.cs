@@ -91,7 +91,10 @@ namespace RimLLM_Framework.Manager
                 {
                     int power = record.ContinuousFailures - CircuitFailureThreshold;
                     cooldownSeconds = CircuitBaseCooldownSeconds * Math.Pow(2, Math.Min(power, MaxCircuitBackoffSteps));
-                    RimLLMLog.Warning($"[RimLLM] Target {target} has failed {record.ContinuousFailures} times continuously. Circuit cooldown set for {cooldownSeconds} seconds.");
+                    if (RimLLMLog.Enabled)
+                    {
+                        RimLLMLog.Warning($"[RimLLM] Target {target} has failed {record.ContinuousFailures} times continuously. Circuit cooldown set for {cooldownSeconds} seconds.");
+                    }
                 }
                 else
                 {
@@ -111,6 +114,15 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         public bool IsInCooldown(string target, out DateTime cooldownUntil, out int continuousFailures)
         {
+            return IsInCooldown(target, DateTime.UtcNow, out cooldownUntil, out continuousFailures);
+        }
+
+        /// <summary>
+        /// 以呼叫端傳入的同一時間戳檢查冷卻，供候選過濾逐個比對時共用，
+        /// 避免每個候選各取一次 <see cref="DateTime.UtcNow"/>。語意與無參版本一致。
+        /// </summary>
+        internal bool IsInCooldown(string target, DateTime now, out DateTime cooldownUntil, out int continuousFailures)
+        {
             cooldownUntil = DateTime.MinValue;
             continuousFailures = 0;
 
@@ -120,7 +132,7 @@ namespace RimLLM_Framework.Manager
                 {
                     cooldownUntil = record.CooldownUntil;
                     continuousFailures = record.ContinuousFailures;
-                    if (record.CooldownUntil > DateTime.UtcNow)
+                    if (record.CooldownUntil > now)
                     {
                         return true;
                     }
@@ -135,6 +147,14 @@ namespace RimLLM_Framework.Manager
         public bool IsInCooldown(string target)
         {
             return IsInCooldown(target, out _, out _);
+        }
+
+        /// <summary>
+        /// 以共用時間戳的簡化版冷卻檢查。
+        /// </summary>
+        internal bool IsInCooldown(string target, DateTime now)
+        {
+            return IsInCooldown(target, now, out _, out _);
         }
 
 

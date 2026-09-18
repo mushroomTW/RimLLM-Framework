@@ -259,7 +259,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 This is the point of the framework. All of the following already happens behind that one `IChatClient`:
 
 | You skip | Because the framework does it |
-|---|---|
+| --- | --- |
 | API key storage and UI | AES-256 encrypted settings with an OS-protected per-user key, shared across every mod |
 | Picking a provider or model | Player-configured fallback chain, `Provider:Model` entries |
 | Retry and `Retry-After` | Retries on timeout / 429 / connection error, honouring both header formats |
@@ -278,7 +278,7 @@ This is the point of the framework. All of the following already happens behind 
 `using RimLLM_Framework;` brings in 14 public types. Most mods only ever touch the first row:
 
 | Tier | Types | Needed when |
-|---|---|---|
+| --- | --- | --- |
 | **Calling a model** | `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException`, `LLMError`, `RimLLMClientExtensions` (`GetResponseObjectAsync<T>`, `WereToolsStripped`), `RimWorldFunctionInvoker` | Always — this is the whole consumer API |
 | **Supplying a provider** | `ILLMProvider`, `LLMProviderCapabilities`, `IRimLLMSettings` | Only if you register your own LLM backend via `RimLLMProvider.RegisterProvider` (`ILLMProvider` produces standard `Microsoft.Extensions.AI.IChatClient`) |
 | **Diagnostics** | `TestResult`, `ProviderIds`, `LLMErrorMapper` | Connection tests, built-in provider id constants, HTTP-status mapping |
@@ -318,7 +318,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
    * Instant connectivity check that measures latency and validates the API key and model. Implemented once in the base class and shared by all providers.
 7. **Thread safety and main-thread Scribe dispatch**
    * All settings dictionaries are guarded by locks against concurrent read/write from multiple threads.
-   * Scribe writes triggered by `RecordLog` are dispatched back to the Unity main thread through `RimLLMDispatcher` with a 15-second write throttle, preventing crashes and TPS spikes caused by background saves.
+   * `RecordLog` updates the in-memory log on the Unity main thread through `RimLLMDispatcher`, while telemetry file writes (AES + JSON + disk) run on a background single-writer with a 15-second write throttle, preventing crashes and TPS spikes caused by background saves.
 8. **Reasoning models and chain-of-thought tagging**
    * Native support for modern reasoning and thinking models such as **Gemini 3.7 Flash / 3.1 Pro (Thinking)**, **OpenAI GPT-5.6 Sol / GPT-5.5**, **DeepSeek-V4-Pro / Flash**, **Grok 4.6**, **Qwen3.8-Max**, **Kimi K3** and **GLM-5.3-Flash**.
    * The framework normalizes the chain of thought returned by the API (`reasoning_content` in the OpenAI protocol) into MEAI's own `TextReasoningContent`, and hands it to you inside `ChatResponse.Messages` / `ChatResponseUpdate.Contents`. It is deliberately **not** folded into `ChatResponse.Text`: every caller that reads `Text` — structured output, the response cache key, JSON parsing — would otherwise have to strip tags out of it first. Filter on the content type to keep or drop it.

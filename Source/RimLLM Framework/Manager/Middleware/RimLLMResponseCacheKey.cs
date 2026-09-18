@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using Microsoft.Extensions.AI;
 
 namespace RimLLM_Framework.Manager
@@ -12,6 +13,14 @@ namespace RimLLM_Framework.Manager
     /// </summary>
     internal static class RimLLMResponseCacheKey
     {
+        /// <summary>
+        /// 執行緒專屬雜湊器：SHA256.Create 含密碼學提供者初始化，每請求建立一次昂貴；
+        /// SHA256 實例非執行緒安全，故以 ThreadLocal 持有。輸出與每次新建完全一致。
+        /// </summary>
+        private static readonly ThreadLocal<SHA256> Hasher =
+            new ThreadLocal<SHA256>(() => SHA256.Create());
+
+        private static readonly char[] HexTable = "0123456789abcdef".ToCharArray();
         /// <summary>
         /// 由「所有會影響模型輸出的欄位」組出快取鍵，再以 SHA-256 壓成定長字串
         /// （直接拿正規化字串當鍵會讓長提示詞把記憶體吃光）。
@@ -60,16 +69,17 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
-            using (var sha256 = SHA256.Create())
+            // 與舊實作位元一致：UTF-8(SHA-256(正規化字串)) 的小寫十六進位。
+            // 差異僅在效能：雜湊器執行緒複用、十六進位以查表直寫 char[]，
+            // 省下每次的提供者初始化與每 byte 一次的 "x2" 格式化配置。
+            byte[] hash = Hasher.Value.ComputeHash(Encoding.UTF8.GetBytes(canonical.ToString()));
+            char[] hexChars = new char[hash.Length * 2];
+            for (int i = 0; i < hash.Length; i++)
             {
-                byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(canonical.ToString()));
-                var hex = new StringBuilder(hash.Length * 2);
-                foreach (byte b in hash)
-                {
-                    hex.Append(b.ToString("x2", CultureInfo.InvariantCulture));
-                }
-                return hex.ToString();
+                hexChars[i * 2] = HexTable[hash[i] >> 4];
+                hexChars[i * 2 + 1] = HexTable[hash[i] & 0xF];
             }
+            return new string(hexChars);
         }
 
         /// <summary>

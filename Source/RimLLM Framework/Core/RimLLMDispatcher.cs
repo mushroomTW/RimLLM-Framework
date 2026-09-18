@@ -207,14 +207,25 @@ namespace RimLLM_Framework.Core
 
         /// <summary>
         /// 依項目數與時間預算清空佇列，回傳實際執行的項目數。
+        /// 佇列為空時直接回傳，不啟動 Stopwatch，避免每幀一次的計時器配置。
+        /// 時間比較使用 ElapsedTicks（高解析度）：ElapsedMilliseconds 在 Windows 上粒度約 15ms，
+        /// 2ms 預算形同虛設。
         /// </summary>
         internal static int DrainWithBudget(int maxActions, long budgetMs)
         {
+            if (ExecutionQueue.IsEmpty || maxActions <= 0 || budgetMs <= 0)
+            {
+                return 0;
+            }
+
+            // OnDestroy 以 long.MaxValue 表示「不設時間上限」；直接跳過時間比較以免換算溢位。
+            bool checkTime = budgetMs != long.MaxValue;
+            long budgetTicks = checkTime ? budgetMs * Stopwatch.Frequency / 1000L : 0L;
             var stopwatch = Stopwatch.StartNew();
             int processed = 0;
 
             while (processed < maxActions &&
-                   stopwatch.ElapsedMilliseconds < budgetMs &&
+                   (!checkTime || stopwatch.ElapsedTicks < budgetTicks) &&
                    ExecutionQueue.TryDequeue(out QueuedAction action))
             {
                 Interlocked.Decrement(ref _queuedCount);

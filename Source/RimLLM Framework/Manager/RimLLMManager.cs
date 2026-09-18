@@ -151,10 +151,27 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         internal LLMProviderCapabilities GetEffectiveCapabilities(string preferredModelId)
         {
-            List<RimLLMFallbackPipeline.ResolvedCandidate> candidates =
-                _fallbackPipeline.ResolveCandidates(preferredModelId, null, includeCoolingDown: true);
+            if (!TryGetEffectiveCapabilities(preferredModelId, out LLMProviderCapabilities effective, out string failureReason))
+            {
+                throw new RimLLMException(LLMError.ProviderOffline, failureReason);
+            }
 
-            var effective = new LLMProviderCapabilities
+            return effective;
+        }
+
+        /// <summary>
+        /// 非拋版能力查詢，供相容層每秒輪詢使用，避免離線時每秒配置例外。
+        /// 語意與 <see cref="GetEffectiveCapabilities(string)"/> 一致，僅以傳回值取代擲出。
+        /// </summary>
+        internal bool TryGetEffectiveCapabilities(string preferredModelId, out LLMProviderCapabilities effective, out string failureReason)
+        {
+            if (!_fallbackPipeline.TryResolveCandidates(preferredModelId, null, includeCoolingDown: true, out List<RimLLMFallbackPipeline.ResolvedCandidate> candidates, out failureReason))
+            {
+                effective = null;
+                return false;
+            }
+
+            var result = new LLMProviderCapabilities
             {
                 SupportsNativeStructuredOutput = true,
                 SupportsStreaming = true,
@@ -164,12 +181,15 @@ namespace RimLLM_Framework.Manager
             foreach (RimLLMFallbackPipeline.ResolvedCandidate candidate in candidates)
             {
                 LLMProviderCapabilities caps = candidate.Provider?.Capabilities ?? new LLMProviderCapabilities();
-                effective.SupportsNativeStructuredOutput &= caps.SupportsNativeStructuredOutput;
-                effective.SupportsStreaming &= caps.SupportsStreaming;
-                effective.SupportsUsageMetadata &= caps.SupportsUsageMetadata;
-                effective.SupportsFunctionCalling &= caps.SupportsFunctionCalling;
+                result.SupportsNativeStructuredOutput &= caps.SupportsNativeStructuredOutput;
+                result.SupportsStreaming &= caps.SupportsStreaming;
+                result.SupportsUsageMetadata &= caps.SupportsUsageMetadata;
+                result.SupportsFunctionCalling &= caps.SupportsFunctionCalling;
             }
-            return effective;
+
+            effective = result;
+            failureReason = null;
+            return true;
         }
 
         /// <summary>

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Providers;
 
@@ -534,6 +535,111 @@ namespace RimLLM_Framework.Tests
             // 驗證清空後直接操作 Patch 不會引發 NullReferenceException
             sanitized.Patch.Set(System.Text.Encoding.UTF8.GetBytes("$.response_format"), "json_object");
             sanitized.Patch.Set(System.Text.Encoding.UTF8.GetBytes("$.max_tokens"), 100);
+        }
+
+        // ---------- TPS 優化：非拋版判定、日誌快徑、派遣器、分級快取 ----------
+
+        [Test]
+        public void TryResolveCandidatesReturnsFalseInsteadOfThrowingOnEmptyChain()
+        {
+            // 相容層每秒輪詢一次：空鏈時不得以例外控制流程，否則每秒配置例外與堆疊。
+            var settings = new MockSettings { MaxRetries = 0, RetryDelay = 0f, RoutingStrategy = 0 };
+            settings.FallbackChain = new List<string>();
+            var ledger = new RimLLMHealthLedger();
+            var tracker = new RimLLMUsageTracker(settings);
+            var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
+            var policy = BuildPipeline(settings, ledger, tracker, providers);
+
+            bool ok = policy.TryResolveCandidates(null, null, false, out var candidates, out string reason);
+
+            ClassicAssert.IsFalse(ok);
+            ClassicAssert.IsNull(candidates);
+            ClassicAssert.IsNotEmpty(reason);
+            // 拋版語意維持不變，仍擲出 ProviderOffline。
+            Assert.ThrowsAsync<RimLLMException>(async () => { policy.ResolveCandidates(null, null); await Task.CompletedTask; });
+        }
+
+        [Test]
+        public void TryResolveCandidatesSucceedsWhenEligibleCandidatesExist()
+        {
+            var settings = new MockSettings { MaxRetries = 0, RetryDelay = 0f, RoutingStrategy = 0 };
+            var ledger = new RimLLMHealthLedger();
+            var tracker = new RimLLMUsageTracker(settings);
+            var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
+            RegisterProvider(settings, providers, new MockTestProvider { ProviderId = "openai" });
+            settings.FallbackChain = new List<string> { "openai:gpt-4o-mini" };
+            var policy = BuildPipeline(settings, ledger, tracker, providers);
+
+            bool ok = policy.TryResolveCandidates(null, null, false, out var candidates, out string reason);
+
+            ClassicAssert.IsTrue(ok);
+            ClassicAssert.IsNull(reason);
+            ClassicAssert.AreEqual(1, candidates.Count);
+        }
+
+        [Test]
+        public void ManagerTryGetEffectiveCapabilitiesDoesNotThrowWhenOffline()
+        {
+            var settings = new MockSettings { MaxRetries = 0, RetryDelay = 0f, RoutingStrategy = 0 };
+            settings.FallbackChain = new List<string>();
+            var manager = new RimLLMManager(settings);
+
+            bool ok = manager.TryGetEffectiveCapabilities(null, out var caps, out string reason);
+
+            ClassicAssert.IsFalse(ok);
+            ClassicAssert.IsNull(caps);
+            ClassicAssert.IsNotEmpty(reason);
+        }
+
+        [Test]
+        public void SanitizeFastPathLeavesPlainMessagesUntouched()
+        {
+            // 不含金鑰指標的一般遊戲日誌必須原樣通過（僅保留換行跳脫與截斷語意）。
+            const string plain = "Attempting to call provider: openai (Model: gpt-4o-mini), retrying attempt 2...";
+            ClassicAssert.AreEqual(plain, RimLLMLog.SanitizeForLog(plain, 500));
+
+            string escaped = RimLLMLog.SanitizeForLog("line1\r\nline2", 500);
+            ClassicAssert.AreEqual("line1\\r\\nline2", escaped);
+
+            // 含指標時遮罩語意不變。
+            string redacted = RimLLMLog.SanitizeForLog("request failed, api_key=SECRETVALUE123", 500);
+            ClassicAssert.IsFalse(redacted.Contains("SECRETVALUE123"));
+            ClassicAssert.IsTrue(redacted.Contains("[redacted]"));
+        }
+
+        [Test]
+        public void DispatcherEmptyDrainReturnsZeroWithoutWork()
+        {
+            RimLLMDispatcher.ResetQueueForTests();
+            ClassicAssert.AreEqual(0, RimLLMDispatcher.DrainWithBudget(128, 2));
+            ClassicAssert.AreEqual(0, RimLLMDispatcher.DrainWithBudget(0, 2));
+            RimLLMDispatcher.ResetQueueForTests();
+        }
+
+        [Test]
+        public void ModelLevelCacheIsConsistentAcrossCases()
+        {
+            var settings = new MockSettings();
+            var tracker = new RimLLMUsageTracker(settings);
+
+            // 快取鍵大小寫不敏感：三次呼叫結果一致，且與覆寫查詢互不干擾。
+            ClassicAssert.AreEqual(tracker.GetModelLevel("openai", "gpt-4o"), tracker.GetModelLevel("OpenAI", "GPT-4o"));
+            ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelLow, tracker.GetModelLevel("local", "anything"));
+            ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelMedium, tracker.GetModelLevel("openai", "some-unknown-model-xyz"));
+        }
+
+        [Test]
+        public void ResponseCacheKeyIsStableLowercaseHex()
+        {
+            string key = RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions());
+
+            ClassicAssert.AreEqual(64, key.Length);
+            foreach (char c in key)
+            {
+                bool isHex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+                ClassicAssert.IsTrue(isHex, $"快取鍵必須為小寫十六進位，實際含 '{c}'");
+            }
+            ClassicAssert.AreEqual(key, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions()));
         }
 
         [Test]

@@ -23,6 +23,16 @@ namespace RimLLM_Framework.Manager
         private static readonly object LogLock = new object();
         private static readonly object UsageLock = new object();
 
+        /// <summary>日誌保留上限。與 Trim 邏輯共用，避免魔法數字散落。</summary>
+        internal const int MaxRetainedLogs = 30;
+
+        /// <summary>
+        /// 日誌佇列的近似計數。ConcurrentQueue.Count 在舊 Mono 上是加鎖列舉（O(n)），
+        /// 每請求呼叫一次會隨日誌量線性變貴；此計數器以 Interlocked 維護，Trim 只看它。
+        /// 多執行緒下為近似值（最終一致），僅影響保留條數上下一兩條，不影響正確性。
+        /// </summary>
+        private int _logCount;
+
         public const int ModelLevelHigh = 3;
         public const int ModelLevelMedium = 2;
         public const int ModelLevelLow = 1;
@@ -36,25 +46,61 @@ namespace RimLLM_Framework.Manager
         /// Level 2 (Medium): 輸出費率 >= $0.50 / 1M Tokens (如 Gemini Flash, DeepSeek-V4-Pro, Qwen-Plus)
         /// Level 1 (Low): 輸出費率 < $0.50 / 1M Tokens 或本地免費模型 ($0)
         /// </summary>
+        /// <summary>
+        /// 模型分級快取：費率表為靜態唯讀，同一 provider:model 的分級永不變化。
+        /// 鍵保留原始大小寫，以 OrdinalIgnoreCase 比對，省下每次的 ToLower 配置。
+        /// 使用者覆寫走 <see cref="IRimLLMSettings.GetModelLevelOverride"/> 即時查詢，不進快取，
+        /// 因此設定頁調整分級立即生效。
+        /// </summary>
+        private static readonly ConcurrentDictionary<string, int> ModelLevelCache =
+            new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
         public int GetModelLevel(string providerId, string modelName)
         {
-            string normProvider = NormalizeProvider(providerId);
-            if (normProvider == "openaicompatible" ||
-                normProvider == "openai-compatible" ||
-                normProvider == "local" ||
-                string.IsNullOrEmpty(modelName))
+            if (string.IsNullOrEmpty(modelName) ||
+                string.Equals(providerId, "openaicompatible", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(providerId, "openai-compatible", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(providerId, "local", StringComparison.OrdinalIgnoreCase))
             {
                 return ModelLevelLow;
             }
 
+            string cacheKey = BuildModelLevelCacheKey(providerId, modelName);
+            if (ModelLevelCache.TryGetValue(cacheKey, out int cached))
+            {
+                return cached;
+            }
+
+            int level;
             if (FindModelRate(providerId, modelName, out CostRate rate))
             {
-                if (rate.CompletionPerMillion >= HighTierCompletionCostThreshold) return ModelLevelHigh;
-                if (rate.CompletionPerMillion >= MediumTierCompletionCostThreshold) return ModelLevelMedium;
-                return ModelLevelLow;
+                if (rate.CompletionPerMillion >= HighTierCompletionCostThreshold) level = ModelLevelHigh;
+                else if (rate.CompletionPerMillion >= MediumTierCompletionCostThreshold) level = ModelLevelMedium;
+                else level = ModelLevelLow;
+            }
+            else
+            {
+                level = ModelLevelMedium; // 未知雲端模型預設給予 Medium 評級
             }
 
-            return ModelLevelMedium; // 未知雲端模型預設給予 Medium 評級
+            ModelLevelCache[cacheKey] = level;
+            return level;
+        }
+
+        /// <summary>組分級快取鍵：僅剝除 models/ 前綴，不做大小寫正規化（比對器負責）。</summary>
+        private static string BuildModelLevelCacheKey(string providerId, string modelName)
+        {
+            string model = StripModelsPrefix(modelName?.Trim());
+            return (providerId?.Trim() ?? "") + ":" + model;
+        }
+
+        private static string StripModelsPrefix(string model)
+        {
+            if (!string.IsNullOrEmpty(model) && model.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
+            {
+                return model.Substring("models/".Length);
+            }
+            return model ?? "";
         }
 
         private static readonly Dictionary<string, CostRate> KnownModelRates = new Dictionary<string, CostRate>(StringComparer.OrdinalIgnoreCase)
@@ -157,8 +203,10 @@ namespace RimLLM_Framework.Manager
                 foreach (var log in frameworkSettings.RequestLogs)
                 {
                     RequestLogs.Enqueue(log);
+                    Interlocked.Increment(ref _logCount);
                     CountOutcome(log.Provider, log.Success);
                 }
+                TrimLogs();
             }
         }
 
@@ -179,10 +227,8 @@ namespace RimLLM_Framework.Manager
             };
 
             RequestLogs.Enqueue(entry);
-            while (RequestLogs.Count > 30)
-            {
-                RequestLogs.TryDequeue(out _);
-            }
+            Interlocked.Increment(ref _logCount);
+            TrimLogs();
 
             CountOutcome(provider, success);
 
@@ -190,28 +236,34 @@ namespace RimLLM_Framework.Manager
             {
                 RimLLMDispatcher.EnqueueOnMainThread(() =>
                 {
+                    bool needSave;
                     lock (LogLock)
                     {
                         frameworkSettings.RequestLogs = new List<RimLLMManager.RequestLogEntry>(RequestLogs.ToArray());
                         // 節流：非成功或過了 15 秒以上才執行實體寫入（僅寫遙測 JSON，不動設定 XML）
                         if (!success || (DateTime.UtcNow - _lastLogWriteTime).TotalSeconds > 15)
                         {
-                            try
-                            {
-                                frameworkSettings.SaveTelemetry();
-                                _lastLogWriteTime = DateTime.UtcNow;
-                            }
-                            catch (Exception ex)
-                            {
-                                RimLLMLog.Warning($"[RimLLM] Throttled telemetry write failed: {ex.Message}");
-                            }
+                            _lastLogWriteTime = DateTime.UtcNow;
+                            // 寫檔在背景非同步進行：先標記待寫入，讓關閉時的 FlushTelemetryIfDirty
+                            // 能補上尚未完成或失敗的背景寫入；Save 成功會自行清除該標記。
+                            frameworkSettings.MarkTelemetryDirty();
+                            needSave = true;
                         }
                         else
                         {
                             // 被節流跳過的變更需標記為待寫入，關閉遊戲時才會強制 flush，
                             // 否則 session 最後一段用量永遠寫不進去。
                             frameworkSettings.MarkTelemetryDirty();
+                            needSave = false;
                         }
+                    }
+
+                    // AES 加密 + JSON 序列化 + 磁碟寫入改由背景單寫者執行，
+                    // 不再佔用主線程派遣器的 2ms 幀預算。記憶體內的 RequestLogs 更新仍在主線程，
+                    // 與既有 Scribe/設定寫入互斥語意一致。
+                    if (needSave)
+                    {
+                        QueueTelemetrySave(frameworkSettings);
                     }
                 });
             }
@@ -233,12 +285,92 @@ namespace RimLLM_Framework.Manager
             }
         }
 
+        private static readonly object SaveQueueLock = new object();
+        private static bool _telemetrySaveRunning;
+        private static bool _telemetrySaveRequested;
+
+        /// <summary>
+        /// 把遙測寫檔排入背景單寫者佇列。同一時間最多一個寫檔在跑，
+        /// 執行中若又有新請求，只合併為一次追寫（存檔讀的是執行當下的最新狀態，不會遺失）。
+        /// 寫檔本身（Save）為例外安全且以暫存檔原子替換，失敗會保留 IsDirty 由下次 flush 重試。
+        /// 背景寫檔持有 <see cref="LogLock"/>，與主線程的記憶體更新、ClearLogs 互斥，
+        /// 排序與過去「主線程內寫檔」一致；關閉時的 FlushTelemetryIfDirty 仍同步執行。
+        /// </summary>
+        private static void QueueTelemetrySave(RimLLMFrameworkSettings frameworkSettings)
+        {
+            lock (SaveQueueLock)
+            {
+                if (_telemetrySaveRunning)
+                {
+                    _telemetrySaveRequested = true;
+                    return;
+                }
+                _telemetrySaveRunning = true;
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    while (true)
+                    {
+                        try
+                        {
+                            lock (LogLock)
+                            {
+                                frameworkSettings.SaveTelemetry();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            RimLLMLog.Warning($"[RimLLM] Background telemetry write failed: {ex.Message}");
+                        }
+
+                        lock (SaveQueueLock)
+                        {
+                            if (!_telemetrySaveRequested)
+                            {
+                                _telemetrySaveRunning = false;
+                                return;
+                            }
+                            _telemetrySaveRequested = false;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lock (SaveQueueLock)
+                    {
+                        _telemetrySaveRunning = false;
+                        _telemetrySaveRequested = false;
+                    }
+                    RimLLMLog.Warning($"[RimLLM] Background telemetry writer failed: {ex.Message}");
+                }
+            });
+        }
+
+        /// <summary>
+        /// 以計數器為準修剪多餘日誌，避免 ConcurrentQueue.Count 的加鎖列舉。
+        /// </summary>
+        private void TrimLogs()
+        {
+            while (Volatile.Read(ref _logCount) > MaxRetainedLogs)
+            {
+                if (!RequestLogs.TryDequeue(out _))
+                {
+                    break;
+                }
+                Interlocked.Decrement(ref _logCount);
+            }
+        }
+
         /// <summary>
         /// 清空所有快取的請求日誌，並儲存設定。
         /// </summary>
         public void ClearLogs()
         {
             while (RequestLogs.TryDequeue(out _)) { }
+            Interlocked.Exchange(ref _logCount, 0);
             ProviderStatistics.Clear();
 
             if (_settings is RimLLMFrameworkSettings frameworkSettings)
@@ -366,9 +498,9 @@ namespace RimLLM_Framework.Manager
 
         private bool FindModelRate(string providerId, string modelName, out CostRate rate)
         {
-            string normProvider = NormalizeProvider(providerId);
-            string normModel = NormalizeModel(modelName);
-            string exactKey = $"{normProvider}:{normModel}";
+            // 字典本身為 OrdinalIgnoreCase，直接以未轉小寫的鍵查詢，省下每次的 ToLower 配置。
+            string normModel = StripModelsPrefix(modelName?.Trim());
+            string exactKey = (providerId?.Trim() ?? "") + ":" + normModel;
 
             if (KnownModelRates.TryGetValue(exactKey, out rate))
             {
@@ -379,7 +511,7 @@ namespace RimLLM_Framework.Manager
             string bestPrefixMatchKey = null;
             int bestPrefixLen = 0;
 
-            string providerPrefix = normProvider + ":";
+            string providerPrefix = (providerId?.Trim() ?? "") + ":";
             foreach (var kvp in KnownModelRates)
             {
                 if (kvp.Key.StartsWith(providerPrefix, StringComparison.OrdinalIgnoreCase))
@@ -408,27 +540,8 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         private static float GetCacheReadDiscount(string providerId)
         {
-            switch (NormalizeProvider(providerId))
-            {
-                case "gemini": return 0.25f;     // Gemini cachedContent 約為輸入價的 0.25x
-                case "deepseek": return 0.02f;
-                default: return 0.25f;
-            }
-        }
-
-        private static string NormalizeProvider(string providerId)
-        {
-            return (providerId ?? "").Trim().ToLowerInvariant();
-        }
-
-        private static string NormalizeModel(string modelName)
-        {
-            string model = (modelName ?? "").Trim().ToLowerInvariant();
-            if (model.StartsWith("models/"))
-            {
-                model = model.Substring("models/".Length);
-            }
-            return model;
+            if (string.Equals(providerId?.Trim(), "deepseek", StringComparison.OrdinalIgnoreCase)) return 0.02f;
+            return 0.25f;
         }
 
         #region Budget Ledger & Policy Gatekeeping

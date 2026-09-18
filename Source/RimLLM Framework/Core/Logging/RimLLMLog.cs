@@ -38,11 +38,30 @@ namespace RimLLM_Framework.Core
             RegexOptions.Compiled,
             TimeSpan.FromSeconds(1));
 
+        /// <summary>
+        /// 正則前快徑：訊息若不含任何金鑰指標子字串，正則必然無匹配，直接跳過。
+        /// 此處列出的每個指標都是對應正則分支的必要子字串（大小寫不敏感），
+        /// 因此跳過不會改變任何輸出，僅省下每請求一次的正則掃描。
+        /// </summary>
+        private static bool HasPotentialSecret(string value)
+        {
+            return value.IndexOf("api", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("authorization", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("key=", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("bearer", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("sk-", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("AIza", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("gsk_", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("xai-", StringComparison.OrdinalIgnoreCase) >= 0
+                || value.IndexOf("nvapi-", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         public static string SanitizeForLog(string value, int maxLength = 500)
         {
             if (string.IsNullOrEmpty(value)) return value;
 
-            string sanitized = SecretPattern.Replace(value, match =>
+            string sanitized = HasPotentialSecret(value)
+                ? SecretPattern.Replace(value, match =>
             {
                 string text = match.Value;
                 int idx = text.IndexOf('=');
@@ -52,7 +71,8 @@ namespace RimLLM_Framework.Core
                     return text.Substring(0, idx + 1) + "[redacted]";
                 }
                 return "[redacted-secret]";
-            });
+            })
+                : value;
 
             sanitized = sanitized.Replace("\r", "\\r").Replace("\n", "\\n");
             if (sanitized.Length > maxLength)

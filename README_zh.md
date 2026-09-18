@@ -316,7 +316,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 即時連線檢查，量測延遲並驗證 API 金鑰與模型。在基底類別實作一次，所有供應商共用。
 7. **執行緒安全與主執行緒 Scribe 派送**
    * 所有設定字典皆以鎖保護，防止多執行緒並發讀寫。
-   * `RecordLog` 觸發的 Scribe 寫入會透過 `RimLLMDispatcher` 派送回 Unity 主執行緒，並套用 15 秒寫入節流，避免背景存檔造成崩潰或 TPS 掉幀。
+   * `RecordLog` 的記憶體內日誌更新仍透過 `RimLLMDispatcher` 在 Unity 主執行緒執行，遙測寫檔（AES 加密＋JSON 序列化＋磁碟寫入）則由背景單寫者執行，並套用 15 秒寫入節流，避免背景存檔造成崩潰或 TPS 掉幀。
 8. **推理模型與思維鏈標記**
    * 原生支援 **Gemini 3.7 Flash / 3.1 Pro (Thinking)**、**OpenAI GPT-5.6 Sol / GPT-5.5**、**DeepSeek-V4-Pro / Flash**、**Grok 4.6**、**Qwen3.8-Max**、**Kimi K3**、**GLM-5.3-Flash** 等現代深度推理與思考模型。
    * 框架會把 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`）正規化成 MEAI 原生的 `TextReasoningContent`，放在 `ChatResponse.Messages` 與 `ChatResponseUpdate.Contents` 裡交給你。它刻意**不**被揉進 `ChatResponse.Text`：否則每一個讀 `Text` 的呼叫端（結構化輸出、快取鍵、JSON 解析）都得先把標籤剥掉。要保留或丟棄，依內容型別過濾即可。

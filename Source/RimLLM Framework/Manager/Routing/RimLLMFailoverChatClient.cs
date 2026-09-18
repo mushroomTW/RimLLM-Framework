@@ -143,9 +143,13 @@ namespace RimLLM_Framework.Manager
             }
 
             var candidate = state.Current;
-            RimLLMLog.Message(state.AttemptOnCurrent > 0
-                ? $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName}), retrying attempt {state.AttemptOnCurrent + 1}..."
-                : $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName})");
+            // 呼叫端包裝：關閉詳細日誌時連內插字串都不配置，輸出與原本（不輸出）完全一致。
+            if (RimLLMLog.Enabled)
+            {
+                RimLLMLog.Message(state.AttemptOnCurrent > 0
+                    ? $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName}), retrying attempt {state.AttemptOnCurrent + 1}..."
+                    : $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName})");
+            }
 
             return new RimLLMProviderChatClient(candidate.Provider, candidate.ModelName, _settings);
         }
@@ -164,7 +168,10 @@ namespace RimLLM_Framework.Manager
                 float delay = RimLLMFallbackPipeline.ResolveRetryDelay(
                     _settings.RetryDelay, state.AttemptOnCurrent, state.LastException);
 
-                RimLLMLog.Warning($"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) call failed: {RimLLMLog.SanitizeForLog(state.LastException?.Message, 300)}. Retrying in {delay:F1} seconds...");
+                if (RimLLMLog.Enabled)
+                {
+                    RimLLMLog.Warning($"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) call failed: {RimLLMLog.SanitizeForLog(state.LastException?.Message, 300)}. Retrying in {delay:F1} seconds...");
+                }
                 if (delay > 0f)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(delay), cancellationToken).ConfigureAwait(false);
@@ -176,14 +183,20 @@ namespace RimLLM_Framework.Manager
 
             if (!retryable)
             {
-                RimLLMLog.Warning($"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) returned a non-retryable error: {RimLLMLog.SanitizeForLog(state.LastException?.Message, 300)}. Fallbacking to the next entry.");
-                // 非重試類錯誤多半是請求組裝或 SDK 層的問題，只有訊息無從定位；
-                // 詳細日誌開啟時一併輸出完整例外鏈與堆疊。
-                RimLLMLog.Message($"[RimLLM] Non-retryable error detail:\n{RimLLMLog.SanitizeForLog(state.LastException?.ToString(), 4000)}");
+                if (RimLLMLog.Enabled)
+                {
+                    RimLLMLog.Warning($"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) returned a non-retryable error: {RimLLMLog.SanitizeForLog(state.LastException?.Message, 300)}. Fallbacking to the next entry.");
+                    // 非重試類錯誤多半是請求組裝或 SDK 層的問題，只有訊息無從定位；
+                    // 詳細日誌開啟時一併輸出完整例外鏈與堆疊。
+                    RimLLMLog.Message($"[RimLLM] Non-retryable error detail:\n{RimLLMLog.SanitizeForLog(state.LastException?.ToString(), 4000)}");
+                }
             }
             else
             {
-                RimLLMLog.Warning($"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
+                if (RimLLMLog.Enabled)
+                {
+                    RimLLMLog.Warning($"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
+                }
             }
 
             // 換手之前結算這個候選的健康度。一次請求對同一個候選的所有重試合計只記一次
@@ -268,7 +281,10 @@ namespace RimLLM_Framework.Manager
             }
             catch (Exception ex)
             {
-                RimLLMLog.Warning($"[RimLLM] Failed to record routing outcome: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                if (RimLLMLog.Enabled)
+                {
+                    RimLLMLog.Warning($"[RimLLM] Failed to record routing outcome: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                }
             }
 
             return default(ste::System.Threading.Tasks.ValueTask);

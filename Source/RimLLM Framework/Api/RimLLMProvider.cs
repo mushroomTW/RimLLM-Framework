@@ -95,6 +95,33 @@ namespace RimLLM_Framework
         {
             return Manager.GetEffectiveCapabilities(preferredModelId);
         }
+
+        /// <summary>
+        /// 非拋版能力查詢，供相容層高頻輪詢使用，避免離線時以例外控制流程。
+        /// 語意與 <see cref="GetEffectiveCapabilities"/> 一致，僅以傳回值取代擲出。
+        /// </summary>
+        internal static bool TryGetEffectiveCapabilities(string preferredModelId, out LLMProviderCapabilities capabilities, out string failureReason)
+        {
+            try
+            {
+                return Manager.TryGetEffectiveCapabilities(preferredModelId, out capabilities, out failureReason);
+            }
+            catch (Exception ex)
+            {
+                // Manager 尚未初始化等啟動順序異常視為不接管，呼叫端以警告節流記錄。
+                capabilities = null;
+                failureReason = $"{ex.GetType().Name}: {ex.Message}";
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 非拋版能力查詢（預設模型），供相容層高頻輪詢使用。
+        /// </summary>
+        internal static bool TryGetEffectiveCapabilities(out LLMProviderCapabilities capabilities, out string failureReason)
+        {
+            return TryGetEffectiveCapabilities(null, out capabilities, out failureReason);
+        }
     }
 #pragma warning restore S101, S2342
 }

@@ -71,9 +71,12 @@ namespace RimLLM_Framework.Manager
                 if (_globalRequestTimestamps.Count >= globalMaxRequests)
                 {
                     _globalCoolDownUntil = now.AddSeconds(_settings.CoolDownDurationSeconds);
-                    RimLLMLog.Warning(
-                        $"[RimLLM] Shared API anti-abuse limit reached ({globalMaxRequests} requests). " +
-                        $"Cooling down until {_globalCoolDownUntil.ToLocalTime()}.");
+                    if (RimLLMLog.Enabled)
+                    {
+                        RimLLMLog.Warning(
+                            $"[RimLLM] Shared API anti-abuse limit reached ({globalMaxRequests} requests). " +
+                            $"Cooling down until {_globalCoolDownUntil.ToLocalTime()}.");
+                    }
                     throw new RimLLMException(
                         LLMError.RateLimit,
                         $"[RimLLM] Shared API anti-abuse limit reached. " +
@@ -96,7 +99,10 @@ namespace RimLLM_Framework.Manager
                 {
                     DateTime cdUntil = now.AddSeconds(_settings.CoolDownDurationSeconds);
                     _coolDownUntil[modId] = cdUntil;
-                    RimLLMLog.Warning($"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
+                    if (RimLLMLog.Enabled)
+                    {
+                        RimLLMLog.Warning($"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
+                    }
                     throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
                 }
             }

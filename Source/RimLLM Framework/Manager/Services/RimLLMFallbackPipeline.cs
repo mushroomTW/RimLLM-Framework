@@ -61,38 +61,62 @@ namespace RimLLM_Framework.Manager
         /// </param>
         internal List<ResolvedCandidate> ResolveCandidates(string preferredModelId, string minFallbackLevel, bool includeCoolingDown = false)
         {
+            if (!TryResolveCandidates(preferredModelId, minFallbackLevel, includeCoolingDown, out List<ResolvedCandidate> candidates, out string failureReason))
+            {
+                throw new RimLLMException(LLMError.ProviderOffline, failureReason);
+            }
+
+            return candidates;
+        }
+
+        /// <summary>
+        /// 非拋版候選解析，供每秒輪詢的接管判定使用，避免離線時每秒配置例外與堆疊。
+        /// 語意與 <see cref="ResolveCandidates"/> 完全一致，僅以傳回值取代擲出。
+        /// </summary>
+        internal bool TryResolveCandidates(string preferredModelId, string minFallbackLevel, bool includeCoolingDown, out List<ResolvedCandidate> candidates, out string failureReason)
+        {
             var fallbackChain = GetFallbackChainSnapshot();
             if (fallbackChain == null || fallbackChain.Count == 0)
             {
-                throw new RimLLMException(LLMError.ProviderOffline, "No valid API provider fallback chain configured.");
+                candidates = null;
+                failureReason = "No valid API provider fallback chain configured.";
+                return false;
             }
+
+            // 同一供應商常在鏈上出現多次（例如三個 OpenRouter 模型），API 金鑰在單次解析內不變，
+            // 以區域快取去重，避免每個條目各拿一次設定鎖。單次解析的一致快照，語意不變。
+            var apiKeyCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             // PreferredModelId（格式 "ProviderId:ModelName"）指定的話，於 fallback chain 前優先嘗試
             var effectiveChain = new List<string>(fallbackChain);
-            PrependPreferredModelIfUsable(effectiveChain, preferredModelId);
+            PrependPreferredModelIfUsable(effectiveChain, preferredModelId, apiKeyCache);
 
             // 1. 解析所有符合資格的供應商候選
-            var candidates = new List<ResolvedCandidate>();
+            var resolved = new List<ResolvedCandidate>();
             foreach (string entry in effectiveChain)
             {
-                if (TryGetEligibleCandidate(entry, minFallbackLevel, out string pId, out ILLMProvider p, out string mName))
+                if (TryGetEligibleCandidate(entry, minFallbackLevel, apiKeyCache, out string pId, out ILLMProvider p, out string mName))
                 {
-                    candidates.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
+                    resolved.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
                 }
             }
 
-            if (candidates.Count == 0)
+            if (resolved.Count == 0)
             {
-                throw new RimLLMException(LLMError.ProviderOffline, "No eligible API providers found in the fallback chain.");
+                candidates = null;
+                failureReason = "No eligible API providers found in the fallback chain.";
+                return false;
             }
 
             // 2. 過濾處於故障冷卻期的候選（若全部都在冷卻中，則破例放行）
+            // 全組共用同一個時間戳：逐候選各取一次 UtcNow 既浪費又讓比較基準漂移。
+            DateTime now = DateTime.UtcNow;
             var activeCandidates = includeCoolingDown
-                ? candidates
-                : candidates.FindAll(c => !_healthLedger.IsInCooldown(HealthKey(c)));
+                ? resolved
+                : resolved.FindAll(c => !_healthLedger.IsInCooldown(HealthKey(c), now));
             if (activeCandidates.Count == 0)
             {
-                activeCandidates = candidates;
+                activeCandidates = resolved;
             }
 
             // 3. 套用路由與負載均衡策略
@@ -119,7 +143,9 @@ namespace RimLLM_Framework.Manager
                     break;
             }
 
-            return activeCandidates;
+            candidates = activeCandidates;
+            failureReason = null;
+            return true;
         }
 
 
@@ -219,7 +245,7 @@ namespace RimLLM_Framework.Manager
             lock (RandomLock) { return SharedRandom.Next(maxExclusive); }
         }
 
-        private void PrependPreferredModelIfUsable(List<string> effectiveChain, string preferredModelId)
+        private void PrependPreferredModelIfUsable(List<string> effectiveChain, string preferredModelId, Dictionary<string, string> apiKeyCache)
         {
             if (string.IsNullOrEmpty(preferredModelId)) return;
 
@@ -232,7 +258,7 @@ namespace RimLLM_Framework.Manager
             }
 
             if (prefProvider != null && (_providerResolver(prefProvider) is ILLMProvider prefProviderInstance)
-                && IsProviderUsable(prefProvider, prefProviderInstance)
+                && IsProviderUsable(prefProvider, prefProviderInstance, apiKeyCache)
                 && !effectiveChain.Exists(e => string.Equals(e, preferredEntry, StringComparison.OrdinalIgnoreCase)))
             {
                 effectiveChain.Insert(0, preferredEntry);
@@ -272,13 +298,21 @@ namespace RimLLM_Framework.Manager
 #pragma warning restore S1168
         }
 
-        private bool IsProviderUsable(string providerId, ILLMProvider provider)
+        private bool IsProviderUsable(string providerId, ILLMProvider provider, Dictionary<string, string> apiKeyCache)
         {
-            return _isProviderEnabledFunc(providerId) &&
-                   (!provider.RequiresApiKey || !string.IsNullOrEmpty(_settings.GetApiKey(providerId)));
+            if (!_isProviderEnabledFunc(providerId)) return false;
+            if (!provider.RequiresApiKey) return true;
+            if (apiKeyCache != null && apiKeyCache.TryGetValue(providerId, out string cachedKey))
+            {
+                return !string.IsNullOrEmpty(cachedKey);
+            }
+
+            string apiKey = _settings.GetApiKey(providerId);
+            apiKeyCache?.Add(providerId, apiKey);
+            return !string.IsNullOrEmpty(apiKey);
         }
 
-        private bool TryGetEligibleCandidate(string entry, string minFallbackLevel, out string providerId, out ILLMProvider provider, out string modelName)
+        private bool TryGetEligibleCandidate(string entry, string minFallbackLevel, Dictionary<string, string> apiKeyCache, out string providerId, out ILLMProvider provider, out string modelName)
         {
             provider = null;
 
@@ -289,13 +323,13 @@ namespace RimLLM_Framework.Manager
             if (provider == null)
                 return false;
 
-            if (!IsProviderUsable(providerId, provider))
+            if (!IsProviderUsable(providerId, provider, apiKeyCache))
                 return false;
 
             // Budget fallback to free (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)
             if (_settings.BudgetPolicy == 2 &&
                 _settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit &&
-                providerId != ProviderIds.OpenAICompatible && !modelName.ToLower().Contains("free"))
+                providerId != ProviderIds.OpenAICompatible && (modelName == null || modelName.IndexOf("free", StringComparison.OrdinalIgnoreCase) < 0))
             {
                 return false;
             }
@@ -307,7 +341,10 @@ namespace RimLLM_Framework.Manager
                 int currentModelLevel = GetModelLevel(entry, providerId, modelName);
                 if (currentModelLevel < minLevel)
                 {
-                    RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
+                    if (RimLLMLog.Enabled)
+                    {
+                        RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
+                    }
                     return false;
                 }
             }
