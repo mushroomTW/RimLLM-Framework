@@ -3,6 +3,7 @@ extern alias ste;
 using System;
 using System.ClientModel;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -19,14 +20,28 @@ namespace RimLLM_Framework.Providers
     /// <summary>
     /// OpenAI API 供應商，支援 Chat Completion 與 SSE 串流。
     /// </summary>
-    public class OpenAIProvider : BaseHttpProvider
+    public class OpenAIProvider : ILLMProvider
     {
+        protected readonly IRimLLMSettings Settings;
         private readonly string _providerId;
         private readonly string _defaultEndpoint;
         private readonly string _defaultTestModel;
 
-        public override string ProviderId => _providerId;
+        static OpenAIProvider()
+        {
+            // 初始化安全協定，解決 Unity/Mono 環境下部分舊版 HTTPS 憑證握手問題。
+            // 確保任何供應商被建立時就生效（含只走官方 SDK 的路徑）。
+            System.Net.ServicePointManager.SecurityProtocol =
+                System.Net.SecurityProtocolType.Tls12;
+        }
+
+        public virtual string ProviderId => _providerId;
         protected virtual string DefaultEndpoint => _defaultEndpoint;
+
+        /// <summary>
+        /// 此供應商是否必須提供 API Key 才能使用。預設為 true，本地相容介面可覆寫為 false。
+        /// </summary>
+        public virtual bool RequiresApiKey => true;
 
         /// <summary>
         /// 衍生 provider 是否支援 OpenAI 相容的 <c>response_format: json_schema</c> 欄位。
@@ -35,7 +50,7 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         protected virtual bool SupportsNativeJsonSchemaPayload => true;
 
-        public override LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
+        public virtual LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
         {
             SupportsNativeStructuredOutput = SupportsNativeJsonSchemaPayload,
             SupportsStreaming = true,
@@ -51,14 +66,14 @@ namespace RimLLM_Framework.Providers
         }
 
         protected OpenAIProvider(IRimLLMSettings settings, string providerId, string defaultEndpoint, string defaultTestModel)
-            : base(settings)
         {
+            Settings = settings;
             _providerId = providerId;
             _defaultEndpoint = defaultEndpoint;
             _defaultTestModel = defaultTestModel;
         }
 
-        public override IChatClient CreateChatClient(string model)
+        public virtual IChatClient CreateChatClient(string model)
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             if (string.IsNullOrEmpty(apiKey) && !RequiresApiKey)
@@ -559,13 +574,73 @@ namespace RimLLM_Framework.Providers
                    name.StartsWith("gpt-5");
         }
 
-        protected override string DefaultTestModel => _defaultTestModel;
+        public virtual async Task<TestResult> TestConnectionAsync()
+        {
+            string apiKey = Settings.GetActiveApiKey(ProviderId);
+            if (string.IsNullOrEmpty(apiKey) && RequiresApiKey)
+            {
+                return new TestResult { Success = false, Provider = ProviderId, ErrorMessage = "API Key not configured", ErrorCode = LLMError.InvalidKey };
+            }
+
+            var result = new TestResult { Provider = ProviderId };
+            var stopwatch = Stopwatch.StartNew();
+
+            try
+            {
+                var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "ping") };
+                // 輸出上限不能壓到極低：思考型模型會先把額度花在內部推理上，
+                // 額度用盡時回傳的 content 是空的，連線其實正常卻會被判成「回傳空白內容」。
+                // 因此給足額度並明確要求關閉思考，讓測試只反映「連線與金鑰是否可用」。
+                var options = new ChatOptions { MaxOutputTokens = 256 };
+                options.AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    ["rimllm_disable_reasoning"] = true
+                };
+                // 優先使用 DefaultTestModel 作為連線測試模型，因為這是最便宜且穩定的內建對話模型。
+                // 只有在 DefaultTestModel 為 "default" (如 OpenAICompatible 本地相容介面) 時，才去讀取快取清單的第一個模型。
+                string testModel = DefaultTestModel;
+                if (testModel == "default")
+                {
+                    testModel = Settings.GetDefaultModel(ProviderId, DefaultTestModel);
+                }
+
+                using (IChatClient client = CreateChatClient(testModel))
+                {
+                    await client.GetResponseAsync(messages, options).ConfigureAwait(false);
+                    stopwatch.Stop();
+
+                    result.Success = true;
+                    result.Model = testModel;
+                    result.LatencyMs = stopwatch.ElapsedMilliseconds;
+                }
+            }
+            catch (RimLLMException ex)
+            {
+                stopwatch.Stop();
+                result.Success = false;
+                result.ErrorMessage = ex.Message;
+                result.ErrorCode = ex.Error;
+                result.LatencyMs = stopwatch.ElapsedMilliseconds;
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                result.Success = false;
+                result.ErrorMessage = ex.Message;
+                result.ErrorCode = LLMError.Unknown;
+                result.LatencyMs = stopwatch.ElapsedMilliseconds;
+            }
+
+            return result;
+        }
+
+        protected virtual string DefaultTestModel => _defaultTestModel;
 
         /// <summary>
         /// 透過官方 SDK 的 /models 端點取得可用模型清單。
         /// 端點正規化與 chat client 共用同一份邏輯，不再手動改寫 URL。
         /// </summary>
-        public override async Task<List<string>> FetchAvailableModelsAsync()
+        public virtual async Task<List<string>> FetchAvailableModelsAsync()
         {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string endpoint = NormalizeEndpoint(

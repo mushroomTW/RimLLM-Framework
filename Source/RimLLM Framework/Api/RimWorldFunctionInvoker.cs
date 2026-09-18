@@ -42,10 +42,9 @@ namespace RimLLM_Framework.Api
                     // 確保工具執行調度至 Unity 主執行緒。
                     // 內層刻意不加 ConfigureAwait(false)：工具若含 await，續行必須沿著主執行緒的
                     // SynchronizationContext 回到主線程，否則後半段仍會在執行緒池碰遊戲狀態。
-                    return await RimLLMDispatcher.EnqueueOnMainThreadAsync(async () =>
-                    {
-                        return await context.Function.InvokeAsync(context.Arguments, cancellationToken);
-                    }).ConfigureAwait(false);
+                    return await RimLLMDispatcher.EnqueueOnMainThreadAsync(
+                        () => context.Function.InvokeAsync(context.Arguments, cancellationToken)
+                    ).ConfigureAwait(false);
                 }
             };
         }

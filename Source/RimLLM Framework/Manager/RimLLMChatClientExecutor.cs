@@ -306,8 +306,8 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 將官方 SDK 拋出的 ClientResultException 對照為既有 raw HTTP 路徑的 LLMError 語意
-        /// （與 BaseHttpProvider.ThrowHttpError 的狀態碼對照一致）。
+        /// 將官方 SDK 拋出的 ClientResultException 對照為 LLMError 語意
+        /// （與 LLMErrorMapper 的狀態碼對照一致）。
         /// </summary>
         private static RimLLMException MapChatClientException(ClientResultException ex)
         {
@@ -345,8 +345,7 @@ namespace RimLLM_Framework.Manager
         {
             try
             {
-                // 交給 LLMErrorMapper 統一解析：秒數與 HTTP 日期兩種格式都吃，
-                // 與 raw HTTP 路徑（BaseHttpProvider）行為一致。
+                // 交給 LLMErrorMapper 統一解析：秒數與 HTTP 日期兩種格式都吃。
                 return ex.GetRawResponse()?.Headers.TryGetValue("Retry-After", out string value) == true
                     ? LLMErrorMapper.ParseRetryAfter(value)
                     : null;
