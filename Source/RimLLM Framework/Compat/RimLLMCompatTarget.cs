@@ -73,6 +73,16 @@ namespace RimLLM_Framework.Compat
         public virtual void OnTakeoverToggled(bool enabled)
         {
         }
+
+        /// <summary>
+        /// 判斷是否為框架未就緒（Manager 尚未初始化）的啟動順序異常，而非單純無可用供應商。
+        /// </summary>
+        internal static bool IsNotReadyReason(string failureReason)
+        {
+            return !string.IsNullOrEmpty(failureReason) &&
+                (failureReason.IndexOf("InvalidOperationException", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 failureReason.IndexOf("has not been initialized", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
     }
 #pragma warning restore S101
 }

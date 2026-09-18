@@ -202,23 +202,21 @@ namespace RimLLM_Framework.Compat
                 return false;
             }
 
-            try
+            // 高頻查詢走非拋版路徑：離線與未就緒都不再以例外控制流程。
+            if (RimLLMProvider.TryGetEffectiveCapabilities(out _, out string failureReason))
             {
-                RimLLMProvider.GetEffectiveCapabilities();
                 return true;
             }
-            catch (RimLLMException ex)
+
+            if (RimLLMCompatTarget.IsNotReadyReason(failureReason))
             {
-                WarnThrottled($"ModCompatChecker 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 ModCompatChecker 原生路徑。原因：{ex.Message}");
-                return false;
+                WarnThrottled($"ModCompatChecker 接管已開啟，但框架尚未就緒，本次退回 ModCompatChecker 原生路徑。原因：{failureReason}");
             }
-            catch (Exception ex)
+            else
             {
-                // Manager 尚未初始化（InvalidOperationException）等啟動順序異常：
-                // 視為不接管，避免例外從 IsAIConfiguredPostfix（UI 執行緒）等處外洩。
-                WarnThrottled($"ModCompatChecker 接管已開啟，但框架尚未就緒，本次退回 ModCompatChecker 原生路徑。原因：{ex.GetType().Name}: {ex.Message}");
-                return false;
+                WarnThrottled($"ModCompatChecker 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 ModCompatChecker 原生路徑。原因：{failureReason}");
             }
+            return false;
         }
 
         private static void WarnThrottled(string reason)

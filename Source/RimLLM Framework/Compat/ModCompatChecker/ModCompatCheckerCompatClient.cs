@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
@@ -64,27 +65,39 @@ namespace RimLLM_Framework.Compat
             {
                 Task<ChatResponse> task = Task.Run(() => Chat.GetResponseAsync(messages, options, cts.Token));
 
-                DateTime start = DateTime.UtcNow;
-                while (!task.IsCompleted)
+                // 逾時期限只算一次，迴圈內每次疊代只取一次 UtcNow。
+                DateTime deadline = limit.HasValue ? DateTime.UtcNow + limit.Value : DateTime.MaxValue;
+                try
                 {
-                    if (cancelFlag)
+                    // 以 Wait(50) 取代 IsCompleted + Sleep 輪詢：任務完成時立刻醒來，
+                    // 不再有最長 50ms 的睡眠 overshoot；取消旗標維持約 50ms 粒度輪詢。
+                    while (!task.Wait(50))
                     {
-                        try
+                        if (cancelFlag)
                         {
-                            cts.Cancel();
+                            try
+                            {
+                                cts.Cancel();
+                            }
+                            catch (Exception)
+                            {
+                                // 取消 signal 盡力而為；取消語意由下面的例外保證。
+                            }
+                            throw new OperationCanceledException("ModCompatChecker 分析已由使用者取消，不再等待 RimLLM 回應。");
                         }
-                        catch (Exception)
+                        if (DateTime.UtcNow >= deadline)
                         {
-                            // 取消 signal 盡力而為；取消語意由下面的例外保證。
+                            // 供應商無視取消 token 時 cts 不會讓 task 失敗，此處兜底超時，不無限等待。
+                            throw new TimeoutException($"ModCompatChecker 分析經 RimLLM 請求逾時（{timeoutSeconds} 秒）。");
                         }
-                        throw new OperationCanceledException("ModCompatChecker 分析已由使用者取消，不再等待 RimLLM 回應。");
                     }
-                    if (limit.HasValue && DateTime.UtcNow - start >= limit.Value)
-                    {
-                        // 供應商無視取消 token 時 cts 不會讓 task 失敗，此處兜底超時，不無限等待。
-                        throw new TimeoutException($"ModCompatChecker 分析經 RimLLM 請求逾時（{timeoutSeconds} 秒）。");
-                    }
-                    Thread.Sleep(50);
+                }
+                catch (AggregateException agg)
+                {
+                    // Wait 的錯誤包裝與 IsCompleted 輪詢不同：保留原始例外型別與堆疊，
+                    // 讓呼叫端的取消／逾時／RimLLMException 分流維持不變。
+                    ExceptionDispatchInfo.Capture(agg.InnerException ?? (Exception)agg).Throw();
+                    throw;
                 }
 
                 // GetAwaiter().GetResult() 直接解包內層例外（不會是 AggregateException，

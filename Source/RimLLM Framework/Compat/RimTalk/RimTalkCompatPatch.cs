@@ -218,23 +218,21 @@ namespace RimLLM_Framework.Compat
                 return false;
             }
 
-            try
+            // 高頻輪詢走非拋版查詢：離線時不再每秒配置例外與堆疊，警告內容與節流維持不變。
+            if (RimLLMProvider.TryGetEffectiveCapabilities(out _, out string failureReason))
             {
-                RimLLMProvider.GetEffectiveCapabilities();
                 return true;
             }
-            catch (RimLLMException ex)
+
+            // RimTalk 對話頻率高，警告限一分鐘一次，避免洗版。
+            // 刻意不走 RimLLMLog（受 DetailedLogging 開關遮蔽）：這是玩家唯一能得知接管被降級的線索。
+            DateTime now = DateTime.UtcNow;
+            if (now - _lastOfflineWarning >= OfflineWarningInterval)
             {
-                // RimTalk 對話頻率高，警告限一分鐘一次，避免洗版。
-                // 刻意不走 RimLLMLog（受 DetailedLogging 開關遮蔽）：這是玩家唯一能得知接管被降級的線索。
-                DateTime now = DateTime.UtcNow;
-                if (now - _lastOfflineWarning >= OfflineWarningInterval)
-                {
-                    _lastOfflineWarning = now;
-                    Log.Warning($"[RimLLM] 相容層：RimTalk 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 RimTalk 原生路徑。原因：{ex.Message}");
-                }
-                return false;
+                _lastOfflineWarning = now;
+                Log.Warning($"[RimLLM] 相容層：RimTalk 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 RimTalk 原生路徑。原因：{failureReason}");
             }
+            return false;
         }
     }
 }
