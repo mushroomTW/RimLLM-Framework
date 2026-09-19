@@ -643,6 +643,47 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void ProviderCapabilitiesAreReusedAcrossReads()
+        {
+            var provider = new OpenAIProvider(new MockSettings());
+
+            ClassicAssert.AreSame(provider.Capabilities, provider.Capabilities, "能力描述應只建立一次並重用。");
+            ClassicAssert.IsTrue(provider.Capabilities.SupportsFunctionCalling);
+        }
+
+        [Test]
+        public void PublicCapabilitiesQueryReturnsCopy()
+        {
+            var manager = new RimLLMManager(new MockSettings());
+
+            LLMProviderCapabilities first = manager.GetProviderCapabilities(ProviderIds.OpenAI);
+            first.SupportsFunctionCalling = false;
+
+            ClassicAssert.IsTrue(
+                manager.GetProviderCapabilities(ProviderIds.OpenAI).SupportsFunctionCalling,
+                "公開 API 交出的必須是複本，改動不得影響供應商內部重用的實例。");
+        }
+
+        private sealed class SchemaElementPayload
+        {
+            public string Name { get; set; }
+            public int Count { get; set; }
+        }
+
+        [Test]
+        public void SchemaResultElementMatchesJsonAndIsStable()
+        {
+            RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(SchemaElementPayload));
+
+            System.Text.Json.JsonElement a = schema.Element;
+            System.Text.Json.JsonElement b = schema.Element;
+
+            ClassicAssert.AreEqual(schema.Json, a.GetRawText(), "快取的 Element 必須與 Json 字串同源。");
+            ClassicAssert.AreEqual(a.GetRawText(), b.GetRawText());
+            ClassicAssert.AreEqual(System.Text.Json.JsonValueKind.Object, a.ValueKind);
+        }
+
+        [Test]
         public void GetOrCreateSanitizedOptionsCreatesOrSanitizesOptions()
         {
             // Case 1: baseFactory 為 null

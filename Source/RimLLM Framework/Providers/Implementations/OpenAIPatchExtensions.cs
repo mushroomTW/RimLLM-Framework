@@ -61,4 +61,23 @@ namespace RimLLM_Framework.Providers
         }
     }
 #pragma warning restore S3011
+
+    /// <summary>
+    /// Patch 常用的 JSON 路徑，預先編碼成 UTF-8。路徑字面值固定，每請求重新
+    /// <c>Encoding.UTF8.GetBytes</c> 只是製造短命配置；陣列唯讀不改，跨請求共用安全。
+    /// </summary>
+    internal static class OpenAIPatchPaths
+    {
+        public static readonly byte[] ResponseFormat = System.Text.Encoding.UTF8.GetBytes("$.response_format");
+        public static readonly byte[] MaxCompletionTokens = System.Text.Encoding.UTF8.GetBytes("$.max_completion_tokens");
+        public static readonly byte[] MaxTokens = System.Text.Encoding.UTF8.GetBytes("$.max_tokens");
+        public static readonly byte[] ReasoningEffort = System.Text.Encoding.UTF8.GetBytes("$.reasoning_effort");
+        public static readonly byte[] Reasoning = System.Text.Encoding.UTF8.GetBytes("$.reasoning");
+        public static readonly byte[] Thinking = System.Text.Encoding.UTF8.GetBytes("$.thinking");
+        public static readonly byte[] EnableThinking = System.Text.Encoding.UTF8.GetBytes("$.enable_thinking");
+        public static readonly byte[] ThinkingBudget = System.Text.Encoding.UTF8.GetBytes("$.thinking_budget");
+        public static readonly byte[] StreamOptions = System.Text.Encoding.UTF8.GetBytes("$.stream_options");
+        public static readonly byte[] Model = System.Text.Encoding.UTF8.GetBytes("$.model");
+        public static readonly byte[] Models = System.Text.Encoding.UTF8.GetBytes("$.models");
+    }
 }

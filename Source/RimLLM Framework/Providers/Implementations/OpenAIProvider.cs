@@ -50,7 +50,14 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         protected virtual bool SupportsNativeJsonSchemaPayload => true;
 
-        public virtual LLMProviderCapabilities Capabilities => new LLMProviderCapabilities
+        /// <summary>
+        /// 能力描述在第一次存取時建立並重用：相容層每秒輪詢對每個候選都會讀一次，
+        /// 每次請求也讀兩次，逐次 new 只是白白製造 GC 壓力。延遲建立而非建構子建立，
+        /// 是因為 <see cref="SupportsNativeJsonSchemaPayload"/> 為虛擬屬性，子類覆寫在建構子期間尚不可靠。
+        /// </summary>
+        private LLMProviderCapabilities _capabilities;
+
+        public virtual LLMProviderCapabilities Capabilities => _capabilities ?? (_capabilities = new LLMProviderCapabilities
         {
             SupportsNativeStructuredOutput = SupportsNativeJsonSchemaPayload,
             SupportsStreaming = true,
@@ -58,7 +65,7 @@ namespace RimLLM_Framework.Providers
             // 官方 OpenAI SDK 的 IChatClient 會把 ChatOptions.Tools 轉成 tools 欄位送出，
             // OpenAI 相容端點（DeepSeek / Grok / Qwen 等子類）同樣支援。
             SupportsFunctionCalling = true
-        };
+        });
 
         public OpenAIProvider(IRimLLMSettings settings)
             : this(settings, ProviderIds.OpenAI, "https://api.openai.com/v1/chat/completions", "gpt-4o-mini")
@@ -269,21 +276,21 @@ namespace RimLLM_Framework.Providers
                 if (responseFormatJson != null)
                 {
                     chatCompletionOptions.Patch.Set(
-                        Encoding.UTF8.GetBytes("$.response_format"),
+                        OpenAIPatchPaths.ResponseFormat,
                         Encoding.UTF8.GetBytes(responseFormatJson));
                 }
 
                 if (rewriteMaxTokens)
                 {
-                    chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.max_completion_tokens"));
-                    chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.max_tokens"), maxTokens);
+                    chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.MaxCompletionTokens);
+                    chatCompletionOptions.Patch.Set(OpenAIPatchPaths.MaxTokens, maxTokens);
                 }
 
                 // 只有 OpenAIEffort 方言會自己寫回 reasoning_effort，其餘方言一律先清掉，
                 // 避免 SDK 或上一層留下的欄位與方言欄位同時出現而互相矛盾。
                 if (format != ReasoningWireFormat.OpenAIEffort || effortLiteral == null)
                 {
-                    chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.reasoning_effort"));
+                    chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.ReasoningEffort);
                 }
 
                 if (effortLiteral == null) return chatCompletionOptions;
@@ -292,36 +299,36 @@ namespace RimLLM_Framework.Providers
                 {
                     case ReasoningWireFormat.OpenAIEffort:
                         chatCompletionOptions.Patch.Set(
-                            Encoding.UTF8.GetBytes("$.reasoning_effort"),
+                            OpenAIPatchPaths.ReasoningEffort,
                             JsonSerializer.SerializeToUtf8Bytes(effortLiteral));
                         break;
 
                     case ReasoningWireFormat.OpenRouterReasoning:
                         chatCompletionOptions.Patch.Set(
-                            Encoding.UTF8.GetBytes("$.reasoning"),
+                            OpenAIPatchPaths.Reasoning,
                             JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { { "effort", effortLiteral } }));
                         break;
 
                     case ReasoningWireFormat.ThinkingSwitch:
                         chatCompletionOptions.Patch.Set(
-                            Encoding.UTF8.GetBytes("$.thinking"),
+                            OpenAIPatchPaths.Thinking,
                             JsonSerializer.SerializeToUtf8Bytes(
                                 new Dictionary<string, string> { { "type", thinkingEnabled ? "enabled" : "disabled" } }));
                         if (thinkingEnabled)
                         {
                             chatCompletionOptions.Patch.Set(
-                                Encoding.UTF8.GetBytes("$.reasoning_effort"),
+                                OpenAIPatchPaths.ReasoningEffort,
                                 JsonSerializer.SerializeToUtf8Bytes(effortLiteral));
                         }
                         break;
 
                     case ReasoningWireFormat.EnableThinkingFlag:
                         chatCompletionOptions.Patch.Set(
-                            Encoding.UTF8.GetBytes("$.enable_thinking"), thinkingEnabled);
+                            OpenAIPatchPaths.EnableThinking, thinkingEnabled);
                         if (thinkingEnabled && effort.HasValue)
                         {
                             chatCompletionOptions.Patch.Set(
-                                Encoding.UTF8.GetBytes("$.thinking_budget"), ResolveThinkingBudget(effort.Value));
+                                OpenAIPatchPaths.ThinkingBudget, ResolveThinkingBudget(effort.Value));
                         }
                         break;
                 }

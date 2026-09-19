@@ -120,7 +120,7 @@ namespace RimLLM_Framework.Mod
         public static float GetHeight(float width)
         {
             string providerId = ActiveEmbeddingSubTab;
-            int modelCount = Settings.GetModelList(RimLLMEmbeddingService.GetModelListKey(providerId)).Count;
+            int modelCount = Settings.GetModelCount(RimLLMEmbeddingService.GetModelListKey(providerId));
             if (modelCount == 0 && DefaultPresetModels.TryGetValue(providerId, out var presets))
             {
                 modelCount = presets.Count;
@@ -461,10 +461,12 @@ namespace RimLLM_Framework.Mod
             DrawModelInputField(listing, providerId);
 
             listing.Label("RimLLM_AvailableModelsTitle".Translate());
-            var availableModels = ResolveAvailableModels(providerId, out bool isPreset);
-            var modelList = availableModels as IList<string> ?? availableModels.ToList();
+            string modelListKey = RimLLMEmbeddingService.GetModelListKey(providerId);
+            int cachedCount = Settings.GetModelCount(modelListKey);
+            bool isPreset = cachedCount == 0 && DefaultPresetModels.ContainsKey(providerId);
+            bool hasModels = cachedCount > 0 || isPreset;
 
-            if (modelList.Count == 0)
+            if (!hasModels)
             {
                 listing.Label("RimLLM_EmbeddingNoModelList".Translate());
             }
@@ -472,7 +474,12 @@ namespace RimLLM_Framework.Mod
             {
                 DrawModelFilterBar(listing, providerId, isPreset);
 
-                List<string> visibleModels = RimLLMUIStyle.FilterModels(modelList, ModelFilters[providerId]);
+                // 過濾結果與清單複製都走快取：只有模型清單版本或過濾字串變了才重算。
+                List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
+                    "embedding:" + providerId,
+                    Settings.ModelListVersion,
+                    ModelFilters[providerId],
+                    () => ResolveAvailableModels(providerId));
                 Rect scrollRect = listing.GetRect(200f);
                 Widgets.DrawMenuSection(scrollRect);
 
@@ -514,15 +521,14 @@ namespace RimLLM_Framework.Mod
             listing.Gap(4f);
         }
 
-        private static IEnumerable<string> ResolveAvailableModels(string providerId, out bool isPreset)
+        /// <summary>抓取過的模型清單優先，沒有才退回內建預設清單。只在過濾快取失效時被呼叫。</summary>
+        private static IList<string> ResolveAvailableModels(string providerId)
         {
             string cacheKey = RimLLMEmbeddingService.GetModelListKey(providerId);
             List<string> cachedModels = Settings.GetModelList(cacheKey);
-            isPreset = false;
             if (cachedModels.Count == 0 && DefaultPresetModels.TryGetValue(providerId, out var presets))
             {
-                isPreset = true;
-                return presets;
+                return new List<string>(presets);
             }
             return cachedModels;
         }
@@ -577,7 +583,11 @@ namespace RimLLM_Framework.Mod
             Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
             ModelScrollPositions[providerId] = scrollPos;
 
-            for (int i = 0; i < visibleModels.Count; i++)
+            // 只畫可視範圍內的列；tooltip 後綴的翻譯提到迴圈外，不必每個晶片各查一次。
+            RimLLMUIStyle.GetVisibleRowRange(scrollPos.y, scrollRect.height, chipHeight + gap, gap, rows, out int firstRow, out int endRow);
+            string copyHint = "\n\n" + "RimLLM_ClickToCopy".Translate();
+
+            for (int i = firstRow * cols; i < visibleModels.Count && i < endRow * cols; i++)
             {
                 string model = visibleModels[i];
                 int col = i % cols;
@@ -596,8 +606,8 @@ namespace RimLLM_Framework.Mod
                 if (Mouse.IsOver(chipRect))
                 {
                     Widgets.DrawHighlight(chipRect);
+                    TooltipHandler.TipRegion(chipRect, model + copyHint);
                 }
-                TooltipHandler.TipRegion(chipRect, model + "\n\n" + "RimLLM_ClickToCopy".Translate());
 
                 if (Widgets.ButtonInvisible(chipRect))
                 {
@@ -607,7 +617,7 @@ namespace RimLLM_Framework.Mod
                 Rect textRect = chipRect.ContractedBy(4f);
                 using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
                 {
-                    Widgets.Label(textRect, $"{ColorTagOpen}silver>{model.Truncate(textRect.width)}{ColorTagClose}");
+                    Widgets.Label(textRect, ColorTagOpen + "silver>" + RimLLMUIStyle.TruncateCached(model, textRect.width) + ColorTagClose);
                 }
             }
 

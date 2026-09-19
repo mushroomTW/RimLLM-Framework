@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
@@ -47,7 +46,7 @@ namespace RimLLM_Framework.Providers
             options.RawRepresentationFactory = client =>
             {
                 var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(baseFactory, client);
-                chatCompletionOptions.Patch.Remove(Encoding.UTF8.GetBytes("$.model"));
+                chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.Model);
                 var modelsArray = new List<string>();
                 foreach (string m in model.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                 {
@@ -55,7 +54,7 @@ namespace RimLLM_Framework.Providers
                     string trimmed = m.Trim();
                     if (trimmed.Length > 0) modelsArray.Add(trimmed);
                 }
-                chatCompletionOptions.Patch.Set(Encoding.UTF8.GetBytes("$.models"), JsonSerializer.SerializeToUtf8Bytes(modelsArray));
+                chatCompletionOptions.Patch.Set(OpenAIPatchPaths.Models, JsonSerializer.SerializeToUtf8Bytes(modelsArray));
                 return chatCompletionOptions;
             };
         }

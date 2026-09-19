@@ -209,7 +209,17 @@ namespace RimLLM_Framework.Manager
                     return new LLMProviderCapabilities();
                 }
 
-                return provider.Capabilities ?? new LLMProviderCapabilities();
+                // 供應商內部重用同一個能力實例，公開 API 交出複本，避免下游改動污染路由判斷。
+                LLMProviderCapabilities caps = provider.Capabilities;
+                return caps == null
+                    ? new LLMProviderCapabilities()
+                    : new LLMProviderCapabilities
+                    {
+                        SupportsNativeStructuredOutput = caps.SupportsNativeStructuredOutput,
+                        SupportsStreaming = caps.SupportsStreaming,
+                        SupportsUsageMetadata = caps.SupportsUsageMetadata,
+                        SupportsFunctionCalling = caps.SupportsFunctionCalling
+                    };
             }
         }
 

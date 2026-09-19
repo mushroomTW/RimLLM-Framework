@@ -130,17 +130,103 @@ namespace RimLLM_Framework.Mod
             if (models == null) return result;
 
             bool matchAll = string.IsNullOrEmpty(filter) || filter.Trim().Length == 0;
-            string needle = matchAll ? null : filter.Trim().ToLowerInvariant();
+            string needle = matchAll ? null : filter.Trim();
 
+            // 以不分大小寫的比對取代逐筆 ToLowerInvariant：這段每幀對數百筆模型名跑一次，
+            // 每筆各配置一個小寫副本只是白白製造 GC 壓力。
             foreach (string model in models)
             {
                 if (string.IsNullOrEmpty(model)) continue;
-                if (matchAll || model.ToLowerInvariant().IndexOf(needle, StringComparison.Ordinal) >= 0)
+                if (matchAll || model.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     result.Add(model);
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// 過濾結果的快取。模型清單與過濾字串都只在使用者操作時變動，但 OnGUI 每幀跑好幾次，
+        /// 沒有這層的話每個 pass 都要重新走一遍數百筆比對。
+        /// 以呼叫端提供的 <paramref name="cacheKey"/>（通常是供應商 ID）與清單版本號區分項目。
+        /// </summary>
+        private sealed class FilteredModelsEntry
+        {
+            public int Version;
+            public string Filter;
+            public List<string> Result;
+        }
+
+        private static readonly Dictionary<string, FilteredModelsEntry> FilteredModelsCache =
+            new Dictionary<string, FilteredModelsEntry>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 帶快取的 <see cref="FilterModels"/>。<paramref name="version"/> 或 <paramref name="filter"/>
+        /// 與上次相同就直接回傳上次的結果（同一個 List 實例，呼叫端不得改動）。
+        /// <paramref name="sourceProvider"/> 只在需要重算時才被呼叫，讓呼叫端連清單複製都能省下。
+        /// </summary>
+        public static List<string> FilterModelsCached(string cacheKey, int version, string filter, Func<IList<string>> sourceProvider)
+        {
+            if (sourceProvider == null) throw new ArgumentNullException(nameof(sourceProvider));
+            filter = filter ?? string.Empty;
+
+            if (FilteredModelsCache.TryGetValue(cacheKey ?? string.Empty, out FilteredModelsEntry entry) &&
+                entry.Version == version &&
+                string.Equals(entry.Filter, filter, StringComparison.Ordinal))
+            {
+                return entry.Result;
+            }
+
+            IList<string> source = sourceProvider();
+            entry = new FilteredModelsEntry
+            {
+                Version = version,
+                Filter = filter,
+                Result = FilterModels(source, filter)
+            };
+            FilteredModelsCache[cacheKey ?? string.Empty] = entry;
+            return entry.Result;
+        }
+
+        /// <summary>
+        /// 算出捲動清單中真正落在可視範圍內的列區間 [firstRow, endRow)。
+        /// 每列固定高度的清單只畫可視的那幾列：OpenRouter 的模型晶片動輒數百個，
+        /// 全部畫出來等於每幀對捲出視野的內容做數百次文字量測與繪製呼叫。
+        /// 前後各多算一列，捲動時不會露出空白。
+        /// </summary>
+        public static void GetVisibleRowRange(float scrollY, float viewportHeight, float rowStride, float topPadding, int rowCount, out int firstRow, out int endRow)
+        {
+            if (rowCount <= 0 || rowStride <= 0f)
+            {
+                firstRow = 0;
+                endRow = 0;
+                return;
+            }
+
+            firstRow = Mathf.Clamp(Mathf.FloorToInt((scrollY - topPadding) / rowStride) - 1, 0, rowCount);
+            endRow = Mathf.Clamp(Mathf.CeilToInt((scrollY - topPadding + viewportHeight) / rowStride) + 1, firstRow, rowCount);
+        }
+
+        /// <summary>
+        /// 依字型與寬度分開的截斷快取。RimWorld 的 <c>Truncate</c> 不帶快取時會逐字元呼叫
+        /// <c>Text.CalcSize</c> 直到塞得下為止，長模型名在窄晶片裡一次要量十幾回，
+        /// 每幀對每個晶片重做是設定頁最貴的單一開銷。原生快取只以字串為鍵，
+        /// 寬度或字型一變就會拿到錯的結果，因此這裡再包一層以 (字型, 寬度) 分桶。
+        /// </summary>
+        private static readonly Dictionary<long, Dictionary<string, string>> TruncateCaches =
+            new Dictionary<long, Dictionary<string, string>>();
+
+        public static string TruncateCached(string text, float width)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+
+            long bucket = ((long)Text.Font << 32) | (uint)Mathf.RoundToInt(width);
+            if (!TruncateCaches.TryGetValue(bucket, out Dictionary<string, string> cache))
+            {
+                cache = new Dictionary<string, string>(StringComparer.Ordinal);
+                TruncateCaches[bucket] = cache;
+            }
+            return text.Truncate(width, cache);
         }
 
         /// <summary>

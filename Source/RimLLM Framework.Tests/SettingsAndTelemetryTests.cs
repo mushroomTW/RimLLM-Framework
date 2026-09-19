@@ -83,6 +83,22 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void ModelCountAndDefaultModelReadWithoutCopyingList()
+        {
+            var settings = new RimLLMFrameworkSettings();
+            int versionBefore = settings.ModelListVersion;
+
+            ClassicAssert.AreEqual(0, settings.GetModelCount("OpenRouter"));
+            ClassicAssert.AreEqual("fallback", settings.GetDefaultModel("OpenRouter", "fallback"));
+
+            settings.SetModelList("OpenRouter", new List<string> { "first", "second" });
+
+            ClassicAssert.AreEqual(2, settings.GetModelCount("OpenRouter"));
+            ClassicAssert.AreEqual("first", settings.GetDefaultModel("OpenRouter", "fallback"));
+            ClassicAssert.Greater(settings.ModelListVersion, versionBefore, "清單變動必須推進版本號，設定頁的過濾快取靠它失效。");
+        }
+
+        [Test]
         public void TestSettingsDefaultRoutingStrategy()
         {
             var settings = new RimLLMFrameworkSettings();

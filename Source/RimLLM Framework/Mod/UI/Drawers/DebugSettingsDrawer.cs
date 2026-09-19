@@ -170,20 +170,20 @@ namespace RimLLM_Framework.Mod
                 listing.Label("RimLLM_RequestsFromTelemetry".Translate());
             }
 
-            logs.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
-
             if (logs.Count == 0)
             {
                 listing.Label("RimLLM_NoRequests".Translate());
                 return;
             }
 
+            List<string> logLines = ResolveLogLines(logs);
+
             Rect logScrollRect = listing.GetRect(420f);
             Widgets.DrawMenuSection(logScrollRect);
 
             float contentWidth = logScrollRect.width - 16f;
             float logHeight = 24f;
-            float viewHeight = Math.Max(420f, logs.Count * logHeight + 10f);
+            float viewHeight = Math.Max(420f, logLines.Count * logHeight + 10f);
             Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
 
             // 清除歷史後內容會從 30 筆縮回幾筆，捲動位置若留在原處，僅存的那幾列會被畫到可視範圍之外，
@@ -196,26 +196,52 @@ namespace RimLLM_Framework.Mod
 
             Widgets.BeginScrollView(logScrollRect, ref debugScrollPosition, viewRect);
 
-            for (int i = 0; i < logs.Count; i++)
+            Text.Font = GameFont.Tiny;
+            for (int i = 0; i < logLines.Count; i++)
             {
-                var log = logs[i];
                 Rect lineRect = new Rect(4f, i * logHeight + 4f, contentWidth - 8f, logHeight - 2f);
+                Widgets.Label(lineRect, logLines[i]);
+            }
+            Text.Font = GameFont.Small;
+            Widgets.EndScrollView();
+        }
+        #pragma warning restore S3776
 
+        /// <summary>上一次格式化所依據的日誌快照，與格式化後的顯示列一一對應。</summary>
+        private static readonly List<RimLLMManager.RequestLogEntry> _cachedLogSnapshot = new List<RimLLMManager.RequestLogEntry>();
+        private static readonly List<string> _cachedLogLines = new List<string>();
+
+        /// <summary>
+        /// 把日誌轉成顯示列。每列要做翻譯、敏感字遮罩（Regex）與時間格式化，而日誌只在有請求完成時
+        /// 才變動；設定視窗開著時每幀重算 30 列純屬浪費，因此以「同一組項目參考」判定命中，
+        /// 只有佇列內容真的變了才重新格式化。
+        /// </summary>
+        private static List<string> ResolveLogLines(List<RimLLMManager.RequestLogEntry> logs)
+        {
+            logs.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
+
+            bool same = logs.Count == _cachedLogSnapshot.Count;
+            for (int i = 0; same && i < logs.Count; i++)
+            {
+                same = ReferenceEquals(logs[i], _cachedLogSnapshot[i]);
+            }
+            if (same) return _cachedLogLines;
+
+            _cachedLogSnapshot.Clear();
+            _cachedLogSnapshot.AddRange(logs);
+            _cachedLogLines.Clear();
+            foreach (var log in logs)
+            {
                 string timeStr = log.Timestamp.ToString("HH:mm:ss");
                 // 色碼保留在程式碼中，只有文字部分抽成翻譯鍵，避免譯者需要處理富文字標記。
                 string statusText = log.Success
                     ? $"<color=#22c55e>{"RimLLM_StatusRequestSuccess".Translate(log.LatencyMs)}</color>"
                     : $"<color=#ef4444>{"RimLLM_StatusRequestFailed".Translate(RimLLMLog.SanitizeForLog(log.ErrorMessage, 160))}</color>";
 
-                string logLine = $"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}";
-
-                Text.Font = GameFont.Tiny;
-                Widgets.Label(lineRect, logLine);
-                Text.Font = GameFont.Small;
+                _cachedLogLines.Add($"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}");
             }
-            Widgets.EndScrollView();
+            return _cachedLogLines;
         }
-        #pragma warning restore S3776
 
         /// <summary>
         /// 結構化輸出自我檢查。分兩段：

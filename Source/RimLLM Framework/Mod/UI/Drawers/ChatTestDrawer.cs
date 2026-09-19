@@ -35,6 +35,14 @@ namespace RimLLM_Framework.Mod
         private static System.Threading.CancellationTokenSource chatCts;
 
         /// <summary>
+        /// 串流中重新渲染畫面的最短間隔。50ms 對眼睛已是連續更新，
+        /// 但把每秒上百次的全文 Markdown 重排壓到最多 20 次。
+        /// </summary>
+        private const int StreamRenderIntervalMs = 50;
+        private static readonly long StreamRenderIntervalTicks =
+            System.Diagnostics.Stopwatch.Frequency * StreamRenderIntervalMs / 1000L;
+
+        /// <summary>
         /// 判斷聊天輸入是否應該送出。純空白視為未輸入。
         /// </summary>
         internal static bool ShouldSendChatInput(string rawInput)
@@ -204,25 +212,15 @@ namespace RimLLM_Framework.Mod
 
             float chatContentWidth = chatRect.width - 16f;
 
-            GUIStyle richLabelStyle = new GUIStyle(Text.CurFontStyle)
-            {
-                richText = true,
-                wordWrap = true
-            };
+            GUIStyle richLabelStyle = ResolveRichLabelStyle();
 
             float bubbleWidth = chatContentWidth - 8f;
             float bubbleInnerWidth = bubbleWidth - 16f;
-            var bubbleLayouts = new List<(bool isUser, string label, string body, ChatEntryMeta meta, float height, float textHeight)>();
+            List<BubbleLayout> bubbleLayouts = ResolveBubbleLayouts(richLabelStyle, bubbleInnerWidth);
             float totalBubblesHeight = 8f;
-
-            for (int i = 0; i < chatHistory.Count; i++)
+            for (int i = 0; i < bubbleLayouts.Count; i++)
             {
-                string entry = chatHistory[i];
-                bool isUser = ParseMessage(entry, out string label, out string body, out ChatEntryMeta meta);
-                float textHeight = richLabelStyle.CalcHeight(new GUIContent(body), bubbleInnerWidth);
-                float cardHeight = 24f + textHeight + (isUser ? 10f : 34f);
-                bubbleLayouts.Add((isUser, label, body, meta, cardHeight, textHeight));
-                totalBubblesHeight += cardHeight + 8f;
+                totalBubblesHeight += bubbleLayouts[i].Height + 8f;
             }
 
             float chatViewHeight = Math.Max(480f, totalBubblesHeight);
@@ -240,60 +238,62 @@ namespace RimLLM_Framework.Mod
             else
             {
                 float curY = 8f;
+                // 捲出可視範圍的氣泡完全跳過：長對話下每幀真正需要畫的只有幾張卡片。
+                // 捲動位置自行夾住：串流時每個更新都把 y 設成 999999 捲到底，
+                // Unity 要到下一幀才會夾回合法值，不夾的話那一幀會判定所有卡片都在視野外。
+                float visibleTop = Mathf.Clamp(chatScrollPosition.y, 0f, Mathf.Max(0f, chatViewHeight - chatRect.height));
+                float visibleBottom = visibleTop + chatRect.height;
+                string copyLabel = "RimLLM_ChatCopyMessage".Translate();
+
                 for (int i = 0; i < bubbleLayouts.Count; i++)
                 {
-                    var layout = bubbleLayouts[i];
-                    Rect bubbleRect = new Rect(4f, curY, bubbleWidth, layout.height);
+                    BubbleLayout layout = bubbleLayouts[i];
+                    float cardTop = curY;
+                    curY += layout.Height + 8f;
+                    if (cardTop > visibleBottom || cardTop + layout.Height < visibleTop)
+                    {
+                        continue;
+                    }
 
-                    Color bgColor = layout.isUser ? RimLLMUIStyle.BubbleUserFill : RimLLMUIStyle.BubbleAiFill;
+                    Rect bubbleRect = new Rect(4f, cardTop, bubbleWidth, layout.Height);
+
+                    Color bgColor = layout.IsUser ? RimLLMUIStyle.BubbleUserFill : RimLLMUIStyle.BubbleAiFill;
 
                     Widgets.DrawBoxSolid(bubbleRect, bgColor);
                     Widgets.DrawBox(bubbleRect, 1);
 
                     // 標題列
                     Rect headerRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 4f, bubbleRect.width - 16f, 20f);
-                    if (layout.isUser)
+                    using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
                     {
-                        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
-                        {
-                            Widgets.Label(headerRect, $"<color=#60a5fa><b>{layout.label}</b></color>");
-                        }
-                    }
-                    else
-                    {
-                        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
-                        {
-                            Widgets.Label(headerRect, $"<color=#4ade80><b>{layout.label}</b></color>");
-                        }
+                        Widgets.Label(headerRect, layout.HeaderText);
                     }
 
                     // 內文
-                    Rect bodyRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.textHeight + 2f);
-                    GUI.Label(bodyRect, layout.body, richLabelStyle);
+                    Rect bodyRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.TextHeight + 2f);
+                    GUI.Label(bodyRect, layout.Body, richLabelStyle);
 
                     // AI 訊息底部工具列（微型標籤與一鍵複製）
-                    if (!layout.isUser)
+                    if (!layout.IsUser)
                     {
                         float btnWidth = 80f;
                         float btnHeight = 22f;
                         float bottomY = bubbleRect.yMax - 27f;
                         Rect copyBtnRect = new Rect(bubbleRect.xMax - 8f - btnWidth, bottomY, btnWidth, btnHeight);
 
-                        if (!chatLoading && Widgets.ButtonText(copyBtnRect, "RimLLM_ChatCopyMessage".Translate()))
+                        if (!chatLoading && Widgets.ButtonText(copyBtnRect, copyLabel))
                         {
-                            GUIUtility.systemCopyBuffer = StripRichTextForClipboard(layout.body);
+                            GUIUtility.systemCopyBuffer = StripRichTextForClipboard(layout.Body);
                             Messages.Message("RimLLM_CopiedToClipboard".Translate("AI"), MessageTypeDefOf.TaskCompletion, false);
                         }
 
                         // 繪製應答模型、耗時與 Token 數微型標籤
-                        if (layout.meta != null)
+                        if (layout.Meta != null)
                         {
                             Rect badgesArea = new Rect(bubbleRect.x + 8f, bottomY, copyBtnRect.x - 8f - (bubbleRect.x + 8f), btnHeight);
-                            DrawAiMetaBadges(badgesArea, layout.meta);
+                            DrawAiMetaBadges(badgesArea, layout);
                         }
                     }
-
-                    curY += layout.height + 8f;
                 }
             }
 
@@ -390,7 +390,14 @@ namespace RimLLM_Framework.Mod
                     chatLoading = true;
 
                     object replyLock = new object();
-                    string accumulatedReply = "";
+                    var accumulatedReply = new System.Text.StringBuilder();
+
+                    // 串流渲染節流狀態（都在 replyLock 底下讀寫）：
+                    // 每個 chunk 都對累積全文重跑一次 Markdown 與四段 Regex 是 O(n²)，
+                    // 快供應商一秒上百個 chunk 時背景執行緒與主執行緒都在白忙。
+                    long lastRenderTimestamp = 0;
+                    bool trailingRenderScheduled = false;
+                    bool streamCompleted = false;
 
                     var requestCts = new System.Threading.CancellationTokenSource();
                     chatCts = requestCts;
@@ -456,14 +463,23 @@ namespace RimLLM_Framework.Mod
                             }
 
                             // 整段都是推理內容時，收尾標籤只能在串流結束後補。
-                            AppendToReply(thinkFormatter.Complete());
+                            // 直接附加不觸發即時渲染：最終渲染緊接在後，多一次只是浪費。
+                            string tail = thinkFormatter.Complete();
+                            string fullReply;
+                            lock (replyLock)
+                            {
+                                if (!string.IsNullOrEmpty(tail)) accumulatedReply.Append(tail);
+                                // 先標記完成，讓排程中的尾端渲染看到後直接放棄，不會覆蓋最終結果。
+                                streamCompleted = true;
+                                fullReply = accumulatedReply.ToString();
+                            }
 
                             stopwatch.Stop();
                             long finalElapsed = stopwatch.ElapsedMilliseconds;
                             if (!hasExactTokens || totalTokens <= 0)
                             {
                                 int promptChars = userPrompt?.Length ?? 0;
-                                int completionChars = accumulatedReply?.Length ?? 0;
+                                int completionChars = fullReply.Length;
                                 promptTokens = Math.Max(1, (int)Math.Ceiling(promptChars * 0.8));
                                 completionTokens = Math.Max(1, (int)Math.Ceiling(completionChars * 0.8));
                                 totalTokens = promptTokens + completionTokens;
@@ -483,29 +499,76 @@ namespace RimLLM_Framework.Mod
                             void AppendToReply(string text)
                             {
                                 if (string.IsNullOrEmpty(text)) return;
-                                string localReply;
+
+                                bool renderNow;
+                                bool scheduleTrailing = false;
                                 lock (replyLock)
                                 {
-                                    accumulatedReply += text;
-                                    localReply = RenderReply(accumulatedReply);
+                                    accumulatedReply.Append(text);
+                                    long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                                    renderNow = now - lastRenderTimestamp >= StreamRenderIntervalTicks;
+                                    if (renderNow)
+                                    {
+                                        lastRenderTimestamp = now;
+                                    }
+                                    else if (!trailingRenderScheduled)
+                                    {
+                                        // 節流窗內的 chunk 先累積；排一次尾端渲染，
+                                        // 讓串流中途停頓時最後幾個 chunk 也不會卡在畫面外。
+                                        trailingRenderScheduled = true;
+                                        scheduleTrailing = true;
+                                    }
                                 }
-                                var liveMeta = new ChatEntryMeta
+
+                                if (renderNow)
                                 {
-                                    ModelId = actualModelId,
-                                    ElapsedMs = stopwatch.ElapsedMilliseconds,
-                                    TotalTokens = totalTokens,
-                                    PromptTokens = promptTokens,
-                                    CompletionTokens = completionTokens,
-                                    IsEstimatedTokens = !hasExactTokens
-                                };
-                                UpdateAiHistoryEntry(aiHistoryIndex, localReply, meta: liveMeta);
+                                    RenderLive();
+                                }
+                                else if (scheduleTrailing)
+                                {
+                                    Task.Delay(StreamRenderIntervalMs).ContinueWith(_ =>
+                                    {
+                                        lock (replyLock)
+                                        {
+                                            trailingRenderScheduled = false;
+                                            if (streamCompleted) return;
+                                            lastRenderTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                                        }
+                                        RenderLive();
+                                    }, TaskScheduler.Default);
+                                }
                             }
 
-                            string formattedFinal = RenderReply(accumulatedReply);
+                            void RenderLive()
+                            {
+                                // 「檢查 completed → 渲染 → 入列」必須在同一個鎖內完成：
+                                // 入列若放在鎖外，較舊的快照可能在最終渲染（或錯誤訊息）之後才入列，
+                                // 派遣器依入列順序執行，畫面就會被截斷版蓋掉且不再被修正。
+                                lock (replyLock)
+                                {
+                                    if (streamCompleted) return;
+                                    string localReply = RenderReply(accumulatedReply.ToString());
+                                    var liveMeta = new ChatEntryMeta
+                                    {
+                                        ModelId = actualModelId,
+                                        ElapsedMs = stopwatch.ElapsedMilliseconds,
+                                        TotalTokens = totalTokens,
+                                        PromptTokens = promptTokens,
+                                        CompletionTokens = completionTokens,
+                                        IsEstimatedTokens = !hasExactTokens
+                                    };
+                                    UpdateAiHistoryEntry(aiHistoryIndex, localReply, meta: liveMeta);
+                                }
+                            }
+
+                            string formattedFinal = RenderReply(fullReply);
                             UpdateAiHistoryEntry(aiHistoryIndex, formattedFinal, meta: finalMeta, persist: true);
                         }
                         catch (Exception ex)
                         {
+                            // 排程中的尾端渲染不得在錯誤訊息寫入後又把它蓋掉。
+                            lock (replyLock) { streamCompleted = true; }
+
                             string safeError = EntryPrefix("RimLLM_ChatAiError") +
                                 "<color=#ef4444>" + RimLLMLog.SanitizeForLog(ex.Message, 240) + "</color>";
                             RimLLMDispatcher.EnqueueOnMainThread(() =>
@@ -724,46 +787,44 @@ namespace RimLLM_Framework.Mod
         /// 徹底拿掉刺眼的硬外框與高對比底色，以低調柔和的冷灰字階呈現，
         /// 滑鼠懸停時微顯高亮，既保留一鍵複製與詳細 Tooltip，又完全不搶正文焦點。
         /// </summary>
-        private static void DrawAiMetaBadges(Rect area, ChatEntryMeta meta)
+        private static void DrawAiMetaBadges(Rect area, BubbleLayout layout)
         {
-            if (meta == null || area.width < 50f) return;
+            if (layout.Meta == null || area.width < 50f) return;
 
             float curX = area.x;
             float gap = 8f;
 
             // 1. 模型標籤（點擊可一鍵複製，懸停微高亮）
-            DrawModelBadge(ref curX, area, meta.ModelId, gap);
+            DrawModelBadge(ref curX, area, layout, gap);
 
             // 2. 耗時與 Token 數（懸停顯示詳細分解 Tooltip）
-            DrawMetricsBadge(curX, area, meta);
+            DrawMetricsBadge(curX, area, layout);
         }
 
-        private static void DrawModelBadge(ref float curX, Rect area, string modelId, float gap)
+        private static void DrawModelBadge(ref float curX, Rect area, BubbleLayout layout, float gap)
         {
-            string modelDisplay = FormatModelDisplayName(modelId);
+            string modelDisplay = layout.ModelDisplay;
             if (string.IsNullOrEmpty(modelDisplay)) return;
+            string modelId = layout.Meta.ModelId;
 
-            float textW;
-            using (RimLLMUIStyle.With(font: GameFont.Tiny))
-            {
-                textW = Text.CalcSize(modelDisplay).x;
-            }
-
-            float modelW = Mathf.Min(textW + 6f, area.width * 0.6f);
+            float modelW = Mathf.Min(layout.ModelTextWidth + 6f, area.width * 0.6f);
             Rect modelRect = new Rect(curX, area.y, modelW, area.height);
 
-            if (Mouse.IsOver(modelRect))
+            bool hovered = Mouse.IsOver(modelRect);
+            if (hovered)
             {
                 Widgets.DrawHighlight(modelRect);
             }
 
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
             {
-                Widgets.Label(modelRect, $"<color=#94a3b8>{modelDisplay.Truncate(modelRect.width)}</color>");
+                Widgets.Label(modelRect, "<color=#94a3b8>" + RimLLMUIStyle.TruncateCached(modelDisplay, modelRect.width) + "</color>");
             }
 
-            string modelTip = "RimLLM_ChatModelBadgeTooltip".Translate(modelId);
-            TooltipHandler.TipRegion(modelRect, modelTip);
+            if (hovered)
+            {
+                TooltipHandler.TipRegion(modelRect, "RimLLM_ChatModelBadgeTooltip".Translate(modelId));
+            }
 
             if (Widgets.ButtonInvisible(modelRect))
             {
@@ -785,42 +846,154 @@ namespace RimLLM_Framework.Mod
             }
         }
 
-        private static void DrawMetricsBadge(float curX, Rect area, ChatEntryMeta meta)
+        private static void DrawMetricsBadge(float curX, Rect area, BubbleLayout layout)
         {
             float remainW = area.xMax - curX;
             if (remainW <= 40f) return;
 
-            string timeStr = meta.ElapsedMs < 1000 ? $"{meta.ElapsedMs}ms" : $"{(meta.ElapsedMs / 1000f):F1}s";
-            string tokenPrefix = meta.IsEstimatedTokens ? "~" : "";
-            string tokenStr = meta.TotalTokens > 0 ? $"{tokenPrefix}{meta.TotalTokens} tok" : "";
-
-            string statText = string.IsNullOrEmpty(tokenStr)
-                ? $"<color=#64748b>{timeStr}</color>"
-                : $"<color=#64748b>{timeStr}</color>  <color=#475569>•</color>  <color=#64748b>{tokenStr}</color>";
-
-            float statW;
-            using (RimLLMUIStyle.With(font: GameFont.Tiny))
-            {
-                statW = Text.CalcSize(statText.StripTags()).x + 8f;
-            }
-            statW = Mathf.Min(statW, remainW);
+            float statW = Mathf.Min(layout.StatTextWidth + 8f, remainW);
             Rect statRect = new Rect(curX, area.y, statW, area.height);
 
-            if (Mouse.IsOver(statRect))
+            bool hovered = Mouse.IsOver(statRect);
+            if (hovered)
             {
                 Widgets.DrawHighlight(statRect);
             }
 
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
             {
-                Widgets.Label(statRect, statText);
+                Widgets.Label(statRect, layout.StatText);
             }
 
-            float timeSec = meta.ElapsedMs / 1000f;
-            string statTip = meta.IsEstimatedTokens
-                ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens)
-                : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens, meta.PromptTokens, meta.CompletionTokens);
-            TooltipHandler.TipRegion(statRect, statTip);
+            if (hovered)
+            {
+                ChatEntryMeta meta = layout.Meta;
+                float timeSec = meta.ElapsedMs / 1000f;
+                string statTip = meta.IsEstimatedTokens
+                    ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens)
+                    : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens, meta.PromptTokens, meta.CompletionTokens);
+                TooltipHandler.TipRegion(statRect, statTip);
+            }
+        }
+
+        /// <summary>
+        /// 一張氣泡卡片繪製所需的全部預算結果：解析後的標籤與內文、量測過的高度、
+        /// 徽章文字與寬度。<see cref="Entry"/> 記住來源字串，讓快取以參考相等判定是否過期。
+        /// </summary>
+        private sealed class BubbleLayout
+        {
+            public string Entry;
+            public bool IsUser;
+            public string Body;
+            public ChatEntryMeta Meta;
+            public float Height;
+            public float TextHeight;
+            public string HeaderText;
+            public string ModelDisplay;
+            public float ModelTextWidth;
+            public string StatText;
+            public float StatTextWidth;
+        }
+
+        private static readonly List<BubbleLayout> _layoutCache = new List<BubbleLayout>();
+        private static float _layoutCacheWidth = -1f;
+        private static GameFont _layoutCacheFont;
+
+        private static GUIStyle _richLabelStyle;
+        private static GameFont _richLabelStyleFont;
+
+        /// <summary>
+        /// 內文用的 rich text 樣式。GUIStyle 是 Unity 原生物件，先前每個 OnGUI pass 都 new 一個；
+        /// 只有字型變了才需要重建。
+        /// </summary>
+        private static GUIStyle ResolveRichLabelStyle()
+        {
+            if (_richLabelStyle == null || _richLabelStyleFont != Text.Font)
+            {
+                _richLabelStyle = new GUIStyle(Text.CurFontStyle)
+                {
+                    richText = true,
+                    wordWrap = true
+                };
+                _richLabelStyleFont = Text.Font;
+            }
+            return _richLabelStyle;
+        }
+
+        /// <summary>
+        /// 逐筆比對歷史項目與快取的來源字串：沒變的直接沿用，變了的（串流中的那一筆、新增的、
+        /// 清空後重建的）才重新解析與量測。先前每個 OnGUI pass 都對全部歷史重做
+        /// Translate、StripTags（Regex）與 CalcHeight，長對話開著設定頁就是持續的每幀開銷。
+        /// 寬度或字型變了會讓所有量測失效，此時整批重算。
+        /// </summary>
+        private static List<BubbleLayout> ResolveBubbleLayouts(GUIStyle richLabelStyle, float bubbleInnerWidth)
+        {
+            if (_layoutCacheWidth != bubbleInnerWidth || _layoutCacheFont != Text.Font)
+            {
+                _layoutCache.Clear();
+                _layoutCacheWidth = bubbleInnerWidth;
+                _layoutCacheFont = Text.Font;
+            }
+
+            if (_layoutCache.Count > chatHistory.Count)
+            {
+                _layoutCache.RemoveRange(chatHistory.Count, _layoutCache.Count - chatHistory.Count);
+            }
+
+            for (int i = 0; i < chatHistory.Count; i++)
+            {
+                string entry = chatHistory[i];
+                if (i < _layoutCache.Count)
+                {
+                    if (ReferenceEquals(_layoutCache[i].Entry, entry)) continue;
+                    _layoutCache[i] = BuildBubbleLayout(entry, richLabelStyle, bubbleInnerWidth);
+                }
+                else
+                {
+                    _layoutCache.Add(BuildBubbleLayout(entry, richLabelStyle, bubbleInnerWidth));
+                }
+            }
+
+            return _layoutCache;
+        }
+
+        private static BubbleLayout BuildBubbleLayout(string entry, GUIStyle richLabelStyle, float bubbleInnerWidth)
+        {
+            bool isUser = ParseMessage(entry, out string label, out string body, out ChatEntryMeta meta);
+            float textHeight = richLabelStyle.CalcHeight(new GUIContent(body), bubbleInnerWidth);
+
+            var layout = new BubbleLayout
+            {
+                Entry = entry,
+                IsUser = isUser,
+                Body = body,
+                Meta = meta,
+                TextHeight = textHeight,
+                Height = 24f + textHeight + (isUser ? 10f : 34f),
+                HeaderText = isUser
+                    ? "<color=#60a5fa><b>" + label + "</b></color>"
+                    : "<color=#4ade80><b>" + label + "</b></color>"
+            };
+
+            if (meta != null)
+            {
+                layout.ModelDisplay = FormatModelDisplayName(meta.ModelId);
+
+                string timeStr = meta.ElapsedMs < 1000 ? $"{meta.ElapsedMs}ms" : $"{(meta.ElapsedMs / 1000f):F1}s";
+                string tokenPrefix = meta.IsEstimatedTokens ? "~" : "";
+                string tokenStr = meta.TotalTokens > 0 ? $"{tokenPrefix}{meta.TotalTokens} tok" : "";
+                layout.StatText = string.IsNullOrEmpty(tokenStr)
+                    ? $"<color=#64748b>{timeStr}</color>"
+                    : $"<color=#64748b>{timeStr}</color>  <color=#475569>•</color>  <color=#64748b>{tokenStr}</color>";
+
+                using (RimLLMUIStyle.With(font: GameFont.Tiny))
+                {
+                    layout.ModelTextWidth = string.IsNullOrEmpty(layout.ModelDisplay) ? 0f : Text.CalcSize(layout.ModelDisplay).x;
+                    layout.StatTextWidth = Text.CalcSize(layout.StatText.StripTags()).x;
+                }
+            }
+
+            return layout;
         }
 
         /// <summary>

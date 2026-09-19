@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.ClientModel;
@@ -289,14 +288,12 @@ namespace RimLLM_Framework.Manager
             {
                 // schema 與 strict 取自同一次產生結果，避免兩者各算一次而分歧。
                 RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(responseType);
-                using (JsonDocument document = JsonDocument.Parse(schema.Json))
 #pragma warning disable S3267 // reason: 迴圈遍歷在串流與用量統計具更高可讀性與效能，刻意保留 foreach
-                {
-                    options.ResponseFormat = ChatResponseFormat.ForJsonSchema(
-                        document.RootElement.Clone(),
-                        "custom_type",
-                        "RimLLM structured response");
-                }
+                // Element 由 schema 結果快取，不再每請求 JsonDocument.Parse 一次。
+                options.ResponseFormat = ChatResponseFormat.ForJsonSchema(
+                    schema.Element,
+                    "custom_type",
+                    "RimLLM structured response");
                 options.AdditionalProperties["strict"] = schema.StrictCompatible;
             }
 

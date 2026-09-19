@@ -46,7 +46,7 @@ namespace RimLLM_Framework.Mod
             bool enabled = Settings.IsProviderEnabled(ActiveProviderSubTab);
             if (!enabled) return 120f;
 
-            int modelCount = Settings.GetModelList(ActiveProviderSubTab).Count;
+            int modelCount = Settings.GetModelCount(ActiveProviderSubTab);
             float modelSectionHeight = modelCount > 0 ? 280f : 60f;
 
             // 動態計算 API 金鑰列表的高度
@@ -139,7 +139,7 @@ namespace RimLLM_Framework.Mod
             }
             else
             {
-                int modelCount = Settings.GetModelList(providerId).Count;
+                int modelCount = Settings.GetModelCount(providerId);
                 statusText = "RimLLM_StatusEnabled".Translate() + " | " + "RimLLM_ModelsCount".Translate(modelCount);
                 statusColor = RimLLMUIStyle.Success;
             }

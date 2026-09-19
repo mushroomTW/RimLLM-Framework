@@ -139,5 +139,74 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(1, cols);
             ClassicAssert.Greater(chipWidth, 0f);
         }
+
+        // ---------- 過濾快取 ----------
+
+        [Test]
+        public void FilterModelsCachedReusesResultUntilVersionOrFilterChanges()
+        {
+            int sourceCalls = 0;
+            System.Func<IList<string>> source = () =>
+            {
+                sourceCalls++;
+                return new List<string> { "gpt-4o", "gemini-2.5-flash", "deepseek-chat" };
+            };
+
+            var first = RimLLMUIStyle.FilterModelsCached("ui-test", 1, "g", source);
+            var second = RimLLMUIStyle.FilterModelsCached("ui-test", 1, "g", source);
+
+            ClassicAssert.AreSame(first, second, "版本與過濾字串都沒變時必須回傳同一份結果。");
+            ClassicAssert.AreEqual(1, sourceCalls, "命中快取時不得再向來源要清單。");
+            ClassicAssert.AreEqual(2, first.Count);
+
+            var filtered = RimLLMUIStyle.FilterModelsCached("ui-test", 1, "deep", source);
+            ClassicAssert.AreEqual(2, sourceCalls, "過濾字串變了必須重算。");
+            ClassicAssert.AreEqual(1, filtered.Count);
+
+            RimLLMUIStyle.FilterModelsCached("ui-test", 2, "deep", source);
+            ClassicAssert.AreEqual(3, sourceCalls, "清單版本變了必須重算。");
+        }
+
+        [Test]
+        public void FilterModelsCachedKeepsKeysIndependent()
+        {
+            var a = RimLLMUIStyle.FilterModelsCached("key-a", 1, "", () => new List<string> { "a" });
+            var b = RimLLMUIStyle.FilterModelsCached("key-b", 1, "", () => new List<string> { "b" });
+
+            ClassicAssert.AreEqual("a", a[0]);
+            ClassicAssert.AreEqual("b", b[0]);
+        }
+
+        // ---------- 可視列區間 ----------
+
+        [Test]
+        public void VisibleRowRangeCoversViewportWithOneRowPadding()
+        {
+            // 列高 36、頂端留白 4、捲到第 10 列頂端、可視 3 列高。
+            RimLLMUIStyle.GetVisibleRowRange(4f + 36f * 10f, 36f * 3f, 36f, 4f, 100, out int first, out int end);
+
+            ClassicAssert.AreEqual(9, first, "前面多留一列，避免捲動時露出空白。");
+            ClassicAssert.AreEqual(14, end, "後面多留一列。");
+        }
+
+        [Test]
+        public void VisibleRowRangeClampsToRowCount()
+        {
+            RimLLMUIStyle.GetVisibleRowRange(0f, 1000f, 36f, 4f, 5, out int first, out int end);
+            ClassicAssert.AreEqual(0, first);
+            ClassicAssert.AreEqual(5, end);
+
+            RimLLMUIStyle.GetVisibleRowRange(99999f, 200f, 36f, 4f, 5, out first, out end);
+            ClassicAssert.AreEqual(5, first);
+            ClassicAssert.AreEqual(5, end, "捲動超出範圍時不得產生負數或越界區間。");
+        }
+
+        [Test]
+        public void VisibleRowRangeIsEmptyForNoRows()
+        {
+            RimLLMUIStyle.GetVisibleRowRange(50f, 200f, 36f, 4f, 0, out int first, out int end);
+            ClassicAssert.AreEqual(0, first);
+            ClassicAssert.AreEqual(0, end);
+        }
     }
 }

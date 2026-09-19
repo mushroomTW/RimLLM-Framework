@@ -207,6 +207,16 @@ namespace RimLLM_Framework.Mod
         private readonly Dictionary<string, List<string>> _providerModels = BuildBuiltInMap(_ => new List<string>());
 
         /// <summary>
+        /// 模型清單的變更版本號。清單只在抓取模型或載入設定時變動，設定頁以此判斷
+        /// 過濾結果快取是否仍有效，不必每幀複製整份清單來比對。
+        /// </summary>
+        private int _modelListVersion;
+        public int ModelListVersion
+        {
+            get { lock (_settingsLock) { return _modelListVersion; } }
+        }
+
+        /// <summary>
         /// 第三方 Mod 強制接管登錄表（packageId → 是否把該 Mod 的 LLM 流量導向 RimLLM）。
         /// 預設全關；沒有登錄的 Mod 一律視為關閉。鍵由 Compat 層各目標自行宣告。
         /// </summary>
@@ -398,6 +408,7 @@ namespace RimLLM_Framework.Mod
                                 {
                                     // 移除 Clear，直接覆寫，保留新版本預設值
                                     foreach (var kvp in dto.ProviderModels) this._providerModels[kvp.Key] = kvp.Value;
+                                    _modelListVersion++;
                                 }
      
                                 // _apiKeys 依然可以 Clear，因為這是完全由用戶配置決定
@@ -684,10 +695,27 @@ namespace RimLLM_Framework.Mod
             }
         }
 
+        /// <summary>
+        /// 只讀第一筆，不複製整份清單：候選解析對每個純供應商條目都會呼叫一次，
+        /// 相容層每秒輪詢也走這裡，OpenRouter 動輒數百筆模型的清單不該每次都複製。
+        /// </summary>
         public string GetDefaultModel(string providerId, string defaultVal)
         {
-            var list = GetModelList(providerId);
-            return list.Count > 0 ? list[0] : defaultVal;
+            lock (_settingsLock)
+            {
+                return _providerModels.TryGetValue(providerId, out List<string> models) && models.Count > 0
+                    ? models[0]
+                    : defaultVal;
+            }
+        }
+
+        /// <summary>只讀筆數，供設定頁每幀顯示用，不複製清單。</summary>
+        public int GetModelCount(string providerId)
+        {
+            lock (_settingsLock)
+            {
+                return _providerModels.TryGetValue(providerId, out List<string> models) ? models.Count : 0;
+            }
         }
 
         public void SetModelList(string providerId, List<string> models)
@@ -695,6 +723,7 @@ namespace RimLLM_Framework.Mod
             lock (_settingsLock)
             {
                 _providerModels[providerId] = models != null ? new List<string>(models) : new List<string>();
+                _modelListVersion++;
             }
         }
 

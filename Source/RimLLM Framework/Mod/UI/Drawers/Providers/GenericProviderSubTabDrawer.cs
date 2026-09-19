@@ -175,8 +175,7 @@ namespace RimLLM_Framework.Mod
         {
             listing.Label("RimLLM_AvailableModelsTitle".Translate());
 
-            var currentModels = Settings.GetModelList(providerId);
-            if (currentModels.Count == 0)
+            if (Settings.GetModelCount(providerId) == 0)
             {
                 listing.Label("RimLLM_NoCachedModels".Translate());
                 return;
@@ -200,7 +199,9 @@ namespace RimLLM_Framework.Mod
             ModelFilters[providerId] = Widgets.TextField(searchFieldRect, filter);
             listing.Gap(4f);
 
-            List<string> visibleModels = RimLLMUIStyle.FilterModels(currentModels, ModelFilters[providerId]);
+            // 過濾結果與清單複製都走快取：只有模型清單版本或過濾字串變了才重算。
+            List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
+                providerId, Settings.ModelListVersion, ModelFilters[providerId], () => Settings.GetModelList(providerId));
 
             Rect scrollRect = listing.GetRect(220f);
             Widgets.DrawMenuSection(scrollRect);
@@ -232,7 +233,11 @@ namespace RimLLM_Framework.Mod
             Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
             ModelScrollPositions[providerId] = scrollPos;
 
-            for (int i = 0; i < visibleModels.Count; i++)
+            // 只畫可視範圍內的列；tooltip 後綴的翻譯提到迴圈外，不必每個晶片各查一次。
+            RimLLMUIStyle.GetVisibleRowRange(scrollPos.y, scrollRect.height, chipHeight + gap, gap, rows, out int firstRow, out int endRow);
+            string copyHint = "\n\n" + "RimLLM_ClickToCopy".Translate();
+
+            for (int i = firstRow * cols; i < visibleModels.Count && i < endRow * cols; i++)
             {
                 string model = visibleModels[i];
                 int col = i % cols;
@@ -251,8 +256,8 @@ namespace RimLLM_Framework.Mod
                 if (Mouse.IsOver(chipRect))
                 {
                     Widgets.DrawHighlight(chipRect);
+                    TooltipHandler.TipRegion(chipRect, model + copyHint);
                 }
-                TooltipHandler.TipRegion(chipRect, model + "\n\n" + "RimLLM_ClickToCopy".Translate());
 
                 if (Widgets.ButtonInvisible(chipRect))
                 {
@@ -288,7 +293,7 @@ namespace RimLLM_Framework.Mod
                 using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
                 {
                     // 置中加硬切最難讀：改為左對齊並以省略號收尾，完整名稱留在 tooltip。
-                    Widgets.Label(textRect, $"<color=silver>{model.Truncate(textRect.width)}</color>");
+                    Widgets.Label(textRect, "<color=silver>" + RimLLMUIStyle.TruncateCached(model, textRect.width) + "</color>");
                 }
             }
 

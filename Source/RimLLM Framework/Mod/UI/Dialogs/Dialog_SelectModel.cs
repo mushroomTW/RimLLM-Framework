@@ -16,6 +16,10 @@ namespace RimLLM_Framework.Mod
         private string _filter = "";
         private Vector2 _scrollPosition = Vector2.zero;
 
+        /// <summary>過濾結果快取：清單在視窗生命週期內固定，只有過濾字串變了才需要重算。</summary>
+        private string _cachedFilter;
+        private List<string> _cachedFiltered;
+
         public override Vector2 InitialSize => new Vector2(550f, 650f);
 
         public Dialog_SelectModel(List<string> models, Action<string> onSelected)
@@ -42,7 +46,12 @@ namespace RimLLM_Framework.Mod
             DrawQuickFilters(inRect);
 
             // 3. 過濾模型清單（與供應商設定頁共用同一份比對規則，避免兩處各自漂移）
-            List<string> filteredModels = RimLLMUIStyle.FilterModels(_allModels, _filter);
+            if (_cachedFiltered == null || !string.Equals(_cachedFilter, _filter, StringComparison.Ordinal))
+            {
+                _cachedFilter = _filter;
+                _cachedFiltered = RimLLMUIStyle.FilterModels(_allModels, _filter);
+            }
+            List<string> filteredModels = _cachedFiltered;
 
             // 4. 滾動清單區
             DrawModelList(inRect, filteredModels);
@@ -132,7 +141,9 @@ namespace RimLLM_Framework.Mod
 
                 Widgets.BeginScrollView(listRect, ref _scrollPosition, viewRect);
 
-                for (int i = 0; i < filteredModels.Count; i++)
+                // 只畫可視範圍內的列，數百筆模型不必每幀全部畫一遍。
+                RimLLMUIStyle.GetVisibleRowRange(_scrollPosition.y, listRect.height, rowHeight, 4f, filteredModels.Count, out int firstRow, out int endRow);
+                for (int i = firstRow; i < endRow; i++)
                 {
                     string model = filteredModels[i];
                     Rect rowRect = new Rect(4f, i * rowHeight + 4f, contentWidth - 8f, rowHeight - 2f);

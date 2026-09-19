@@ -39,6 +39,29 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>是否因 MEAI exporter 不可用而降級走舊反射實作。</summary>
         public bool UsedLegacyFallback { get; }
+
+        private JsonElement? _element;
+
+        /// <summary>
+        /// <see cref="Json"/> 解析後的獨立 <see cref="JsonElement"/>，第一次存取時解析一次後重用。
+        /// 每次結構化請求都要把 schema 交給 <c>ChatResponseFormat.ForJsonSchema</c>，
+        /// 字串已經快取了，沒理由每請求再解析一次。多執行緒同時首次存取只會各解析一次、結果相同。
+        /// </summary>
+        internal JsonElement Element
+        {
+            get
+            {
+                JsonElement? cached = _element;
+                if (cached.HasValue) return cached.Value;
+
+                using (JsonDocument document = JsonDocument.Parse(Json))
+                {
+                    JsonElement element = document.RootElement.Clone();
+                    _element = element;
+                    return element;
+                }
+            }
+        }
     }
 
     /// <summary>
