@@ -6,11 +6,11 @@ using RimLLM_Framework.Manager;
 namespace RimLLM_Framework.Tests
 {
     /// <summary>
-    /// Embedding 模型清單的排序。
+    /// Embedding 模型清單的名稱啟發式。
     ///
-    /// 各供應商皆走 OpenAI 相容的 /v1/models，該端點沒有能力資訊，
-    /// 因此只能排序不能過濾 —— 本地伺服器的模型名由使用者自訂，
-    /// 過濾會把合法選項藏起來。
+    /// 有能力資訊的供應商（Google、Ollama、LM Studio）直接依能力過濾；
+    /// 只有無能力資訊的通用 OpenAI 相容伺服器才退回這裡的排序 —— 本地伺服器的
+    /// 模型名由使用者自訂，過濾會把合法選項藏起來。
     /// </summary>
     [TestFixture]
     public class EmbeddingModelListTests

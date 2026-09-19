@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.ClientModel;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using OpenAI;
@@ -154,7 +157,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 取得目前 Embedding 供應商可用的模型清單。
         /// </summary>
-        public Task<List<string>> FetchAvailableModelsAsync(CancellationToken cancellationToken = default)
+        public Task<RimLLMEmbeddingModelList> FetchAvailableModelsAsync(CancellationToken cancellationToken = default)
         {
             string provider = _settings.EmbeddingProvider;
             string apiKey = _settings.EmbeddingApiKey;
@@ -163,13 +166,15 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 取得指定 Embedding 供應商可用的模型清單。
+        /// 取得指定 Embedding 供應商可用的模型清單，並盡可能只留下真正的 embedding 模型。
         ///
-        /// 各供應商皆走 OpenAI 相容的 <c>/v1/models</c>，該端點不回傳能力資訊，
-        /// 因此不做精確過濾，只把看起來像 embedding 的名稱排到前面，
-        /// 避免把使用者自行命名的模型藏起來。
+        /// OpenAI 相容的 <c>/v1/models</c> 不回傳能力資訊，因此改走各供應商的原生清單：
+        /// Google 看 <c>supportedGenerationMethods</c>、Ollama 看 <c>/api/show</c> 的 <c>capabilities</c>、
+        /// LM Studio 看 <c>/api/v0/models</c> 的 <c>type</c>；OpenAI 官方型錄的 embedding 模型一律以
+        /// <c>text-embedding-</c> 命名，依名稱過濾即可。只有兩者皆不可得的通用相容伺服器
+        /// 才退回「只排序不過濾」，並以 <see cref="RimLLMEmbeddingModelList.Filtered"/> 告知呼叫端。
         /// </summary>
-        public async Task<List<string>> FetchAvailableModelsAsync(
+        public async Task<RimLLMEmbeddingModelList> FetchAvailableModelsAsync(
             string provider, string endpoint, string apiKey, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(provider) || provider == DisabledProviderId)
@@ -180,27 +185,286 @@ namespace RimLLM_Framework.Manager
             string effectiveApiKey = string.IsNullOrEmpty(apiKey)
                 ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
                 : apiKey;
+            string root = NormalizeEmbeddingEndpoint(endpoint) ?? ResolveDefaultEndpoint(provider);
+
+            float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
+            using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
+            using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
+            {
+                try
+                {
+                    switch (provider)
+                    {
+                        case "Google":
+                            return await FetchGoogleEmbeddingModelsAsync(root, effectiveApiKey, linkedCts.Token).ConfigureAwait(false);
+                        case "LocalAPI_Ollama":
+                            return await FetchOllamaEmbeddingModelsAsync(root, linkedCts.Token).ConfigureAwait(false);
+                        case "LocalAPI_OpenAI":
+                            return await FetchLocalEmbeddingModelsAsync(root, effectiveApiKey, linkedCts.Token).ConfigureAwait(false);
+                        default:
+                            List<string> ids = await FetchOpenAiCompatibleModelsAsync(effectiveApiKey, root, linkedCts.Token).ConfigureAwait(false);
+                            return new RimLLMEmbeddingModelList(ids.FindAll(LooksLikeEmbeddingModel), filtered: true);
+                    }
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new RimLLMException(LLMError.Timeout, $"Embedding 模型清單逾時（{timeoutSeconds} 秒）。");
+                }
+                catch (ClientResultException ex)
+                {
+                    throw LLMErrorMapper.CreateException(
+                        ex.Status,
+                        $"Embedding 模型清單：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                        innerException: ex);
+                }
+                catch (HttpRequestException ex)
+                {
+                    throw new RimLLMException(
+                        LLMError.ProviderOffline,
+                        $"Embedding 模型清單：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                        innerException: ex);
+                }
+                catch (RimLLMException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    throw WrapUnknownEmbeddingError("Embedding 模型清單", ex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 原生清單端點共用的 HttpClient。逾時由呼叫端的 CancellationToken 控制。
+        /// </summary>
+        private static readonly HttpClient ModelListHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+
+        /// <summary>
+        /// Google 原生 <c>/models</c> 端點回報每個模型支援的方法，只留下支援 <c>embedContent</c> 的。
+        /// OpenAI 相容根位址以 <c>/openai</c> 結尾，去掉即為原生 API 根位址；
+        /// 回傳的 <c>models/</c> 前綴一併去除，與預設清單和模型欄位的寫法一致。
+        /// 自訂端點若是非 Google 的相容代理，回應不會有 <c>models</c> 陣列，此時退回通用清單。
+        /// </summary>
+        private static async Task<RimLLMEmbeddingModelList> FetchGoogleEmbeddingModelsAsync(
+            string root, string apiKey, CancellationToken cancellationToken)
+        {
+            string nativeRoot = TrimSuffix(root, "/openai");
+            var ids = new List<string>();
+            string pageToken = null;
+            do
+            {
+                string url = nativeRoot + "/models?pageSize=1000" +
+                    (pageToken == null ? string.Empty : "&pageToken=" + Uri.EscapeDataString(pageToken));
+                using (var request = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    if (!string.IsNullOrEmpty(apiKey))
+                    {
+                        request.Headers.TryAddWithoutValidation("x-goog-api-key", apiKey);
+                    }
+                    using (JsonDocument doc = await SendForJsonAsync(request, cancellationToken).ConfigureAwait(false))
+                    {
+                        if (!doc.RootElement.TryGetProperty("models", out JsonElement models) || models.ValueKind != JsonValueKind.Array)
+                        {
+                            List<string> generic = await FetchOpenAiCompatibleModelsAsync(apiKey, root, cancellationToken).ConfigureAwait(false);
+                            return new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(generic), filtered: false);
+                        }
+                        foreach (JsonElement model in models.EnumerateArray())
+                        {
+                            string name = GetString(model, "name");
+                            if (!string.IsNullOrEmpty(name) &&
+                                ArrayContains(model, "supportedGenerationMethods", "embedContent"))
+                            {
+                                ids.Add(TrimPrefix(name, "models/"));
+                            }
+                        }
+                        pageToken = GetString(doc.RootElement, "nextPageToken");
+                    }
+                }
+            } while (!string.IsNullOrEmpty(pageToken));
+
+            return new RimLLMEmbeddingModelList(ids, filtered: true);
+        }
+
+        /// <summary>
+        /// Ollama 的 <c>/api/tags</c> 只列名稱，能力要逐一向 <c>/api/show</c> 查。
+        /// 舊版 Ollama 沒有 <c>capabilities</c> 欄位；那種情況無從判斷，退回只排序不過濾。
+        /// </summary>
+        private static async Task<RimLLMEmbeddingModelList> FetchOllamaEmbeddingModelsAsync(
+            string root, CancellationToken cancellationToken)
+        {
+            string nativeRoot = TrimSuffix(root, "/v1");
+            var names = new List<string>();
+            using (var request = new HttpRequestMessage(HttpMethod.Get, nativeRoot + "/api/tags"))
+            using (JsonDocument doc = await SendForJsonAsync(request, cancellationToken).ConfigureAwait(false))
+            {
+                if (doc.RootElement.TryGetProperty("models", out JsonElement models) && models.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement model in models.EnumerateArray())
+                    {
+                        string name = GetString(model, "name");
+                        if (!string.IsNullOrEmpty(name)) names.Add(name);
+                    }
+                }
+            }
+
+            var showTasks = new List<Task<bool?>>(names.Count);
+            foreach (string name in names)
+            {
+                showTasks.Add(IsOllamaEmbeddingModelAsync(nativeRoot, name, cancellationToken));
+            }
+            bool?[] verdicts = await Task.WhenAll(showTasks).ConfigureAwait(false);
+
+            var ids = new List<string>();
+            bool allKnown = true;
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (verdicts[i] == null) allKnown = false;
+                if (verdicts[i] != false) ids.Add(names[i]);
+            }
+            return allKnown
+                ? new RimLLMEmbeddingModelList(ids, filtered: true)
+                : new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(ids), filtered: false);
+        }
+
+        /// <summary>
+        /// 回傳 null 代表無從判斷：伺服器沒有回報能力資訊，或這一個模型的查詢失敗。
+        /// 單一模型失敗（中途被刪、暫時 500）不該讓整份清單抓不到，因此在這裡吞掉。
+        /// </summary>
+        private static async Task<bool?> IsOllamaEmbeddingModelAsync(string nativeRoot, string name, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using (var request = new HttpRequestMessage(HttpMethod.Post, nativeRoot + "/api/show"))
+                {
+                    request.Content = new StringContent(
+                        RimLLMJson.Serialize(new Dictionary<string, string> { { "model", name } }),
+                        Encoding.UTF8, "application/json");
+                    using (JsonDocument doc = await SendForJsonAsync(request, cancellationToken).ConfigureAwait(false))
+                    {
+                        if (!doc.RootElement.TryGetProperty("capabilities", out JsonElement caps) || caps.ValueKind != JsonValueKind.Array)
+                        {
+                            return null;
+                        }
+                        return ArrayContains(doc.RootElement, "capabilities", "embedding");
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException || ex is RimLLMException || ex is JsonException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// OpenAI 相容分頁的目標可能是 LM Studio、Ollama 或任何相容伺服器。
+        /// 先探 LM Studio 原生的 <c>/api/v0/models</c>（有 <c>type</c> 欄位），
+        /// 再探 Ollama；兩者都不是才退回無能力資訊的 <c>/v1/models</c>。
+        /// </summary>
+        private static async Task<RimLLMEmbeddingModelList> FetchLocalEmbeddingModelsAsync(
+            string root, string apiKey, CancellationToken cancellationToken)
+        {
+            RimLLMEmbeddingModelList lmStudio = await TryFetchLmStudioEmbeddingModelsAsync(root, cancellationToken).ConfigureAwait(false);
+            if (lmStudio != null) return lmStudio;
 
             try
             {
-                return await FetchOpenAiCompatibleModelsAsync(
-                    effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider)).ConfigureAwait(false);
+                return await FetchOllamaEmbeddingModelsAsync(root, cancellationToken).ConfigureAwait(false);
             }
-            catch (ClientResultException ex)
+            catch (Exception ex) when (ex is HttpRequestException || ex is RimLLMException || ex is JsonException)
             {
-                throw LLMErrorMapper.CreateException(
-                    ex.Status,
-                    $"Embedding 模型清單：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
-                    innerException: ex);
+                // 不是 Ollama，繼續退回通用路徑
             }
-            catch (RimLLMException)
+
+            List<string> ids = await FetchOpenAiCompatibleModelsAsync(apiKey, root, cancellationToken).ConfigureAwait(false);
+            return new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(ids), filtered: false);
+        }
+
+        /// <summary>LM Studio 的原生清單以 <c>type</c> 區分 llm / vlm / embeddings。不是 LM Studio 時回傳 null。</summary>
+        private static async Task<RimLLMEmbeddingModelList> TryFetchLmStudioEmbeddingModelsAsync(
+            string root, CancellationToken cancellationToken)
+        {
+            try
             {
-                throw;
+                using (var request = new HttpRequestMessage(HttpMethod.Get, TrimSuffix(root, "/v1") + "/api/v0/models"))
+                using (JsonDocument doc = await SendForJsonAsync(request, cancellationToken).ConfigureAwait(false))
+                {
+                    if (!doc.RootElement.TryGetProperty("data", out JsonElement data) || data.ValueKind != JsonValueKind.Array)
+                    {
+                        return null;
+                    }
+                    var ids = new List<string>();
+                    bool anyTyped = false;
+                    foreach (JsonElement model in data.EnumerateArray())
+                    {
+                        string type = GetString(model, "type");
+                        if (type == null) continue;
+                        anyTyped = true;
+                        string id = GetString(model, "id");
+                        if (!string.IsNullOrEmpty(id) && string.Equals(type, "embeddings", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ids.Add(id);
+                        }
+                    }
+                    // 沒有任何 type 欄位：不是 LM Studio 的格式，交給後續路徑。
+                    return anyTyped ? new RimLLMEmbeddingModelList(ids, filtered: true) : null;
+                }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is HttpRequestException || ex is RimLLMException || ex is JsonException)
             {
-                throw WrapUnknownEmbeddingError("Embedding 模型清單", ex);
+                return null;
             }
+        }
+
+        private static async Task<JsonDocument> SendForJsonAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            using (HttpResponseMessage response = await ModelListHttp.SendAsync(request, cancellationToken).ConfigureAwait(false))
+            {
+                string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw LLMErrorMapper.CreateException(
+                        (int)response.StatusCode,
+                        $"{request.RequestUri.AbsolutePath} 回應 {(int)response.StatusCode}：{Core.RimLLMLog.SanitizeForLog(body, 200)}",
+                        detectionText: body);
+                }
+                return JsonDocument.Parse(body);
+            }
+        }
+
+        private static string GetString(JsonElement element, string property)
+        {
+            return element.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+
+        private static bool ArrayContains(JsonElement element, string property, string expected)
+        {
+            if (!element.TryGetProperty(property, out JsonElement array) || array.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+            foreach (JsonElement item in array.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String && string.Equals(item.GetString(), expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static string TrimSuffix(string value, string suffix)
+        {
+            return value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+                ? value.Substring(0, value.Length - suffix.Length)
+                : value;
+        }
+
+        private static string TrimPrefix(string value, string prefix)
+        {
+            return value.StartsWith(prefix, StringComparison.Ordinal) ? value.Substring(prefix.Length) : value;
         }
 
         /// <summary>
@@ -264,8 +528,7 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 建立 OpenAI 相容端點的連線參數。模型清單與 embedding 兩條路徑共用，
-        /// 否則端點正規化與佔位金鑰的規則會在兩處各自漂移。
+        /// 建立 OpenAI 相容端點的連線參數：端點正規化、套用預設值、補上佔位金鑰。
         /// </summary>
         private static void BuildOpenAiCompatibleClientArgs(
             string apiKey, string endpoint, string defaultEndpoint,
@@ -278,14 +541,17 @@ namespace RimLLM_Framework.Manager
             credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
         }
 
-        private static async Task<List<string>> FetchOpenAiCompatibleModelsAsync(
-            string apiKey, string endpoint, string defaultEndpoint)
+        /// <summary>
+        /// 沒有能力資訊的通用 <c>/v1/models</c>。<paramref name="root"/> 已正規化並套用過預設值。
+        /// </summary>
+        private static async Task<List<string>> FetchOpenAiCompatibleModelsAsync(string apiKey, string root, CancellationToken cancellationToken)
         {
-            BuildOpenAiCompatibleClientArgs(apiKey, endpoint, defaultEndpoint, out var credential, out var options);
+            var options = new OpenAIClientOptions { Endpoint = new Uri(root, UriKind.Absolute) };
+            var credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
 
             OpenAIModelCollection models = await new OpenAIClient(credential, options)
                 .GetOpenAIModelClient()
-                .GetModelsAsync()
+                .GetModelsAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             var ids = new List<string>();
@@ -296,12 +562,13 @@ namespace RimLLM_Framework.Manager
                     ids.Add(model.Id);
                 }
             }
-            return OrderEmbeddingCandidatesFirst(ids);
+            return ids;
         }
 
         /// <summary>
-        /// 常見的 embedding 模型命名片段。只用來排序，不用來過濾 ——
+        /// 常見的 embedding 模型命名片段。伺服器沒有能力資訊時只用來排序不過濾 ——
         /// 本地伺服器的模型名由使用者自訂，過濾會把合法選項藏起來。
+        /// OpenAI 官方型錄命名固定，才用它直接過濾。
         /// </summary>
         private static readonly string[] EmbeddingNameHints =
         {

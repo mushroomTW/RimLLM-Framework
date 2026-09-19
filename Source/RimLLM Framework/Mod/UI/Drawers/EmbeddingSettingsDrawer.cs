@@ -657,19 +657,25 @@ namespace RimLLM_Framework.Mod
                 Func<string> applyResult;
                 try
                 {
-                    List<string> models = await new RimLLMEmbeddingService(Settings)
+                    RimLLMEmbeddingModelList result = await new RimLLMEmbeddingService(Settings)
                         .FetchAvailableModelsAsync(providerId, endpoint, apiKey)
                         .ConfigureAwait(false);
 
                     applyResult = () =>
                     {
-                        if (models == null || models.Count == 0)
+                        List<string> models = result.Models;
+                        if (models.Count == 0)
                         {
-                            return "RimLLM_FetchSuccessEmpty".Translate();
+                            return result.Filtered
+                                ? "RimLLM_EmbeddingFetchSuccessEmpty".Translate()
+                                : "RimLLM_FetchSuccessEmpty".Translate();
                         }
                         Settings.SetModelList(RimLLMEmbeddingService.GetModelListKey(providerId), models);
                         Settings.Write();
-                        return "RimLLM_FetchSuccessCount".Translate(models.Count);
+                        // 沒過濾的清單可能混有對話模型，狀態列要講清楚，玩家才知道不能照單全收。
+                        return result.Filtered
+                            ? "RimLLM_EmbeddingFetchSuccessCount".Translate(models.Count)
+                            : "RimLLM_EmbeddingFetchSuccessUnfiltered".Translate(models.Count);
                     };
                 }
                 catch (Exception ex)

@@ -169,6 +169,9 @@
   <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;尚未抓取模型清單。可按下方按鈕抓取，或直接於上方輸入模型名稱。&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
   <RimLLM_EmbeddingPresetModelsHint>（展示官方常見推薦模型；亦可點擊下方按鈕從伺服器抓取完整清單）</RimLLM_EmbeddingPresetModelsHint>
   <RimLLM_EmbeddingFetchedModelsHint>✓ 已從伺服器成功同步最新模型清單</RimLLM_EmbeddingFetchedModelsHint>
+  <RimLLM_EmbeddingFetchSuccessCount>&lt;color=green&gt;獲取成功&lt;/color&gt; (共 {0} 個 Embedding 模型，已依伺服器回報的能力過濾)</RimLLM_EmbeddingFetchSuccessCount>
+  <RimLLM_EmbeddingFetchSuccessUnfiltered>&lt;color=yellow&gt;獲取成功&lt;/color&gt; (共 {0} 個模型；伺服器未回報模型能力，清單未過濾，可能混有對話模型)</RimLLM_EmbeddingFetchSuccessUnfiltered>
+  <RimLLM_EmbeddingFetchSuccessEmpty>&lt;color=yellow&gt;獲取成功，但伺服器沒有任何 Embedding 模型&lt;/color&gt;</RimLLM_EmbeddingFetchSuccessEmpty>
   <RimLLM_EnableEmbeddingProvider>設為目前啟用的 Embedding 供應商</RimLLM_EnableEmbeddingProvider>
   <RimLLM_EmbeddingActiveBadge>&lt;color=#4ade80&gt;&lt;b&gt;(目前作用中的向量運算服務)&lt;/b&gt;&lt;/color&gt;</RimLLM_EmbeddingActiveBadge>
   <RimLLM_EmbeddingSetAsModel>設為此供應商的 Embedding 模型</RimLLM_EmbeddingSetAsModel>

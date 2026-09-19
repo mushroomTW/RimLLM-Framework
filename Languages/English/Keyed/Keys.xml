@@ -169,6 +169,9 @@
   <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;No model list fetched yet. Fetch one below, or type the model name above.&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
   <RimLLM_EmbeddingPresetModelsHint>(Showing verified preset models; you can also fetch the full list from your server below)</RimLLM_EmbeddingPresetModelsHint>
   <RimLLM_EmbeddingFetchedModelsHint>✓ Model list synchronized from server</RimLLM_EmbeddingFetchedModelsHint>
+  <RimLLM_EmbeddingFetchSuccessCount>&lt;color=green&gt;Fetch Successful&lt;/color&gt; ({0} embedding models, filtered by the capabilities the server reports)</RimLLM_EmbeddingFetchSuccessCount>
+  <RimLLM_EmbeddingFetchSuccessUnfiltered>&lt;color=yellow&gt;Fetch Successful&lt;/color&gt; ({0} models; the server reports no capabilities, so the list is unfiltered and may include chat models)</RimLLM_EmbeddingFetchSuccessUnfiltered>
+  <RimLLM_EmbeddingFetchSuccessEmpty>&lt;color=yellow&gt;Fetch Successful, but the server has no embedding models&lt;/color&gt;</RimLLM_EmbeddingFetchSuccessEmpty>
   <RimLLM_EnableEmbeddingProvider>Set as active Embedding provider</RimLLM_EnableEmbeddingProvider>
   <RimLLM_EmbeddingActiveBadge>&lt;color=#4ade80&gt;&lt;b&gt;(Active Embedding Service)&lt;/b&gt;&lt;/color&gt;</RimLLM_EmbeddingActiveBadge>
   <RimLLM_EmbeddingSetAsModel>Set as Embedding Model</RimLLM_EmbeddingSetAsModel>
