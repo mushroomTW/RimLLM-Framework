@@ -78,11 +78,10 @@ namespace RimLLM_Framework.Manager
                 .GetResponseAsync(materialized, options, cancellationToken)
                 .ConfigureAwait(false);
 
-            // 先複製一份給第一次呼叫端，再存深層快照：呼叫端之後修改自己那份
-            // Messages／Usage／AdditionalProperties 不會污染快取。
-            ChatResponse callerCopy = RimLLMResponseDeepCopy.Copy(response);
+            // Store 內部會先做深層快照再存，因此直接把原回應交給呼叫端即可：
+            // Store 回傳前快照已經完成，呼叫端之後的修改不會污染快取，省下一次大物件複製。
             Store(key, response);
-            return callerCopy;
+            return response;
         }
 
         public override bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -192,7 +191,9 @@ namespace RimLLM_Framework.Manager
                     }
                     if (_cacheable)
                     {
-                        _collected.Add(_inner.Current);
+                        // 存深層快照而非同一份參考：消費端在列舉過程中若修改已收到的
+                        // Current，不會污染錄製中的快取內容。
+                        _collected.Add(RimLLMResponseDeepCopy.Copy(_inner.Current));
                     }
                     return true;
                 }

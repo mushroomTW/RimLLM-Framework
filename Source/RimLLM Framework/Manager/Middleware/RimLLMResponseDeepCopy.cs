@@ -9,15 +9,31 @@ namespace RimLLM_Framework.Manager
 #endregion
 
     /// <summary>
-    /// 把 <see cref="ChatResponse"/> 深層複製成一份與來源完全獨立的實例。
+    /// 把 <see cref="ChatResponse"/> 深層複製成一份與來源隔離的實例。
     /// </summary>
     /// <remarks>
     /// 回應快取的寫入與讀出都必須隔離實例：<c>ChatResponse.Messages</c> 是可寫清單，
     /// 內層訊息與 <c>AIContent</c> 也是可變物件。若快取持有的是呼叫端拿到的同一份實例，
     /// 呼叫端往 Messages 追加訊息、改 Usage 或 AdditionalProperties，就會污染後續所有命中。
-    /// 這裡對集合與可寫成員逐層重建，唯一保留原樣的是 <see cref="AIContent.RawRepresentation"/>
-    /// 與 <see cref="ChatResponse.RawRepresentation"/>——那是 provider 的私有物件，框架不讀、
-    /// 呼叫端也不該改，複製它既無意義也可能因不可序列化而失敗。
+    /// 隔離範圍（保證）：
+    /// <list type="bullet">
+    /// <item>Messages／Contents／Usage／Annotations 清單與字典容器一律重建；</item>
+    /// <item><c>AdditionalProperties</c>、工具參數、工具結果中的巢狀容器
+    /// （<c>IDictionary&lt;string,object&gt;</c>、非泛型 <c>IDictionary</c>、
+    /// 陣列、<c>List&lt;T&gt;</c>、其他 <c>IList</c>）遞迴重建；</item>
+    /// <item><c>DataContent</c> 以 data URI 重建（含位元組）、<c>UriContent</c> 重建，
+    /// <c>TextContent</c>／<c>TextReasoningContent</c>／<c>FunctionCallContent</c>／
+    /// <c>FunctionResultContent</c>／<c>UsageContent</c> 依型別重建；</item>
+    /// </list>
+    /// 不保證（刻意共用）：
+    /// <list type="bullet">
+    /// <item>未知的自訂 <c>AIContent</c> 子類別：無法可靠重建，原樣保留；</item>
+    /// <item><c>AIContent.RawRepresentation</c> 與 <c>ChatResponse.RawRepresentation</c>：
+    /// 那是 provider 的私有物件，框架不讀、呼叫端也不該改；</item>
+    /// <item>容器值中的任意自訂參考型別（如自訂 POCO）：<c>CopyValue</c> 只重建上述
+    /// 容器形狀，其餘參考型別原樣保留，呼叫端若修改其內部仍可能影響快取；</item>
+    /// <item><c>Annotations</c> 元素與 <c>Exception</c> 實例：唯讀資料，原樣保留。</item>
+    /// </list>
     /// </remarks>
     internal static class RimLLMResponseDeepCopy
     {
@@ -119,7 +135,7 @@ namespace RimLLM_Framework.Manager
                     {
                         foreach (KeyValuePair<string, object> pair in call.Arguments)
                         {
-                            arguments[pair.Key] = pair.Value;
+                            arguments[pair.Key] = CopyValue(pair.Value);
                         }
                     }
                     return CopyBase(new FunctionCallContent(call.CallId, call.Name, arguments)
@@ -129,12 +145,30 @@ namespace RimLLM_Framework.Manager
                     }, call);
                 }
                 case FunctionResultContent result:
-                    return CopyBase(new FunctionResultContent(result.CallId, result.Result)
+                    return CopyBase(new FunctionResultContent(result.CallId, CopyValue(result.Result))
                     {
                         Exception = result.Exception
                     }, result);
                 case UsageContent usage:
                     return CopyBase(new UsageContent(Copy(usage.Details)), usage);
+                case DataContent data:
+                {
+                    // DataContent.Uri 恆為含位元組的 data URI，以它重建即複製了位元組本體。
+                    try
+                    {
+                        var rebuilt = new DataContent(data.Uri, data.MediaType)
+                        {
+                            Name = data.Name
+                        };
+                        return CopyBase(rebuilt, data);
+                    }
+                    catch
+                    {
+                        return source;
+                    }
+                }
+                case UriContent uri:
+                    return CopyBase(new UriContent(uri.Uri, uri.MediaType), uri);
                 default:
                     // 無法安全重建的自訂內容型別：原樣保留。
                     // 這類內容通常由 provider 產生且不具備可寫表面，呼叫端不會去改它。
@@ -185,7 +219,7 @@ namespace RimLLM_Framework.Manager
             };
         }
 
-        /// <summary>AdditionalProperties 複製成新字典，值原樣保留（頂層 key 的增刪改已完全隔離）。</summary>
+        /// <summary>AdditionalProperties 複製成新字典，巢狀容器以 <see cref="CopyValue"/> 遞迴重建。</summary>
         public static AdditionalPropertiesDictionary Copy(AdditionalPropertiesDictionary source)
         {
             if (source == null) return null;
@@ -193,9 +227,96 @@ namespace RimLLM_Framework.Manager
             var copy = new AdditionalPropertiesDictionary();
             foreach (KeyValuePair<string, object> pair in source)
             {
-                copy[pair.Key] = pair.Value;
+                copy[pair.Key] = CopyValue(pair.Value);
             }
             return copy;
+        }
+
+        /// <summary>
+        /// 複製一個任意值。不可變量（null、字串、實值型別）直接共用；
+        /// 常見可變容器（字串鍵字典、非泛型字典、陣列、<c>List&lt;T&gt;</c>、其他 <c>IList</c>、
+        /// <c>ReadOnlyMemory&lt;byte&gt;</c>）遞迴重建；其餘自訂參考型別無法可靠重建，原樣保留。
+        /// </summary>
+        private static object CopyValue(object value)
+        {
+            if (value == null) return null;
+            if (value is string) return value;
+
+            Type valueType = value.GetType();
+            if (valueType.IsValueType)
+            {
+                // 實值型別直接共用（內含的陣列參照除外，見類別註解的不保證事項）。
+                return value;
+            }
+
+            if (value is IDictionary<string, object> stringDict)
+            {
+                var copy = new Dictionary<string, object>(StringComparer.Ordinal);
+                foreach (KeyValuePair<string, object> pair in stringDict)
+                {
+                    copy[pair.Key] = CopyValue(pair.Value);
+                }
+                return copy;
+            }
+
+            if (value is System.Collections.IDictionary dictionary)
+            {
+                bool allStringKeys = true;
+                foreach (object key in dictionary.Keys)
+                {
+                    if (!(key is string))
+                    {
+                        allStringKeys = false;
+                        break;
+                    }
+                }
+                if (allStringKeys)
+                {
+                    var copy = new Dictionary<string, object>(StringComparer.Ordinal);
+                    foreach (System.Collections.DictionaryEntry entry in dictionary)
+                    {
+                        copy[(string)entry.Key] = CopyValue(entry.Value);
+                    }
+                    return copy;
+                }
+                var objectCopy = new Dictionary<object, object>();
+                foreach (System.Collections.DictionaryEntry entry in dictionary)
+                {
+                    objectCopy[entry.Key] = CopyValue(entry.Value);
+                }
+                return objectCopy;
+            }
+
+            if (value is Array array)
+            {
+                var copy = (Array)Array.CreateInstance(valueType.GetElementType(), array.Length);
+                for (int i = 0; i < array.Length; i++)
+                {
+                    copy.SetValue(CopyValue(array.GetValue(i)), i);
+                }
+                return copy;
+            }
+
+            if (value is System.Collections.IList list)
+            {
+                if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(List<>))
+                {
+                    var copy = (System.Collections.IList)Activator.CreateInstance(valueType);
+                    foreach (object item in list)
+                    {
+                        copy.Add(CopyValue(item));
+                    }
+                    return copy;
+                }
+                var objectItems = new List<object>(list.Count);
+                foreach (object item in list)
+                {
+                    objectItems.Add(CopyValue(item));
+                }
+                return objectItems;
+            }
+
+            return value;
         }
     }
 #pragma warning restore S101

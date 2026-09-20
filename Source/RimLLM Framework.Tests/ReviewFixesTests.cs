@@ -316,5 +316,115 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.Greater(RimLLMEmbeddingService.MaxOllamaProbeConcurrency, 0);
             ClassicAssert.LessOrEqual(RimLLMEmbeddingService.MaxOllamaProbeConcurrency, RimLLMEmbeddingService.MaxOllamaModelsToProbe);
         }
+
+        // ---------- [P3] 快取鍵追蹤修正：bool 標記與參數排序 ----------
+
+        [Test]
+        public void CacheKey_BoolTrueAndFalse_ProduceDifferentKeys()
+        {
+            var msgTrue = new ChatMessage(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionResultContent("call-1", new Dictionary<string, object> { { "flag", true } })
+            });
+            var msgFalse = new ChatMessage(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionResultContent("call-1", new Dictionary<string, object> { { "flag", false } })
+            });
+
+            string keyTrue = RimLLMResponseCacheKey.Build(new[] { msgTrue }, new ChatOptions());
+            string keyFalse = RimLLMResponseCacheKey.Build(new[] { msgFalse }, new ChatOptions());
+
+            ClassicAssert.AreNotEqual(keyTrue, keyFalse, "bool true/false 必須產生不同的快取鍵");
+        }
+
+        [Test]
+        public void CacheKey_FunctionCallArgumentsDifferentOrder_SameKey()
+        {
+            var msgA = new ChatMessage(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("call-1", "GetWeather", new Dictionary<string, object> { { "a", 1 }, { "b", 2 } })
+            });
+            var msgB = new ChatMessage(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("call-1", "GetWeather", new Dictionary<string, object> { { "b", 2 }, { "a", 1 } })
+            });
+
+            string keyA = RimLLMResponseCacheKey.Build(new[] { msgA }, new ChatOptions());
+            string keyB = RimLLMResponseCacheKey.Build(new[] { msgB }, new ChatOptions());
+
+            ClassicAssert.AreEqual(keyA, keyB, "工具參數插入順序不可影響快取鍵");
+        }
+
+        // ---------- [P3] 深層複製追蹤修正：巢狀容器隔離 ----------
+
+        [Test]
+        public void DeepCopy_NestedAdditionalProperties_AreIsolated()
+        {
+            var source = new ChatResponse(new ChatMessage(ChatRole.Assistant, "hi"))
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    ["nested"] = new Dictionary<string, object> { { "x", 1 } }
+                }
+            };
+
+            ChatResponse copy = RimLLMResponseDeepCopy.Copy(source);
+            ((Dictionary<string, object>)copy.AdditionalProperties["nested"])["x"] = 999;
+
+            ClassicAssert.AreEqual(1, ((Dictionary<string, object>)source.AdditionalProperties["nested"])["x"],
+                "複製品巢狀字典的修改不得回寫到來源");
+        }
+
+        [Test]
+        public void DeepCopy_FunctionCallNestedArguments_AreIsolated()
+        {
+            var source = new ChatMessage(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("c1", "F", new Dictionary<string, object>
+                {
+                    { "opts", new Dictionary<string, object> { { "k", "v" } } }
+                })
+            });
+
+            ChatMessage copy = (ChatMessage)RimLLMResponseDeepCopy.Copy(
+                new ChatResponse(source)).Messages[0];
+            var copiedCall = (FunctionCallContent)copy.Contents[0];
+            ((Dictionary<string, object>)copiedCall.Arguments["opts"])["k"] = "mutated";
+
+            var originalCall = (FunctionCallContent)source.Contents[0];
+            ClassicAssert.AreEqual("v", ((Dictionary<string, object>)originalCall.Arguments["opts"])["k"],
+                "複製品工具參數巢狀字典的修改不得回寫到來源");
+        }
+
+        // ---------- [P3] 結構化驗證追蹤修正：集合 null 元素 ----------
+
+        private class NullableItemContainer
+        {
+            public List<int?> Values;
+        }
+
+        [Test]
+        public void StructuredValidation_NullElement_Throws()
+        {
+            var container = new ItemContainer
+            {
+                Items = new List<Item> { null }
+            };
+
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                RimLLMJsonHelper.ValidateStructuredObject(container));
+            ClassicAssert.IsTrue(ex.Message.Contains("null"), $"實際訊息：{ex.Message}");
+        }
+
+        [Test]
+        public void StructuredValidation_NullableElement_AllowsNull()
+        {
+            var container = new NullableItemContainer
+            {
+                Values = new List<int?> { 1, null, 3 }
+            };
+
+            RimLLMJsonHelper.ValidateStructuredObject(container); // 不拋出即通過
+        }
     }
 }

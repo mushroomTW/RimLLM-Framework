@@ -345,6 +345,7 @@ namespace RimLLM_Framework.Manager
             {
                 if (doc.RootElement.TryGetProperty("models", out JsonElement models) && models.ValueKind == JsonValueKind.Array)
                 {
+                    int totalModels = models.GetArrayLength();
                     var seen = new HashSet<string>(StringComparer.Ordinal);
                     foreach (JsonElement model in models.EnumerateArray())
                     {
@@ -356,30 +357,33 @@ namespace RimLLM_Framework.Manager
                             break;
                         }
                     }
+                    if (totalModels > names.Count)
+                    {
+                        Core.RimLLMLog.Warning(
+                            $"[RimLLM] Ollama model library has {totalModels} entries; only the first {names.Count} were probed (MaxOllamaModelsToProbe={MaxOllamaModelsToProbe}). Models beyond this limit will not appear in the list.");
+                    }
                 }
             }
 
             // 固定大小 worker pool：同時在飛的 /api/show 請求不超過 MaxOllamaProbeConcurrency 個。
+            // worker 數量本身即為並行上限，不再另設 SemaphoreSlim。
             var verdicts = new bool?[names.Count];
             int nextIndex = -1;
-            using (var gate = new SemaphoreSlim(MaxOllamaProbeConcurrency))
+            var workers = new List<Task>(MaxOllamaProbeConcurrency);
+            for (int w = 0; w < MaxOllamaProbeConcurrency; w++)
             {
-                var workers = new List<Task>(MaxOllamaProbeConcurrency);
-                for (int w = 0; w < MaxOllamaProbeConcurrency; w++)
+                workers.Add(Task.Run(async () =>
                 {
-                    workers.Add(Task.Run(async () =>
+                    while (true)
                     {
-                        while (true)
-                        {
-                            int i = Interlocked.Increment(ref nextIndex);
-                            if (i >= names.Count) return;
-                            bool? verdict = await IsOllamaEmbeddingModelAsync(nativeRoot, names[i], cancellationToken).ConfigureAwait(false);
-                            verdicts[i] = verdict;
-                        }
-                    }, cancellationToken));
-                }
-                await Task.WhenAll(workers).ConfigureAwait(false);
+                        int i = Interlocked.Increment(ref nextIndex);
+                        if (i >= names.Count) return;
+                        bool? verdict = await IsOllamaEmbeddingModelAsync(nativeRoot, names[i], cancellationToken).ConfigureAwait(false);
+                        verdicts[i] = verdict;
+                    }
+                }, cancellationToken));
             }
+            await Task.WhenAll(workers).ConfigureAwait(false);
 
             var ids = new List<string>();
             bool allKnown = true;
@@ -393,7 +397,7 @@ namespace RimLLM_Framework.Manager
                 : new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(ids), filtered: false);
         }
 
-        /// <summary>Ollama 模型清單最多探測的模型數，避免異常大的本地模型庫造成連線尖峰。</summary>
+        /// <summary>Ollama 模型清單最多探測的模型數，避免異常大的本地模型庫造成連線尖峰。超過時只取前 N 個並寫警告日誌。</summary>
         internal const int MaxOllamaModelsToProbe = 128;
 
         /// <summary>Ollama <c>/api/show</c> 探測的同時並行數上限。</summary>

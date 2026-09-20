@@ -356,12 +356,20 @@ namespace RimLLM_Framework.Manager
             {
                 if (value is System.Collections.IEnumerable enumerable && type != typeof(string))
                 {
+                    Type elementType = GetCollectionElementType(type);
                     foreach (object item in enumerable)
                     {
-                        if (item != null)
+                        if (item == null)
                         {
-                            ValidateRequiredMembers(item, item.GetType(), visitedTypes);
+                            // 可空元素型別（如 int?）允許 null；其餘一律視為必填，null 代表 LLM 回傳了殘缺陣列。
+                            if (elementType != null && !IsRequiredMember(elementType))
+                            {
+                                continue;
+                            }
+                            throw new InvalidOperationException(
+                                $"Required structured response collection element is null (collection type '{type.Name}').");
                         }
+                        ValidateRequiredMembers(item, item.GetType(), visitedTypes);
                     }
                     return;
                 }
@@ -413,6 +421,29 @@ namespace RimLLM_Framework.Manager
         private static bool IsRequiredMember(Type type)
         {
             return Nullable.GetUnderlyingType(type) == null;
+        }
+
+        /// <summary>
+        /// 取得集合的元素型別：陣列取 <c>GetElementType</c>，
+        /// 泛型集合取其 <c>IEnumerable&lt;T&gt;</c> 的 <c>T</c>
+        ///（字典會取到 <c>KeyValuePair&lt;K,V&gt;</c>，為實值型別，不影響 null 判斷）。
+        /// 非泛型集合無從得知，回傳 null，呼叫端將 null 元素視為非法。
+        /// </summary>
+        private static Type GetCollectionElementType(Type type)
+        {
+            if (type == null) return null;
+            if (type.IsArray) return type.GetElementType();
+            if (type.IsGenericType)
+            {
+                foreach (Type iface in type.GetInterfaces())
+                {
+                    if (iface.IsGenericType && iface.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IEnumerable<>))
+                    {
+                        return iface.GetGenericArguments()[0];
+                    }
+                }
+            }
+            return null;
         }
     }
 #pragma warning restore S101, S2342

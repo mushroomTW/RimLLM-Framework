@@ -108,7 +108,10 @@ namespace RimLLM_Framework.Manager
                         AppendField(builder, call.Name);
                         if (call.Arguments != null)
                         {
-                            foreach (KeyValuePair<string, object> argument in call.Arguments)
+                            // 參數字典列舉順序不穩定：排序鍵後再附加，同內容不同插入順序得到相同鍵值。
+                            var sortedArguments = new List<KeyValuePair<string, object>>(call.Arguments);
+                            sortedArguments.Sort((a, b) => string.CompareOrdinal(a.Key, b.Key));
+                            foreach (KeyValuePair<string, object> argument in sortedArguments)
                             {
                                 AppendField(builder, argument.Key);
                                 AppendValue(builder, argument.Value);
@@ -154,16 +157,17 @@ namespace RimLLM_Framework.Manager
                 AppendField(builder, str);
                 return;
             }
-            if (value is IFormattable formattable)
-            {
-                builder.Append("F;");
-                AppendField(builder, formattable.ToString(null, CultureInfo.InvariantCulture));
-                return;
-            }
+            // bool 必須在 IFormattable 之前：bool 實作 IFormattable，若順序顛倒此分支永遠到不了。
             if (value is bool flag)
             {
                 builder.Append("B;");
                 AppendField(builder, flag ? "1" : "0");
+                return;
+            }
+            if (value is IFormattable formattable)
+            {
+                builder.Append("F;");
+                AppendField(builder, formattable.ToString(null, CultureInfo.InvariantCulture));
                 return;
             }
             if (value is System.Collections.IDictionary dict)
