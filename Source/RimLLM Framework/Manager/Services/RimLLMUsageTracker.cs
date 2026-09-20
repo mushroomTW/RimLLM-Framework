@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
-using RimLLM_Framework.Mod;
 using RimWorld;
 using Verse;
 #pragma warning disable S108, S1104, S2325, S3267, S3887, S2696 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀；S2696 靜態節流跨實例共享為設計意圖
@@ -228,9 +227,9 @@ namespace RimLLM_Framework.Manager
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             
-            if (_settings is RimLLMFrameworkSettings frameworkSettings && frameworkSettings.RequestLogs != null)
+            if (_settings.RequestLogs != null)
             {
-                foreach (var log in frameworkSettings.RequestLogs)
+                foreach (var log in _settings.RequestLogs)
                 {
                     RequestLogs.Enqueue(log);
                     Interlocked.Increment(ref _logCount);
@@ -262,41 +261,38 @@ namespace RimLLM_Framework.Manager
 
             CountOutcome(provider, success);
 
-            if (_settings is RimLLMFrameworkSettings frameworkSettings)
+            RimLLMDispatcher.EnqueueOnMainThread(() =>
             {
-                RimLLMDispatcher.EnqueueOnMainThread(() =>
+                bool needSave;
+                lock (LogLock)
                 {
-                    bool needSave;
-                    lock (LogLock)
+                    _settings.RequestLogs = new List<RimLLMManager.RequestLogEntry>(RequestLogs.ToArray());
+                    // 節流：非成功或過了 15 秒以上才執行實體寫入（僅寫遙測 JSON，不動設定 XML）
+                    if (!success || (DateTime.UtcNow - _lastLogWriteTime).TotalSeconds > 15)
                     {
-                        frameworkSettings.RequestLogs = new List<RimLLMManager.RequestLogEntry>(RequestLogs.ToArray());
-                        // 節流：非成功或過了 15 秒以上才執行實體寫入（僅寫遙測 JSON，不動設定 XML）
-                        if (!success || (DateTime.UtcNow - _lastLogWriteTime).TotalSeconds > 15)
-                        {
-                            _lastLogWriteTime = DateTime.UtcNow;
-                            // 寫檔在背景非同步進行：先標記待寫入，讓關閉時的 FlushTelemetryIfDirty
-                            // 能補上尚未完成或失敗的背景寫入；Save 成功會自行清除該標記。
-                            frameworkSettings.MarkTelemetryDirty();
-                            needSave = true;
-                        }
-                        else
-                        {
-                            // 被節流跳過的變更需標記為待寫入，關閉遊戲時才會強制 flush，
-                            // 否則 session 最後一段用量永遠寫不進去。
-                            frameworkSettings.MarkTelemetryDirty();
-                            needSave = false;
-                        }
+                        _lastLogWriteTime = DateTime.UtcNow;
+                        // 寫檔在背景非同步進行：先標記待寫入，讓關閉時的 FlushTelemetryIfDirty
+                        // 能補上尚未完成或失敗的背景寫入；Save 成功會自行清除該標記。
+                        _settings.MarkTelemetryDirty();
+                        needSave = true;
                     }
+                    else
+                    {
+                        // 被節流跳過的變更需標記為待寫入，關閉遊戲時才會強制 flush，
+                        // 否則 session 最後一段用量永遠寫不進去。
+                        _settings.MarkTelemetryDirty();
+                        needSave = false;
+                    }
+                }
 
-                    // AES 加密 + JSON 序列化 + 磁碟寫入改由背景單寫者執行，
-                    // 不再佔用主線程派遣器的 2ms 幀預算。記憶體內的 RequestLogs 更新仍在主線程，
-                    // 與既有 Scribe/設定寫入互斥語意一致。
-                    if (needSave)
-                    {
-                        QueueTelemetrySave(frameworkSettings);
-                    }
-                });
-            }
+                // AES 加密 + JSON 序列化 + 磁碟寫入改由背景單寫者執行，
+                // 不再佔用主線程派遣器的 2ms 幀預算。記憶體內的 RequestLogs 更新仍在主線程，
+                // 與既有 Scribe/設定寫入互斥語意一致。
+                if (needSave)
+                {
+                    QueueTelemetrySave(_settings);
+                }
+            });
         }
 
         /// <summary>
@@ -326,7 +322,7 @@ namespace RimLLM_Framework.Manager
         /// 背景寫檔持有 <see cref="LogLock"/>，與主線程的記憶體更新、ClearLogs 互斥，
         /// 排序與過去「主線程內寫檔」一致；關閉時的 FlushTelemetryIfDirty 仍同步執行。
         /// </summary>
-        private static void QueueTelemetrySave(RimLLMFrameworkSettings frameworkSettings)
+        private static void QueueTelemetrySave(IRimLLMSettings settings)
         {
             lock (SaveQueueLock)
             {
@@ -348,7 +344,7 @@ namespace RimLLM_Framework.Manager
                         {
                             lock (LogLock)
                             {
-                                frameworkSettings.SaveTelemetry();
+                                settings.SaveTelemetry();
                             }
                         }
                         catch (Exception ex)
@@ -403,20 +399,17 @@ namespace RimLLM_Framework.Manager
             Interlocked.Exchange(ref _logCount, 0);
             ProviderStatistics.Clear();
 
-            if (_settings is RimLLMFrameworkSettings frameworkSettings)
+            lock (LogLock)
             {
-                lock (LogLock)
+                _settings.RequestLogs = new List<RimLLMManager.RequestLogEntry>();
+                try
                 {
-                    frameworkSettings.RequestLogs = new List<RimLLMManager.RequestLogEntry>();
-                    try
-                    {
-                        frameworkSettings.SaveTelemetry();
-                        _lastLogWriteTime = DateTime.UtcNow;
-                    }
-                    catch (Exception ex)
-                    {
-                        RimLLMLog.Warning($"[RimLLM] Clear logs telemetry write failed: {ex.Message}");
-                    }
+                    _settings.SaveTelemetry();
+                    _lastLogWriteTime = DateTime.UtcNow;
+                }
+                catch (Exception ex)
+                {
+                    RimLLMLog.Warning($"[RimLLM] Clear logs telemetry write failed: {ex.Message}");
                 }
             }
         }
@@ -495,10 +488,7 @@ namespace RimLLM_Framework.Manager
 
                 try
                 {
-                    if (_settings is RimLLMFrameworkSettings frameworkSettings)
-                    {
-                        frameworkSettings.SaveTelemetry();
-                    }
+                    _settings.SaveTelemetry();
                 }
                 catch (Exception ex)
                 {

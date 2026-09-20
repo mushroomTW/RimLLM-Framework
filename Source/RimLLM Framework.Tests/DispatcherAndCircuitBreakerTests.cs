@@ -637,13 +637,10 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void TestComplexTypeSchemaWarmupAndRecursion()
         {
-            var mockSettings = new MockSettings();
-            var manager = new RimLLMManager(mockSettings);
-            
             // 預熱無空建構子、帶有循環引用的型別，驗證不會 StackOverflow 且產生合理 JSON
             RimLLMJsonHelper.GetSampleJson<ComplexTestDataStructure>();
 
-            string json = manager.GetSampleJson(typeof(ComplexTestDataStructure));
+            string json = RimLLMJsonHelper.GetSampleJson(typeof(ComplexTestDataStructure));
             
             ClassicAssert.IsNotEmpty(json);
             ClassicAssert.AreNotEqual("{}", json);

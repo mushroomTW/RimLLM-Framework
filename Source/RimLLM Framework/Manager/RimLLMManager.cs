@@ -329,13 +329,6 @@ namespace RimLLM_Framework.Manager
             return await provider.FetchAvailableModelsAsync().ConfigureAwait(false);
         }
 
-#pragma warning disable S2325 // reason: 實例方法維持外部呼叫一致性，雖可 static 但保留實例語意
-        internal string GetSampleJson(Type type)
-        {
-            return RimLLMJsonHelper.GetSampleJson(type);
-        }
-#pragma warning restore S2325
-
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
         {
             return _fallbackPipeline.ResolveFallbackEntry(entry, out providerId, out modelName);

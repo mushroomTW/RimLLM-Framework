@@ -732,6 +732,12 @@ namespace RimLLM_Framework.Tests
             return 0;
         }
 
+        public List<RimLLMManager.RequestLogEntry> RequestLogs { get; set; } = new List<RimLLMManager.RequestLogEntry>();
+
+        public void MarkTelemetryDirty() {}
+
+        public void SaveTelemetry() {}
+
         public void Write() {}
     }
 

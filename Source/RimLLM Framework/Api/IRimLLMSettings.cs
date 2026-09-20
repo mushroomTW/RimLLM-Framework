@@ -189,6 +189,21 @@ namespace RimLLM_Framework
         string EmbeddingApiKey { get; set; }
 
         /// <summary>
+        /// 歷史請求日誌記錄清單。
+        /// </summary>
+        List<Manager.RimLLMManager.RequestLogEntry> RequestLogs { get; set; }
+
+        /// <summary>
+        /// 標記遙測資料有未寫入的變更。
+        /// </summary>
+        void MarkTelemetryDirty();
+
+        /// <summary>
+        /// 儲存遙測資料。
+        /// </summary>
+        void SaveTelemetry();
+
+        /// <summary>
         /// 將設定寫入/持久化。
         /// </summary>
         void Write();
