@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -87,6 +88,9 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 附加訊息中非文字的內容。ChatMessage.Text 只串接 TextContent，工具結果與二進位內容
         /// 完全不影響鍵值——兩段只有工具結果不同的對話會組出同一個鍵而互相污染。
+        /// 複雜值（工具參數、工具結果、自訂物件）以 <see cref="AppendValue"/> 遞迴序列化，
+        /// 而不是 <c>ToString()</c>：後者對不同內容的 Dictionary 或自訂物件只會輸出相同的
+        /// 型別名稱，讓不同請求命中同一筆快取。
         /// </summary>
         private static void AppendNonTextContents(StringBuilder builder, IList<AIContent> contents)
         {
@@ -107,21 +111,105 @@ namespace RimLLM_Framework.Manager
                             foreach (KeyValuePair<string, object> argument in call.Arguments)
                             {
                                 AppendField(builder, argument.Key);
-                                AppendField(builder, argument.Value?.ToString());
+                                AppendValue(builder, argument.Value);
                             }
                         }
                         break;
                     case FunctionResultContent result:
                         AppendField(builder, result.CallId);
-                        AppendField(builder, result.Result?.ToString());
+                        AppendValue(builder, result.Result);
                         break;
                     case DataContent data:
                         AppendField(builder, data.Uri);
                         break;
                     default:
-                        AppendField(builder, content.ToString());
+                        AppendValue(builder, content);
                         break;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 以穩定、遞迴、具型別標記的方式附加一個任意值。
+        /// 目標是「內容相同則附加結果相同、內容不同則附加結果不同」：
+        /// <list type="bullet">
+        /// <item><c>null</c> 以標記表示，不會與字串 "null" 混淆；</item>
+        /// <item>字串原樣附加（長度前綴）；</item>
+        /// <item>可格式化的純量以 InvariantCulture 格式化；</item>
+        /// <item>Dictionary 排序鍵後依序附加，列舉順序不影響鍵值；</item>
+        /// <item>其他集合依序遞迴；</item>
+        /// <item>其餘物件以 System.Text.Json 序列化，取得型別標記且內容相關的穩定表示。</item>
+        /// </list>
+        /// </summary>
+        private static void AppendValue(StringBuilder builder, object value)
+        {
+            if (value == null)
+            {
+                builder.Append("N;");
+                return;
+            }
+            if (value is string str)
+            {
+                builder.Append("S;");
+                AppendField(builder, str);
+                return;
+            }
+            if (value is IFormattable formattable)
+            {
+                builder.Append("F;");
+                AppendField(builder, formattable.ToString(null, CultureInfo.InvariantCulture));
+                return;
+            }
+            if (value is bool flag)
+            {
+                builder.Append("B;");
+                AppendField(builder, flag ? "1" : "0");
+                return;
+            }
+            if (value is System.Collections.IDictionary dict)
+            {
+                // 字典列舉順序不保證穩定：排序鍵後再附加，同內容不同順序得到相同鍵值。
+                var pairs = new List<System.Collections.DictionaryEntry>();
+                foreach (System.Collections.DictionaryEntry entry in dict)
+                {
+                    pairs.Add(entry);
+                }
+                pairs.Sort((a, b) => string.CompareOrdinal(
+                    Convert.ToString(a.Key, CultureInfo.InvariantCulture),
+                    Convert.ToString(b.Key, CultureInfo.InvariantCulture)));
+                builder.Append("D;").Append(pairs.Count).Append(';');
+                foreach (System.Collections.DictionaryEntry pair in pairs)
+                {
+                    AppendField(builder, Convert.ToString(pair.Key, CultureInfo.InvariantCulture));
+                    AppendValue(builder, pair.Value);
+                }
+                return;
+            }
+            if (value is System.Collections.IEnumerable enumerable)
+            {
+                var items = new List<object>();
+                foreach (object item in enumerable)
+                {
+                    items.Add(item);
+                }
+                builder.Append("E;").Append(items.Count).Append(';');
+                foreach (object item in items)
+                {
+                    AppendValue(builder, item);
+                }
+                return;
+            }
+
+            // 其餘物件：以執行期型別做 JSON 序列化，得到與內容相關的穩定表示。
+            // 序列化失敗（如循環引用）時退回型別名稱加 ToString()，仍比單獨型別名稱多一層區分。
+            builder.Append("O;").Append(value.GetType().FullName).Append(';');
+            try
+            {
+                AppendField(builder, RimLLMJson.Serialize(value));
+            }
+            catch
+            {
+                AppendField(builder, value.ToString());
             }
         }
 

@@ -15,6 +15,12 @@ namespace RimLLM_Framework.Manager
     internal static class RimLLMChatClientExecutor
     {
         /// <summary>
+        /// 串流字元估算累積的上限。只在 provider 沒回報用量時用來估算 completion tokens，
+        /// 超過上限就封頂，避免異常大的串流把記憶體吃光。
+        /// </summary>
+        internal const int MaxAccumulatedCharsForEstimate = 4 * 1024 * 1024;
+
+        /// <summary>
         /// 非串流請求：以 <paramref name="timeoutSeconds"/> 建立整體逾時，並與呼叫端的取消 Token 連動。
         /// 官方 SDK 的 client 本身沒有套用使用者設定的 ApiTimeout，因此在此統一補上，
         /// 使 SDK 路徑與 raw HTTP 路徑的逾時語意一致。
@@ -94,7 +100,7 @@ namespace RimLLM_Framework.Manager
             string model,
             bool useNativeSchema,
             string providerId,
-            Action<ChatResponseUpdate> onUpdateReceived,
+            Func<ChatResponseUpdate, Task> onUpdateReceived,
             float timeoutSeconds,
             CancellationToken cancellationToken,
             Action<ChatOptions> customizeOptions = null)
@@ -104,8 +110,11 @@ namespace RimLLM_Framework.Manager
             IList<ChatMessage> builtMessages = BuildMessages(messages, options);
             TimeSpan idleTimeout = ResolveTimeout(timeoutSeconds);
             // 只在 provider 沒回報用量時當作字元估算的來源，不再是回傳值。
+            // 有上限：超過 MaxAccumulatedCharsForEstimate 就停止累積——估算只需要近似值，
+            // 無界累積會讓異常大的串流把記憶體吃光。
             var textBuilder = new StringBuilder();
             bool anyOutput = false;
+            bool estimateCapped = false;
             UsageDetails lastUsage = null;
 
             using (var timeoutCts = new CancellationTokenSource(idleTimeout))
@@ -134,7 +143,23 @@ namespace RimLLM_Framework.Manager
                             if (part is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                             {
                                 anyOutput = true;
-                                textBuilder.Append(textContent.Text);
+                                if (!estimateCapped)
+                                {
+                                    if (textBuilder.Length >= MaxAccumulatedCharsForEstimate)
+                                    {
+                                        estimateCapped = true;
+                                    }
+                                    else
+                                    {
+                                        textBuilder.Append(textContent.Text);
+                                        if (textBuilder.Length > MaxAccumulatedCharsForEstimate)
+                                        {
+                                            // 單一 chunk 可能很大；超過上限就截斷並封頂。
+                                            textBuilder.Length = MaxAccumulatedCharsForEstimate;
+                                            estimateCapped = true;
+                                        }
+                                    }
+                                }
                             }
                             else if (part is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
                             {
@@ -153,7 +178,11 @@ namespace RimLLM_Framework.Manager
 
                         // 原樣轉發：呼叫端收到的就是 provider 產生的那個 update，
                         // ResponseId、FinishReason、UsageContent 一律不經改寫。
-                        onUpdateReceived?.Invoke(update);
+                        // 回呼改為可 await 版本，讓有界 channel 的寫入背壓得以生效。
+                        if (onUpdateReceived != null)
+                        {
+                            await onUpdateReceived(update).ConfigureAwait(false);
+                        }
                     }
                 }
                 catch (ClientResultException ex)

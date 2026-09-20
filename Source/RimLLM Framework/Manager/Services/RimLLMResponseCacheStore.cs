@@ -50,7 +50,9 @@ namespace RimLLM_Framework.Manager
             {
                 if (DateTime.UtcNow < entry.ExpirationUtc)
                 {
-                    response = entry.Response;
+                    // 每次命中都交出一份深層複製：呼叫端修改回傳的 Messages／Usage／
+                    // AdditionalProperties 不會污染快取中的原始項目。
+                    response = RimLLMResponseDeepCopy.Copy(entry.Response);
                     return true;
                 }
                 _cache.TryRemove(key, out _);
@@ -62,6 +64,7 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>
         /// 存活時間在寫入當下就固定下來，之後玩家調整 TTL 設定只會影響新寫入的項目。
+        /// 寫入前先做深層快照，避免呼叫端在 Store 回傳後繼續修改原回應而污染快取。
         /// </summary>
         public void Store(string key, ChatResponse response, float ttlMinutes)
         {
@@ -74,7 +77,7 @@ namespace RimLLM_Framework.Manager
 
             DateTime expiration = DateTime.UtcNow.AddMinutes(ttlMinutes);
             long seq = System.Threading.Interlocked.Increment(ref _sequence);
-            _cache[key] = new CacheEntry(response, expiration, seq);
+            _cache[key] = new CacheEntry(RimLLMResponseDeepCopy.Copy(response), expiration, seq);
         }
 
         private void Prune()

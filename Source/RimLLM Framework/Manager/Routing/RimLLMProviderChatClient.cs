@@ -27,6 +27,12 @@ namespace RimLLM_Framework.Manager
     /// </remarks>
     internal sealed class RimLLMProviderChatClient : IChatClient
     {
+        /// <summary>
+        /// 串流橋接的有界 channel 容量。消費端慢時生產端在 WriteAsync 上等待，
+        /// 這個數字決定最多緩衝多少個 update；64 已足夠吸收 provider 的突發產出。
+        /// </summary>
+        internal const int StreamBufferCapacity = 64;
+
         private readonly ILLMProvider _provider;
         private readonly string _model;
         private readonly IRimLLMSettings _settings;
@@ -179,9 +185,15 @@ namespace RimLLM_Framework.Manager
                 // GetStreamingResponseAsync 與 await foreach（WithCancellation）兩邊的 token 都要生效。
                 var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken, cancellationToken);
 
-                // 無界 channel + TryWrite：不需要 ValueTask，因此不必碰 ste 別名。
-                var channel = System.Threading.Channels.Channel.CreateUnbounded<ChatResponseUpdate>(
-                    new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+                // 有界 channel：消費端慢時生產端在 WriteAsync 上等待，避免遠端資料被無界緩衝。
+                // FullMode.Wait 讓背壓生效（WriteAsync 只會在空間釋出時完成）。
+                var channel = System.Threading.Channels.Channel.CreateBounded<ChatResponseUpdate>(
+                    new System.Threading.Channels.BoundedChannelOptions(StreamBufferCapacity)
+                    {
+                        SingleReader = true,
+                        SingleWriter = true,
+                        FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
+                    });
 
                 StartProducer(channel.Writer, linkedCts.Token);
 
@@ -221,7 +233,7 @@ namespace RimLLM_Framework.Manager
                                 _client._model,
                                 useNativeSchema,
                                 _client._provider.ProviderId,
-                                update =>
+                                async update =>
                                 {
                                     // 唯一的改寫：把 ModelId 換成 "供應商:模型" 複合識別，
                                     // 讓呼叫端在 fallback 之後仍分辨得出實際是誰回的。
@@ -233,7 +245,7 @@ namespace RimLLM_Framework.Manager
                                     {
                                         MarkToolsStripped(update.AdditionalProperties ??= new AdditionalPropertiesDictionary());
                                     }
-                                    writer.TryWrite(update);
+                                    await writer.WriteAsync(update, cancellationToken).ConfigureAwait(false);
                                 },
                                 _client._settings.ApiTimeout,
                                 cancellationToken).ConfigureAwait(false);

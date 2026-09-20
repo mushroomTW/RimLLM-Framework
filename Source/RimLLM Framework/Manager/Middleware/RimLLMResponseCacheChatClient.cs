@@ -70,17 +70,19 @@ namespace RimLLM_Framework.Manager
             if (_store.TryGet(key, out ChatResponse cached))
             {
                 RimLLMLog.Message("[RimLLM] Response cache hit; the API call was skipped.");
-                // 每次命中都交出一份新的外殼：ChatResponse 的 Messages 是可寫清單，
-                // 直接遞出快取中的那個實例，呼叫端只要往裡面追加訊息就污染了後續所有命中。
-                return CopyForCaller(cached);
+                // Store 的 TryGet 已回傳深層複製，直接交給呼叫端即可。
+                return cached;
             }
 
             ChatResponse response = await base
                 .GetResponseAsync(materialized, options, cancellationToken)
                 .ConfigureAwait(false);
 
+            // 先複製一份給第一次呼叫端，再存深層快照：呼叫端之後修改自己那份
+            // Messages／Usage／AdditionalProperties 不會污染快取。
+            ChatResponse callerCopy = RimLLMResponseDeepCopy.Copy(response);
             Store(key, response);
-            return response;
+            return callerCopy;
         }
 
         public override bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -121,25 +123,9 @@ namespace RimLLM_Framework.Manager
             if (string.IsNullOrEmpty(response?.Text)) return;
             if (response.ModelId == RimLLMBudgetChatClient.MockModelId) return;
 
+            // RimLLMResponseCacheStore.Store 會先做深層快照再存，呼叫端之後修改
+            // 自己那份回應不會污染快取。
             _store.Store(key, response, _settings.ResponseCacheTtlMinutes);
-        }
-
-        /// <summary>把快取項目複製成一份呼叫端可以自由改動的回應。</summary>
-        private static ChatResponse CopyForCaller(ChatResponse cached)
-        {
-            if (cached == null) return null;
-
-            return new ChatResponse(new List<ChatMessage>(cached.Messages))
-            {
-                ResponseId = cached.ResponseId,
-                ConversationId = cached.ConversationId,
-                ModelId = cached.ModelId,
-                CreatedAt = cached.CreatedAt,
-                FinishReason = cached.FinishReason,
-                Usage = cached.Usage,
-                AdditionalProperties = cached.AdditionalProperties,
-                RawRepresentation = cached.RawRepresentation
-            };
         }
 
         /// <summary>沿路收集 update，串流正常結束後把彙整出的回應存進快取。</summary>
@@ -168,11 +154,19 @@ namespace RimLLM_Framework.Manager
 
         private sealed class RecordingEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
         {
+            /// <summary>
+            /// 錄製到快取的更新筆數上限。異常大的串流不該被整段快取起來——
+            /// 除了記憶體，重播時也要全數攤成 update。超過上限就放棄寫入快取，
+            /// 但串流本身照常轉發。
+            /// </summary>
+            private const int MaxRecordedUpdates = 100_000;
+
             private readonly bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> _inner;
             private readonly List<ChatResponseUpdate> _collected = new List<ChatResponseUpdate>();
             private readonly string _key;
             private readonly RimLLMResponseCacheChatClient _owner;
             private bool _completed;
+            private bool _cacheable = true;
 
             public RecordingEnumerator(
                 bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> inner,
@@ -191,16 +185,28 @@ namespace RimLLM_Framework.Manager
                 bool moved = await _inner.MoveNextAsync().ConfigureAwait(false);
                 if (moved)
                 {
-                    _collected.Add(_inner.Current);
+                    if (_cacheable && _collected.Count >= MaxRecordedUpdates)
+                    {
+                        _cacheable = false;
+                        _collected.Clear();
+                    }
+                    if (_cacheable)
+                    {
+                        _collected.Add(_inner.Current);
+                    }
                     return true;
                 }
 
                 // 只有完整列舉結束才寫入：中途拋出例外或提早停止列舉的內容不完整，
-                // 存進去會讓後續的相同請求拿到被截斷的回應。
+                // 存進去會讓後續的相同請求拿到被截斷的回應。超過筆數上限的異常串流
+                // 直接放棄快取。
                 if (!_completed)
                 {
                     _completed = true;
-                    _owner.Store(_key, _collected.ToChatResponse());
+                    if (_cacheable)
+                    {
+                        _owner.Store(_key, _collected.ToChatResponse());
+                    }
                 }
                 return false;
             }

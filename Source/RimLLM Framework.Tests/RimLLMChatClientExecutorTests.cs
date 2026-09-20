@@ -314,7 +314,7 @@ namespace RimLLM_Framework.Tests
 
             RimLLMChatClientExecutor.StreamAsync(
                 client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI",
-                received.Add, 30f, CancellationToken.None).GetAwaiter().GetResult();
+                async update => { received.Add(update); await Task.CompletedTask; }, 30f, CancellationToken.None).GetAwaiter().GetResult();
 
             ClassicAssert.AreEqual(3, received.Count, "每一個 provider update 都應原封不動轉發一次。");
             ClassicAssert.AreSame(client.StreamUpdates[0], received[0]);
@@ -381,7 +381,7 @@ namespace RimLLM_Framework.Tests
 
             RimLLMChatClientExecutor.StreamAsync(
                 client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI",
-                received.Add, 30f, CancellationToken.None).GetAwaiter().GetResult();
+                async update => { received.Add(update); await Task.CompletedTask; }, 30f, CancellationToken.None).GetAwaiter().GetResult();
 
             // UsageContent 也原樣轉發，不再被抽出來重組成收尾 update。
             ClassicAssert.AreEqual(2, received.Count);

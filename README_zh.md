@@ -335,14 +335,13 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位）並套用折扣費率估算成本，讓成本面板反映真實節省。
    * **成本估算來自內建費率表**（現行的 OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。不在表上的模型一律估為 **$0**，所以每日預算只能防住費率表認得的花費——但每個模型的 token 數都照常記錄。
-   * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 每一則訊息（角色、文字，以及工具結果之類的非文字內容）、目標模型、最低相容等級、快取上下文、temperature、最大輸出 Token、思考強度、是否關閉思考、結構化輸出型別，以及所有會原樣送達供應商的取樣參數（`TopP`、`TopK`、`FrequencyPenalty`、`PresencePenalty`、`Seed`、`StopSequences`）—— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰由內部輕量化機制管理（256 筆上限，先進先出與 TTL 淘汰），避免依賴外部快取套件造成 RimWorld AppDomain 組件版本衝突，框架只負責判定「什麼算同一個請求」。只存在記憶體中，不寫入存檔。
+   * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 每一則訊息（角色、文字，以及工具結果之類的非文字內容，其複雜值以結構化序列化而非 `ToString()` 納入鍵值）、目標模型、最低相容等級、快取上下文、temperature、最大輸出 Token、思考強度、是否關閉思考、結構化輸出型別，以及所有會原樣送達供應商的取樣參數（`TopP`、`TopK`、`FrequencyPenalty`、`PresencePenalty`、`Seed`、`StopSequences`）—— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰由內部輕量化機制管理（256 筆上限，先進先出與 TTL 淘汰），避免依賴外部快取套件造成 RimWorld AppDomain 組件版本衝突，框架只負責判定「什麼算同一個請求」。存入與讀出都會做深層快照，呼叫端修改回傳的 `Messages`／`Usage`／`AdditionalProperties` 不會污染後續命中。只存在記憶體中，不寫入存檔。
 10. **Embedding SDK**
     * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
     * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini，OpenAI 走其原生端點；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。模型、端點與金鑰依 Embedding 供應商分別保存，切換啟用的供應商不會遺失其他供應商的設定；模型或端點留空代表使用該供應商預設值，金鑰留空則繼承對應對話供應商的金鑰。
     * 設定頁可直接抓取可用模型清單，不必憑記憶輸入名稱；只要伺服器說得出哪些是 embedding 模型，清單就**只留真正的 embedding 模型**：Google 走原生 `/models` 清單（`supportedGenerationMethods` 含 `embedContent`）、Ollama 看 `/api/show` 的 `capabilities`、LM Studio 看 `/api/v0/models` 的 `type`，OpenAI 則依官方型錄固定的 `text-embedding-*` 命名過濾。只有兩者皆無的通用 OpenAI 相容伺服器才退回沒有能力資訊的 `/v1/models`，此時清單只**排序**（把像 embedding 的名稱排前面）而不過濾 —— 伺服器的模型名可能由使用者自訂，過濾會把合法選項藏起來；狀態列會明講清單未過濾。沒有模型清單端點的伺服器仍可手動輸入。
     * Embedding 屬計費 API，因此與一般生成請求共用同一套防濫用檢查；其金鑰採用與供應商金鑰相同的 AES 加密。
 11. **原生 Tool Calling（函式呼叫）**
-    * 完整支援 Microsoft.Extensions.AI Tool Calling 標準（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`、`FunctionResultContent`）。
     * 完整支援 Microsoft.Extensions.AI Tool Calling 標準（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`、`FunctionResultContent`），所有供應商經共用的 OpenAI 協定路徑提供。
     * 提供 `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`，自動將工具叫用委派排入 Unity 主執行緒執行，杜絕 RimWorld 跨執行緒崩潰風險。
     * 當請求中包含工具時，自動繞過本地回應快取以確保狀態副作用一致性。
@@ -371,10 +370,11 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 ### 3. 串流橋接（`Channel<T>`）
 
-* Executor 的串流 API 是回呼形式（`Action<ChatResponseUpdate> onUpdateReceived`），而 MEAI 要的是 `IAsyncEnumerable<ChatResponseUpdate>`。兩者之間以無界的 `System.Threading.Channels.Channel<T>` 橋接，消費端就是 `ChannelReader.ReadAllAsync()`。
+* Executor 的串流 API 是回呼形式（`Func<ChatResponseUpdate, Task> onUpdateReceived`），而 MEAI 要的是 `IAsyncEnumerable<ChatResponseUpdate>`。兩者之間以**有界**的 `System.Threading.Channels.Channel<T>`（64 筆 update）橋接，生產端 await `WriteAsync`，因此消費端慢時會把背壓回推到網路讀取，而不是把整段串流緩衝在記憶體。消費端是 `ChannelReader.ReadAllAsync()`。
 * update 以**原樣**穿過這座橋——你列舉到的就是供應商產生的那個物件，只有 `ModelId` 被改寫。框架不再自行合成一個收尾 update，因此 `UsageContent`、`FinishReason` 與 `ResponseId` 只在供應商真的送出時才存在。
 * 由於 `IAsyncEnumerable` 是透過 `bclasync` extern alias 進入本專案，C# 8 無法對它編譯 async iterator。`ReadAllAsync()` 直接繞過這個限制：它回傳的正是同一顆組件的 `IAsyncEnumerable`，因此不必手寫任何 iterator。
 * 一層薄包裝會解開 `ChannelClosedException`，讓生產端的失敗以原始的 `RimLLMException` 呈現給呼叫端。
+* Executor 的 fallback token 估算把累積文字封頂在 4 MB，異常大的串流不會讓記憶體無限成長；回應快取也拒絕錄製超過 100 000 筆 update 的串流（串流本身照常轉發）。
 
 ### 4. 統一的 HTTP 錯誤對照（`LLMErrorMapper`）
 

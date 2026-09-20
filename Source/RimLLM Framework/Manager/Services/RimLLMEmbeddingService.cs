@@ -170,7 +170,7 @@ namespace RimLLM_Framework.Manager
                     try
                     {
                         results.AddRange(await ComputeOpenAiCompatibleEmbeddingsAsync(
-                            batch, model, apiKey, endpoint, defaultEndpoint, linkedCts.Token).ConfigureAwait(false));
+                            batch, model, provider, apiKey, endpoint, defaultEndpoint, linkedCts.Token).ConfigureAwait(false));
                     }
                     catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                     {
@@ -333,6 +333,7 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// Ollama 的 <c>/api/tags</c> 只列名稱，能力要逐一向 <c>/api/show</c> 查。
         /// 舊版 Ollama 沒有 <c>capabilities</c> 欄位；那種情況無從判斷，退回只排序不過濾。
+        /// 模型很多時以固定 worker pool 限流，避免一次開出與模型數相同的連線。
         /// </summary>
         private static async Task<RimLLMEmbeddingModelList> FetchOllamaEmbeddingModelsAsync(
             string root, CancellationToken cancellationToken)
@@ -344,20 +345,41 @@ namespace RimLLM_Framework.Manager
             {
                 if (doc.RootElement.TryGetProperty("models", out JsonElement models) && models.ValueKind == JsonValueKind.Array)
                 {
+                    var seen = new HashSet<string>(StringComparer.Ordinal);
                     foreach (JsonElement model in models.EnumerateArray())
                     {
                         string name = GetString(model, "name");
-                        if (!string.IsNullOrEmpty(name)) names.Add(name);
+                        if (string.IsNullOrEmpty(name) || !seen.Add(name)) continue;
+                        names.Add(name);
+                        if (names.Count >= MaxOllamaModelsToProbe)
+                        {
+                            break;
+                        }
                     }
                 }
             }
 
-            var showTasks = new List<Task<bool?>>(names.Count);
-            foreach (string name in names)
+            // 固定大小 worker pool：同時在飛的 /api/show 請求不超過 MaxOllamaProbeConcurrency 個。
+            var verdicts = new bool?[names.Count];
+            int nextIndex = -1;
+            using (var gate = new SemaphoreSlim(MaxOllamaProbeConcurrency))
             {
-                showTasks.Add(IsOllamaEmbeddingModelAsync(nativeRoot, name, cancellationToken));
+                var workers = new List<Task>(MaxOllamaProbeConcurrency);
+                for (int w = 0; w < MaxOllamaProbeConcurrency; w++)
+                {
+                    workers.Add(Task.Run(async () =>
+                    {
+                        while (true)
+                        {
+                            int i = Interlocked.Increment(ref nextIndex);
+                            if (i >= names.Count) return;
+                            bool? verdict = await IsOllamaEmbeddingModelAsync(nativeRoot, names[i], cancellationToken).ConfigureAwait(false);
+                            verdicts[i] = verdict;
+                        }
+                    }, cancellationToken));
+                }
+                await Task.WhenAll(workers).ConfigureAwait(false);
             }
-            bool?[] verdicts = await Task.WhenAll(showTasks).ConfigureAwait(false);
 
             var ids = new List<string>();
             bool allKnown = true;
@@ -370,6 +392,12 @@ namespace RimLLM_Framework.Manager
                 ? new RimLLMEmbeddingModelList(ids, filtered: true)
                 : new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(ids), filtered: false);
         }
+
+        /// <summary>Ollama 模型清單最多探測的模型數，避免異常大的本地模型庫造成連線尖峰。</summary>
+        internal const int MaxOllamaModelsToProbe = 128;
+
+        /// <summary>Ollama <c>/api/show</c> 探測的同時並行數上限。</summary>
+        internal const int MaxOllamaProbeConcurrency = 8;
 
         /// <summary>
         /// 回傳 null 代表無從判斷：伺服器沒有回報能力資訊，或這一個模型的查詢失敗。
@@ -538,7 +566,7 @@ namespace RimLLM_Framework.Manager
                 try
                 {
                     List<RimLLMEmbeddingResult> results = await ComputeOpenAiCompatibleEmbeddingsAsync(
-                        new[] { text }, model, effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider), linkedCts.Token).ConfigureAwait(false);
+                        new[] { text }, model, provider, effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider), linkedCts.Token).ConfigureAwait(false);
                     return results[0];
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -656,9 +684,11 @@ namespace RimLLM_Framework.Manager
         /// <summary>
         /// 一批文字一次 API 呼叫。usage 掛在整個集合上（不分筆），因此平均分攤到每一筆：
         /// 各筆的 <see cref="RimLLMEmbeddingResult.InputTokenCount"/> 加總即為供應商回報的總量。
+        /// <paramref name="model"/> 與 <paramref name="provider"/> 是請求開始時捕捉的實際
+        /// 供應商身分，帶進每一筆結果供呼叫端標記向量與記帳，避免 await 之後設定被改。
         /// </summary>
         private static async Task<List<RimLLMEmbeddingResult>> ComputeOpenAiCompatibleEmbeddingsAsync(
-            IReadOnlyList<string> texts, string model, string apiKey, string endpoint, string defaultEndpoint, CancellationToken cancellationToken)
+            IReadOnlyList<string> texts, string model, string providerId, string apiKey, string endpoint, string defaultEndpoint, CancellationToken cancellationToken)
         {
             BuildOpenAiCompatibleClientArgs(apiKey, endpoint, defaultEndpoint, out var credential, out var options);
             var client = new EmbeddingClient(model, credential, options);
@@ -674,11 +704,14 @@ namespace RimLLM_Framework.Manager
                     $"The OpenAI-compatible embedding response contained {embeddings?.Count ?? 0} vector(s) for {texts.Count} input(s).");
             }
 
-            return DistributeUsage(embeddings, embeddings.Usage?.InputTokenCount);
+            return DistributeUsage(embeddings, embeddings.Usage?.InputTokenCount, model, providerId);
         }
 
-        /// <summary>把整批的輸入 token 數平均分攤到每一筆（餘數給前幾筆），沒回報用量時每筆都是 null。</summary>
-        private static List<RimLLMEmbeddingResult> DistributeUsage(OpenAIEmbeddingCollection embeddings, long? totalInputTokens)
+        /// <summary>
+        /// 把整批的輸入 token 數平均分攤到每一筆（餘數給前幾筆），沒回報用量時每筆都是 null。
+        /// 每一筆都帶上實際使用的模型與供應商（由請求開始時捕捉，見 <see cref="ComputeEmbeddingsAsync"/>）。
+        /// </summary>
+        private static List<RimLLMEmbeddingResult> DistributeUsage(OpenAIEmbeddingCollection embeddings, long? totalInputTokens, string modelId, string providerId)
         {
             var results = new List<RimLLMEmbeddingResult>(embeddings.Count);
             long share = totalInputTokens.HasValue ? totalInputTokens.Value / embeddings.Count : 0;
@@ -686,7 +719,7 @@ namespace RimLLM_Framework.Manager
             for (int i = 0; i < embeddings.Count; i++)
             {
                 long? perItem = totalInputTokens.HasValue ? share + (i < remainder ? 1 : 0) : (long?)null;
-                results.Add(new RimLLMEmbeddingResult(embeddings[i].ToFloats().ToArray(), perItem));
+                results.Add(new RimLLMEmbeddingResult(embeddings[i].ToFloats().ToArray(), perItem, modelId, providerId));
             }
             return results;
         }
