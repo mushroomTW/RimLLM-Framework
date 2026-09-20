@@ -396,9 +396,13 @@ namespace RimLLM_Framework.Manager
                     case LLMError.RateLimit:
                     case LLMError.ProviderOffline:
                     case LLMError.NetworkError:
-                    case LLMError.QuotaExceeded:
                     case LLMError.Unknown:
                         return true;
+                    case LLMError.QuotaExceeded:
+                        // 402 是真的餘額用完：不會在退避的幾十秒內變出來，重試只是白等，直接換手。
+                        // 但 429 訊息含 "quota" 的每分鐘限流（Gemini 免費層）也會映成 QuotaExceeded，
+                        // 那種等一下就能成功，仍要重試。
+                        return rimEx.HttpStatusCode != 402;
                     default:
                         return false;
                 }

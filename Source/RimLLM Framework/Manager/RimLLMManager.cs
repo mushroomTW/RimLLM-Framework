@@ -259,11 +259,11 @@ namespace RimLLM_Framework.Manager
             // 由內往外堆疊。層序是語意性的，不可調換：
             // 正規化必須在最外層，否則快取算鍵時看到的思考強度會和實際送出的不一致；
             // 快取必須排在防濫用與預算之前，因為命中不發 API 呼叫，攔阻零成本的重播沒有意義；
-            // 預算則排在防濫用之後、佇列之前，被擋下的請求不該佔用併發名額；
-            // 佇列在最內層，名額只留給真正要打 API 的請求。
+            // 預算則排在防濫用之後，被擋下的請求不該佔用併發名額；
+            // 併發名額不在這裡疊：由路由對每一個候選嘗試各包一層佇列，名額只留給真正
+            // 要打 API 的那一次呼叫，重試前的指數退避不會占著名額讓其他 Mod 排隊。
             IChatClient client = RimLLMFailoverChatClient.Create(
-                _settings, _healthLedger, _usageTracker, _fallbackPipeline, modId);
-            client = new RimLLMRequestQueueChatClient(client, _requestQueue);
+                _settings, _healthLedger, _usageTracker, _fallbackPipeline, modId, _requestQueue);
             client = new RimLLMBudgetChatClient(client, _usageTracker);
             client = new RimLLMAntiAbuseChatClient(client, _settings, _throttleStore, modId);
             client = new RimLLMResponseCacheChatClient(client, _settings, _responseCacheStore);

@@ -88,6 +88,15 @@ namespace RimLLM_Framework.Compat
         }
 
         /// <summary>
+        /// 接管請求的輸出上限。Auto Translation 原生的 OpenAI 相容翻譯器不設 max_tokens，
+        /// 而框架對未指定的請求預設補 1024；哨兵開的是 2000 token 的批次翻譯，譯文常比原文長，
+        /// 1024 會把批次 XML 截斷、解析失敗後整批回原文。給到與批次同大小：
+        /// 有些伺服器（vLLM 等）會以「輸入 + max_tokens ≤ 上下文」驗證，4k 上下文的本地模型
+        /// 2000 輸入 + 2048 輸出剛好塞得下，再大就會被直接 400 拒絕。
+        /// </summary>
+        internal const int MaxOutputTokens = 2048;
+
+        /// <summary>
         /// 翻譯任務著重精準度與低延遲，預設關閉思考鏈（DisableReasoning）並使用溫和的溫度（0.3）。
         /// </summary>
         private static ChatOptions BuildOptions()
@@ -95,7 +104,8 @@ namespace RimLLM_Framework.Compat
             return new RimLLMChatOptions
             {
                 DisableReasoning = true,
-                Temperature = 0.3f
+                Temperature = 0.3f,
+                MaxOutputTokens = MaxOutputTokens
             };
         }
     }

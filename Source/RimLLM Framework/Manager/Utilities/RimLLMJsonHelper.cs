@@ -54,7 +54,8 @@ namespace RimLLM_Framework.Manager
 
 
         /// <summary>
-        /// 結構化輸出的核心流程：直接解析 → JSON repair 回退 → LLM-assisted double-repair。
+        /// 結構化輸出的核心流程：直接解析 → 靜態 JSON repair → 抽出 JSON 區塊後第二次解析。
+        /// 純本地修復，不會再向模型發第二次請求。
         /// </summary>
         public static T DeserializeStructured<T>(string rawResponse, IRimLLMSettings settings)
         {
@@ -157,7 +158,7 @@ namespace RimLLM_Framework.Manager
                 else if (c == '}' || c == ']')
                 {
                     // 閉合符號與堆疊頂端不符，代表結構本身已損毀而非單純截斷。
-                    // 此時任何補齊都只會讓結果更糟，直接交給 ExtractJsonBlock 與 double repair 處理。
+                    // 此時任何補齊都只會讓結果更糟，直接交給 ExtractJsonBlock 的第二次解析處理。
                     if (expectedClosers.Count == 0 || expectedClosers[expectedClosers.Count - 1] != c)
                     {
                         return json;

@@ -91,6 +91,9 @@ namespace RimLLM_Framework.Tests
             var rimOptions = (RimLLMChatOptions)options;
             ClassicAssert.IsTrue(rimOptions.DisableReasoning);
             ClassicAssert.AreEqual(0.3f, rimOptions.Temperature);
+            // 對齊原生請求的 max_tokens: 1500，不能落到框架預設的 1024。
+            ClassicAssert.AreEqual(ModCompatCheckerCompatClient.MaxOutputTokens, rimOptions.MaxOutputTokens);
+            ClassicAssert.AreEqual(1500, rimOptions.MaxOutputTokens);
         }
 
         [Test]

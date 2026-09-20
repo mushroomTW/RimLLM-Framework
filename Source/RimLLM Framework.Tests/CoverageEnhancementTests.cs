@@ -299,6 +299,36 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestRequestQueueKeepsFifoWithinSamePriority()
+        {
+            // 同優先級、同一個時鐘刻度內入列的請求先前以 DateTime 判先後，鍵值相等時
+            // BinarySearch 會把後到的插到前面，變成後進先出。改用入列序號後必須嚴格 FIFO。
+            var settings = new MockSettings { MaxConcurrentRequests = 1 };
+            var queue = new RimLLMRequestQueue(settings);
+
+            IDisposable holder = queue.AcquireSlotAsync(0, CancellationToken.None).GetAwaiter().GetResult();
+            var waiters = new List<Task<IDisposable>>();
+            for (int i = 0; i < 5; i++)
+            {
+                waiters.Add(queue.AcquireSlotAsync(0, CancellationToken.None));
+            }
+            // 高優先級最後入列，仍要排在所有同級項目之前。
+            Task<IDisposable> urgent = queue.AcquireSlotAsync(10, CancellationToken.None);
+
+            holder.Dispose();
+            ClassicAssert.IsTrue(urgent.Wait(2000), "高優先級應最先取得名額");
+            ClassicAssert.IsFalse(waiters.Exists(w => w.IsCompleted), "名額只有一個，同級項目此時都還在等");
+            urgent.Result.Dispose();
+            for (int i = 0; i < 5; i++)
+            {
+                int granted = Task.WaitAny(waiters.ToArray(), 2000);
+                ClassicAssert.AreEqual(i, granted, "同優先級必須依入列順序取得名額");
+                waiters[granted].Result.Dispose();
+                waiters[granted] = new TaskCompletionSource<IDisposable>().Task; // 已處理者換成永不完成的佔位
+            }
+        }
+
+        [Test]
         [NonParallelizable]
         public void TestDispatcherQueueBudgetAndErrorHandling()
         {
@@ -670,6 +700,84 @@ namespace RimLLM_Framework.Tests
             Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<TestStructureWithRequiredField>("{\"RequiredField\":null}"));
             Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<List<TestStructureWithRequiredField>>("[{\"RequiredField\":null}]"));
 
+        }
+
+        /// <summary>
+        /// 服務端持續拒絕原生 schema 時，降級重打只能發生一次且必須改走提示式路徑。
+        /// 先前的 catch 遞迴呼叫 GenerateAsync 本身，第二次仍送原生 schema，只要服務端一直拒絕就會無限重打；
+        /// 上面的 TestNativeSchemaRejectionAndDoubleRepair 因 mock 第二次無條件成功而看不出來。
+        /// </summary>
+        [Test]
+        public async Task TestPersistentNativeSchemaRejection_FallsBackToPromptPathExactlyOnce()
+        {
+            var settings = new MockSettings { EnableNativeSchema = true };
+            var manager = new RimLLMManager(settings);
+
+            int nativeCalls = 0;
+            int promptCalls = 0;
+            var alwaysRejecting = new MockTestProvider
+            {
+                ProviderId = "SchemaAlwaysReject",
+                GenerateHandler = (msgs, opts, m) =>
+                {
+                    // executor 只有在走原生 schema 時才會設定 ResponseFormat。
+                    if (opts?.ResponseFormat != null)
+                    {
+                        nativeCalls++;
+                        throw new RimLLMException(LLMError.InvalidResponse, "400 response_format json_schema is not supported")
+                        {
+                            IsSchemaRejection = true
+                        };
+                    }
+                    promptCalls++;
+                    return Task.FromResult("{\"Name\":\"prompt-path\"}");
+                }
+            };
+            alwaysRejecting.Capabilities.SupportsNativeStructuredOutput = true;
+            settings.EnabledProviders["SchemaAlwaysReject"] = true;
+            settings.ApiKeys["SchemaAlwaysReject"] = "test-key";
+            settings.FallbackChain = new List<string> { "SchemaAlwaysReject:m1" };
+            manager.RegisterProvider(alwaysRejecting);
+
+            IChatClient client = manager.CreateChatClient("test.mod");
+            var options = new RimLLMChatOptions
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    [RimLLMChatOptions.ResponseTypeKey] = typeof(NullableTestDataStructure)
+                }
+            };
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))
+            {
+                ChatResponse res = await client.GetResponseAsync(
+                    new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }, options, cts.Token);
+                StringAssert.Contains("prompt-path", res.Text);
+            }
+
+            ClassicAssert.AreEqual(1, nativeCalls, "原生 schema 只能嘗試一次");
+            ClassicAssert.AreEqual(1, promptCalls, "被拒後只能以提示式路徑重打一次");
+        }
+
+        /// <summary>
+        /// 前綴比對必須停在版本邊界：先前 "gpt-4"（$30/$60）會吃到 "gpt-4.1-mini"（$0.40/$1.60），
+        /// 成本高估 75 倍；日期後綴等以 "-" 接續的變體仍要能命中。
+        /// </summary>
+        [Test]
+        public void TestModelRatePrefixMatchStopsAtVersionBoundary()
+        {
+            var tracker = new RimLLMUsageTracker(new MockSettings());
+
+            float mini = tracker.EstimateCost("openai", "gpt-4.1-mini", 1000000, 1000000, 0);
+            ClassicAssert.AreEqual(2.00f, mini, 0.01f, "gpt-4.1-mini 必須以自己的費率計算，不能落到 gpt-4");
+
+            float datedMini = tracker.EstimateCost("openai", "gpt-4.1-mini-2025-04-14", 1000000, 1000000, 0);
+            ClassicAssert.AreEqual(mini, datedMini, 0.001f, "日期後綴以 - 接續，仍屬同一費率");
+
+            float gpt4 = tracker.EstimateCost("openai", "gpt-4-0613", 1000000, 1000000, 0);
+            ClassicAssert.AreEqual(90.00f, gpt4, 0.01f, "gpt-4 自己的版本後綴照常命中");
+
+            ClassicAssert.AreEqual(0f, tracker.EstimateCost("openai", "gpt-40", 1000000, 1000000, 0),
+                "前綴後接數字不是版本邊界，不得命中 gpt-4");
         }
 
         [Test]

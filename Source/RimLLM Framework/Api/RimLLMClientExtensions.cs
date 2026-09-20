@@ -94,7 +94,8 @@ namespace RimLLM_Framework
             RimLLMChatOptions options,
             CancellationToken cancellationToken)
         {
-            ChatOptions effective = options ?? new RimLLMChatOptions();
+            // 與框架路徑一樣先複製：ResponseFormat 是寫在副本上的，不能改到呼叫端手上那份。
+            ChatOptions effective = (options ?? new RimLLMChatOptions()).Clone();
             // schema 的快取由 RimLLMSchemaBuilder 統一負責，此處不再另建一份。
             string schemaJson = RimLLMSchemaBuilder.BuildJson(typeof(T));
             using (JsonDocument document = JsonDocument.Parse(schemaJson))

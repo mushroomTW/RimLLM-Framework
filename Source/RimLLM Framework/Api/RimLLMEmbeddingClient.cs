@@ -60,6 +60,13 @@ namespace RimLLM_Framework
                     InputTokenCount = inputTokens,
                     TotalTokenCount = inputTokens
                 };
+
+                // 與對話請求一樣計入用量與每日預算；先前 embedding 的 token 完全不進帳本。
+                _manager.RecordUsage(
+                    RimLLMEmbeddingService.GetMainProviderIdForEmbedding(_manager.Settings.EmbeddingProvider),
+                    modelId,
+                    inputTokens.Value > int.MaxValue ? int.MaxValue : (int)inputTokens.Value,
+                    0);
             }
             return generated;
         }

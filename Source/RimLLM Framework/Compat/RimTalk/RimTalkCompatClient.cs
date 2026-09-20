@@ -204,12 +204,19 @@ namespace RimLLM_Framework.Compat
         }
 
         /// <summary>
+        /// 接管請求的輸出上限。RimTalk 原生 client 不設 max_tokens；框架對未指定的請求預設補 1024，
+        /// 多 pawn 的 JSONL 對話會被截斷，因此在此明確給足；但不能給到 4096：
+        /// 有些伺服器（vLLM 等）會以「輸入 + max_tokens ≤ 上下文」驗證，4k 上下文的本地模型會直接 400。
+        /// </summary>
+        internal const int MaxOutputTokens = 2048;
+
+        /// <summary>
         /// RimTalk 原生 client 的 thinking ladder 第一階就是「關閉思考」（對話講求速度與成本），
-        /// 這裡直接以框架的 DisableReasoning 表達同一意圖；其餘參數（溫度、上限）沿用 RimLLM 全域設定。
+        /// 這裡直接以框架的 DisableReasoning 表達同一意圖；溫度沿用 RimLLM 全域設定。
         /// </summary>
         private static ChatOptions BuildOptions()
         {
-            return new RimLLMChatOptions { DisableReasoning = true };
+            return new RimLLMChatOptions { DisableReasoning = true, MaxOutputTokens = MaxOutputTokens };
         }
 
         private static AIRequestException Wrap(Exception ex, string requestJson)

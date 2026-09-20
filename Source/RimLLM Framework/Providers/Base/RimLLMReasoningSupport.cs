@@ -43,6 +43,14 @@ namespace RimLLM_Framework.Providers
         private static readonly HashSet<string> ReasoningUnsupported = new HashSet<string>();
         private static readonly HashSet<string> TemperatureUnsupported = new HashSet<string>();
 
+        /// <summary>
+        /// 拒絕「關閉思考」（<c>reasoning_effort: "none"</c> 等）的模型。與 <see cref="ReasoningUnsupported"/>
+        /// 分開記：o 系列、Groq 等只接受 low/medium/high 的模型會以 400 拒絕 "none"，
+        /// 那只代表「關不掉」，不代表不吃強度參數——先前兩者混記，連線測試送一次關閉指令
+        /// 就讓該模型整個 session 都不再收到玩家設定的強度。
+        /// </summary>
+        private static readonly HashSet<string> DisableUnsupported = new HashSet<string>();
+
         private static string BuildKey(string providerId, string model)
         {
             return (providerId ?? string.Empty) + "|" + (model ?? string.Empty);
@@ -66,11 +74,28 @@ namespace RimLLM_Framework.Providers
             }
         }
 
+        /// <summary>記下此模型不接受「關閉思考」指令。回傳 true 代表這是新資訊。</summary>
+        public static bool MarkDisableUnsupported(string providerId, string model)
+        {
+            lock (Gate)
+            {
+                return DisableUnsupported.Add(BuildKey(providerId, model));
+            }
+        }
+
         public static bool IsReasoningUnsupported(string providerId, string model)
         {
             lock (Gate)
             {
                 return ReasoningUnsupported.Contains(BuildKey(providerId, model));
+            }
+        }
+
+        public static bool IsDisableUnsupported(string providerId, string model)
+        {
+            lock (Gate)
+            {
+                return DisableUnsupported.Contains(BuildKey(providerId, model));
             }
         }
 
@@ -89,6 +114,7 @@ namespace RimLLM_Framework.Providers
             {
                 ReasoningUnsupported.Clear();
                 TemperatureUnsupported.Clear();
+                DisableUnsupported.Clear();
             }
         }
     }

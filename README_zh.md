@@ -126,6 +126,8 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 訊息清單與 `ChatOptions` 的用法與 MEAI 文件完全相同。唯一與本框架有關的規則是：不設定 `ModelId` 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定；要指定就填 `"供應商:模型"` 形式的項目。
 
+有兩個欄位沒設定時框架會補預設值：`MaxOutputTokens` 為 **1024**、`Temperature` 為 **0.7**。批次翻譯、多角色對話、欄位很多的結構化輸出這類長回應請自行設定 `MaxOutputTokens`，否則回覆會在 1024 個 token 處被截斷。
+
 回傳的 `ChatResponse` 就是供應商產生的那一個，除了 `ModelId` 被改寫成 `"供應商:模型"`（讓你在 failover 之後仍分辨得出實際是誰回的）之外，一律原樣交還。`ResponseId`、`CreatedAt`、`ConversationId`、`Usage`、`FinishReason`、`RawRepresentation` 與 `AdditionalProperties` 都是供應商設什麼就是什麼，包括 `null`。`Usage` 為 `null` 代表供應商沒有回報 token 數，不是這次呼叫免費。
 
 ### 串流
@@ -210,6 +212,8 @@ IEmbeddingGenerator<string, Embedding<float>> generator =
 
 `GenerateAsync`、`GeneratedEmbeddings<T>` 與 `Embedding<float>` 的行為與 MEAI 文件相同。每個 `Embedding<float>` 都帶著實際算出它的 `ModelId`，`GeneratedEmbeddings.Usage` 則在供應商有回報時帶回輸入 token 數—— OpenAI 相容端點會回報，Gemini 公開 API 不會（它的 `tokenCount` 限 Enterprise 平台），因此在 Gemini 下 `Usage` 維持 `null`。與對話一樣，`null` 代表供應商沒有回報，不是這次呼叫免費。Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出 `RimLLMException`。
 
+同一次 `GenerateAsync` 的多筆輸入會合成一次批次請求送出（為了上限較小的端點，每 100 筆分一批），不再每筆一次 HTTP 來回；供應商回報的輸入 token 也和對話請求一樣計入用量看板與每日預算。
+
 ### 錯誤處理
 
 所有失敗都以 `RimLLMException` 呈現，並帶有與供應商無關的 `LLMError` 代碼：
@@ -267,7 +271,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 費用控管 | 每日預算，可選硬性阻擋／模擬回應／改用免費模型／詢問玩家 |
 | 用量與費用回報 | Debug 分頁的各供應商 Token 與成本看板 |
 | 推理模型的差異 | `reasoning_content` 統一正規化為 MEAI 的 `TextReasoningContent` |
-| 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，並具備 LLM 輔助的二次修復 |
+| 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，再抽出 JSON 區塊做第二次解析 |
 | 主執行緒切換 | 串流 chunk 與日誌寫入都已派送回 Unity 主執行緒 |
 | 原生 Tool Calling 與主執行緒排程 | 所有供應商經 OpenAI 協定送出工具定義；工具委派自動排入 Unity 主執行緒 |
 
@@ -295,6 +299,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * **客戶端 Fallback 鏈**：可設定由主要模型與多個精確備援模型組成的鏈。目前模型遇到逾時、速率限制（HTTP 429）或連線錯誤時，框架會無縫往下切換。UI 產生的項目為 `Provider:Model` 形式；框架仍相容只填供應商的舊項目，並使用該供應商的預設模型。
    * **OpenRouter 服務端 Fallback**：OpenRouter 的項目可以用逗號列出多個模型 —— 把 `ChatOptions.ModelId` 設為 `"OpenRouter:model-a, model-b, model-c"`（Fallback 鏈項目也接受同樣的格式）。此時供應商會改送 OpenRouter 的 `models` 陣列而非單一 `model` 欄位，把「要用哪一個」的決定交給 OpenRouter 服務端；只填一個模型名時仍送出一般的 `model`。由 `TestOpenRouterFallbackPayload` 驗證。注意設定介面是從快取模型清單一次挑一個模型來組出項目，因此這種多模型寫法來自呼叫端程式碼，而不是 Fallback 鏈編輯器。
    * `Retry-After` 在所有路徑上都支援 RFC 7231 允許的兩種格式 —— 延遲秒數與 HTTP 日期。
+   * **HTTP 402 不重試**：402 代表帳戶餘額已經用完，餘額不會在退避的幾十秒內變出來，因此直接換下一個候選，不先耗光重試額度。訊息只是提到「quota」的 429（Gemini 每分鐘限流）仍照常退避重試。
+   * **退避期間不占併發名額**：全域 `MaxConcurrentRequests` 的名額以每一次嘗試為單位、只在真正打 API 時持有，等待指數退避（最長 60 秒）的請求不會讓其他 Mod 的請求排在後面。
    * **重試間的指數退避**：等待時間每次翻倍（`RetryDelay × 2ⁿ`）並加上 ±20% 抖動，上限 60 秒。遇到限流還用固定間隔連打，只會再一次撞上同一面牆，把重試額度白白耗光；伺服器透過 `Retry-After` 要求更長的等待時仍以其為準。
    * **冷卻以「供應商 + 模型」為單位。**健康帳本以 `Provider:Model` 為鍵。備用鏈上常同時掛著同一個供應商的多個模型（例如三個 OpenRouter 模型），只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐。
    * **一次請求只記一次失敗。**同一次請求的所有重試合計只計一次失敗。逐次記錄的話，單一次網路抖動（預設設定下共 4 次嘗試）就能把健康的目標推過熔斷門檻，冤枉凍結數分鐘。
@@ -323,11 +329,12 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * GUI 對話測試頁自己從這些內容組出 `<think>...</think>` 標籤，再將思維鏈以灰色斜體呈現。那個扁平化是呈現，不是協定。
    * **推理強度控制**：預設為「自動」，維持服務端自己的預設行為（OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
    * **強度對所有供應商、所有模型都有效**。線上格式由各供應商自行宣告，框架不再靠模型名猜測：頂層 `reasoning_effort`（OpenAI、經 OpenAI 相容端點存取的 Gemini、xAI、Groq、MiniMax、NVIDIA、OpenAI 相容端點）、OpenRouter 的統一 `reasoning` 物件、`thinking: {type}` 加強度（DeepSeek、Z.ai、Kimi）、`enable_thinking` 搭配 `thinking_budget`（Qwen）。詞彙差異逐家對應 —— Kimi 只吃 low/high/max，xAI 的推理無法關閉，關閉請求在該家會被忽略而不是換來 400。
-   * **未知模型先樂觀送出，再從服務端學習**。以模型名列白名單必然腐化：框架先前只對 `o1`/`o3` 開頭的模型送出強度，其餘一律靜默丟棄。現在除了少數已知不具思考能力的系列之外一律送出；若服務端以 400 拒絕該參數，框架會記下這組 (供應商, 模型)、去掉參數重打一次，並在本次遊戲執行期間不再送。漏掉一個模型的代價因此是一次重試，而不是永久失效。同一套機制也涵蓋 `temperature` —— GPT-5 等推理模型會直接拒絕它。記憶只存在於本次執行，模型日後支援了，重開遊戲就會重新嘗試。
+   * **未知模型先樂觀送出，再從服務端學習**。以模型名列白名單必然腐化：框架先前只對 `o1`/`o3` 開頭的模型送出強度，其餘一律靜默丟棄。現在除了少數已知不具思考能力的系列之外一律送出；若服務端以 400 拒絕該參數，框架會記下這組 (供應商, 模型)、去掉參數重打一次，並在本次遊戲執行期間不再送。漏掉一個模型的代價因此是一次重試，而不是永久失效。同一套機制也涵蓋 `temperature` —— GPT-5 等推理模型會直接拒絕它。「關閉思考」被拒（對 o 系列這類關不掉的模型送 `reasoning_effort: "none"`）會另外記：之後只略過該模型的關閉指令，明確指定的強度仍照常送出——連線測試一律要求關閉思考，先前那一次 400 會讓玩家設定的強度整個 session 都被靜默丟掉。記憶只存在於本次執行，模型日後支援了，重開遊戲就會重新嘗試。
    * **Markdown 呈現**：對話測試頁採用 **Markdig AST 解析器** 將模型回覆精準轉成 Unity 舊版 rich text，標題、粗體、斜體、清單、引用、連結與程式碼區塊會以結構呈現，而不是印出 `**`、`` ` `` 這些原始符號。舊版 IMGUI 只認得 `b`、`i`、`size`、`color`、`material`、`quad` 六個標籤，沒有對應標籤的結構（縮排、表格）以空白與符號近似。底線斜體刻意不支援，因為會與 `snake_case` 識別字衝突。
 9. **上下文快取與 Prompt 快取**
    * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位）並套用折扣費率估算成本，讓成本面板反映真實節省。
+   * **成本估算來自內建費率表**（現行的 OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。不在表上的模型一律估為 **$0**，所以每日預算只能防住費率表認得的花費——但每個模型的 token 數都照常記錄。
    * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 每一則訊息（角色、文字，以及工具結果之類的非文字內容）、目標模型、最低相容等級、快取上下文、temperature、最大輸出 Token、思考強度、是否關閉思考、結構化輸出型別，以及所有會原樣送達供應商的取樣參數（`TopP`、`TopK`、`FrequencyPenalty`、`PresencePenalty`、`Seed`、`StopSequences`）—— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰由內部輕量化機制管理（256 筆上限，先進先出與 TTL 淘汰），避免依賴外部快取套件造成 RimWorld AppDomain 組件版本衝突，框架只負責判定「什麼算同一個請求」。只存在記憶體中，不寫入存檔。
 10. **Embedding SDK**
     * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。

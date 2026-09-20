@@ -280,7 +280,7 @@ namespace RimLLM_Framework.Core
             }
             catch (Exception ex)
             {
-                RimLLMLog.Error($"[RimLLM] 加密金鑰時發生異常: {ex.Message}");
+                RimLLMLog.Error($"[RimLLM] Encryption failed: {ex.Message}");
                 throw new RimLLMException(LLMError.Unknown, $"Encryption failed: {ex.Message}", ex);
             }
         }
@@ -337,7 +337,7 @@ namespace RimLLM_Framework.Core
             }
             catch (Exception ex)
             {
-                RimLLMLog.Warning($"[RimLLM] 解密金鑰失敗 (可能格式錯誤或金鑰受損): {ex.Message}");
+                RimLLMLog.Warning($"[RimLLM] Decryption failed (malformed ciphertext or unavailable key): {ex.Message}");
                 return null;
             }
         }

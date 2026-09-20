@@ -53,11 +53,11 @@ namespace RimLLM_Framework.Manager
                 }
                 catch (HttpRequestException ex)
                 {
-                    throw new RimLLMException(LLMError.NetworkError, $"{providerId} 網路連線錯誤: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
+                    throw new RimLLMException(LLMError.NetworkError, $"{providerId} network error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    throw new RimLLMException(LLMError.Timeout, $"{providerId} 請求逾時（{timeoutSeconds} 秒）。");
+                    throw new RimLLMException(LLMError.Timeout, $"{providerId} request timed out after {timeoutSeconds} seconds.");
                 }
 
                 // 回應原樣交還。ResponseId、CreatedAt、ConversationId、RawRepresentation 這些
@@ -73,7 +73,7 @@ namespace RimLLM_Framework.Manager
 
                 if (string.IsNullOrWhiteSpace(response?.Text) && !hasToolCalls && !hasReasoning)
                 {
-                    throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} 回傳空白內容。");
+                    throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} returned an empty response.");
                 }
 
                 RecordUsage(providerId, model, builtMessages, response.Text, response.Usage);
@@ -162,18 +162,18 @@ namespace RimLLM_Framework.Manager
                 }
                 catch (HttpRequestException ex)
                 {
-                    throw new RimLLMException(LLMError.NetworkError, $"{providerId} 串流網路連線錯誤: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
+                    throw new RimLLMException(LLMError.NetworkError, $"{providerId} streaming network error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    throw new RimLLMException(LLMError.Timeout, $"{providerId} 串流閒置逾時（{timeoutSeconds} 秒未收到新內容）。");
+                    throw new RimLLMException(LLMError.Timeout, $"{providerId} stream idle timeout: no new content for {timeoutSeconds} seconds.");
                 }
             }
 
             if (!anyOutput)
             {
                 // 空串流幾乎都是連線被中斷，屬可重試錯誤；用 InvalidResponse 會讓 fallback 失效。
-                throw new RimLLMException(LLMError.NetworkError, $"{providerId} 回傳空白串流內容。");
+                throw new RimLLMException(LLMError.NetworkError, $"{providerId} returned an empty stream.");
             }
 
             RecordUsage(providerId, model, builtMessages, textBuilder.ToString(), lastUsage);
@@ -371,13 +371,13 @@ namespace RimLLM_Framework.Manager
             else
             {
                 // messages 已經是 BuildMessages 的產物，系統提示詞與 CachedContext 都在裡面。
-                int promptChars = 0;
+                double promptEstimate = 0;
                 foreach (ChatMessage m in messages)
                 {
-                    if (m != null && !string.IsNullOrEmpty(m.Text)) promptChars += m.Text.Length;
+                    if (m != null && !string.IsNullOrEmpty(m.Text)) promptEstimate += EstimateTokensRaw(m.Text);
                 }
-                promptTokens = EstimateTokens(promptChars);
-                completionTokens = EstimateTokens(responseText?.Length ?? 0);
+                promptTokens = Math.Max(1, (int)Math.Ceiling(promptEstimate));
+                completionTokens = EstimateTokens(responseText);
             }
 
             try
@@ -405,9 +405,32 @@ namespace RimLLM_Framework.Manager
             cachedPromptTokens = ToInt32(usage?.CachedInputTokenCount);
         }
 
-        private static int EstimateTokens(int characterCount)
+        /// <summary>
+        /// 供應商沒回報用量時的字元估算：CJK 字元約 1 token／字，其餘（拉丁字母、標點、空白）
+        /// 約 4 字元／token。先前一律以 0.8 token／字元計，英文提示詞會高估約 3 倍。
+        /// </summary>
+        internal static int EstimateTokens(string text)
         {
-            return Math.Max(1, (int)Math.Ceiling(characterCount * 0.8d));
+            return Math.Max(1, (int)Math.Ceiling(EstimateTokensRaw(text)));
+        }
+
+        private static double EstimateTokensRaw(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+            double tokens = 0;
+            foreach (char c in text)
+            {
+                tokens += IsCjkChar(c) ? 1.0 : 0.25;
+            }
+            return tokens;
+        }
+
+        private static bool IsCjkChar(char c)
+        {
+            return (c >= 0x2E80 && c <= 0x9FFF) ||   // CJK 部首、符號、假名、統一漢字
+                   (c >= 0xAC00 && c <= 0xD7AF) ||   // 諺文音節
+                   (c >= 0xF900 && c <= 0xFAFF) ||   // CJK 相容漢字
+                   (c >= 0xFF00 && c <= 0xFFEF);     // 全形字元
         }
 
         private static int ToInt32(long? value)

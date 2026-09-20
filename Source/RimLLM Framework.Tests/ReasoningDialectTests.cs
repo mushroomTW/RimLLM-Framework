@@ -328,6 +328,46 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.IsTrue(RimLLMReasoningSupport.IsReasoningUnsupported("OpenAI", "some-legacy-model"));
         }
 
+        /// <summary>
+        /// 被拒的是「關閉」指令時，只能學到「這個模型關不掉」，之後帶強度的請求仍要送出參數。
+        /// 連線測試一律要求關閉思考，先前一次 400 就把 o 系列整個 session 的強度設定都吃掉了。
+        /// </summary>
+        [Test]
+        public void DisableRejectionOnlyDisablesTheDisableSwitch_EffortIsStillSentLater()
+        {
+            var provider = new TestOpenAIProvider(SettingsWithKey("OpenAI"));
+            provider.WireHandler.ScriptResponse(
+                HttpStatusCode.BadRequest,
+                "{\"error\":{\"message\":\"Invalid value: 'none'. Supported values are: 'low', 'medium', and 'high'.\",\"param\":\"reasoning_effort\"}}");
+
+            string text = provider.GenerateAsync(
+                UserMessages, new RimLLMChatOptions { DisableReasoning = true }, "o5-preview").GetAwaiter().GetResult();
+
+            ClassicAssert.AreEqual("ok", text);
+            ClassicAssert.AreEqual(2, provider.WireHandler.RequestBodies.Count);
+            ClassicAssert.AreEqual("none", (string)JsonNode.Parse(provider.WireHandler.RequestBodies[0]).AsObject()["reasoning_effort"]);
+            ClassicAssert.IsNull(JsonNode.Parse(provider.WireHandler.RequestBodies[1]).AsObject()["reasoning_effort"],
+                "重打時關閉指令要被拿掉");
+            ClassicAssert.IsTrue(RimLLMReasoningSupport.IsDisableUnsupported("OpenAI", "o5-preview"));
+            ClassicAssert.IsFalse(RimLLMReasoningSupport.IsReasoningUnsupported("OpenAI", "o5-preview"),
+                "拒絕關閉不等於不支援思考參數");
+
+            provider.GenerateAsync(
+                UserMessages,
+                new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High } },
+                "o5-preview").GetAwaiter().GetResult();
+
+            ClassicAssert.AreEqual(3, provider.WireHandler.RequestBodies.Count);
+            ClassicAssert.AreEqual("high", (string)JsonNode.Parse(provider.WireHandler.RequestBodies[2]).AsObject()["reasoning_effort"],
+                "之後帶強度的請求仍必須送出 reasoning_effort");
+
+            // 學到關不掉之後，再次要求關閉不該再浪費一次來回。
+            provider.GenerateAsync(
+                UserMessages, new RimLLMChatOptions { DisableReasoning = true }, "o5-preview").GetAwaiter().GetResult();
+            ClassicAssert.AreEqual(4, provider.WireHandler.RequestBodies.Count);
+            ClassicAssert.IsNull(JsonNode.Parse(provider.WireHandler.RequestBodies[3]).AsObject()["reasoning_effort"]);
+        }
+
         [Test]
         public void RememberedRejectionSkipsTheParameterOnLaterRequests()
         {

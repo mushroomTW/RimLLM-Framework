@@ -60,6 +60,18 @@ namespace RimLLM_Framework
             Exception innerException = null,
             string detectionText = null)
         {
+            RimLLMException exception = MapStatusCode(statusCode, friendlyMessage, retryAfter, innerException, detectionText);
+            exception.HttpStatusCode = statusCode;
+            return exception;
+        }
+
+        private static RimLLMException MapStatusCode(
+            int? statusCode,
+            string friendlyMessage,
+            TimeSpan? retryAfter,
+            Exception innerException,
+            string detectionText)
+        {
             string probe = detectionText ?? friendlyMessage;
 
             switch (statusCode)

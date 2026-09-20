@@ -28,6 +28,19 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestEstimateTokens_DistinguishesCjkFromLatin()
+        {
+            // 英文約 4 字元一個 token；先前一律 0.8 token／字元，會把 40 字元的英文估成 32。
+            ClassicAssert.AreEqual(10, RimLLMChatClientExecutor.EstimateTokens(new string('a', 40)));
+            // CJK 約一字一個 token。
+            ClassicAssert.AreEqual(4, RimLLMChatClientExecutor.EstimateTokens("殖民地開"));
+            // 混合文字逐字累計後無條件進位；空字串至少算 1。
+            ClassicAssert.AreEqual(3, RimLLMChatClientExecutor.EstimateTokens("hi 你好"));
+            ClassicAssert.AreEqual(1, RimLLMChatClientExecutor.EstimateTokens(""));
+            ClassicAssert.AreEqual(1, RimLLMChatClientExecutor.EstimateTokens(null));
+        }
+
+        [Test]
         public void TestGenerateAsync_SendsMessagesAndOptions()
         {
             var client = new CapturingChatClient

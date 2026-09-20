@@ -36,6 +36,8 @@ namespace RimLLM_Framework.Manager
             var canonical = new StringBuilder();
 
             AppendField(canonical, options?.ModelId);
+            // MEAI 的 OpenAI client 會把 Instructions 當成 system message 送出，屬於會改變輸出的欄位。
+            AppendField(canonical, options?.Instructions);
             AppendField(canonical, RimLLMChatOptions.GetMinFallbackLevel(options));
             AppendField(canonical, RimLLMChatOptions.GetCachedContext(options));
             AppendField(canonical, RimLLMChatOptions.GetEnableContextCaching(options) ? "1" : "0");

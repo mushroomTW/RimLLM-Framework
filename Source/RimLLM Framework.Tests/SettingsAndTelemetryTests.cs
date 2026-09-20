@@ -47,6 +47,57 @@ namespace RimLLM_Framework.Tests
             }
         }
 
+        /// <summary>
+        /// 預設思考強度的存檔往返。先前載入端把「&gt; 3 即無效」寫死，
+        /// 而 MEAI 10.10 的列舉是 None=0…ExtraHigh=4：High 存成 4 後每次載入都變回 Auto。
+        /// </summary>
+        [Test]
+        public void DefaultReasoningEffort_RoundTripsThroughSettingsEncoding()
+        {
+            foreach (ReasoningEffort effort in Enum.GetValues(typeof(ReasoningEffort)))
+            {
+                int encoded = RimLLMFrameworkSettings.EncodeReasoningEffort(effort);
+                ClassicAssert.AreEqual(effort, RimLLMFrameworkSettings.DecodeReasoningEffort(encoded),
+                    $"{effort} 存檔後必須原樣讀回");
+            }
+
+            ClassicAssert.AreEqual(0, RimLLMFrameworkSettings.EncodeReasoningEffort(null));
+            ClassicAssert.IsNull(RimLLMFrameworkSettings.DecodeReasoningEffort(0), "0 代表 Auto");
+            ClassicAssert.IsNull(RimLLMFrameworkSettings.DecodeReasoningEffort(-1));
+            ClassicAssert.IsNull(RimLLMFrameworkSettings.DecodeReasoningEffort(99), "未知值退回 Auto 而非擲例外");
+
+            // 與既有設定檔相容：舊版以同一套 +1 編碼寫入的 Low／Medium 讀回不變。
+            ClassicAssert.AreEqual(ReasoningEffort.Low, RimLLMFrameworkSettings.DecodeReasoningEffort(2));
+            ClassicAssert.AreEqual(ReasoningEffort.Medium, RimLLMFrameworkSettings.DecodeReasoningEffort(3));
+            ClassicAssert.AreEqual(ReasoningEffort.High, RimLLMFrameworkSettings.DecodeReasoningEffort(4));
+        }
+
+        /// <summary>
+        /// 存檔路徑的加密失敗必須被吞掉：ExposeData 在 Scribe 存檔中途執行，
+        /// 例外一旦冒出去，備援鏈、端點與所有開關都會跟著存不下來。
+        /// </summary>
+        [Test]
+        public void TryEncryptForSave_SwallowsEncryptionFailure_InsteadOfThrowingThroughScribe()
+        {
+            ClassicAssert.IsTrue(RimLLMFrameworkSettings.TryEncryptForSave("sk-secret", out string cipher));
+            ClassicAssert.AreEqual("sk-secret", EncryptionUtility.Decrypt(cipher));
+
+            // 讓安全金鑰無法載入：Encrypt 會擲 RimLLMException，存檔路徑要回 false 而不是往外丟。
+            EncryptionUtility.ResetSecureKeyForTests();
+            EncryptionUtility.SecureKeyPathResolver = () => null;
+            try
+            {
+                ClassicAssert.IsFalse(RimLLMFrameworkSettings.TryEncryptForSave("sk-secret", out string failed));
+                ClassicAssert.IsNull(failed);
+            }
+            finally
+            {
+                EncryptionUtility.ResetSecureKeyForTests();
+                EncryptionUtility.SecureKeyPathResolver = () =>
+                    Path.Combine(_encryptionKeyDirectory, "RimLLM_EncryptionKey.dat");
+            }
+        }
+
         [Test]
         public void TestClearLogs()
         {

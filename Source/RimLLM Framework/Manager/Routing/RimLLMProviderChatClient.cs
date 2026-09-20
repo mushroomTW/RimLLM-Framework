@@ -87,13 +87,27 @@ namespace RimLLM_Framework.Manager
                 catch (Exception ex) when (IsNativeSchemaRejected(ex))
                 {
                     // 原生 schema 被拒，降級成「以提示詞要求 JSON」重試一次。
-                    return await GenerateAsync(
-                        ApplyJsonSchemaInstructions(messages, responseType),
-                        options,
-                        cancellationToken).ConfigureAwait(false);
+                    // 必須直接走提示式路徑：先前這裡遞迴呼叫 GenerateAsync 本身，
+                    // options 沒變、判斷條件也沒變，服務端只要持續拒絕就會無限重打 API。
+                    return await GenerateWithPromptSchemaAsync(messages, options, responseType, cancellationToken)
+                        .ConfigureAwait(false);
                 }
             }
 
+            return await GenerateWithPromptSchemaAsync(messages, options, responseType, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 不送原生 schema：需要結構化輸出時改以提示詞要求 JSON（<paramref name="responseType"/> 為 null 則原樣送出）。
+        /// 這是原生 schema 被拒後唯一允許的重試路徑，本身不再做任何降級重試。
+        /// </summary>
+        private async Task<ChatResponse> GenerateWithPromptSchemaAsync(
+            IList<ChatMessage> messages,
+            ChatOptions options,
+            Type responseType,
+            CancellationToken cancellationToken)
+        {
             using (IChatClient client = _provider.CreateChatClient(_model))
             {
                 return await RimLLMChatClientExecutor.GenerateAsync(
@@ -314,7 +328,14 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
-            string message = exception.ToString().ToLowerInvariant();
+            // 只看例外鏈的訊息，不看 ToString()：後者含堆疊，而堆疊裡的 RimLLMSchemaBuilder
+            // 本身就含 "schema"，任何訊息帶 "invalid"／"400" 的例外都會被誤判成 schema 被拒。
+            var messageBuilder = new System.Text.StringBuilder();
+            for (Exception current = exception; current != null; current = current.InnerException)
+            {
+                messageBuilder.Append(current.Message).Append('\n');
+            }
+            string message = messageBuilder.ToString().ToLowerInvariant();
             bool mentionsSchema = message.Contains("schema") ||
                                   message.Contains("response_format") ||
                                   message.Contains("response format") ||
@@ -341,7 +362,7 @@ namespace RimLLM_Framework.Manager
             stripped = true;
 
             RimLLMLog.Warning(
-                $"[RimLLM] 供應商 {provider?.ProviderId} 不支援原生工具呼叫，本次請求的 {options.Tools.Count} 個工具已被移除。");
+                $"[RimLLM] Provider {provider?.ProviderId} does not support native tool calling; {options.Tools.Count} tool(s) were stripped from this request.");
 
             ChatOptions clone = options.Clone();
             clone.Tools = null;

@@ -21,6 +21,12 @@ namespace RimLLM_Framework
         public TimeSpan? RetryAfter { get; set; }
 
         /// <summary>
+        /// 原始 HTTP 狀態碼（錯誤來自 HTTP 回應時才有）。同一個 <see cref="LLMError"/> 可能對應不同狀態碼，
+        /// 重試判定需要區分：402 與 429 都會映成 QuotaExceeded，只有前者是真的餘額用完。
+        /// </summary>
+        public int? HttpStatusCode { get; set; }
+
+        /// <summary>
         /// 標記此錯誤是否為「服務端拒絕原生 JSON Schema」。
         /// 只有明確標記為 true 的錯誤才會觸發框架的非原生 Schema 降級重打，
         /// 避免一般的 InvalidResponse 失敗被誤判而掩蓋真正的錯誤。

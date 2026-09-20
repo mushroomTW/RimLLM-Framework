@@ -33,6 +33,13 @@ namespace RimLLM_Framework.Manager
         private readonly string _modId;
 
         /// <summary>
+        /// 併發名額佇列。以每個候選嘗試為單位取得名額：名額若在路由外層取得，
+        /// 重試前的指數退避（最長 60 秒）會一直占著名額，MaxConcurrentRequests 預設只有 2，
+        /// 一個被限流的供應商就能讓其他 Mod 的請求全部排隊。測試可傳 null 略過排隊。
+        /// </summary>
+        private readonly RimLLMRequestQueue _queue;
+
+        /// <summary>
         /// 標記本次請求是串流。RoutingContext 不帶這個資訊，而候選用盡時要擲出的錯誤碼
         /// 取決於串流與否，因此以框架私有鍵夾在 ChatOptions 上傳遞。
         /// </summary>
@@ -63,13 +70,15 @@ namespace RimLLM_Framework.Manager
             RimLLMHealthLedger healthLedger,
             RimLLMUsageTracker usageTracker,
             RimLLMFallbackPipeline policy,
-            string modId)
+            string modId,
+            RimLLMRequestQueue queue = null)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _healthLedger = healthLedger ?? throw new ArgumentNullException(nameof(healthLedger));
             _usageTracker = usageTracker ?? throw new ArgumentNullException(nameof(usageTracker));
             _policy = policy ?? throw new ArgumentNullException(nameof(policy));
             _modId = modId;
+            _queue = queue;
 
             // 終止由候選是否用盡決定，不另設嘗試上限。
             MaximumAttemptsPerRequest = null;
@@ -85,10 +94,11 @@ namespace RimLLM_Framework.Manager
             RimLLMHealthLedger healthLedger,
             RimLLMUsageTracker usageTracker,
             RimLLMFallbackPipeline policy,
-            string modId)
+            string modId,
+            RimLLMRequestQueue queue)
         {
             return new StreamingMarkerChatClient(
-                new RimLLMFailoverChatClient(settings, healthLedger, usageTracker, policy, modId));
+                new RimLLMFailoverChatClient(settings, healthLedger, usageTracker, policy, modId, queue));
         }
 
         /// <summary>
@@ -113,7 +123,55 @@ namespace RimLLM_Framework.Manager
                     marked.AdditionalProperties = new AdditionalPropertiesDictionary();
                 }
                 marked.AdditionalProperties[StreamingKey] = true;
-                return base.GetStreamingResponseAsync(messages, marked, cancellationToken);
+                return new TaskBackedStreamEnumerable(base.GetStreamingResponseAsync(messages, marked, cancellationToken));
+            }
+        }
+
+        /// <summary>
+        /// 把 MEAI FailoverChatClient（C# async iterator）的列舉器換成以 Task 支撐的 ValueTask。
+        /// </summary>
+        /// <remarks>
+        /// async iterator 的 MoveNextAsync 回傳 IValueTaskSource 型的 ValueTask：只能 await 一次、
+        /// 未完成時同步取值會擲 InvalidOperationException，執行中呼叫 DisposeAsync 則擲 NotSupportedException。
+        /// 佇列層先前疊在路由外面，它的 async 方法恰好把這種 ValueTask 換成了 Task 型，
+        /// 同步取值的呼叫端（含大量既有測試）一直依賴這個性質；名額改為逐候選持有後，
+        /// 由這一層明確地把該性質留在框架的串流邊界上。
+        /// </remarks>
+        private sealed class TaskBackedStreamEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
+        {
+            private readonly bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> _inner;
+
+            public TaskBackedStreamEnumerable(bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> inner)
+            {
+                _inner = inner;
+            }
+
+            public bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
+                CancellationToken cancellationToken = default)
+            {
+                return new TaskBackedStreamEnumerator(_inner.GetAsyncEnumerator(cancellationToken));
+            }
+        }
+
+        private sealed class TaskBackedStreamEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
+        {
+            private readonly bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> _inner;
+
+            public TaskBackedStreamEnumerator(bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> inner)
+            {
+                _inner = inner;
+            }
+
+            public ChatResponseUpdate Current => _inner.Current;
+
+            public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
+            {
+                return await _inner.MoveNextAsync().ConfigureAwait(false);
+            }
+
+            public async ste::System.Threading.Tasks.ValueTask DisposeAsync()
+            {
+                await _inner.DisposeAsync().ConfigureAwait(false);
             }
         }
 
@@ -151,7 +209,9 @@ namespace RimLLM_Framework.Manager
                     : $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName})");
             }
 
-            return new RimLLMProviderChatClient(candidate.Provider, candidate.ModelName, _settings);
+            IChatClient candidateClient = new RimLLMProviderChatClient(candidate.Provider, candidate.ModelName, _settings);
+            // 名額包在單一嘗試外面：嘗試結束（成功、失敗或串流列舉完）即歸還，退避等待不占名額。
+            return _queue != null ? new RimLLMRequestQueueChatClient(candidateClient, _queue) : candidateClient;
         }
 
         /// <summary>
@@ -251,6 +311,12 @@ namespace RimLLM_Framework.Manager
                 var candidate = state.Current;
                 string healthKey = RimLLMFallbackPipeline.HealthKey(candidate);
                 long elapsedMs = (long)attempt.Duration.TotalMilliseconds;
+                // 名額包在嘗試裡面，基底類別的碼表從等名額就開始計；扣掉等待，
+                // 帳本與 MinLatency 排序看到的才是供應商本身的延遲而不是排隊擁擠度。
+                if (attempt.Client is RimLLMRequestQueueChatClient queued)
+                {
+                    elapsedMs = Math.Max(0, elapsedMs - queued.QueueWaitMilliseconds);
+                }
 
                 if (attempt.Exception == null)
                 {

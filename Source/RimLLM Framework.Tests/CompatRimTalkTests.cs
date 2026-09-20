@@ -171,6 +171,9 @@ namespace RimLLM_Framework.Tests
             ChatMessage[] sent = fake.ReceivedMessages.Single().ToArray();
             ClassicAssert.AreEqual(ChatRole.System, sent[0].Role);
             ClassicAssert.IsTrue(fake.ReceivedOptions.Single() is RimLLMChatOptions opts && opts.DisableReasoning);
+            // RimTalk 原生不設 max_tokens；多 pawn JSONL 不能被框架預設的 1024 截斷。
+            ClassicAssert.AreEqual(RimTalkCompatClient.MaxOutputTokens, fake.ReceivedOptions.Single().MaxOutputTokens);
+            ClassicAssert.GreaterOrEqual(fake.ReceivedOptions.Single().MaxOutputTokens, 2048);
         }
 
         [Test]

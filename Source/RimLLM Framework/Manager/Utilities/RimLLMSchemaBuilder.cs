@@ -249,7 +249,7 @@ namespace RimLLM_Framework.Manager
                     // 一次失敗即永久降級，避免每次請求都吃例外成本。
                     LastExporterFailure = DescribeExporterFailure(exception);
                     ForceLegacy = true;
-                    RimLLMLog.Warning("MEAI schema exporter 不可用，永久降級至舊反射實作：" + LastExporterFailure);
+                    RimLLMLog.Warning("[RimLLM] MEAI schema exporter is unavailable; permanently falling back to the legacy reflection schema builder: " + LastExporterFailure);
                 }
             }
 

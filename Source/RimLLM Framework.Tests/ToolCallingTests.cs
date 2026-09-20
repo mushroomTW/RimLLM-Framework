@@ -415,6 +415,73 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(LLMError.ProviderOffline, ex.Error);
         }
 
+        /// <summary>
+        /// 工具結果必須是工具本身的回傳值，而不是包住它的 ValueTask。
+        /// 先前 EnqueueOnMainThreadAsync 的多載解析選到 Func&lt;T&gt;（T = ValueTask&lt;object&gt;），
+        /// 整顆 ValueTask 被裝箱送給模型，序列化成 {"isCompleted":…,"result":42}；
+        /// 舊測試只比對 ToString()，而 ValueTask&lt;T&gt;.ToString() 恰好回傳內層值，因此抓不到。
+        /// </summary>
+        [Test]
+        public async Task MainThreadFunctionInvoker_UnwrapsToolResult_ForSyncAndAsyncTools()
+        {
+            var settings = new MockSettings { FallbackChain = new List<string> { "ToolMock:mock-model" } };
+            var seenResults = new List<object>();
+            int round = 0;
+            var provider = new MockToolCallingProvider
+            {
+                GetResponseHandler = (messages, options) =>
+                {
+                    round++;
+                    if (round == 1)
+                    {
+                        var calls = new List<AIContent>
+                        {
+                            new FunctionCallContent("c-sync", "SyncAdd", new Dictionary<string, object> { ["a"] = 1, ["b"] = 2 }),
+                            new FunctionCallContent("c-async", "AsyncEcho", new Dictionary<string, object> { ["text"] = "pong" })
+                        };
+                        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, calls))
+                        {
+                            FinishReason = ChatFinishReason.ToolCalls
+                        });
+                    }
+
+                    foreach (ChatMessage message in messages)
+                    {
+                        seenResults.AddRange(message.Contents.OfType<FunctionResultContent>().Select(r => r.Result));
+                    }
+                    return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "done")));
+                }
+            };
+            var manager = BuildManager(settings, provider);
+            var client = manager.CreateChatClient("test.tool.unwrap").AsMainThreadFunctionInvokingClient();
+
+            var options = new ChatOptions
+            {
+                Tools = new List<AITool>
+                {
+                    AIFunctionFactory.Create((int a, int b) => a + b, "SyncAdd"),
+                    AIFunctionFactory.Create(async (string text) =>
+                    {
+                        await Task.Delay(10);
+                        return text + "!";
+                    }, "AsyncEcho")
+                }
+            };
+
+            var response = await client.GetResponseAsync(UserSays("go"), options);
+
+            ClassicAssert.AreEqual("done", response.Text);
+            ClassicAssert.AreEqual(2, seenResults.Count, "兩個工具結果都要回到模型");
+            foreach (object result in seenResults)
+            {
+                ClassicAssert.IsNotNull(result);
+                StringAssert.DoesNotContain("ValueTask", result.GetType().FullName,
+                    "工具結果不得是裝箱的 ValueTask");
+            }
+            ClassicAssert.AreEqual("3", seenResults[0].ToString());
+            ClassicAssert.AreEqual("pong!", seenResults[1].ToString(), "async 工具的結果也要被完整等待並解開");
+        }
+
         [Test]
         public void GeminiSendsToolDefinitionsThroughOpenAiCompatibleEndpoint()
         {

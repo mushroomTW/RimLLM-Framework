@@ -478,10 +478,9 @@ namespace RimLLM_Framework.Mod
                             long finalElapsed = stopwatch.ElapsedMilliseconds;
                             if (!hasExactTokens || totalTokens <= 0)
                             {
-                                int promptChars = userPrompt?.Length ?? 0;
-                                int completionChars = fullReply.Length;
-                                promptTokens = Math.Max(1, (int)Math.Ceiling(promptChars * 0.8));
-                                completionTokens = Math.Max(1, (int)Math.Ceiling(completionChars * 0.8));
+                                // 與用量帳本用同一套估算，顯示的數字才會和統計頁一致。
+                                promptTokens = RimLLMChatClientExecutor.EstimateTokens(userPrompt);
+                                completionTokens = RimLLMChatClientExecutor.EstimateTokens(fullReply);
                                 totalTokens = promptTokens + completionTokens;
                                 hasExactTokens = false;
                             }

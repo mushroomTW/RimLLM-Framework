@@ -111,7 +111,7 @@ namespace RimLLM_Framework.Mod
                 catch (Exception ex)
                 {
                     // 非 Unity 環境（單元測試、headless 反射執行）取不到 Config 路徑。
-                    RimLLMLog.Warning($"[RimLLM] 無法解析遙測檔案路徑，略過載入: {ex.Message}");
+                    RimLLMLog.Warning($"[RimLLM] Telemetry file path unavailable; skipping load: {ex.Message}");
                     return;
                 }
 
@@ -126,7 +126,7 @@ namespace RimLLM_Framework.Mod
                 string backupPath = path + ".bak";
                 if (TryLoadFrom(backupPath, out _))
                 {
-                    RimLLMLog.Warning("[RimLLM] 遙測主檔無法解析，已改由備份檔還原。");
+                    RimLLMLog.Warning("[RimLLM] Telemetry file could not be parsed; restored from the .bak backup.");
                     LoadedFromDisk = true;
                     IsDirty = true;
                 }
@@ -158,7 +158,7 @@ namespace RimLLM_Framework.Mod
             }
             catch (Exception ex)
             {
-                RimLLMLog.Warning($"[RimLLM] 載入遙測資料失敗 ({Path.GetFileName(path)}): {ex.Message}");
+                RimLLMLog.Warning($"[RimLLM] Failed to load telemetry ({Path.GetFileName(path)}): {ex.Message}");
                 return false;
             }
         }
@@ -179,7 +179,7 @@ namespace RimLLM_Framework.Mod
                     // 無法取得原使用者的受保護 key 時，以空歷史起始，但保留密文，
                     // 避免本次程序的其他遙測變更將歷史永久覆寫掉。
                     undecryptableEncryptedChatHistory = dto.EncryptedChatHistory;
-                    RimLLMLog.Warning("[RimLLM] 對話歷史無法解密（可能已更換裝置或使用者），將以空白歷史起始並保留原始密文。");
+                    RimLLMLog.Warning("[RimLLM] Chat history could not be decrypted (device or user may have changed); starting with an empty history and keeping the original ciphertext.");
                     return new List<string>();
                 }
 
@@ -220,7 +220,7 @@ namespace RimLLM_Framework.Mod
                 }
                 catch (Exception ex)
                 {
-                    RimLLMLog.Warning($"[RimLLM] 無法解析遙測檔案路徑，略過寫入: {ex.Message}");
+                    RimLLMLog.Warning($"[RimLLM] Telemetry file path unavailable; skipping save: {ex.Message}");
                     return;
                 }
 
@@ -268,7 +268,7 @@ namespace RimLLM_Framework.Mod
                 }
                 catch (Exception ex)
                 {
-                    RimLLMLog.Warning($"[RimLLM] 寫入遙測資料失敗: {ex.Message}");
+                    RimLLMLog.Warning($"[RimLLM] Failed to write telemetry: {ex.Message}");
                     try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
                 }
             }

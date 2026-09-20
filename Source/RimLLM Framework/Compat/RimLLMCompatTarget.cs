@@ -60,7 +60,7 @@ namespace RimLLM_Framework.Compat
                 ApplyPatch(harmony);
                 IsPatched = true;
                 PatchError = null;
-                RimLLMLog.Message($"[RimLLM] 相容層：已掛載 {DisplayName} ({ModId}) 攔截。");
+                RimLLMLog.Message($"[RimLLM] Compat: hooked {DisplayName} ({ModId}).");
             }
             catch (Exception ex)
             {

@@ -108,6 +108,12 @@ namespace RimLLM_Framework.Compat
         }
 
         /// <summary>
+        /// 接管請求的輸出上限，對齊 ModCompatChecker 原生請求的 <c>max_tokens: 1500</c>；
+        /// 不明確設定時框架會補 1024，診斷報告的尾段會被截掉。
+        /// </summary>
+        internal const int MaxOutputTokens = 1500;
+
+        /// <summary>
         /// 診斷分析著重精準度，預設關閉思考鏈（DisableReasoning）並使用溫和的溫度（0.3）。
         /// </summary>
         private static ChatOptions BuildOptions()
@@ -115,7 +121,8 @@ namespace RimLLM_Framework.Compat
             return new RimLLMChatOptions
             {
                 DisableReasoning = true,
-                Temperature = 0.3f
+                Temperature = 0.3f,
+                MaxOutputTokens = MaxOutputTokens
             };
         }
     }

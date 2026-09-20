@@ -426,6 +426,57 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void RetryBackoffDoesNotHoldTheConcurrencySlot()
+        {
+            // 名額若疊在路由外層，請求 A 在指數退避期間會一直占著唯一的名額，
+            // 與 A 無關的請求 B 只能排隊等 A 重試完。名額改為逐候選嘗試持有後，
+            // B 必須能在 A 的退避空窗內完成。
+            var settings = new MockSettings
+            {
+                FallbackChain = new List<string> { "Flaky:m" },
+                MaxConcurrentRequests = 1,
+                MaxRetries = 1,
+                RetryDelay = 0.5f
+            };
+            settings.EnabledProviders["Flaky"] = true;
+            settings.ApiKeys["Flaky"] = "k";
+            var manager = new RimLLMManager(settings);
+
+            int flakyCalls = 0;
+            var bDone = new System.Threading.ManualResetEventSlim(false);
+            bool bFinishedBeforeRetry = false;
+            manager.RegisterProvider(new MockTestProvider
+            {
+                ProviderId = "Flaky",
+                GenerateHandler = (msgs, opts, model) =>
+                {
+                    string prompt = System.Linq.Enumerable.Last(msgs).Text;
+                    if (prompt == "A")
+                    {
+                        int call = System.Threading.Interlocked.Increment(ref flakyCalls);
+                        if (call == 1) throw new RimLLMException(LLMError.NetworkError, "flake");
+                        bFinishedBeforeRetry = bDone.IsSet;
+                        return Task.FromResult("A-ok");
+                    }
+                    bDone.Set();
+                    return Task.FromResult("B-ok");
+                }
+            });
+
+            IChatClient client = manager.CreateChatClient("test.queue.backoff");
+            Task<ChatResponse> a = client.GetResponseAsync(NewMessages("A"));
+            // 等 A 的第一次嘗試失敗、進入退避，再送 B。
+            System.Threading.SpinWait.SpinUntil(() => System.Threading.Volatile.Read(ref flakyCalls) >= 1, 5000);
+            Task<ChatResponse> b = client.GetResponseAsync(NewMessages("B"));
+
+            ClassicAssert.IsTrue(b.Wait(5000), "B 不該被 A 的退避卡住");
+            ClassicAssert.AreEqual("B-ok", b.Result.Text);
+            ClassicAssert.IsTrue(a.Wait(10000));
+            ClassicAssert.AreEqual("A-ok", a.Result.Text);
+            ClassicAssert.IsTrue(bFinishedBeforeRetry, "B 必須在 A 重試之前就拿到名額並完成");
+        }
+
+        [Test]
         public void AntiAbuseWindowIsSharedAcrossClientsOfTheSameMod()
         {
             // 節流狀態必須由所有 client 共用：若每個 client 各持一份，同一個 Mod
@@ -513,6 +564,10 @@ namespace RimLLM_Framework.Tests
                 baseKey,
                 RimLLMResponseCacheKey.Build(
                     NewMessages(), new ChatOptions { StopSequences = new List<string> { "STOP" } }));
+            // MEAI 的 OpenAI client 會把 Instructions 當 system message 送出，同樣會改變輸出。
+            ClassicAssert.AreNotEqual(
+                baseKey,
+                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Instructions = "answer in haiku" }));
         }
 
         // ---------- OpenAI Patch 傳播器停用與工廠輔助測試 ----------

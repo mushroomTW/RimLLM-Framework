@@ -1020,7 +1020,7 @@ namespace RimLLM_Framework.Tests
 
             var ex = Assert.Throws<RimLLMException>(() =>
                 service.ComputeEmbeddingAsync("hello").GetAwaiter().GetResult());
-            ClassicAssert.IsTrue(ex.Message.Contains("尚未設定供應商"), "停用狀態下不產生向量，應明確拋出錯誤");
+            ClassicAssert.IsTrue(ex.Message.Contains("No embedding provider is configured"), "停用狀態下不產生向量，應明確拋出錯誤");
         }
 
                 [Test]
@@ -1067,6 +1067,50 @@ namespace RimLLM_Framework.Tests
             // 其他 ArgumentOutOfRangeException 仍維持非可重試。
             var otherEx = new ArgumentOutOfRangeException("count", 5, "Count must be non-negative.");
             ClassicAssert.IsFalse(RimLLMFallbackPipeline.IsRetryableException(otherEx));
+        }
+
+        [Test]
+        public void TestQuotaExceededIsNotRetried_FallsToNextCandidateImmediately()
+        {
+            // 402：帳戶餘額不會在退避的幾十秒內變出來，重試只是白等。
+            ClassicAssert.IsFalse(RimLLMFallbackPipeline.IsRetryableException(
+                new RimLLMException(LLMError.QuotaExceeded, "insufficient_quota") { HttpStatusCode = 402 }));
+            // 429 帶 "quota" 字樣的每分鐘限流（Gemini 免費層）同樣映成 QuotaExceeded，但等一下就能過，必須重試。
+            ClassicAssert.IsTrue(RimLLMFallbackPipeline.IsRetryableException(
+                LLMErrorMapper.CreateException(429, "You exceeded your current quota (GenerateRequestsPerMinute)")));
+
+            var mockSettings = new MockSettings
+            {
+                FallbackChain = new List<string> { "MockBroke:model-a", "MockRich:model-b" },
+                MaxRetries = 5,
+                RetryDelay = 0f
+            };
+            mockSettings.EnabledProviders["MockBroke"] = true;
+            mockSettings.EnabledProviders["MockRich"] = true;
+            mockSettings.ApiKeys["MockBroke"] = "k";
+            mockSettings.ApiKeys["MockRich"] = "k";
+            var manager = new RimLLMManager(mockSettings);
+
+            int brokeCalls = 0;
+            manager.RegisterProvider(new MockTestProvider
+            {
+                ProviderId = "MockBroke",
+                GenerateHandler = (msgs, opts, model) =>
+                {
+                    brokeCalls++;
+                    throw new RimLLMException(LLMError.QuotaExceeded, "insufficient_quota") { HttpStatusCode = 402 };
+                }
+            });
+            manager.RegisterProvider(new MockTestProvider
+            {
+                ProviderId = "MockRich",
+                GenerateHandler = (msgs, opts, model) => System.Threading.Tasks.Task.FromResult("ok")
+            });
+
+            IChatClient client = manager.CreateChatClient("test.quota.norety");
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "p") };
+            ClassicAssert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
+            ClassicAssert.AreEqual(1, brokeCalls, "配額耗盡不應消耗重試次數，直接換下一個候選");
         }
 
         [Test]

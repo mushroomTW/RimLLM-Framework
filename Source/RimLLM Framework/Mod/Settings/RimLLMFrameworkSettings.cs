@@ -293,7 +293,10 @@ namespace RimLLM_Framework.Mod
                     var encryptedKeys = new Dictionary<string, string>();
                     foreach (var kvp in _apiKeys)
                     {
-                        encryptedKeys[kvp.Key] = EncryptionUtility.Encrypt(kvp.Value);
+                        if (TryEncryptForSave(kvp.Value, out string cipher))
+                        {
+                            encryptedKeys[kvp.Key] = cipher;
+                        }
                     }
 
                     // 載入時解不開的金鑰原樣寫回密文。若不這麼做，這些 provider 不在 _apiKeys 中，
@@ -309,7 +312,10 @@ namespace RimLLM_Framework.Mod
                     var encryptedEmbeddingKeys = new Dictionary<string, string>();
                     foreach (var kvp in _embeddingApiKeys)
                     {
-                        encryptedEmbeddingKeys[kvp.Key] = EncryptionUtility.Encrypt(kvp.Value);
+                        if (TryEncryptForSave(kvp.Value, out string cipher))
+                        {
+                            encryptedEmbeddingKeys[kvp.Key] = cipher;
+                        }
                     }
                     foreach (var kvp in _undecryptableEmbeddingApiKeys)
                     {
@@ -333,9 +339,15 @@ namespace RimLLM_Framework.Mod
                         string.Equals(this.EmbeddingProvider, _undecryptableEmbeddingApiKeyProvider, StringComparison.Ordinal) &&
                         !string.IsNullOrEmpty(this.EmbeddingProvider) &&
                         !_embeddingApiKeys.ContainsKey(this.EmbeddingProvider);
-                    string encryptedEmbeddingApiKey = preserveUndecryptableEmbeddingApiKey
-                        ? _undecryptableEmbeddingApiKey
-                        : EncryptionUtility.Encrypt(this.EmbeddingApiKey ?? "");
+                    string encryptedEmbeddingApiKey;
+                    if (preserveUndecryptableEmbeddingApiKey)
+                    {
+                        encryptedEmbeddingApiKey = _undecryptableEmbeddingApiKey;
+                    }
+                    else if (!TryEncryptForSave(this.EmbeddingApiKey ?? "", out encryptedEmbeddingApiKey))
+                    {
+                        encryptedEmbeddingApiKey = null;
+                    }
 
                     var dto = new SettingsDto
                     {
@@ -351,7 +363,7 @@ namespace RimLLM_Framework.Mod
                         ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
                         DetailedLogging = this.DetailedLogging,
                         MaxConcurrentRequests = this.MaxConcurrentRequests,
-                        DefaultReasoningEffort = this.DefaultReasoningEffort == null ? 0 : (int)this.DefaultReasoningEffort.Value + 1,
+                        DefaultReasoningEffort = EncodeReasoningEffort(this.DefaultReasoningEffort),
                         DailyBudgetLimit = this.DailyBudgetLimit,
                         BudgetPolicy = this.BudgetPolicy,
                         EnableAntiAbuse = this.EnableAntiAbuse,
@@ -444,7 +456,7 @@ namespace RimLLM_Framework.Mod
                                     foreach (var kvp in dto.ModelLevelOverrides) _modelLevelOverrides[kvp.Key] = kvp.Value;
                                 }
 
-                                this.DefaultReasoningEffort = dto.DefaultReasoningEffort <= 0 || dto.DefaultReasoningEffort > 3 ? (ReasoningEffort?)null : (ReasoningEffort?)(dto.DefaultReasoningEffort - 1);
+                                this.DefaultReasoningEffort = DecodeReasoningEffort(dto.DefaultReasoningEffort);
 
                                 // 舊版設定 XML 內嵌的遙測資料：若獨立遙測檔尚不存在，執行一次性遷移
                                 if (!_telemetry.LoadedFromDisk &&
@@ -457,7 +469,7 @@ namespace RimLLM_Framework.Mod
                                     this.TotalCompletionTokens = dto.TotalCompletionTokens;
                                     this.TotalEstimatedCost = dto.TotalEstimatedCost;
                                     SaveTelemetry();
-                                    RimLLMLog.Message("[RimLLM] 已將舊版設定中的遙測資料遷移至獨立檔案 RimLLM_Telemetry.json。");
+                                    RimLLMLog.Message("[RimLLM] Migrated telemetry from the legacy settings XML to RimLLM_Telemetry.json.");
                                 }
 
                                 // 載入可調節項 (全域配置) 並防呆
@@ -549,13 +561,55 @@ namespace RimLLM_Framework.Mod
                         }
                         catch (Exception ex)
                         {
-                            RimLLMLog.Error($"[RimLLM] 載入設定失敗: {ex.Message}");
+                            RimLLMLog.Error($"[RimLLM] Failed to load settings: {ex.Message}");
                         }
                     }
                 }
             }
         }
 #pragma warning restore S3776
+
+        /// <summary>
+        /// 存檔路徑專用的加密：失敗時回傳 false 並略過該金鑰，而不是讓例外穿出 <see cref="ExposeData"/>。
+        /// 這裡是在 Scribe 存檔中途被呼叫的，例外一旦冒出去，整份設定（備援鏈、端點、開關）都會存不下來；
+        /// Mono 的 ProtectedData 在 profile 不可寫時會擲 CryptographicException，Linux／macOS 上並不罕見。
+        /// 金鑰仍留在記憶體中，加密恢復正常後的下一次存檔就會寫回。
+        /// </summary>
+        internal static bool TryEncryptForSave(string plainText, out string cipherText)
+        {
+            try
+            {
+                cipherText = EncryptionUtility.Encrypt(plainText);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                cipherText = null;
+                RimLLMLog.Error($"[RimLLM] API key could not be encrypted and was not written to settings; other settings were saved. Reason: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 預設思考強度的存檔編碼：0 代表 Auto（null），其餘為列舉值 + 1。
+        /// 與既有設定檔相容：舊檔的 2／3 仍讀成 Low／Medium。
+        /// </summary>
+        internal static int EncodeReasoningEffort(ReasoningEffort? effort)
+        {
+            return effort == null ? 0 : (int)effort.Value + 1;
+        }
+
+        /// <summary>
+        /// <see cref="EncodeReasoningEffort"/> 的反向。合法範圍以列舉實際定義為準，不再寫死上限：
+        /// MEAI 10.10 的 ReasoningEffort 是 None=0…ExtraHigh=4，先前寫死的「&gt; 3 即無效」
+        /// 讓 High（存成 4）每次載入都被丟回 Auto。
+        /// </summary>
+        internal static ReasoningEffort? DecodeReasoningEffort(int encoded)
+        {
+            if (encoded <= 0) return null;
+            int value = encoded - 1;
+            return Enum.IsDefined(typeof(ReasoningEffort), value) ? (ReasoningEffort?)(ReasoningEffort)value : null;
+        }
 
         public string GetApiKey(string providerId)
         {

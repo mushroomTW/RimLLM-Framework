@@ -175,7 +175,7 @@ namespace RimLLM_Framework.Core
                 int totalDropped = Interlocked.Increment(ref _droppedCount);
                 if (totalDropped % 100 == 1)
                 {
-                    RimLLMLog.Warning($"[RimLLM] 主線程佇列已達上限 {MaxQueuedActions}，已累計丟棄 {totalDropped} 個回呼。");
+                    RimLLMLog.Warning($"[RimLLM] Main-thread queue reached its limit of {MaxQueuedActions}; {totalDropped} callbacks dropped so far.");
                 }
             }
 
@@ -237,7 +237,7 @@ namespace RimLLM_Framework.Core
                 }
                 catch (Exception ex)
                 {
-                    RimLLMLog.Error($"[RimLLM] 主線程分發 Callback 執行失敗: {ex.Message}\n{ex.StackTrace}");
+                    RimLLMLog.Error($"[RimLLM] Main-thread callback failed: {ex.Message}\n{ex.StackTrace}");
                 }
             }
 
@@ -282,7 +282,7 @@ namespace RimLLM_Framework.Core
             int drained = DrainWithBudget(int.MaxValue, long.MaxValue);
             if (drained > 0)
             {
-                RimLLMLog.Message($"[RimLLM] 派遣器關閉前排空了 {drained} 個待執行回呼。");
+                RimLLMLog.Message($"[RimLLM] Dispatcher drained {drained} pending callbacks before shutdown.");
             }
 
             if (_instance == this)

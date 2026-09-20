@@ -242,18 +242,18 @@ namespace RimLLM_Framework.Providers
         /// 思考參數一律由 Patch 掌控而不交給 MEAI 的 <c>ChatOptions.Reasoning</c>：
         /// 後者只會序列化成 OpenAI 的 <c>reasoning_effort</c>，表達不了其他家的方言。
         /// </summary>
+        /// <summary>掛在送出去的 ChatOptions 上，記錄這次請求實際送出的思考強度字面值（null 代表沒送）。</summary>
+        private const string SentEffortLiteralKey = "rimllm_sent_effort_literal";
+
         #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
         private void ApplyReasoningAndSampling(ChatOptions requestOptions, string model, ChatOptions options, string responseFormatJson)
         {
-            bool disableReasoning = ResolveDisableReasoning(requestOptions);
             ReasoningEffort? effort = requestOptions?.Reasoning?.Effort;
-
-            // 服務端先前明確拒絕過思考參數的模型不再嘗試，避免每次請求都白白換來一次 400。
-            bool reasoningAllowed = ReasoningFormat != ReasoningWireFormat.None &&
-                                    !IsKnownNonReasoningModel(model) &&
-                                    !RimLLMReasoningSupport.IsReasoningUnsupported(ProviderId, model);
-            string effortLiteral = reasoningAllowed ? ResolveEffortLiteral(effort, disableReasoning) : null;
+            string effortLiteral = ResolveOutgoingEffortLiteral(requestOptions, model);
             bool thinkingEnabled = effortLiteral != null && effortLiteral != "none";
+            // 把這次實際送出的字面值記在請求上。事後判讀 400 要看的是「送了什麼」，不能重算：
+            // 並行請求可能已經改寫學習記憶，重算會得到另一個答案而記錯項目。
+            (options.AdditionalProperties ??= new AdditionalPropertiesDictionary())[SentEffortLiteralKey] = effortLiteral;
 
             options.Reasoning = null;
 
@@ -349,14 +349,27 @@ namespace RimLLM_Framework.Providers
         }
 
         /// <summary>
-        /// 算出要送出的強度字面值。回傳 null 代表不干預，交給服務端自己的預設。
+        /// 算出這次請求實際會送出的強度字面值。回傳 null 代表不干預，交給服務端自己的預設。
+        /// 組裝請求與事後判讀 400 都走這一個函式，兩邊對「送了什麼」的認知才不會分歧。
         /// </summary>
-        private string ResolveEffortLiteral(ReasoningEffort? effort, bool disableReasoning)
+        private string ResolveOutgoingEffortLiteral(ChatOptions requestOptions, string model)
         {
-            if (disableReasoning)
+            // 服務端先前明確拒絕過思考參數的模型不再嘗試，避免每次請求都白白換來一次 400。
+            bool reasoningAllowed = ReasoningFormat != ReasoningWireFormat.None &&
+                                    !IsKnownNonReasoningModel(model) &&
+                                    !RimLLMReasoningSupport.IsReasoningUnsupported(ProviderId, model);
+            if (!reasoningAllowed) return null;
+
+            if (ResolveDisableReasoning(requestOptions))
             {
-                return SupportsDisablingReasoning ? "none" : null;
+                // 關不掉的模型（靜態宣告或服務端拒絕過）：沿用 Grok 的作法靜默忽略關閉指令，
+                // 不送任何思考參數，也不改送強度。
+                bool canDisable = SupportsDisablingReasoning &&
+                                  !RimLLMReasoningSupport.IsDisableUnsupported(ProviderId, model);
+                return canDisable ? "none" : null;
             }
+
+            ReasoningEffort? effort = requestOptions?.Reasoning?.Effort;
             return effort.HasValue ? MapEffortLiteral(effort.Value) : null;
         }
 
@@ -396,7 +409,7 @@ namespace RimLLM_Framework.Providers
                 catch (ClientResultException ex)
                 {
                     var mapped = LLMErrorMapper.CreateException(ex.Status, ex.Message, innerException: ex);
-                    if (_provider.MarkUnsupportedParameters(_model, mapped))
+                    if (_provider.MarkUnsupportedParameters(_model, mapped, targetOptions))
                     {
                         var retryOptions = options?.Clone() ?? new ChatOptions();
                         _provider.BuildChatOptions(options, _model, retryOptions);
@@ -471,7 +484,7 @@ namespace RimLLM_Framework.Providers
                 var targetOptions = _originalOptions?.Clone() ?? new ChatOptions();
                 _provider.BuildChatOptions(_originalOptions, _model, targetOptions);
                 var innerEnumerator = _streamFactory(targetOptions, cancellationToken).GetAsyncEnumerator(cancellationToken);
-                return new OpenAiStreamEnumerator(_streamFactory, innerEnumerator, _originalOptions, _provider, _model, cancellationToken);
+                return new OpenAiStreamEnumerator(_streamFactory, innerEnumerator, _originalOptions, targetOptions, _provider, _model, cancellationToken);
             }
         }
 
@@ -480,6 +493,8 @@ namespace RimLLM_Framework.Providers
             private readonly Func<ChatOptions, System.Threading.CancellationToken, bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>> _streamFactory;
             private bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> _inner;
             private readonly ChatOptions _originalOptions;
+            /// <summary>目前這次嘗試實際送出的 options，判讀 400 時要看它而不是重算。</summary>
+            private ChatOptions _sentOptions;
             private readonly OpenAIProvider _provider;
             private readonly string _model;
             private readonly System.Threading.CancellationToken _cancellationToken;
@@ -489,6 +504,7 @@ namespace RimLLM_Framework.Providers
                 Func<ChatOptions, System.Threading.CancellationToken, bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>> streamFactory,
                 bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> inner,
                 ChatOptions originalOptions,
+                ChatOptions sentOptions,
                 OpenAIProvider provider,
                 string model,
                 System.Threading.CancellationToken cancellationToken)
@@ -496,6 +512,7 @@ namespace RimLLM_Framework.Providers
                 _streamFactory = streamFactory;
                 _inner = inner;
                 _originalOptions = originalOptions;
+                _sentOptions = sentOptions;
                 _provider = provider;
                 _model = model;
                 _cancellationToken = cancellationToken;
@@ -519,12 +536,13 @@ namespace RimLLM_Framework.Providers
                     catch (ClientResultException ex)
                     {
                         var mapped = LLMErrorMapper.CreateException(ex.Status, ex.Message, innerException: ex);
-                        if (!_hasYieldedAny && _provider.MarkUnsupportedParameters(_model, mapped))
+                        if (!_hasYieldedAny && _provider.MarkUnsupportedParameters(_model, mapped, _sentOptions))
                         {
                             // 尚未產出任何分塊且為可自癒參數（如思考強度/格式），在此請求中就地重試
                             await _inner.DisposeAsync().ConfigureAwait(false);
                             var retryOptions = _originalOptions?.Clone() ?? new ChatOptions();
                             _provider.BuildChatOptions(_originalOptions, _model, retryOptions);
+                            _sentOptions = retryOptions;
                             _inner = _streamFactory(retryOptions, _cancellationToken).GetAsyncEnumerator(_cancellationToken);
                             continue;
                         }
@@ -544,21 +562,34 @@ namespace RimLLM_Framework.Providers
         /// 回傳 true 代表這次記到了新資訊，值得以去掉參數的請求重打一次；
         /// 回傳 false 代表拒絕與這些參數無關（或先前已記錄過），呼叫端應直接把錯誤拋出去。
         /// </summary>
-        private bool MarkUnsupportedParameters(string model, RimLLMException exception)
+        private bool MarkUnsupportedParameters(string model, RimLLMException exception, ChatOptions sentOptions)
         {
             bool learned = false;
 
-            if (exception.IsReasoningRejection &&
-                RimLLMReasoningSupport.MarkReasoningUnsupported(ProviderId, model))
+            if (exception.IsReasoningRejection)
             {
-                RimLLMLog.Warning($"[RimLLM] {ProviderId} 的模型 {model} 不接受思考參數，之後將不再送出。");
-                learned = true;
+                // 送出的是「關閉」指令時，學到的只是「這個模型關不掉」，不是「不吃思考參數」——
+                // 兩者混記的話，連線測試（一律要求關閉）的一次 400 就會讓該模型整個 session
+                // 都收不到玩家設定的強度。
+                if (RimLLMChatOptions.ReadAdditional<string>(sentOptions, SentEffortLiteralKey, null) == "none")
+                {
+                    if (RimLLMReasoningSupport.MarkDisableUnsupported(ProviderId, model))
+                    {
+                        RimLLMLog.Warning($"[RimLLM] Model {model} on {ProviderId} rejected disabling reasoning; disable requests will be ignored for it from now on.");
+                        learned = true;
+                    }
+                }
+                else if (RimLLMReasoningSupport.MarkReasoningUnsupported(ProviderId, model))
+                {
+                    RimLLMLog.Warning($"[RimLLM] Model {model} on {ProviderId} rejected reasoning parameters; they will no longer be sent to it.");
+                    learned = true;
+                }
             }
 
             if (exception.IsTemperatureRejection &&
                 RimLLMReasoningSupport.MarkTemperatureUnsupported(ProviderId, model))
             {
-                RimLLMLog.Warning($"[RimLLM] {ProviderId} 的模型 {model} 不接受 temperature，之後將不再送出。");
+                RimLLMLog.Warning($"[RimLLM] Model {model} on {ProviderId} rejected temperature; it will no longer be sent to it.");
                 learned = true;
             }
 

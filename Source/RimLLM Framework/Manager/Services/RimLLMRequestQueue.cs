@@ -24,6 +24,7 @@ namespace RimLLM_Framework.Manager
         private readonly object _queueLock = new object();
         private readonly List<QueueEntry> _waitingQueue = new List<QueueEntry>();
         private int _activeRequests;
+        private long _enqueueSequence;
 
         /// <summary>
         /// 佇列實體定義。
@@ -32,7 +33,12 @@ namespace RimLLM_Framework.Manager
         {
             public int Priority { get; set; }
             public TaskCompletionSource<IDisposable> Tcs { get; set; }
-            public DateTime EnqueueTime { get; set; } = DateTime.UtcNow;
+
+            /// <summary>
+            /// 入列序號。先前以 DateTime.UtcNow 判先後，同一個時鐘刻度內入列的請求鍵值相等，
+            /// BinarySearch 命中後會插在既有項目前面，突發時同優先級變成後進先出。
+            /// </summary>
+            public long Sequence { get; set; }
 
             public int CompareTo(QueueEntry other)
             {
@@ -41,7 +47,7 @@ namespace RimLLM_Framework.Manager
                 if (cmp == 0)
                 {
                     // 優先級相同時，先入列的排在前面（FIFO）
-                    return this.EnqueueTime.CompareTo(other.EnqueueTime);
+                    return this.Sequence.CompareTo(other.Sequence);
                 }
                 return cmp;
             }
@@ -82,7 +88,12 @@ namespace RimLLM_Framework.Manager
         public async Task<IDisposable> AcquireSlotAsync(int priority, CancellationToken cancellationToken)
         {
             var tcs = new TaskCompletionSource<IDisposable>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var entry = new QueueEntry { Priority = priority, Tcs = tcs };
+            var entry = new QueueEntry
+            {
+                Priority = priority,
+                Tcs = tcs,
+                Sequence = Interlocked.Increment(ref _enqueueSequence)
+            };
 
             // 一開始就已取消：沿用「await 一個已取消的 Task」的形狀，
             // 讓呼叫端拿到的仍是 TaskCanceledException 而非裸的 OperationCanceledException。

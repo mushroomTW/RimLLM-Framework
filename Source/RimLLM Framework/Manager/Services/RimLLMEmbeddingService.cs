@@ -59,7 +59,7 @@ namespace RimLLM_Framework.Manager
             string defaultEndpoint;
             if (!OpenAiCompatibleDefaultEndpoints.TryGetValue(provider ?? string.Empty, out defaultEndpoint))
             {
-                throw new RimLLMException(LLMError.Unknown, $"不支援的 Embedding 供應商：{provider}");
+                throw new RimLLMException(LLMError.Unknown, $"Unsupported embedding provider: {provider}");
             }
             return defaultEndpoint;
         }
@@ -83,7 +83,7 @@ namespace RimLLM_Framework.Manager
         {
             return new RimLLMException(
                 LLMError.Unknown,
-                $"{operation}：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                $"{operation}: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
                 innerException: ex);
         }
 
@@ -104,7 +104,44 @@ namespace RimLLM_Framework.Manager
         {
             if (string.IsNullOrEmpty(text))
             {
-                throw new ArgumentException("要計算 embedding 的文字不可為空。", nameof(text));
+                throw new ArgumentException("Text to embed cannot be empty.", nameof(text));
+            }
+
+            IReadOnlyList<RimLLMEmbeddingResult> results =
+                await ComputeEmbeddingsAsync(new[] { text }, cancellationToken).ConfigureAwait(false);
+            return results[0];
+        }
+
+        /// <summary>
+        /// 單一批次送往 OpenAI 相容端點的最大筆數。OpenAI 官方上限為 2048，
+        /// Gemini 的 OpenAI 相容端點與本地伺服器保守得多，100 是各家都吃得下的數字。
+        /// </summary>
+        internal const int MaxEmbeddingBatchSize = 100;
+
+        /// <summary>
+        /// 批次計算多筆文字的 embedding 向量。同一批文字合成一次 API 呼叫（超過
+        /// <see cref="MaxEmbeddingBatchSize"/> 時分批），先前逐筆序列呼叫讓 N 筆文字變成 N 次 HTTP 來回。
+        /// 供應商回報的用量是整批的總和，這裡平均分攤到每一筆，加總後仍等於供應商回報的值。
+        /// </summary>
+        /// <exception cref="ArgumentNullException"><paramref name="texts"/> 為 null。</exception>
+        /// <exception cref="ArgumentException">任一筆文字為空。</exception>
+        /// <exception cref="RimLLMException">
+        /// 當 EmbeddingProvider 尚未設定、供應商不支援或 API 回傳錯誤時拋出。
+        /// </exception>
+        public async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(IEnumerable<string> texts, CancellationToken cancellationToken = default)
+        {
+            if (texts == null) throw new ArgumentNullException(nameof(texts));
+
+            var inputs = new List<string>(texts);
+            var results = new List<RimLLMEmbeddingResult>(inputs.Count);
+            if (inputs.Count == 0) return results;
+
+            foreach (string text in inputs)
+            {
+                if (string.IsNullOrEmpty(text))
+                {
+                    throw new ArgumentException("Text to embed cannot be empty.", nameof(texts));
+                }
             }
 
             string provider = _settings.EmbeddingProvider;
@@ -112,7 +149,7 @@ namespace RimLLM_Framework.Manager
             {
                 throw new RimLLMException(
                     LLMError.Unknown,
-                    "Embedding 尚未設定供應商，無法產生向量。請先在設定中選擇 Embedding 供應商。");
+                    "No embedding provider is configured; select one in the RimLLM settings first.");
             }
 
             string model = _settings.EmbeddingModel;
@@ -120,38 +157,45 @@ namespace RimLLM_Framework.Manager
                 ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
                 : _settings.EmbeddingApiKey;
             string endpoint = _settings.EmbeddingEndpoint;
+            string defaultEndpoint = ResolveDefaultEndpoint(provider);
 
-            // 以 ApiTimeout 建立逾時來源，並與呼叫端的取消 Token 連動。
+            // 以 ApiTimeout 建立逾時來源，並與呼叫端的取消 Token 連動。逾時以整批為單位。
             float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
-            using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
-            using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
+            for (int offset = 0; offset < inputs.Count; offset += MaxEmbeddingBatchSize)
             {
-                try
+                List<string> batch = inputs.GetRange(offset, Math.Min(MaxEmbeddingBatchSize, inputs.Count - offset));
+                using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
+                using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
                 {
-                    return await ComputeOpenAiCompatibleEmbeddingAsync(
-                        text, model, apiKey, endpoint, ResolveDefaultEndpoint(provider), linkedCts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    // 呼叫端沒有取消，代表是 ApiTimeout 觸發的逾時。
-                    throw new RimLLMException(LLMError.Timeout, $"Embedding 請求逾時（{timeoutSeconds} 秒）。");
-                }
-                catch (ClientResultException ex)
-                {
-                    throw LLMErrorMapper.CreateException(
-                        ex.Status,
-                        $"Embedding API：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
-                        innerException: ex);
-                }
-                catch (RimLLMException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    throw WrapUnknownEmbeddingError("Embedding API", ex);
+                    try
+                    {
+                        results.AddRange(await ComputeOpenAiCompatibleEmbeddingsAsync(
+                            batch, model, apiKey, endpoint, defaultEndpoint, linkedCts.Token).ConfigureAwait(false));
+                    }
+                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        // 呼叫端沒有取消，代表是 ApiTimeout 觸發的逾時。
+                        throw new RimLLMException(LLMError.Timeout, $"Embedding request timed out after {timeoutSeconds} seconds.");
+                    }
+                    catch (ClientResultException ex)
+                    {
+                        throw LLMErrorMapper.CreateException(
+                            ex.Status,
+                            $"Embedding API: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                            innerException: ex);
+                    }
+                    catch (RimLLMException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        throw WrapUnknownEmbeddingError("Embedding API", ex);
+                    }
                 }
             }
+
+            return results;
         }
 
         /// <summary>
@@ -179,7 +223,7 @@ namespace RimLLM_Framework.Manager
         {
             if (string.IsNullOrEmpty(provider) || provider == DisabledProviderId)
             {
-                throw new RimLLMException(LLMError.Unknown, "Embedding 尚未設定供應商，無法取得模型清單。");
+                throw new RimLLMException(LLMError.Unknown, "No embedding provider is configured; cannot fetch the model list.");
             }
 
             string effectiveApiKey = string.IsNullOrEmpty(apiKey)
@@ -208,20 +252,20 @@ namespace RimLLM_Framework.Manager
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    throw new RimLLMException(LLMError.Timeout, $"Embedding 模型清單逾時（{timeoutSeconds} 秒）。");
+                    throw new RimLLMException(LLMError.Timeout, $"Embedding model list request timed out after {timeoutSeconds} seconds.");
                 }
                 catch (ClientResultException ex)
                 {
                     throw LLMErrorMapper.CreateException(
                         ex.Status,
-                        $"Embedding 模型清單：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                        $"Embedding model list: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
                         innerException: ex);
                 }
                 catch (HttpRequestException ex)
                 {
                     throw new RimLLMException(
                         LLMError.ProviderOffline,
-                        $"Embedding 模型清單：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                        $"Embedding model list: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
                         innerException: ex);
                 }
                 catch (RimLLMException)
@@ -230,7 +274,7 @@ namespace RimLLM_Framework.Manager
                 }
                 catch (Exception ex)
                 {
-                    throw WrapUnknownEmbeddingError("Embedding 模型清單", ex);
+                    throw WrapUnknownEmbeddingError("Embedding model list", ex);
                 }
             }
         }
@@ -425,7 +469,7 @@ namespace RimLLM_Framework.Manager
                 {
                     throw LLMErrorMapper.CreateException(
                         (int)response.StatusCode,
-                        $"{request.RequestUri.AbsolutePath} 回應 {(int)response.StatusCode}：{Core.RimLLMLog.SanitizeForLog(body, 200)}",
+                        $"{request.RequestUri.AbsolutePath} responded {(int)response.StatusCode}: {Core.RimLLMLog.SanitizeForLog(body, 200)}",
                         detectionText: body);
                 }
                 return JsonDocument.Parse(body);
@@ -475,12 +519,12 @@ namespace RimLLM_Framework.Manager
         {
             if (string.IsNullOrEmpty(provider) || provider == DisabledProviderId)
             {
-                throw new RimLLMException(LLMError.Unknown, "請先選擇 Embedding 供應商。");
+                throw new RimLLMException(LLMError.Unknown, "Select an embedding provider first.");
             }
 
             if (string.IsNullOrEmpty(model))
             {
-                throw new RimLLMException(LLMError.Unknown, "請先指定 Embedding 模型名稱。");
+                throw new RimLLMException(LLMError.Unknown, "Specify an embedding model name first.");
             }
 
             string effectiveApiKey = string.IsNullOrEmpty(apiKey)
@@ -493,18 +537,19 @@ namespace RimLLM_Framework.Manager
             {
                 try
                 {
-                    return await ComputeOpenAiCompatibleEmbeddingAsync(
-                        text, model, effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider), linkedCts.Token).ConfigureAwait(false);
+                    List<RimLLMEmbeddingResult> results = await ComputeOpenAiCompatibleEmbeddingsAsync(
+                        new[] { text }, model, effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider), linkedCts.Token).ConfigureAwait(false);
+                    return results[0];
                 }
                 catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    throw new RimLLMException(LLMError.Timeout, $"Embedding 連線測試逾時（{timeoutSeconds} 秒）。");
+                    throw new RimLLMException(LLMError.Timeout, $"Embedding connection test timed out after {timeoutSeconds} seconds.");
                 }
                 catch (ClientResultException ex)
                 {
                     throw LLMErrorMapper.CreateException(
                         ex.Status,
-                        $"Embedding 測試失敗：{Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                        $"Embedding test failed: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
                         innerException: ex);
                 }
                 catch (RimLLMException)
@@ -513,7 +558,7 @@ namespace RimLLM_Framework.Manager
                 }
                 catch (Exception ex)
                 {
-                    throw WrapUnknownEmbeddingError("Embedding 測試", ex);
+                    throw WrapUnknownEmbeddingError("Embedding test", ex);
                 }
             }
         }
@@ -538,8 +583,18 @@ namespace RimLLM_Framework.Manager
             {
                 Endpoint = new Uri(NormalizeEmbeddingEndpoint(endpoint) ?? defaultEndpoint, UriKind.Absolute)
             };
+            if (TransportOverride != null)
+            {
+                options.Transport = TransportOverride;
+            }
             credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
         }
+
+        /// <summary>
+        /// 讓單元測試以假的 HTTP 傳輸攔截 embedding 請求（與 <c>EncryptionUtility.SecureKeyPathResolver</c>
+        /// 同一種測試接縫）；正式環境一律 null，走 SDK 預設傳輸。
+        /// </summary>
+        internal static System.ClientModel.Primitives.PipelineTransport TransportOverride;
 
         /// <summary>
         /// 沒有能力資訊的通用 <c>/v1/models</c>。<paramref name="root"/> 已正規化並套用過預設值。
@@ -599,40 +654,41 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 批次計算多筆文字的 embedding 向量。為維持各供應商行為一致，統一採序列呼叫。
+        /// 一批文字一次 API 呼叫。usage 掛在整個集合上（不分筆），因此平均分攤到每一筆：
+        /// 各筆的 <see cref="RimLLMEmbeddingResult.InputTokenCount"/> 加總即為供應商回報的總量。
         /// </summary>
-        public async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(IEnumerable<string> texts, CancellationToken cancellationToken = default)
-        {
-            if (texts == null) throw new ArgumentNullException(nameof(texts));
-
-            var results = new List<RimLLMEmbeddingResult>();
-            foreach (string text in texts)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                results.Add(await ComputeEmbeddingAsync(text, cancellationToken).ConfigureAwait(false));
-            }
-            return results;
-        }
-
-        private static async Task<RimLLMEmbeddingResult> ComputeOpenAiCompatibleEmbeddingAsync(
-            string text, string model, string apiKey, string endpoint, string defaultEndpoint, CancellationToken cancellationToken)
+        private static async Task<List<RimLLMEmbeddingResult>> ComputeOpenAiCompatibleEmbeddingsAsync(
+            IReadOnlyList<string> texts, string model, string apiKey, string endpoint, string defaultEndpoint, CancellationToken cancellationToken)
         {
             BuildOpenAiCompatibleClientArgs(apiKey, endpoint, defaultEndpoint, out var credential, out var options);
             var client = new EmbeddingClient(model, credential, options);
 
-            // 單筆版的 GenerateEmbeddingAsync 只回傳向量，usage 掛在集合上，
-            // 因此改送單元素批次以取得 token 數。
             OpenAIEmbeddingCollection embeddings = await client
-                .GenerateEmbeddingsAsync(new[] { text }, cancellationToken: cancellationToken)
+                .GenerateEmbeddingsAsync(texts, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            if (embeddings == null || embeddings.Count == 0)
+            if (embeddings == null || embeddings.Count != texts.Count)
             {
-                throw new RimLLMException(LLMError.InvalidResponse, "OpenAI 相容 embedding 回應不含向量資料。");
+                throw new RimLLMException(
+                    LLMError.InvalidResponse,
+                    $"The OpenAI-compatible embedding response contained {embeddings?.Count ?? 0} vector(s) for {texts.Count} input(s).");
             }
-            return new RimLLMEmbeddingResult(
-                embeddings[0].ToFloats().ToArray(),
-                embeddings.Usage?.InputTokenCount);
+
+            return DistributeUsage(embeddings, embeddings.Usage?.InputTokenCount);
+        }
+
+        /// <summary>把整批的輸入 token 數平均分攤到每一筆（餘數給前幾筆），沒回報用量時每筆都是 null。</summary>
+        private static List<RimLLMEmbeddingResult> DistributeUsage(OpenAIEmbeddingCollection embeddings, long? totalInputTokens)
+        {
+            var results = new List<RimLLMEmbeddingResult>(embeddings.Count);
+            long share = totalInputTokens.HasValue ? totalInputTokens.Value / embeddings.Count : 0;
+            long remainder = totalInputTokens.HasValue ? totalInputTokens.Value % embeddings.Count : 0;
+            for (int i = 0; i < embeddings.Count; i++)
+            {
+                long? perItem = totalInputTokens.HasValue ? share + (i < remainder ? 1 : 0) : (long?)null;
+                results.Add(new RimLLMEmbeddingResult(embeddings[i].ToFloats().ToArray(), perItem));
+            }
+            return results;
         }
 
         private static readonly char[] SlashTrimChars = { '/' };

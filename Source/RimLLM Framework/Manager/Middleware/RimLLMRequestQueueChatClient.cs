@@ -13,12 +13,19 @@ namespace RimLLM_Framework.Manager
     /// 優先權佇列與並行限流。高 Priority 的請求先取得名額，同優先級則先到先得。
     /// </summary>
     /// <remarks>
-    /// 這是堆疊中最內的一層：名額必須留給真正要打 API 的請求，因此排在快取、
-    /// 防濫用與預算之後——被那三者攔下的請求不該佔用名額。
+    /// 由 <see cref="RimLLMFailoverChatClient"/> 對每一個候選嘗試各包一層，而不是疊在整條堆疊上：
+    /// 名額只在真正打 API 的那一次呼叫期間持有，重試前的指數退避與換手都不占名額；
+    /// 被快取、防濫用與預算攔下的請求根本走不到這裡，自然也不佔用名額。
     /// </remarks>
     internal sealed class RimLLMRequestQueueChatClient : DelegatingChatClient
     {
         private readonly RimLLMRequestQueue _queue;
+
+        /// <summary>
+        /// 這個實體最近一次等待名額花的毫秒數。路由層對每個候選嘗試各建一個實體，
+        /// MEAI 的 attempt.Duration 從呼叫進來就開始計，健康帳本要扣掉這段才是供應商本身的延遲。
+        /// </summary>
+        public long QueueWaitMilliseconds { get; private set; }
 
         public RimLLMRequestQueueChatClient(IChatClient innerClient, RimLLMRequestQueue queue)
             : base(innerClient)
@@ -31,10 +38,12 @@ namespace RimLLM_Framework.Manager
             ChatOptions options = null,
             CancellationToken cancellationToken = default)
         {
+            var wait = System.Diagnostics.Stopwatch.StartNew();
             using (await _queue
                 .AcquireSlotAsync(RimLLMChatOptions.GetPriority(options), cancellationToken)
                 .ConfigureAwait(false))
             {
+                QueueWaitMilliseconds = wait.ElapsedMilliseconds;
                 return await base.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -105,9 +114,11 @@ namespace RimLLM_Framework.Manager
             {
                 if (_inner == null)
                 {
+                    var wait = System.Diagnostics.Stopwatch.StartNew();
                     _slot = await _owner._queue
                         .AcquireSlotAsync(RimLLMChatOptions.GetPriority(_options), _linkedCts.Token)
                         .ConfigureAwait(false);
+                    _owner.QueueWaitMilliseconds = wait.ElapsedMilliseconds;
 
                     _inner = _owner
                         .StreamInner(_messages, _options, _linkedCts.Token)

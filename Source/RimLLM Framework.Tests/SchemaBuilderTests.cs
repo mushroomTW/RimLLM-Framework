@@ -122,7 +122,7 @@ namespace RimLLM_Framework.Tests
         ///
         /// 原本 <c>ValidateRequiredMembers</c> 的判斷式是反的：只在「值為 null 且型別**允許** null」
         /// 時才拋，也就是只會對合法可為 null 的成員開火。模型照 schema 回傳 null 會被判定為解析失敗，
-        /// 白白走一次靜態修復再加一次付費的 double-repair，最後仍以 RimLLMException 收場。
+        /// 白白走一次靜態修復與第二次解析，最後仍以 RimLLMException 收場。
         /// 這條路徑先前沒有任何測試涵蓋。
         /// </summary>
         [Test]

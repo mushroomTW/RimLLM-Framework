@@ -106,16 +106,30 @@ namespace RimLLM_Framework.Manager
         private static readonly Dictionary<string, CostRate> KnownModelRates = new Dictionary<string, CostRate>(StringComparer.OrdinalIgnoreCase)
         {
             // OpenAI
+            { "openai:gpt-5", new CostRate(1.25f, 10.00f) },
+            { "openai:gpt-5-mini", new CostRate(0.25f, 2.00f) },
+            { "openai:gpt-5-nano", new CostRate(0.05f, 0.40f) },
+            { "openai:gpt-5.1", new CostRate(1.25f, 10.00f) },
+            { "openai:gpt-4.1", new CostRate(2.00f, 8.00f) },
+            { "openai:gpt-4.1-mini", new CostRate(0.40f, 1.60f) },
+            { "openai:gpt-4.1-nano", new CostRate(0.10f, 0.40f) },
             { "openai:gpt-4o", new CostRate(2.50f, 10.00f) },
             { "openai:gpt-4o-mini", new CostRate(0.15f, 0.60f) },
             { "openai:o1", new CostRate(15.00f, 60.00f) },
             { "openai:o1-mini", new CostRate(1.10f, 4.40f) },
+            { "openai:o3", new CostRate(2.00f, 8.00f) },
             { "openai:o3-mini", new CostRate(1.10f, 4.40f) },
+            { "openai:o3-pro", new CostRate(20.00f, 80.00f) },
+            { "openai:o4-mini", new CostRate(1.10f, 4.40f) },
             { "openai:gpt-4-turbo", new CostRate(10.00f, 30.00f) },
             { "openai:gpt-4", new CostRate(30.00f, 60.00f) },
             { "openai:gpt-3.5-turbo", new CostRate(0.50f, 1.50f) },
+            { "openai:text-embedding-3-small", new CostRate(0.02f, 0f) },
+            { "openai:text-embedding-3-large", new CostRate(0.13f, 0f) },
+            { "openai:text-embedding-ada-002", new CostRate(0.10f, 0f) },
 
             // Google Gemini
+            { "gemini:gemini-embedding-001", new CostRate(0.15f, 0f) },
             { "gemini:gemini-2.0-flash", new CostRate(0.10f, 0.40f) },
             { "gemini:gemini-2.0-flash-lite", new CostRate(0.075f, 0.30f) },
             { "gemini:gemini-1.5-flash", new CostRate(0.075f, 0.30f) },
@@ -135,11 +149,15 @@ namespace RimLLM_Framework.Manager
             { "deepseek:deepseek-v4-flash", new CostRate(0.14f, 0.28f) },
             { "deepseek:deepseek-v4-pro", new CostRate(0.435f, 0.87f) },
 
-            // Groq
+            // Groq（模型 ID 含供應商前綴時整段入鍵）
             { "groq:llama-3.3-70b-versatile", new CostRate(0.59f, 0.79f) },
             { "groq:llama-3.1-8b-instant", new CostRate(0.05f, 0.08f) },
             { "groq:mixtral-8x7b-32768", new CostRate(0.24f, 0.24f) },
             { "groq:gemma2-9b-it", new CostRate(0.20f, 0.20f) },
+            { "groq:openai/gpt-oss-120b", new CostRate(0.15f, 0.75f) },
+            { "groq:openai/gpt-oss-20b", new CostRate(0.10f, 0.50f) },
+            { "groq:qwen/qwen3-32b", new CostRate(0.29f, 0.59f) },
+            { "groq:moonshotai/kimi-k2-instruct", new CostRate(1.00f, 3.00f) },
 
             // Qwen
             { "qwen:qwen-max", new CostRate(2.80f, 8.40f) },
@@ -147,15 +165,27 @@ namespace RimLLM_Framework.Manager
             { "qwen:qwen-turbo", new CostRate(0.10f, 0.20f) },
 
             // Moonshot / Kimi
+            { "kimi:kimi-k2", new CostRate(0.60f, 2.50f) },
             { "kimi:moonshot-v1-8k", new CostRate(1.68f, 1.68f) },
             { "kimi:moonshot-v1-32k", new CostRate(3.36f, 3.36f) },
             { "kimi:moonshot-v1-128k", new CostRate(8.40f, 8.40f) },
 
             // MiniMax
             { "minimax:minimax-m3", new CostRate(0.30f, 1.20f) },
+            { "minimax:minimax-m2", new CostRate(0.30f, 1.20f) },
             { "minimax:abab6.5s", new CostRate(0.14f, 0.28f) },
 
+            // Z.ai (GLM)
+            { "z.ai:glm-4.6", new CostRate(0.60f, 2.20f) },
+            { "z.ai:glm-4.5", new CostRate(0.60f, 2.20f) },
+            { "z.ai:glm-4.5-air", new CostRate(0.20f, 1.10f) },
+            { "z.ai:glm-4.5-flash", new CostRate(0f, 0f) },
+
             // Grok (xAI)
+            { "grok:grok-4", new CostRate(3.00f, 15.00f) },
+            { "grok:grok-4-fast", new CostRate(0.20f, 0.50f) },
+            { "grok:grok-3", new CostRate(3.00f, 15.00f) },
+            { "grok:grok-3-mini", new CostRate(0.30f, 0.50f) },
             { "grok:grok-2", new CostRate(2.00f, 10.00f) },
             { "grok:grok-beta", new CostRate(5.00f, 15.00f) }
         };
@@ -507,7 +537,9 @@ namespace RimLLM_Framework.Manager
                 return true;
             }
 
-            // 前綴模糊匹配（例如 gpt-4o-2024-08-06 匹配 gpt-4o, gemini-2.0-flash-001 匹配 gemini-2.0-flash）
+            // 前綴模糊匹配（例如 gpt-4o-2024-08-06 匹配 gpt-4o, gemini-2.0-flash-001 匹配 gemini-2.0-flash）。
+            // 前綴之後必須是分隔字元或結尾：單純的 StartsWith 會讓 "gpt-4" 吃到 "gpt-4.1-mini"，
+            // 把 $0.40 的模型以 $30 計價。
             string bestPrefixMatchKey = null;
             int bestPrefixLen = 0;
 
@@ -518,6 +550,7 @@ namespace RimLLM_Framework.Manager
                 {
                     string candidateModel = kvp.Key.Substring(providerPrefix.Length);
                     if (normModel.StartsWith(candidateModel, StringComparison.OrdinalIgnoreCase) &&
+                        IsPrefixBoundary(normModel, candidateModel.Length) &&
                         candidateModel.Length > bestPrefixLen)
                     {
                         bestPrefixLen = candidateModel.Length;
@@ -533,6 +566,17 @@ namespace RimLLM_Framework.Manager
 
             rate = default;
             return false;
+        }
+
+        /// <summary>
+        /// 前綴比對的版本邊界：緊接在前綴後的字元必須是分隔符（或已到結尾），
+        /// 讓 "gpt-4o" 命中 "gpt-4o-2024-08-06" 但 "gpt-4" 不命中 "gpt-4.1"。
+        /// </summary>
+        private static bool IsPrefixBoundary(string model, int prefixLength)
+        {
+            if (prefixLength >= model.Length) return true;
+            char next = model[prefixLength];
+            return next == '-' || next == '_' || next == ':' || next == '@' || next == ' ';
         }
 
         /// <summary>
