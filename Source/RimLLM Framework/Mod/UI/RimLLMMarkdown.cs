@@ -363,16 +363,16 @@ namespace RimLLM_Framework.Mod
 
             private void RenderFencedCode(FencedCodeBlock fenced)
             {
-                _sb.Append(ColorTagOpen).Append(CodeColor).Append(">");
-                for (int i = 0; i < fenced.Lines.Count; i++)
-                {
-                    if (i > 0) _sb.Append('\n');
-                    _sb.Append("  ").Append(EscapeCode(fenced.Lines.Lines[i].Slice.ToString()));
-                }
-                _sb.Append(ColorTagClose);
+                RenderCodeLines(fenced);
             }
 
             private void RenderCodeBlock(CodeBlock code)
+            {
+                RenderCodeLines(code);
+            }
+
+            // FencedCodeBlock 繼承 CodeBlock，共用同一份行繪製邏輯。
+            private void RenderCodeLines(CodeBlock code)
             {
                 _sb.Append(ColorTagOpen).Append(CodeColor).Append(">");
                 for (int i = 0; i < code.Lines.Count; i++)
