@@ -354,14 +354,14 @@ namespace RimLLM_Framework.Tests
             var enumerator = client.GetStreamingResponseAsync(NewMessages()).GetAsyncEnumerator();
             try
             {
-                while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
                 {
                     builder.Append(enumerator.Current.Text);
                 }
             }
             finally
             {
-                enumerator.DisposeAsync().GetAwaiter().GetResult();
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
             return builder.ToString();
         }
@@ -413,14 +413,14 @@ namespace RimLLM_Framework.Tests
             var enumerator = client.GetStreamingResponseAsync(NewMessages()).GetAsyncEnumerator();
 
             // 開始列舉即佔用唯一的名額。
-            ClassicAssert.IsTrue(enumerator.MoveNextAsync().GetAwaiter().GetResult());
+            ClassicAssert.IsTrue(enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult());
 
             Task<ChatResponse> blocked = client.GetResponseAsync(NewMessages());
             ClassicAssert.IsFalse(blocked.Wait(200), "串流仍在列舉中，第二個請求不該取得名額");
 
             // 名額直到列舉器被釋放才歸還——列舉結束本身不代表呼叫端已經用完。
-            while (enumerator.MoveNextAsync().GetAwaiter().GetResult()) { }
-            enumerator.DisposeAsync().GetAwaiter().GetResult();
+            while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult()) { }
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
             ClassicAssert.IsTrue(blocked.Wait(5000), "名額歸還後第二個請求應該完成");
         }

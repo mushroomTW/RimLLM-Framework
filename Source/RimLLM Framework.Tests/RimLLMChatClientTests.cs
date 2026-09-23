@@ -211,7 +211,7 @@ namespace RimLLM_Framework.Tests
                 new RimLLMChatOptions()).GetAsyncEnumerator();
             try
             {
-                while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
                 {
                     var update = enumerator.Current;
                     if (!string.IsNullOrEmpty(update.Text))
@@ -222,7 +222,7 @@ namespace RimLLM_Framework.Tests
             }
             finally
             {
-                enumerator.DisposeAsync().GetAwaiter().GetResult();
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
             ClassicAssert.AreEqual("mock-stream", string.Concat(chunks));
         }
@@ -253,14 +253,14 @@ namespace RimLLM_Framework.Tests
                 new RimLLMChatOptions()).GetAsyncEnumerator();
             try
             {
-                while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
                 {
                     modelId = modelId ?? enumerator.Current.ModelId;
                 }
             }
             finally
             {
-                enumerator.DisposeAsync().GetAwaiter().GetResult();
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
 
             ClassicAssert.AreEqual("TestMockStream:model-s", modelId);
@@ -296,13 +296,13 @@ namespace RimLLM_Framework.Tests
             {
                 try
                 {
-                    while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                    while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
                     {
                     }
                 }
                 finally
                 {
-                    enumerator.DisposeAsync().GetAwaiter().GetResult();
+                    enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
             }, "產生端失敗時列舉必須擲出例外");
         }
@@ -466,14 +466,14 @@ namespace RimLLM_Framework.Tests
             var e1 = client.GetStreamingResponseAsync(inputMessages).GetAsyncEnumerator();
             try
             {
-                while (e1.MoveNextAsync().GetAwaiter().GetResult())
+                while (e1.MoveNextAsync().AsTask().GetAwaiter().GetResult())
                 {
                     if (!string.IsNullOrEmpty(e1.Current.Text)) chunks1.Add(e1.Current.Text);
                 }
             }
             finally
             {
-                e1.DisposeAsync().GetAwaiter().GetResult();
+                e1.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
             ClassicAssert.AreEqual("cached-content", string.Concat(chunks1));
             ClassicAssert.AreEqual(1, callCount);
@@ -483,14 +483,14 @@ namespace RimLLM_Framework.Tests
             var e2 = client.GetStreamingResponseAsync(inputMessages).GetAsyncEnumerator();
             try
             {
-                while (e2.MoveNextAsync().GetAwaiter().GetResult())
+                while (e2.MoveNextAsync().AsTask().GetAwaiter().GetResult())
                 {
                     if (!string.IsNullOrEmpty(e2.Current.Text)) chunks2.Add(e2.Current.Text);
                 }
             }
             finally
             {
-                e2.DisposeAsync().GetAwaiter().GetResult();
+                e2.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
             ClassicAssert.AreEqual("cached-content", string.Concat(chunks2));
             ClassicAssert.AreEqual(1, callCount, "第二次串流呼叫應直接命中快取，不應再次觸發 StreamHandler");
@@ -595,10 +595,10 @@ namespace RimLLM_Framework.Tests
             var enumerator = client.GetStreamingResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }).GetAsyncEnumerator();
 
-            bool moved = enumerator.MoveNextAsync().GetAwaiter().GetResult();
+            bool moved = enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult();
             ClassicAssert.IsTrue(moved);
             ClassicAssert.AreEqual("chunk-1", enumerator.Current.Text);
-            enumerator.DisposeAsync().GetAwaiter().GetResult();
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
 
         [Test]
@@ -625,11 +625,11 @@ namespace RimLLM_Framework.Tests
             var enumerator = client.GetStreamingResponseAsync(
                 new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") }).GetAsyncEnumerator();
 
-            bool moved = enumerator.MoveNextAsync().GetAwaiter().GetResult();
+            bool moved = enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult();
             ClassicAssert.IsTrue(moved);
-            enumerator.DisposeAsync().GetAwaiter().GetResult();
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             // 第二次呼叫 DisposeAsync，CTS 已處於 Disposed 狀態，驗證安全忽略 ObjectDisposedException
-            Assert.DoesNotThrow(() => enumerator.DisposeAsync().GetAwaiter().GetResult());
+            Assert.DoesNotThrow(() => enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult());
         }
 
         [Test]
@@ -662,7 +662,7 @@ namespace RimLLM_Framework.Tests
 
                     try
                     {
-                        while (enumerator.MoveNextAsync().GetAwaiter().GetResult())
+                        while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
                         {
                             if (!string.IsNullOrEmpty(enumerator.Current.Text))
                             {
@@ -672,7 +672,7 @@ namespace RimLLM_Framework.Tests
                     }
                     finally
                     {
-                        enumerator.DisposeAsync().GetAwaiter().GetResult();
+                        enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
                     }
 
                     ClassicAssert.AreEqual("healed", string.Concat(chunks));

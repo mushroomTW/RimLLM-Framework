@@ -568,14 +568,14 @@ namespace RimLLM_Framework.Tests
             var streamEnumerator = budgetClient.GetStreamingResponseAsync(mockMessages).GetAsyncEnumerator();
             try
             {
-                while (streamEnumerator.MoveNextAsync().GetAwaiter().GetResult())
+                while (streamEnumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
                 {
                     streamedText += streamEnumerator.Current.Text;
                 }
             }
             finally
             {
-                streamEnumerator.DisposeAsync().GetAwaiter().GetResult();
+                streamEnumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
             ClassicAssert.AreEqual(mockRes.Text, streamedText, "串流與非串流的模擬內容必須一致");
 

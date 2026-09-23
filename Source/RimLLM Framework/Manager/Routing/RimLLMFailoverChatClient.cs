@@ -123,55 +123,7 @@ namespace RimLLM_Framework.Manager
                     marked.AdditionalProperties = new AdditionalPropertiesDictionary();
                 }
                 marked.AdditionalProperties[StreamingKey] = true;
-                return new TaskBackedStreamEnumerable(base.GetStreamingResponseAsync(messages, marked, cancellationToken));
-            }
-        }
-
-        /// <summary>
-        /// 把 MEAI FailoverChatClient（C# async iterator）的列舉器換成以 Task 支撐的 ValueTask。
-        /// </summary>
-        /// <remarks>
-        /// async iterator 的 MoveNextAsync 回傳 IValueTaskSource 型的 ValueTask：只能 await 一次、
-        /// 未完成時同步取值會擲 InvalidOperationException，執行中呼叫 DisposeAsync 則擲 NotSupportedException。
-        /// 佇列層先前疊在路由外面，它的 async 方法恰好把這種 ValueTask 換成了 Task 型，
-        /// 同步取值的呼叫端（含大量既有測試）一直依賴這個性質；名額改為逐候選持有後，
-        /// 由這一層明確地把該性質留在框架的串流邊界上。
-        /// </remarks>
-        private sealed class TaskBackedStreamEnumerable : bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate>
-        {
-            private readonly bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> _inner;
-
-            public TaskBackedStreamEnumerable(bclasync::System.Collections.Generic.IAsyncEnumerable<ChatResponseUpdate> inner)
-            {
-                _inner = inner;
-            }
-
-            public bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
-                CancellationToken cancellationToken = default)
-            {
-                return new TaskBackedStreamEnumerator(_inner.GetAsyncEnumerator(cancellationToken));
-            }
-        }
-
-        private sealed class TaskBackedStreamEnumerator : bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate>
-        {
-            private readonly bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> _inner;
-
-            public TaskBackedStreamEnumerator(bclasync::System.Collections.Generic.IAsyncEnumerator<ChatResponseUpdate> inner)
-            {
-                _inner = inner;
-            }
-
-            public ChatResponseUpdate Current => _inner.Current;
-
-            public async ste::System.Threading.Tasks.ValueTask<bool> MoveNextAsync()
-            {
-                return await _inner.MoveNextAsync().ConfigureAwait(false);
-            }
-
-            public async ste::System.Threading.Tasks.ValueTask DisposeAsync()
-            {
-                await _inner.DisposeAsync().ConfigureAwait(false);
+                return base.GetStreamingResponseAsync(messages, marked, cancellationToken);
             }
         }
 
