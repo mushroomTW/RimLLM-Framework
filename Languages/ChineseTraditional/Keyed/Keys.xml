@@ -117,6 +117,7 @@
   <RimLLM_ResetUsageBtn>重置累計統計</RimLLM_ResetUsageBtn>
   <RimLLM_UsageHeader>Token 與費用累計統計</RimLLM_UsageHeader>
   <RimLLM_UsageInfo>輸入: {0} | 輸出: {1} | 估計花費: ${2} USD</RimLLM_UsageInfo>
+  <RimLLM_UnpricedUsageNotice>本次執行有 {0} 筆請求查無費率；其費用未計入估算與每日預算。</RimLLM_UnpricedUsageNotice>
   <RimLLM_MsgUsageReset>Token 與費用累計統計已重置。</RimLLM_MsgUsageReset>
   <RimLLM_ModelLevelOverrideTitle>模型分級覆寫</RimLLM_ModelLevelOverrideTitle>
   <RimLLM_ModelLevelOverrideExplanation>手動指定模型分級 (Lv.1=低, Lv.2=中, Lv.3=高)，供 MinFallbackLevel 過濾使用；預設依模型 API 輸出費率客觀自動分級。</RimLLM_ModelLevelOverrideExplanation>

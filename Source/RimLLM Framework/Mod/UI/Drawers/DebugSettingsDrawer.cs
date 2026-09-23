@@ -88,6 +88,12 @@ namespace RimLLM_Framework.Mod
                 Widgets.Label(usageInfoRect, usageText);
             }
 
+            if (RimLLMProvider.TryGetManager(out var costManager) &&
+                costManager.UsageTracker.UnpricedUsageCount > 0)
+            {
+                listing.Label("RimLLM_UnpricedUsageNotice".Translate(costManager.UsageTracker.UnpricedUsageCount));
+            }
+
             if (Widgets.ButtonText(resetUsageBtnRect, "RimLLM_ResetUsageBtn".Translate()) &&
                 RimLLMProvider.TryGetManager(out var usageManager))
             {

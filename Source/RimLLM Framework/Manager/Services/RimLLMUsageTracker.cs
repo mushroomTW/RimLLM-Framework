@@ -31,6 +31,10 @@ namespace RimLLM_Framework.Manager
         /// 多執行緒下為近似值（最終一致），僅影響保留條數上下一兩條，不影響正確性。
         /// </summary>
         private int _logCount;
+        private long _unpricedUsageCount;
+
+        /// <summary>本次執行中有用量但查無費率的呼叫數；不把未知費用誤認為免費。</summary>
+        public long UnpricedUsageCount => Interlocked.Read(ref _unpricedUsageCount);
 
         public const int ModelLevelHigh = 3;
         public const int ModelLevelMedium = 2;
@@ -141,12 +145,12 @@ namespace RimLLM_Framework.Manager
             { "gemini:gemini-3.5-flash", new CostRate(1.50f, 9.00f) },
 
             // DeepSeek
-            { "deepseek:deepseek-chat", new CostRate(0.14f, 0.28f) },
-            { "deepseek:deepseek-reasoner", new CostRate(0.14f, 0.28f) },
-            { "deepseek:deepseek-v3", new CostRate(0.14f, 0.28f) },
-            { "deepseek:deepseek-r1", new CostRate(0.14f, 0.28f) },
-            { "deepseek:deepseek-v4-flash", new CostRate(0.14f, 0.28f) },
-            { "deepseek:deepseek-v4-pro", new CostRate(0.435f, 0.87f) },
+            { "deepseek:deepseek-chat", new CostRate(0.14f, 0.28f, 0.02f) },
+            { "deepseek:deepseek-reasoner", new CostRate(0.14f, 0.28f, 0.02f) },
+            { "deepseek:deepseek-v3", new CostRate(0.14f, 0.28f, 0.02f) },
+            { "deepseek:deepseek-r1", new CostRate(0.14f, 0.28f, 0.02f) },
+            { "deepseek:deepseek-v4-flash", new CostRate(0.14f, 0.28f, 0.02f) },
+            { "deepseek:deepseek-v4-pro", new CostRate(0.435f, 0.87f, 0.02f) },
 
             // Groq（模型 ID 含供應商前綴時整段入鍵）
             { "groq:llama-3.3-70b-versatile", new CostRate(0.59f, 0.79f) },
@@ -193,11 +197,13 @@ namespace RimLLM_Framework.Manager
         {
             public readonly float PromptPerMillion;
             public readonly float CompletionPerMillion;
+            public readonly float CachedPromptPerMillion;
 
-            public CostRate(float promptPerMillion, float completionPerMillion)
+            public CostRate(float promptPerMillion, float completionPerMillion, float cacheReadMultiplier = 0.25f)
             {
                 PromptPerMillion = promptPerMillion;
                 CompletionPerMillion = completionPerMillion;
+                CachedPromptPerMillion = promptPerMillion * cacheReadMultiplier;
             }
         }
 
@@ -452,9 +458,15 @@ namespace RimLLM_Framework.Manager
                 _settings.TotalPromptTokens += promptTokens;
                 _settings.TotalCompletionTokens += completionTokens;
 
-                float cost = EstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens);
-                _settings.TotalEstimatedCost += cost;
-                _settings.DailyAccumulatedCost += cost;
+                if (TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost))
+                {
+                    _settings.TotalEstimatedCost += cost;
+                    _settings.DailyAccumulatedCost += cost;
+                }
+                else
+                {
+                    Interlocked.Increment(ref _unpricedUsageCount);
+                }
             }
 
             // 累加特定供應商的 prompt tokens 與 API 快取 tokens 用量
@@ -476,6 +488,7 @@ namespace RimLLM_Framework.Manager
                 _settings.TotalPromptTokens = 0;
                 _settings.TotalCompletionTokens = 0;
                 _settings.TotalEstimatedCost = 0f;
+                Interlocked.Exchange(ref _unpricedUsageCount, 0);
 
                 foreach (var kvp in ProviderStatistics)
                 {
@@ -498,22 +511,31 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 估算單次呼叫的美元成本。<paramref name="cachedPromptTokens"/> 由呼叫端保證已落在 [0, promptTokens] 範圍內。
+        /// 估算單次呼叫的美元成本。為維持既有 API，查無費率時仍回傳 0；
+        /// 需要區分未知費用與已知免費時，應使用 <see cref="TryEstimateCost"/>。
+        /// <paramref name="cachedPromptTokens"/> 由呼叫端保證已落在 [0, promptTokens] 範圍內。
         /// </summary>
         public float EstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens)
         {
+            TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost);
+            return cost;
+        }
+
+        /// <summary>回傳是否找到費率，讓記帳區分未知費用與明確的零元費率。</summary>
+        internal bool TryEstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens, out float cost)
+        {
             if (!FindModelRate(providerId, modelName, out CostRate rate))
             {
-                return 0f;
+                cost = 0f;
+                return false;
             }
 
             int fullRatePromptTokens = promptTokens - cachedPromptTokens;
-            float cacheDiscount = GetCacheReadDiscount(providerId);
-
             float promptCost = (fullRatePromptTokens / 1000000f) * rate.PromptPerMillion
-                               + (cachedPromptTokens / 1000000f) * rate.PromptPerMillion * cacheDiscount;
+                               + (cachedPromptTokens / 1000000f) * rate.CachedPromptPerMillion;
             float completionCost = (completionTokens / 1000000f) * rate.CompletionPerMillion;
-            return promptCost + completionCost;
+            cost = promptCost + completionCost;
+            return true;
         }
 
         private bool FindModelRate(string providerId, string modelName, out CostRate rate)
@@ -567,15 +589,6 @@ namespace RimLLM_Framework.Manager
             if (prefixLength >= model.Length) return true;
             char next = model[prefixLength];
             return next == '-' || next == '_' || next == ':' || next == '@' || next == ' ';
-        }
-
-        /// <summary>
-        /// 快取命中（cache read / cachedContent）Token 相對於一般輸入 Token 的計費折扣倍率。
-        /// </summary>
-        private static float GetCacheReadDiscount(string providerId)
-        {
-            if (string.Equals(providerId?.Trim(), "deepseek", StringComparison.OrdinalIgnoreCase)) return 0.02f;
-            return 0.25f;
         }
 
         #region Budget Ledger & Policy Gatekeeping
