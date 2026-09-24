@@ -11,8 +11,8 @@ namespace RimLLM_Framework.Manager
     /// 把一組已經產生好的 <see cref="ChatResponseUpdate"/> 當成串流回放。
     /// </summary>
     /// <remarks>
-    /// 中介層在「不往下呼叫就直接給出結果」時需要這個：快取命中要重播已存的回應，
-    /// 預算靜默模擬要送出模擬文字。兩者都沒有真正的下游串流可以轉發。
+    /// 中介層在「不往下呼叫就直接給出結果」時需要這個：預算靜默模擬要送出模擬文字，
+    /// 沒有真正的下游串流可以轉發。
     /// 手寫列舉器而非 async iterator，是因為本組件以 extern alias 隔離
     /// IAsyncEnumerable 與 ValueTask，編譯器的 async iterator 改寫無法套用。
     /// </remarks>

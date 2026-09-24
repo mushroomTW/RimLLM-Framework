@@ -85,48 +85,6 @@ namespace RimLLM_Framework.Tests
 
         // ---------- [P2] 快取鍵：結構化序列化區分內容 ----------
 
-        [Test]
-        public void CacheKey_DifferentDictionaryValues_ProduceDifferentKeys()
-        {
-            var messages1 = MessagesWithToolResult(new Dictionary<string, object> { { "city", "RimCity" } });
-            var messages2 = MessagesWithToolResult(new Dictionary<string, object> { { "city", "OtherCity" } });
-
-            string key1 = RimLLMResponseCacheKey.Build(messages1, new ChatOptions());
-            string key2 = RimLLMResponseCacheKey.Build(messages2, new ChatOptions());
-
-            ClassicAssert.AreNotEqual(key1, key2, "內容不同的工具結果必須產生不同的快取鍵");
-        }
-
-        [Test]
-        public void CacheKey_SameDictionaryDifferentOrder_SameKey()
-        {
-            var messages1 = MessagesWithToolResult(new Dictionary<string, object> { { "a", 1 }, { "b", 2 } });
-            var messages2 = MessagesWithToolResult(new Dictionary<string, object> { { "b", 2 }, { "a", 1 } });
-
-            string key1 = RimLLMResponseCacheKey.Build(messages1, new ChatOptions());
-            string key2 = RimLLMResponseCacheKey.Build(messages2, new ChatOptions());
-
-            ClassicAssert.AreEqual(key1, key2, "字典列舉順序不可影響快取鍵");
-        }
-
-        [Test]
-        public void CacheKey_FunctionResultComplexValue_DistinguishesContent()
-        {
-            var msgA = new ChatMessage(ChatRole.Assistant, new List<AIContent>
-            {
-                new FunctionResultContent("call-1", new Dictionary<string, object> { { "x", 1 } })
-            });
-            var msgB = new ChatMessage(ChatRole.Assistant, new List<AIContent>
-            {
-                new FunctionResultContent("call-1", new Dictionary<string, object> { { "x", 2 } })
-            });
-
-            string keyA = RimLLMResponseCacheKey.Build(new[] { msgA }, new ChatOptions());
-            string keyB = RimLLMResponseCacheKey.Build(new[] { msgB }, new ChatOptions());
-
-            ClassicAssert.AreNotEqual(keyA, keyB);
-        }
-
         private static List<ChatMessage> MessagesWithToolResult(object result)
         {
             return new List<ChatMessage>
@@ -140,73 +98,6 @@ namespace RimLLM_Framework.Tests
         }
 
         // ---------- [P2] 快取深層快照：呼叫端修改不污染快取 ----------
-
-        [Test]
-        public async Task ResponseCache_CallerMutation_DoesNotPolluteCachedEntry()
-        {
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
-            int calls = 0;
-            var cache = new RimLLMResponseCacheChatClient(
-                new MockCustomChatClient
-                {
-                    GetResponseHandler = (msgs, opts) =>
-                    {
-                        calls++;
-                        var message = new ChatMessage(ChatRole.Assistant, "original");
-                        return Task.FromResult(new ChatResponse(new List<ChatMessage> { message })
-                        {
-                            Usage = new UsageDetails { InputTokenCount = 10, OutputTokenCount = 5 },
-                            AdditionalProperties = new AdditionalPropertiesDictionary { ["k"] = "v" }
-                        });
-                    }
-                },
-                settings,
-                new RimLLMResponseCacheStore());
-
-            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
-
-            // 第一次呼叫：取得原回應後刻意修改
-            ChatResponse first = await cache.GetResponseAsync(messages);
-            first.Messages.Add(new ChatMessage(ChatRole.User, "pollution"));
-            first.Messages[0].Contents.Add(new TextContent("mutated"));
-            first.Usage.InputTokenCount = 999;
-            first.AdditionalProperties["k"] = "mutated";
-
-            // 第二次呼叫：命中快取，但內容必須仍是原始值
-            ChatResponse second = await cache.GetResponseAsync(messages);
-            ClassicAssert.AreEqual(1, calls, "第二次應命中快取");
-            ClassicAssert.AreEqual("original", second.Messages[0].Text);
-            ClassicAssert.AreEqual(1, second.Messages.Count, "呼叫端的追加不得出現在快取裡");
-            ClassicAssert.AreEqual(10, second.Usage.InputTokenCount, "呼叫端的 Usage 修改不得污染快取");
-            ClassicAssert.AreEqual("v", second.AdditionalProperties["k"], "呼叫端的 AdditionalProperties 修改不得污染快取");
-        }
-
-        [Test]
-        public async Task ResponseCache_HitResultMutation_DoesNotPolluteNextHit()
-        {
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
-            int calls = 0;
-            var cache = new RimLLMResponseCacheChatClient(
-                new MockCustomChatClient
-                {
-                    GetResponseHandler = (msgs, opts) =>
-                    {
-                        calls++;
-                        return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "stable")));
-                    }
-                },
-                settings,
-                new RimLLMResponseCacheStore());
-
-            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
-
-            await cache.GetResponseAsync(messages); // 寫入快取
-            ChatResponse hit1 = await cache.GetResponseAsync(messages);
-            hit1.Messages.Clear(); // 清掉命中回傳的 Messages
-
-            ChatResponse hit2 = await cache.GetResponseAsync(messages);
-            ClassicAssert.AreEqual("stable", hit2.Messages[0].Text, "命中結果的修改不得影響下一次命中");
-        }
 
         // ---------- [P2] Embedding：模型/供應商在請求開始時捕捉 ----------
 
@@ -253,7 +144,7 @@ namespace RimLLM_Framework.Tests
         // ---------- [P2] 串流：總量限制 ----------
 
         [Test]
-        public void StreamAsync_CapsAccumulatedTextEstimate()
+        public void StreamAsync_ForwardsHugeChunk()
         {
             var client = new CapturingChatClient
             {
@@ -261,7 +152,7 @@ namespace RimLLM_Framework.Tests
                 {
                     new ChatResponseUpdate(ChatRole.Assistant, new List<AIContent>
                     {
-                        new TextContent(new string('x', RimLLMChatClientExecutor.MaxAccumulatedCharsForEstimate + 1000))
+                        new TextContent(new string('x', 4 * 1024 * 1024 + 1000))
                     })
                 }
             };
@@ -278,8 +169,47 @@ namespace RimLLM_Framework.Tests
                 30f,
                 CancellationToken.None).GetAwaiter().GetResult();
 
-            // 不拋出、update 仍全部轉發；內部字元估算被截斷在上限內。
+            // 不拋出、update 仍全部轉發；估算只累加數值，不保留文字。
             ClassicAssert.AreEqual(1, received.Count);
+        }
+
+        [Test]
+        public void StreamAsync_WithoutReportedUsage_RecordsEstimateOfAllChunks()
+        {
+            RimLLMProvider.TryGetManager(out RimLLMManager previousManager);
+            var settings = new MockSettings();
+            RimLLMProvider.Initialize(new RimLLMManager(settings));
+            try
+            {
+                // 最後一塊超過舊實作的 4MB 字元上限：若有人把封頂加回來，估算會少算而失敗。
+                string huge = new string('x', 4 * 1024 * 1024 + 4000);
+                var client = new CapturingChatClient();
+                foreach (string chunk in new[] { "ab", "中文", huge })
+                {
+                    client.StreamUpdates.Add(new ChatResponseUpdate(
+                        ChatRole.Assistant, new List<AIContent> { new TextContent(chunk) }));
+                }
+
+                RimLLMChatClientExecutor.StreamAsync(
+                    client,
+                    new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") },
+                    null,
+                    "gpt-test",
+                    useNativeSchema: false,
+                    "OpenAI",
+                    null,
+                    30f,
+                    CancellationToken.None).GetAwaiter().GetResult();
+
+                // 逐塊累加的估算必須等於對整段文字一次估算的結果，且不得封頂。
+                ClassicAssert.AreEqual(
+                    RimLLMChatClientExecutor.EstimateTokens("ab中文" + huge),
+                    settings.TotalCompletionTokens);
+            }
+            finally
+            {
+                RimLLMProvider.Initialize(previousManager);
+            }
         }
 
         [Test]
@@ -319,82 +249,7 @@ namespace RimLLM_Framework.Tests
 
         // ---------- [P3] 快取鍵追蹤修正：bool 標記與參數排序 ----------
 
-        [Test]
-        public void CacheKey_BoolTrueAndFalse_ProduceDifferentKeys()
-        {
-            var msgTrue = new ChatMessage(ChatRole.Assistant, new List<AIContent>
-            {
-                new FunctionResultContent("call-1", new Dictionary<string, object> { { "flag", true } })
-            });
-            var msgFalse = new ChatMessage(ChatRole.Assistant, new List<AIContent>
-            {
-                new FunctionResultContent("call-1", new Dictionary<string, object> { { "flag", false } })
-            });
-
-            string keyTrue = RimLLMResponseCacheKey.Build(new[] { msgTrue }, new ChatOptions());
-            string keyFalse = RimLLMResponseCacheKey.Build(new[] { msgFalse }, new ChatOptions());
-
-            ClassicAssert.AreNotEqual(keyTrue, keyFalse, "bool true/false 必須產生不同的快取鍵");
-        }
-
-        [Test]
-        public void CacheKey_FunctionCallArgumentsDifferentOrder_SameKey()
-        {
-            var msgA = new ChatMessage(ChatRole.Assistant, new List<AIContent>
-            {
-                new FunctionCallContent("call-1", "GetWeather", new Dictionary<string, object> { { "a", 1 }, { "b", 2 } })
-            });
-            var msgB = new ChatMessage(ChatRole.Assistant, new List<AIContent>
-            {
-                new FunctionCallContent("call-1", "GetWeather", new Dictionary<string, object> { { "b", 2 }, { "a", 1 } })
-            });
-
-            string keyA = RimLLMResponseCacheKey.Build(new[] { msgA }, new ChatOptions());
-            string keyB = RimLLMResponseCacheKey.Build(new[] { msgB }, new ChatOptions());
-
-            ClassicAssert.AreEqual(keyA, keyB, "工具參數插入順序不可影響快取鍵");
-        }
-
         // ---------- [P3] 深層複製追蹤修正：巢狀容器隔離 ----------
-
-        [Test]
-        public void DeepCopy_NestedAdditionalProperties_AreIsolated()
-        {
-            var source = new ChatResponse(new ChatMessage(ChatRole.Assistant, "hi"))
-            {
-                AdditionalProperties = new AdditionalPropertiesDictionary
-                {
-                    ["nested"] = new Dictionary<string, object> { { "x", 1 } }
-                }
-            };
-
-            ChatResponse copy = RimLLMResponseDeepCopy.Copy(source);
-            ((Dictionary<string, object>)copy.AdditionalProperties["nested"])["x"] = 999;
-
-            ClassicAssert.AreEqual(1, ((Dictionary<string, object>)source.AdditionalProperties["nested"])["x"],
-                "複製品巢狀字典的修改不得回寫到來源");
-        }
-
-        [Test]
-        public void DeepCopy_FunctionCallNestedArguments_AreIsolated()
-        {
-            var source = new ChatMessage(ChatRole.Assistant, new List<AIContent>
-            {
-                new FunctionCallContent("c1", "F", new Dictionary<string, object>
-                {
-                    { "opts", new Dictionary<string, object> { { "k", "v" } } }
-                })
-            });
-
-            ChatMessage copy = (ChatMessage)RimLLMResponseDeepCopy.Copy(
-                new ChatResponse(source)).Messages[0];
-            var copiedCall = (FunctionCallContent)copy.Contents[0];
-            ((Dictionary<string, object>)copiedCall.Arguments["opts"])["k"] = "mutated";
-
-            var originalCall = (FunctionCallContent)source.Contents[0];
-            ClassicAssert.AreEqual("v", ((Dictionary<string, object>)originalCall.Arguments["opts"])["k"],
-                "複製品工具參數巢狀字典的修改不得回寫到來源");
-        }
 
         // ---------- [P3] 結構化驗證追蹤修正：集合 null 元素 ----------
 

@@ -692,8 +692,6 @@ namespace RimLLM_Framework.Tests
         public int RoutingStrategy { get; set; } = 0;
         public bool EnableNativeSchema { get; set; } = true;
         public bool EnableJsonRepair { get; set; } = true;
-        public bool EnableResponseCache { get; set; } = false;
-        public float ResponseCacheTtlMinutes { get; set; } = 30f;
 
         public string EmbeddingProvider { get; set; } = "Disabled";
         public string EmbeddingModel { get; set; } = "text-embedding-004";

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.ClientModel;
@@ -14,12 +13,6 @@ namespace RimLLM_Framework.Manager
     /// <summary>以逐候選的參數（模型、schema 方言、逾時）包裝一次 MEAI IChatClient 呼叫。</summary>
     internal static class RimLLMChatClientExecutor
     {
-        /// <summary>
-        /// 串流字元估算累積的上限。只在 provider 沒回報用量時用來估算 completion tokens，
-        /// 超過上限就封頂，避免異常大的串流把記憶體吃光。
-        /// </summary>
-        internal const int MaxAccumulatedCharsForEstimate = 4 * 1024 * 1024;
-
         /// <summary>
         /// 非串流請求：以 <paramref name="timeoutSeconds"/> 建立整體逾時，並與呼叫端的取消 Token 連動。
         /// 官方 SDK 的 client 本身沒有套用使用者設定的 ApiTimeout，因此在此統一補上，
@@ -82,7 +75,8 @@ namespace RimLLM_Framework.Manager
                     throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} returned an empty response.");
                 }
 
-                RecordUsage(providerId, model, builtMessages, response.Text, response.Usage);
+                // 要不要用估算值只由 RecordUsage 決定；逐字元估算相較網路往返可忽略。
+                RecordUsage(providerId, model, builtMessages, response.Usage, EstimateTokensRaw(response.Text));
                 return response;
             }
         }
@@ -109,12 +103,10 @@ namespace RimLLM_Framework.Manager
 
             IList<ChatMessage> builtMessages = BuildMessages(messages, options);
             TimeSpan idleTimeout = ResolveTimeout(timeoutSeconds);
-            // 只在 provider 沒回報用量時當作字元估算的來源，不再是回傳值。
-            // 有上限：超過 MaxAccumulatedCharsForEstimate 就停止累積——估算只需要近似值，
-            // 無界累積會讓異常大的串流把記憶體吃光。
-            var textBuilder = new StringBuilder();
+            // provider 沒回報用量時才會用到的 completion token 估算。逐塊累加估算值，
+            // 不保留文字本身：先前為此累積最多 4MB 的 StringBuilder，而多數 provider 都會回報用量。
+            double completionEstimate = 0;
             bool anyOutput = false;
-            bool estimateCapped = false;
             UsageDetails lastUsage = null;
 
             using (var timeoutCts = new CancellationTokenSource(idleTimeout))
@@ -143,23 +135,7 @@ namespace RimLLM_Framework.Manager
                             if (part is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                             {
                                 anyOutput = true;
-                                if (!estimateCapped)
-                                {
-                                    if (textBuilder.Length >= MaxAccumulatedCharsForEstimate)
-                                    {
-                                        estimateCapped = true;
-                                    }
-                                    else
-                                    {
-                                        textBuilder.Append(textContent.Text);
-                                        if (textBuilder.Length > MaxAccumulatedCharsForEstimate)
-                                        {
-                                            // 單一 chunk 可能很大；超過上限就截斷並封頂。
-                                            textBuilder.Length = MaxAccumulatedCharsForEstimate;
-                                            estimateCapped = true;
-                                        }
-                                    }
-                                }
+                                completionEstimate += EstimateTokensRaw(textContent.Text);
                             }
                             else if (part is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
                             {
@@ -205,7 +181,7 @@ namespace RimLLM_Framework.Manager
                 throw new RimLLMException(LLMError.NetworkError, $"{providerId} returned an empty stream.");
             }
 
-            RecordUsage(providerId, model, builtMessages, textBuilder.ToString(), lastUsage);
+            RecordUsage(providerId, model, builtMessages, lastUsage, completionEstimate);
         }
         #pragma warning restore S107, S3776
 
@@ -383,12 +359,13 @@ namespace RimLLM_Framework.Manager
             }
         }
 
+        /// <param name="completionEstimate">provider 沒回報用量時使用的 completion token 估算值（<see cref="EstimateTokensRaw"/> 的累計）。</param>
         private static void RecordUsage(
             string providerId,
             string model,
             IList<ChatMessage> messages,
-            string responseText,
-            UsageDetails usage)
+            UsageDetails usage,
+            double completionEstimate)
         {
             int promptTokens;
             int completionTokens;
@@ -405,8 +382,8 @@ namespace RimLLM_Framework.Manager
                 {
                     if (m != null && !string.IsNullOrEmpty(m.Text)) promptEstimate += EstimateTokensRaw(m.Text);
                 }
-                promptTokens = Math.Max(1, (int)Math.Ceiling(promptEstimate));
-                completionTokens = EstimateTokens(responseText);
+                promptTokens = ToTokenCount(promptEstimate);
+                completionTokens = ToTokenCount(completionEstimate);
             }
 
             try
@@ -440,7 +417,13 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         internal static int EstimateTokens(string text)
         {
-            return Math.Max(1, (int)Math.Ceiling(EstimateTokensRaw(text)));
+            return ToTokenCount(EstimateTokensRaw(text));
+        }
+
+        /// <summary>估算值轉成至少 1 的整數 token 數；極大的串流封頂在 int.MaxValue 而非溢位。</summary>
+        private static int ToTokenCount(double estimate)
+        {
+            return (int)Math.Min(int.MaxValue, Math.Max(1, Math.Ceiling(estimate)));
         }
 
         private static double EstimateTokensRaw(string text)

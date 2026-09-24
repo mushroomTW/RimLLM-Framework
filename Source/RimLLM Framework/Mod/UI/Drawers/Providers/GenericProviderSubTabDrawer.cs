@@ -101,7 +101,7 @@ namespace RimLLM_Framework.Mod
         public static void DrawApiKeyList(Listing_Standard listing, string providerId)
         {
             string rawApiKey = Settings.GetApiKey(providerId);
-            var keys = new List<string>(rawApiKey.Split(new char[] { ',' }, StringSplitOptions.None));
+            var keys = new List<string>(rawApiKey.Split(RimLLMFrameworkSettings.ApiKeySeparators, StringSplitOptions.None));
             if (keys.Count == 0 || (keys.Count == 1 && string.IsNullOrEmpty(keys[0])))
             {
                 keys = new List<string> { "" };

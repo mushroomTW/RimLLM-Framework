@@ -102,8 +102,7 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 在請求進入路由之前標記「這是串流」。必須緊貼著 router：擺到回應快取之外的話，
-        /// 這個鍵會進入快取鍵的計算，讓同一個請求的串流與非串流版本各存一份。
+        /// 在請求進入路由之前標記「這是串流」。
         /// </summary>
         private sealed class StreamingMarkerChatClient : DelegatingChatClient
         {

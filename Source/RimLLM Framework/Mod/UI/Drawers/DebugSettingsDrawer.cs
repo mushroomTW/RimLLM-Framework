@@ -252,10 +252,9 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// 結構化輸出自我檢查。分兩段：
         ///
-        /// 第一段在本機完成，不發網路請求也不花錢 —— 產生兩種供應商方言的 schema，藉此確認
+        /// 第一段在本機完成，不發網路請求也不花錢 —— 產生 schema，藉此確認
         /// <c>System.Text.Json</c> 的 <c>JsonSchemaExporter</c> 在 RimWorld 的 Mono 執行環境可用。
-        /// 這件事單元測試驗不到（測試跑在真正的 .NET Framework 上），而失敗模式是靜默降級成舊的
-        /// 反射實作，不主動檢查就不會有人發現。
+        /// 這件事單元測試驗不到（測試跑在真正的 .NET Framework 上）。
         ///
         /// 第二段才真的向目前的 fallback 鏈發一次結構化請求，驗證供應商確實接受這份 schema。
         /// </summary>
@@ -263,10 +262,6 @@ namespace RimLLM_Framework.Mod
         {
             schemaSelfTestRunning = true;
             schemaSelfTestStatus = "RimLLM_SchemaSelfTestRunning".Translate();
-
-            // 降級是永久性的（一次失敗即黏住，避免每次請求都吃例外成本），
-            // 所以自我檢查必須先解除，否則第二次之後按下去都只是在讀上一次的結論而非重新探測。
-            RimLLMSchemaBuilder.ForceLegacy = false;
 
             RimLLMSchemaResult schema;
             try
@@ -283,21 +278,6 @@ namespace RimLLM_Framework.Mod
             }
 
             Log.Message("[RimLLM] Schema self-test: " + schema.Json);
-
-            if (schema.UsedLegacyFallback)
-            {
-                // exporter 不可用時框架仍能運作，但會失去 description、精確的型別對照與 strict 相容性。
-                string failure = RimLLMSchemaBuilder.LastExporterFailure;
-                Log.Warning("[RimLLM] Schema exporter failure: " + (failure ?? "(未記錄)"));
-
-                schemaSelfTestRunning = false;
-                schemaSelfTestStatus = "<color=#f59e0b>" + "RimLLM_SchemaSelfTestLegacy".Translate() + "</color>";
-                if (!string.IsNullOrEmpty(failure))
-                {
-                    schemaSelfTestStatus += "\n<color=#ef4444>" + RimLLMLog.SanitizeForLog(failure, 400) + "</color>";
-                }
-                return;
-            }
 
             schemaSelfTestStatus = "RimLLM_SchemaSelfTestLocalOk".Translate();
 

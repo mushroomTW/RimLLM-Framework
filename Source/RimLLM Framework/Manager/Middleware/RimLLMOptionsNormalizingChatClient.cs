@@ -12,9 +12,7 @@ namespace RimLLM_Framework.Manager
     /// 把玩家在設定中指定的預設思考強度套進未指定的請求。
     /// </summary>
     /// <remarks>
-    /// 這一層必須是整條堆疊的最外層，且務必排在回應快取之前：
-    /// 快取鍵是由「所有會影響輸出的欄位」算出來的，若正規化排在後面，
-    /// 算鍵時看到的思考強度會和實際送出的不一致，導致兩個實際等價的請求各打一次 API。
+    /// 這一層是整條堆疊的最外層，下游各層看到的都是已套用預設值的選項。
     /// </remarks>
     internal sealed class RimLLMOptionsNormalizingChatClient : DelegatingChatClient
     {

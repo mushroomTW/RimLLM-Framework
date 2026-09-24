@@ -15,7 +15,7 @@ namespace RimLLM_Framework.Manager
     /// <remarks>
     /// 由 <see cref="RimLLMFailoverChatClient"/> 對每一個候選嘗試各包一層，而不是疊在整條堆疊上：
     /// 名額只在真正打 API 的那一次呼叫期間持有，重試前的指數退避與換手都不占名額；
-    /// 被快取、防濫用與預算攔下的請求根本走不到這裡，自然也不佔用名額。
+    /// 被防濫用與預算攔下的請求根本走不到這裡，自然也不佔用名額。
     /// </remarks>
     internal sealed class RimLLMRequestQueueChatClient : DelegatingChatClient
     {

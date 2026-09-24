@@ -95,9 +95,13 @@ namespace RimLLM_Framework.Core
             }
         }
 
+        /// <summary>
+        /// 輸出警告。不檢查 Enabled 旗標：警告多半是一次性的診斷線索（金鑰解不開、遙測寫檔失敗、
+        /// schema exporter 降級），詳細日誌預設關閉時仍必須看得到。每次請求都會觸發的警告
+        /// 由呼叫端自行以 <see cref="Enabled"/> 包住。
+        /// </summary>
         public static void Warning(string msg)
         {
-            if (!Enabled) return;
             try
             {
                 Log.Warning(msg);

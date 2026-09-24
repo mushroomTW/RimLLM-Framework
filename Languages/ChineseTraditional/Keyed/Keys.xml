@@ -87,7 +87,6 @@
   <RimLLM_SchemaSelfTest>結構化輸出自我檢查</RimLLM_SchemaSelfTest>
   <RimLLM_SchemaSelfTestRunning>檢查中…</RimLLM_SchemaSelfTestRunning>
   <RimLLM_SchemaSelfTestLocalOk>schema 已在本機產生，正在發出實際請求…</RimLLM_SchemaSelfTestLocalOk>
-  <RimLLM_SchemaSelfTestLegacy>本執行環境無法使用受管理的 schema 產生器，框架已降級回舊的反射實作。結構化輸出仍可運作，但會失去成員說明與 strict 模式。兩種方言的 schema 已寫入偵錯日誌。</RimLLM_SchemaSelfTestLegacy>
   <RimLLM_SchemaSelfTestBuildFailed>schema 產生失敗: {0}</RimLLM_SchemaSelfTestBuildFailed>
   <RimLLM_SchemaSelfTestOk>結構化輸出正常。Summary：「{0}」，Score：{1}</RimLLM_SchemaSelfTestOk>
   <RimLLM_SchemaSelfTestRemoteFailed>實際請求失敗: {0}</RimLLM_SchemaSelfTestRemoteFailed>
@@ -144,8 +143,6 @@
   <RimLLM_RoutingStrategy_LowestCost>成本優先</RimLLM_RoutingStrategy_LowestCost>
   <RimLLM_EnableNativeSchemaLabel>啟用原生 JSON Schema 強制執行 (提升結構化輸出精準度)</RimLLM_EnableNativeSchemaLabel>
   <RimLLM_EnableJsonRepairLabel>啟用 JSON 回傳格式修復輔助 (容錯非標準 JSON)</RimLLM_EnableJsonRepairLabel>
-  <RimLLM_EnableResponseCacheLabel>啟用重複請求的回應快取 (省錢，但相同輸入會得到相同輸出)</RimLLM_EnableResponseCacheLabel>
-  <RimLLM_ResponseCacheTtlLabel>回應快取存活時間: {0} 分鐘</RimLLM_ResponseCacheTtlLabel>
 
   <RimLLM_FallbackLevelAuto>自動</RimLLM_FallbackLevelAuto>
   <RimLLM_FallbackLevelLow>低</RimLLM_FallbackLevelLow>

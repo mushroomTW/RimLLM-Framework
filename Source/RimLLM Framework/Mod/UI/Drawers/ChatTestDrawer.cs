@@ -166,12 +166,13 @@ namespace RimLLM_Framework.Mod
         }
 
         /// <summary>
-        /// 將目前的對話歷史複本寫回遙測儲存。
+        /// 將目前的對話歷史複本交給遙測儲存，寫檔（AES + JSON + 磁碟）交由背景單寫者執行。
+        /// 先前在主執行緒同步寫檔，背景寫入正持有檔案鎖時主執行緒還會被卡住。
         /// </summary>
         private static void PersistChatHistory()
         {
             Settings.ChatHistory = new List<string>(chatHistory);
-            Settings.SaveTelemetry();
+            Settings.QueueTelemetrySave();
         }
 
         /// <summary>
@@ -349,6 +350,7 @@ namespace RimLLM_Framework.Mod
                 CancelActiveChatRequest();
                 chatHistory.Clear();
                 Settings.ClearChatHistory();
+                // 清空是少見的明確操作，歷史可能含敏感內容：同步寫檔，不留給背景寫入的時間窗。
                 Settings.SaveTelemetry();
                 chatInput = "";
             }

@@ -42,7 +42,9 @@ namespace RimLLM_Framework.Mod
         public float ApiTimeout { get; set; } = 30f;       // API 逾時時間 (秒)
         public int MaxRetries { get; set; } = 3;           // 單模型最多重試次數
         public float RetryDelay { get; set; } = 3f;        // 重試間隔 (秒)
-        public bool DetailedLogging { get; set; } = true;  // 是否啟用詳細日誌
+        // 是否啟用詳細日誌。預設關閉：每次請求都會寫日誌，而 Verse 的日誌有全域 10000 筆上限，
+        // 被高頻 Mod 使用時長時間遊玩會把上限用完，之後所有 Mod 的錯誤都不再被記錄。
+        public bool DetailedLogging { get; set; } = false;
         public int MaxConcurrentRequests { get; set; } = 2; // 最大並行限制
         public ReasoningEffort? DefaultReasoningEffort { get; set; } = null;
 
@@ -89,9 +91,6 @@ namespace RimLLM_Framework.Mod
         public int RoutingStrategy { get; set; } = 2;
         public bool EnableNativeSchema { get; set; } = true;
         public bool EnableJsonRepair { get; set; } = true;
-        // 預設關閉：命中即代表相同輸入拿到相同輸出，對敘事類文本未必是玩家要的，由玩家自行開啟。
-        public bool EnableResponseCache { get; set; } = false;
-        public float ResponseCacheTtlMinutes { get; set; } = 30f;
 
         public const string DisabledProvider = "Disabled";
         public string EmbeddingProvider { get; set; } = DisabledProvider;
@@ -137,6 +136,16 @@ namespace RimLLM_Framework.Mod
         public void SaveTelemetry()
         {
             _telemetry.Save();
+        }
+
+        /// <summary>
+        /// 把遙測寫檔交給背景單寫者，不在呼叫端執行緒做 AES + JSON + 磁碟寫入。
+        /// 先標記待寫入：背景寫檔失敗或來不及完成時，由關閉時的 <see cref="FlushTelemetryIfDirty"/> 補上。
+        /// </summary>
+        public void QueueTelemetrySave()
+        {
+            _telemetry.MarkDirty();
+            RimLLMUsageTracker.QueueTelemetrySave(this);
         }
 
         /// <summary>
@@ -266,8 +275,6 @@ namespace RimLLM_Framework.Mod
             public int RoutingStrategy = 2;
             public bool EnableNativeSchema = true;
             public bool EnableJsonRepair = true;
-            public bool EnableResponseCache;
-            public float ResponseCacheTtlMinutes = 30f;
             public string EncryptedEmbeddingApiKey;
             public string EmbeddingProvider = DisabledProvider;
             public string EmbeddingModel = "gemini-embedding-2";
@@ -277,7 +284,17 @@ namespace RimLLM_Framework.Mod
             public Dictionary<string, string> EmbeddingEndpoints;
             public Dictionary<string, string> EncryptedEmbeddingApiKeys;
             public Dictionary<string, bool> CompatTakeovers;
+
+            /// <summary>設定格式版本，供一次性遷移判斷；舊檔沒有這個欄位，讀成 0。</summary>
+            public int SettingsVersion;
         }
+
+        /// <summary>
+        /// 目前的設定格式版本。
+        /// 1：DetailedLogging 預設改為關閉。版本 0 的檔案裡的 true 是舊預設值寫進去的，
+        /// 無法與玩家主動開啟區分，因此載入時一律重設為關閉一次。
+        /// </summary>
+        private const int CurrentSettingsVersion = 1;
 #pragma warning restore 0649
 #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
 
@@ -373,8 +390,6 @@ namespace RimLLM_Framework.Mod
                         RoutingStrategy = this.RoutingStrategy,
                         EnableNativeSchema = this.EnableNativeSchema,
                         EnableJsonRepair = this.EnableJsonRepair,
-                        EnableResponseCache = this.EnableResponseCache,
-                        ResponseCacheTtlMinutes = this.ResponseCacheTtlMinutes,
                         EmbeddingProvider = this.EmbeddingProvider,
                         EmbeddingModel = this.EmbeddingModel,
                         EmbeddingEndpoint = this.EmbeddingEndpoint,
@@ -384,7 +399,8 @@ namespace RimLLM_Framework.Mod
                         EmbeddingModels = new Dictionary<string, string>(this._embeddingModels),
                         EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
                         EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys,
-                        CompatTakeovers = new Dictionary<string, bool>(this._compatTakeovers)
+                        CompatTakeovers = new Dictionary<string, bool>(this._compatTakeovers),
+                        SettingsVersion = CurrentSettingsVersion
                     };
      
                     jsonStr = RimLLMJson.Serialize(dto);
@@ -476,7 +492,8 @@ namespace RimLLM_Framework.Mod
                                 this.ApiTimeout = dto.ApiTimeout <= 0f ? 30f : dto.ApiTimeout;
                                 this.MaxRetries = dto.MaxRetries < 0 ? 3 : dto.MaxRetries;
                                 this.RetryDelay = dto.RetryDelay < 0f ? 3f : dto.RetryDelay;
-                                this.DetailedLogging = dto.DetailedLogging;
+                                // 版本 0 的 true 來自舊預設值（見 CurrentSettingsVersion），重設為新預設一次。
+                                this.DetailedLogging = dto.SettingsVersion >= 1 && dto.DetailedLogging;
                                 this.MaxConcurrentRequests = dto.MaxConcurrentRequests <= 0 ? 2 : dto.MaxConcurrentRequests;
                                 RimLLMLog.Enabled = this.DetailedLogging;
 
@@ -491,8 +508,6 @@ namespace RimLLM_Framework.Mod
                                 this.RoutingStrategy = dto.RoutingStrategy < 0 || dto.RoutingStrategy > MaxRoutingStrategy ? 0 : dto.RoutingStrategy;
                                 this.EnableNativeSchema = dto.EnableNativeSchema;
                                 this.EnableJsonRepair = dto.EnableJsonRepair;
-                                this.EnableResponseCache = dto.EnableResponseCache;
-                                this.ResponseCacheTtlMinutes = dto.ResponseCacheTtlMinutes <= 0f ? 30f : dto.ResponseCacheTtlMinutes;
                                 this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? DisabledProvider : dto.EmbeddingProvider;
                                 if (dto.EmbeddingModels != null)
                                 {
@@ -619,13 +634,19 @@ namespace RimLLM_Framework.Mod
             }
         }
 
+        /// <summary>
+        /// 多把金鑰的分隔字元。輪替與設定頁的金鑰列表必須用同一組：
+        /// 先前設定頁只認逗號，含分號的金鑰字串在畫面上是一把、實際卻被當成兩把輪替。
+        /// </summary>
+        internal static readonly char[] ApiKeySeparators = { ',', ';' };
+
         public string GetActiveApiKey(string providerId)
         {
             lock (_settingsLock)
             {
                 if (!_apiKeys.TryGetValue(providerId, out string raw) || string.IsNullOrEmpty(raw)) return "";
 
-                var keys = raw.Split(new char[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                var keys = raw.Split(ApiKeySeparators, StringSplitOptions.RemoveEmptyEntries);
                 if (keys.Length == 0) return "";
                 if (keys.Length == 1) return keys[0].Trim();
 

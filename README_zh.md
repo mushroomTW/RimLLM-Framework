@@ -132,7 +132,9 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 ### 串流
 
-串流是標準 MEAI 的 `GetStreamingResponseAsync` / `await foreach`，語法見 MEAI 文件。框架額外保證兩件事：每一個 update 都已派送到 Unity 主執行緒，可以直接在迴圈裡操作 UI；整條 Fallback 鏈失敗時，原始的 `RimLLMException` 會從 `await foreach` 重新擲出，串流不會無聲結束。
+串流是標準 MEAI 的 `GetStreamingResponseAsync` / `await foreach`，語法見 MEAI 文件。框架額外保證一件事：整條 Fallback 鏈失敗時，原始的 `RimLLMException` 會從 `await foreach` 重新擲出，串流不會無聲結束。
+
+框架**不會**把 update 派送到 Unity 主執行緒。迴圈在哪個執行緒續行，取決於你自己的 `await`：在主執行緒上開始 `await foreach`，Unity 的 `SynchronizationContext` 會讓每一輪都回到主執行緒；若從 `Task.Run` 或 `ConfigureAwait(false)` 之後開始，迴圈本體就跑在執行緒池上，此時只能透過 `RimLLMDispatcher.EnqueueOnMainThread` 碰遊戲或 UI 狀態。
 
 ### 結構化輸出
 
@@ -272,7 +274,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 用量與費用回報 | Debug 分頁的各供應商 Token 與成本看板 |
 | 推理模型的差異 | `reasoning_content` 統一正規化為 MEAI 的 `TextReasoningContent` |
 | 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，再抽出 JSON 區塊做第二次解析 |
-| 主執行緒切換 | 串流 chunk 與日誌寫入都已派送回 Unity 主執行緒 |
+| 主執行緒切換 | 記憶體內的請求日誌更新派送回 Unity 主執行緒；公開 `RimLLMDispatcher` 供你派送自己的回呼 |
 | 原生 Tool Calling 與主執行緒排程 | 所有供應商經 OpenAI 協定送出工具定義；工具委派自動排入 Unity 主執行緒 |
 
 ### API 表面速查
@@ -317,7 +319,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * Embedding 設定改採與供應商頁相同的三欄式版面：每個 Embedding 供應商（Google Gemini、OpenAI、Ollama、OpenAI 相容）各自一個子分頁，擁有獨立的模型、端點與選填金鑰；尚未抓取清單時顯示已知 embedding 模型的預設清單；兩個本地供應商提供本地伺服器自動探測按鈕；並提供「測試連線與向量生成」按鈕，回報向量維度與耗時。
    * 模型選擇彈窗具備一鍵清除按鈕與主流模型家族快捷過濾標籤（Gemini、GPT、Claude、DeepSeek 等）。
 5. **獨立除錯分頁與日誌開關**
-   * 獨立的**除錯**設定分頁，含「詳細日誌」核取方塊，讓 Mod 開發者與玩家在排查問題時自由開關本 Mod 的日誌輸出。
+   * 獨立的**除錯**設定分頁，含「詳細日誌」核取方塊（預設關閉——每次請求都會寫一行日誌，而 Verse 的共用日誌上限為 10000 筆），讓 Mod 開發者與玩家在排查問題時自由開關本 Mod 逐次請求的日誌輸出。一次性的警告（例如 API 金鑰無法解密、遙測寫檔失敗）則一律記錄。
 6. **一鍵連線測試**
    * 即時連線檢查，量測延遲並驗證 API 金鑰與模型。在基底類別實作一次，所有供應商共用。
 7. **執行緒安全與主執行緒 Scribe 派送**
@@ -325,7 +327,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * `RecordLog` 的記憶體內日誌更新仍透過 `RimLLMDispatcher` 在 Unity 主執行緒執行，遙測寫檔（AES 加密＋JSON 序列化＋磁碟寫入）則由背景單寫者執行，並套用 15 秒寫入節流，避免背景存檔造成崩潰或 TPS 掉幀。
 8. **推理模型與思維鏈標記**
    * 原生支援 **Gemini 3.7 Flash / 3.1 Pro (Thinking)**、**OpenAI GPT-5.6 Sol / GPT-5.5**、**DeepSeek-V4-Pro / Flash**、**Grok 4.6**、**Qwen3.8-Max**、**Kimi K3**、**GLM-5.3-Flash** 等現代深度推理與思考模型。
-   * 框架會把 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`）正規化成 MEAI 原生的 `TextReasoningContent`，放在 `ChatResponse.Messages` 與 `ChatResponseUpdate.Contents` 裡交給你。它刻意**不**被揉進 `ChatResponse.Text`：否則每一個讀 `Text` 的呼叫端（結構化輸出、快取鍵、JSON 解析）都得先把標籤剥掉。要保留或丟棄，依內容型別過濾即可。
+   * 框架會把 API 回傳的思維鏈（OpenAI 協定的 `reasoning_content`）正規化成 MEAI 原生的 `TextReasoningContent`，放在 `ChatResponse.Messages` 與 `ChatResponseUpdate.Contents` 裡交給你。它刻意**不**被揉進 `ChatResponse.Text`：否則每一個讀 `Text` 的呼叫端（結構化輸出、JSON 解析）都得先把標籤剥掉。要保留或丟棄，依內容型別過濾即可。
    * GUI 對話測試頁自己從這些內容組出 `<think>...</think>` 標籤，再將思維鏈以灰色斜體呈現。那個扁平化是呈現，不是協定。
    * **推理強度控制**：預設為「自動」，維持服務端自己的預設行為（OpenAI 的動態 `reasoning_effort` 等）。也可以完全關閉推理，或手動設為低／中／高。
    * **強度對所有供應商、所有模型都有效**。線上格式由各供應商自行宣告，框架不再靠模型名猜測：頂層 `reasoning_effort`（OpenAI、經 OpenAI 相容端點存取的 Gemini、xAI、Groq、MiniMax、NVIDIA、OpenAI 相容端點）、OpenRouter 的統一 `reasoning` 物件、`thinking: {type}` 加強度（DeepSeek、Z.ai、Kimi）、`enable_thinking` 搭配 `thinking_budget`（Qwen）。詞彙差異逐家對應 —— Kimi 只吃 low/high/max，xAI 的推理無法關閉，關閉請求在該家會被忽略而不是換來 400。
@@ -335,7 +337,6 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位），並依費率表中該模型的快取輸入估計費率計算。供應商定價可能變動，因此金額仍是估算值。
    * **成本估算來自內建費率表**（OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。查無費率代表**費用未知**，不是已知免費：token 數仍會累計，但其費用不列入顯示總額與每日預算。Debug 分頁會顯示本次執行中查無費率的請求數。每日預算在請求前檢查已累計的估算金額，並非精確的消費上限。
-   * **本地回應快取**（預設關閉，且與上面兩項不同 —— 那兩項是「供應商端」的快取，這一項完全不離開玩家的電腦）。啟用後，逐字相同的請求會直接回傳先前的結果，完全不發出 API 呼叫：零成本、零延遲，也不會產生任何 Token 用量記錄。快取鍵涵蓋所有會影響輸出的欄位 —— 每一則訊息（角色、文字，以及工具結果之類的非文字內容，其複雜值以結構化序列化而非 `ToString()` 納入鍵值）、目標模型、最低相容等級、快取上下文、temperature、最大輸出 Token、思考強度、是否關閉思考、結構化輸出型別，以及所有會原樣送達供應商的取樣參數（`TopP`、`TopK`、`FrequencyPenalty`、`PresencePenalty`、`Seed`、`StopSequences`）—— 但刻意不含 `modId` 與 `Priority`，它們只影響節流與排隊順序。比對是精確比對，不做語意相似度。代價是相同輸入必然得到相同輸出，這對敘事性文本未必是玩家要的，因此預設關閉，並提供玩家自訂的存活時間（1–120 分鐘，寫入當下就固定）與 256 筆上限。過期與容量淘汰由內部輕量化機制管理（256 筆上限，先進先出與 TTL 淘汰），避免依賴外部快取套件造成 RimWorld AppDomain 組件版本衝突，框架只負責判定「什麼算同一個請求」。存入與讀出都會做深層快照，呼叫端修改回傳的 `Messages`／`Usage`／`AdditionalProperties` 不會污染後續命中。只存在記憶體中，不寫入存檔。
 10. **Embedding SDK**
     * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
     * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini，OpenAI 走其原生端點；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。模型、端點與金鑰依 Embedding 供應商分別保存，切換啟用的供應商不會遺失其他供應商的設定；模型或端點留空代表使用該供應商預設值，金鑰留空則繼承對應對話供應商的金鑰。
@@ -344,9 +345,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 11. **原生 Tool Calling（函式呼叫）**
     * 完整支援 Microsoft.Extensions.AI Tool Calling 標準（`AIFunction`、`ChatOptions.Tools`、`FunctionCallContent`、`FunctionResultContent`），所有供應商經共用的 OpenAI 協定路徑提供。
     * 提供 `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`，自動將工具叫用委派排入 Unity 主執行緒執行，杜絕 RimWorld 跨執行緒崩潰風險。
-    * 當請求中包含工具時，自動繞過本地回應快取以確保狀態副作用一致性。
 12. **第三方整合（強制其他 Mod 改走 RimLLM）**
-    * 設定頁新增「第三方整合」分頁，列出 RimLLM 可以接管 LLM 流量的 Mod——目前包含 **RimTalk**（`cj.rimtalk`）、**Auto Translation**（`seohyeon.autotranslation`）與 **Mod 兼容性檢查器**（`modcompatchecker.main`）。開關開啟後，目標 Mod 的所有請求一律導入 RimLLM 的備援鏈、預算、節流、回應快取與用量統計。開啟期間目標 Mod 自己的 API 金鑰／模型／端點設定會被忽略；開關即時生效不需重啟，預設**關閉**。
+    * 設定頁新增「第三方整合」分頁，列出 RimLLM 可以接管 LLM 流量的 Mod——目前包含 **RimTalk**（`cj.rimtalk`）、**Auto Translation**（`seohyeon.autotranslation`）與 **Mod 兼容性檢查器**（`modcompatchecker.main`）。開關開啟後，目標 Mod 的所有請求一律導入 RimLLM 的備援鏈、預算、節流與用量統計。開啟期間目標 Mod 自己的 API 金鑰／模型／端點設定會被忽略；開關即時生效不需重啟，預設**關閉**。
     * **RimTalk**：提示工程完全不動，訊息（含「Output JSONL」指示）原樣轉送，串流文字逐塊餵進 RimTalk 自己的 `JsonStreamParser`，氣泡仍然像原生一樣一行一行冒出來。推理內容不會混進 JSONL 串流，且這類請求關閉思考以對齊 RimTalk 自身的預設。
     * **Auto Translation**：完整支援單條與 XML 批次翻譯。以原生具備批次能力與佔位符防護的 `Translator_OpenAICompatible` 作為哨兵轉接，佔位符（`__PH0__` 等）防護、XML 批次打包與解析均沿用 Auto Translation 自身邏輯。開關開啟時自動同步當前翻譯器為哨兵，關閉或 RimLLM 缺金鑰/離線時自動退回原生翻譯引擎並節流警告。
     * **Mod 兼容性檢查器**：攔截 `AIService.CallAPIWithTimeout`，將 Harmony/XML 衝突分析、依賴問題與報錯診斷等請求全面導流至 RimLLM。接管開啟時自動將 `IsAIConfigured` 覆寫為 `true`，玩家無需在檢查器內重複設定金鑰即可直接使用 AI 診斷，並自動短路餘額查詢以杜絕 401 報錯。
@@ -360,7 +360,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 ### 1. 統一介面與調度核心（`IChatClient` / `IEmbeddingGenerator` 與 `RimLLMProvider`）
 
 * 框架對外暴露標準的 Microsoft.Extensions.AI 介面。呼叫端只面對 `IChatClient` 或 `IEmbeddingGenerator`，完全不需要知道實際由哪個供應商或模型處理 —— 調度與 Fallback 輪替由 `RimLLMManager` 負責。
-* `CreateChatClient` 回傳的是一疊 MEAI `DelegatingChatClient` 中介層——思考強度正規化、回應快取、防濫用節流、預算保護、優先權佇列——最內層是沿 Fallback 鏈路由的 `FailoverChatClient`。每一層都是 `internal`。使用端會碰到的框架專屬型別只有 `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException` 與 `LLMError`，其餘跨越邊界的全是 MEAI 型別。
+* `CreateChatClient` 回傳的是一疊 MEAI `DelegatingChatClient` 中介層——思考強度正規化、防濫用節流、預算保護、優先權佇列——最內層是沿 Fallback 鏈路由的 `FailoverChatClient`。每一層都是 `internal`。使用端會碰到的框架專屬型別只有 `RimLLMProvider`、`RimLLMChatOptions`、`RimLLMException` 與 `LLMError`，其餘跨越邊界的全是 MEAI 型別。
 * `modId` 是純標籤，不是憑證。它是每個 Mod 防濫用節流與遙測歸屬的鍵，不需要任何註冊呼叫。
 
 ### 2. Unity 主執行緒派送器（`RimLLMDispatcher`）
@@ -374,7 +374,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 * update 以**原樣**穿過這座橋——你列舉到的就是供應商產生的那個物件，只有 `ModelId` 被改寫。框架不再自行合成一個收尾 update，因此 `UsageContent`、`FinishReason` 與 `ResponseId` 只在供應商真的送出時才存在。
 * 由於 `IAsyncEnumerable` 是透過 `bclasync` extern alias 進入本專案，C# 8 無法對它編譯 async iterator。`ReadAllAsync()` 直接繞過這個限制：它回傳的正是同一顆組件的 `IAsyncEnumerable`，因此不必手寫任何 iterator。
 * 一層薄包裝會解開 `ChannelClosedException`，讓生產端的失敗以原始的 `RimLLMException` 呈現給呼叫端。
-* Executor 的 fallback token 估算把累積文字封頂在 4 MB，異常大的串流不會讓記憶體無限成長；回應快取也拒絕錄製超過 100 000 筆 update 的串流（串流本身照常轉發）。
+* Executor 的 fallback token 估算逐塊累加成計數，不暫存串流文字，異常大的串流不會讓記憶體無限成長。
 
 ### 4. 統一的 HTTP 錯誤對照（`LLMErrorMapper`）
 
@@ -406,7 +406,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
   * `$ref` **不只**用於遞迴 —— MEAI 也用它來為重複出現的型別去重，所以一律截斷 `$ref` 會靜默刪掉正常成員。正規化層會解析 JSON pointer，只有在它指向目前展開路徑上的祖先時才視為循環。
   * **所有成員一律列入 `required`**，選填性改由型別表達。OpenAI 的 strict structured output 要求 `required` 涵蓋每一個 property，所以舊行為（`Nullable<T>` 不列入 `required` 卻仍送 `strict: true`）在服務端會被拒絕，並被靜默降級成提示式 JSON。
   * schema 產生與反序列化都跑在 System.Text.Json 的單一共用契約下（納入欄位、尊重 `[JsonIgnore]`／`[JsonPropertyName]`、排除唯讀成員），並有測試斷言兩邊成員集合一致。**結構化輸出的型別請勿使用自訂的 `JsonConverter`** —— 它會改變 wire 形狀，而 exporter 看不到。子 mod 遷移注意：Newtonsoft 的 `[JsonProperty("x")]`須改為 STJ 的 `[JsonPropertyName("x")]`，`Newtonsoft.Json.JsonIgnoreAttribute` 須改為 `System.Text.Json.Serialization.JsonIgnoreAttribute` —— 遷移後舊標註會被靜默忽略。
-  * 若 `JsonSchemaExporter` 在 RimWorld 的 Mono 環境不可用，產生器會記錄警告、永久降級回舊的反射實作，並強制關閉 `strict`。
+  * `JsonSchemaExporter` 已實測可在 RimWorld 的 Mono 環境運作，因此不再保留反射降級路徑；若它失敗，結構化請求會直接拋出例外而不是靜默降級。遊戲內可用偵錯分頁的結構化輸出自我檢查確認。
 * 供應商專屬 SDK 絕不出現在 `RimLLMManager` 或公開 SDK facade 中；共用層只相依 `IChatClient`、`LLMProviderCapabilities` 與既有的 `ILLMProvider` API。API 金鑰一律來自加密設定，絕不寫入原始碼或一般日誌。
 
 ---

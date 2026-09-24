@@ -54,7 +54,7 @@ namespace RimLLM_Framework.Mod
             if (ActiveProviderSubTab != ProviderIds.OpenAICompatible)
             {
                 string rawApiKey = Settings.GetApiKey(ActiveProviderSubTab);
-                var keys = rawApiKey.Split(new char[] { ',' }, System.StringSplitOptions.None);
+                var keys = rawApiKey.Split(RimLLMFrameworkSettings.ApiKeySeparators, System.StringSplitOptions.None);
                 int keyCount = Mathf.Max(1, keys.Length);
                 keysHeight = 30f + (keyCount * 32f) + 36f;
             }

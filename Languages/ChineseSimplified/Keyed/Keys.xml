@@ -87,7 +87,6 @@
   <RimLLM_SchemaSelfTest>结构化输出自我检查</RimLLM_SchemaSelfTest>
   <RimLLM_SchemaSelfTestRunning>检查中…</RimLLM_SchemaSelfTestRunning>
   <RimLLM_SchemaSelfTestLocalOk>schema 已在本机生成，正在发出实际请求…</RimLLM_SchemaSelfTestLocalOk>
-  <RimLLM_SchemaSelfTestLegacy>本运行环境无法使用受管理的 schema 生成器，框架已降级回旧的反射实现。结构化输出仍可运作，但会失去成员说明与 strict 模式。两种方言的 schema 已写入调试日志。</RimLLM_SchemaSelfTestLegacy>
   <RimLLM_SchemaSelfTestBuildFailed>schema 生成失败: {0}</RimLLM_SchemaSelfTestBuildFailed>
   <RimLLM_SchemaSelfTestOk>结构化输出正常。Summary：「{0}」，Score：{1}</RimLLM_SchemaSelfTestOk>
   <RimLLM_SchemaSelfTestRemoteFailed>实际请求失败: {0}</RimLLM_SchemaSelfTestRemoteFailed>
@@ -144,8 +143,6 @@
   <RimLLM_RoutingStrategy_LowestCost>成本优先</RimLLM_RoutingStrategy_LowestCost>
   <RimLLM_EnableNativeSchemaLabel>启用原生 JSON Schema 强制执行 (提升结构化输出精准度)</RimLLM_EnableNativeSchemaLabel>
   <RimLLM_EnableJsonRepairLabel>启用 JSON 回传格式修复辅助 (容错非标准 JSON)</RimLLM_EnableJsonRepairLabel>
-  <RimLLM_EnableResponseCacheLabel>启用重复请求的回应缓存 (省钱，但相同输入会得到相同输出)</RimLLM_EnableResponseCacheLabel>
-  <RimLLM_ResponseCacheTtlLabel>回应缓存存活时间: {0} 分钟</RimLLM_ResponseCacheTtlLabel>
 
   <RimLLM_FallbackLevelAuto>自动</RimLLM_FallbackLevelAuto>
   <RimLLM_FallbackLevelLow>低</RimLLM_FallbackLevelLow>

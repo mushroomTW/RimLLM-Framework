@@ -434,69 +434,6 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestGetStreamingResponseAsync_ResponseCacheHit_EmitsCachedChunks()
-        {
-            var mockSettings = new MockSettings
-            {
-                FallbackChain = new List<string> { "TestMockStream:model-s" },
-                EnableResponseCache = true,
-                ResponseCacheTtlMinutes = 10f
-            };
-            mockSettings.EnabledProviders["TestMockStream"] = true;
-            mockSettings.ApiKeys["TestMockStream"] = "key";
-            var manager = new RimLLMManager(mockSettings);
-            int callCount = 0;
-            manager.RegisterProvider(new MockStreamProvider
-            {
-                ProviderId = "TestMockStream",
-                StreamHandler = (messages, options, model, onChunk) =>
-                {
-                    callCount++;
-                    onChunk("cached-");
-                    onChunk("content");
-                    return System.Threading.Tasks.Task.CompletedTask;
-                }
-            });
-
-            var client = CreateClient(manager, "test.cachestream.mod");
-            var inputMessages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "query-for-cache") };
-
-            // 第一次呼叫：填充快取
-            var chunks1 = new List<string>();
-            var e1 = client.GetStreamingResponseAsync(inputMessages).GetAsyncEnumerator();
-            try
-            {
-                while (e1.MoveNextAsync().AsTask().GetAwaiter().GetResult())
-                {
-                    if (!string.IsNullOrEmpty(e1.Current.Text)) chunks1.Add(e1.Current.Text);
-                }
-            }
-            finally
-            {
-                e1.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            }
-            ClassicAssert.AreEqual("cached-content", string.Concat(chunks1));
-            ClassicAssert.AreEqual(1, callCount);
-
-            // 第二次呼叫：命中快取，必須完整回傳快取文字且不應漏封包
-            var chunks2 = new List<string>();
-            var e2 = client.GetStreamingResponseAsync(inputMessages).GetAsyncEnumerator();
-            try
-            {
-                while (e2.MoveNextAsync().AsTask().GetAwaiter().GetResult())
-                {
-                    if (!string.IsNullOrEmpty(e2.Current.Text)) chunks2.Add(e2.Current.Text);
-                }
-            }
-            finally
-            {
-                e2.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            }
-            ClassicAssert.AreEqual("cached-content", string.Concat(chunks2));
-            ClassicAssert.AreEqual(1, callCount, "第二次串流呼叫應直接命中快取，不應再次觸發 StreamHandler");
-        }
-
-        [Test]
         public void TestOpenAICompatibleProvider_CreateChatClient_WithoutApiKey_Succeeds()
         {
             var settings = new MockSettings();

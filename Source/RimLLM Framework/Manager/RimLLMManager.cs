@@ -10,10 +10,10 @@ using RimLLM_Framework.Providers;
 namespace RimLLM_Framework.Manager
 {
     /// <summary>
-    /// IRimLLM 介面的核心管理器實作。
+    /// SDK 的核心管理器。
     /// 統一調度 API 供應商註冊、生命週期管理與公開外觀轉發。
     /// 內部核心職責委託給：
-    /// - 對話執行管道 (RimLLMChatExecutionPipeline)
+    /// - 對話中介層堆疊（見 <see cref="CreateChatClient"/>）
     /// - 嵌入向量服務 (RimLLMEmbeddingService)
     /// - 使用量與日誌追蹤器 (RimLLMUsageTracker)
     /// - 備用管道 (RimLLMFallbackPipeline)
@@ -32,7 +32,6 @@ namespace RimLLM_Framework.Manager
         private readonly RimLLMEmbeddingService _embeddingService;
         private readonly RimLLMFallbackPipeline _fallbackPipeline;
         private readonly RimLLMThrottleStore _throttleStore;
-        private readonly RimLLMResponseCacheStore _responseCacheStore;
         private readonly RimLLMRequestQueue _requestQueue;
         private readonly RimLLMHealthLedger _healthLedger;
 
@@ -77,9 +76,8 @@ namespace RimLLM_Framework.Manager
                 IsProviderEnabled);
 
             _throttleStore = new RimLLMThrottleStore(settings);
-            // 節流狀態與回應快取都必須跨 client 共用：CreateChatClient 每次呼叫都組出全新的
+            // 節流狀態必須跨 client 共用：CreateChatClient 每次呼叫都組出全新的
             // 一疊中介層，狀態若跟著中介層走，換一個 client 就等同重置。
-            _responseCacheStore = new RimLLMResponseCacheStore();
 
             // 初始化並註冊內建供應商
             RegisterBuiltInProvider(new OpenAIProvider(settings));
@@ -257,16 +255,14 @@ namespace RimLLM_Framework.Manager
             }
 
             // 由內往外堆疊。層序是語意性的，不可調換：
-            // 正規化必須在最外層，否則快取算鍵時看到的思考強度會和實際送出的不一致；
-            // 快取必須排在防濫用與預算之前，因為命中不發 API 呼叫，攔阻零成本的重播沒有意義；
-            // 預算則排在防濫用之後，被擋下的請求不該佔用併發名額；
+            // 正規化在最外層，下游各層看到的都是已套用預設值的選項；
+            // 預算排在防濫用之後，被擋下的請求不該佔用併發名額；
             // 併發名額不在這裡疊：由路由對每一個候選嘗試各包一層佇列，名額只留給真正
             // 要打 API 的那一次呼叫，重試前的指數退避不會占著名額讓其他 Mod 排隊。
             IChatClient client = RimLLMFailoverChatClient.Create(
                 _settings, _healthLedger, _usageTracker, _fallbackPipeline, modId, _requestQueue);
             client = new RimLLMBudgetChatClient(client, _usageTracker);
             client = new RimLLMAntiAbuseChatClient(client, _settings, _throttleStore, modId);
-            client = new RimLLMResponseCacheChatClient(client, _settings, _responseCacheStore);
             client = new RimLLMOptionsNormalizingChatClient(client, _settings);
             return client;
         }

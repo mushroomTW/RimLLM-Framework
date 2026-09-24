@@ -15,7 +15,6 @@ namespace RimLLM_Framework.Manager
     /// <remarks>
     /// modId 在建立 client 時就綁定，不是逐次請求帶進來的，因此這一層是 per-mod 實例；
     /// 節流狀態則放在所有實例共用的 <see cref="RimLLMThrottleStore"/>。
-    /// 位置必須排在回應快取之後：快取命中不發 API 呼叫，攔阻零成本的重播沒有意義。
     /// </remarks>
     internal sealed class RimLLMAntiAbuseChatClient : DelegatingChatClient
     {

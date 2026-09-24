@@ -328,7 +328,7 @@ namespace RimLLM_Framework.Manager
         /// 背景寫檔持有 <see cref="LogLock"/>，與主線程的記憶體更新、ClearLogs 互斥，
         /// 排序與過去「主線程內寫檔」一致；關閉時的 FlushTelemetryIfDirty 仍同步執行。
         /// </summary>
-        private static void QueueTelemetrySave(IRimLLMSettings settings)
+        internal static void QueueTelemetrySave(IRimLLMSettings settings)
         {
             lock (SaveQueueLock)
             {

@@ -74,7 +74,11 @@ namespace RimLLM_Framework.Manager
                 }
 
                 string repairedJson = RepairJson(rawResponse);
-                RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting static repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                // 每次需要修復的結構化回應都會觸發，受詳細日誌開關控制。
+                if (RimLLMLog.Enabled)
+                {
+                    RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting static repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                }
                 try
                 {
                     string fallbackExtracted = ExtractJsonBlock(repairedJson);

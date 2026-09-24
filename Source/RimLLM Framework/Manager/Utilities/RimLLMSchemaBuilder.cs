@@ -9,7 +9,6 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using RimLLM_Framework.Core;
 #pragma warning disable S1168, S1192, S3267, S3878 // reason: S1168 null 表示不可表達節點/未找到，與空集合語意不同，呼叫端需區分；其餘批次抑制語意保留，維持現狀
 
 namespace RimLLM_Framework.Manager
@@ -20,12 +19,11 @@ namespace RimLLM_Framework.Manager
     /// </summary>
     public sealed class RimLLMSchemaResult
     {
-        internal RimLLMSchemaResult(string json, bool containsOpenEndedMap, bool strictCompatible, bool usedLegacyFallback)
+        internal RimLLMSchemaResult(string json, bool containsOpenEndedMap, bool strictCompatible)
         {
             Json = json;
             ContainsOpenEndedMap = containsOpenEndedMap;
             StrictCompatible = strictCompatible;
-            UsedLegacyFallback = usedLegacyFallback;
         }
 
         /// <summary>已套用 OpenAI 相容方言的 schema JSON。</summary>
@@ -36,9 +34,6 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>是否可安全地以 OpenAI strict structured output 送出。</summary>
         public bool StrictCompatible { get; }
-
-        /// <summary>是否因 MEAI exporter 不可用而降級走舊反射實作。</summary>
-        public bool UsedLegacyFallback { get; }
 
         private JsonElement? _element;
 
@@ -98,38 +93,6 @@ namespace RimLLM_Framework.Manager
             "type", "enum", "properties", "required", "items", "additionalProperties", "description", OptionalMarker
         };
 
-        private readonly struct CanonicalCacheKey : IEquatable<CanonicalCacheKey>
-        {
-            public readonly Type Type;
-            public readonly int MaxDepth;
-
-            public CanonicalCacheKey(Type type, int maxDepth)
-            {
-                Type = type;
-                MaxDepth = maxDepth;
-            }
-
-            public bool Equals(CanonicalCacheKey other)
-            {
-                return Type == other.Type && MaxDepth == other.MaxDepth;
-            }
-
-            public override bool Equals(object obj)
-            {
-                return obj is CanonicalCacheKey other && Equals(other);
-            }
-
-            public override int GetHashCode()
-            {
-                unchecked
-                {
-                    return ((Type != null ? Type.GetHashCode() : 0) * 397) ^ MaxDepth;
-                }
-            }
-        }
-
-        private static readonly ConcurrentDictionary<CanonicalCacheKey, JsonObject> CanonicalCache = new ConcurrentDictionary<CanonicalCacheKey, JsonObject>();
-
         /// <summary>
         /// 最終結果快取。Stage C 只剩唯一的 OpenAI 相容方言，結果完全由型別決定，
         /// 因此直接以 <c>Type</c> 為鍵 —— 方言時代的包裝 struct 已刪除。
@@ -138,34 +101,6 @@ namespace RimLLM_Framework.Manager
 
         private static readonly object OptionsLock = new object();
         private static JsonSerializerOptions _serializerOptions;
-
-        /// <summary>
-        /// 強制略過 MEAI exporter、一律走舊的反射實作。
-        /// RimWorld 的 Mono 執行環境無法保證 <c>JsonSchemaExporter</c> 可用（它依賴 Reflection.Emit
-        /// 產生 getter/setter），因此保留這個逃生門；exporter 第一次拋例外時也會自動打開。
-        /// </summary>
-        public static bool ForceLegacy
-        {
-            get { return _forceLegacy; }
-            set
-            {
-                if (_forceLegacy == value) return;
-
-                _forceLegacy = value;
-                // 切換產生方式會讓既有快取失效 —— 已快取的 canonical 與結果是用另一條路徑產生的。
-                CanonicalCache.Clear();
-                ResultCache.Clear();
-            }
-        }
-
-        private static bool _forceLegacy;
-
-        /// <summary>
-        /// MEAI exporter 最近一次失敗的完整型別與訊息，未失敗過則為 null。
-        /// 降級是靜默的（功能仍可運作），所以必須把原因留下來供診斷讀取 ——
-        /// 只寫進日誌的話，玩家回報時往往已經被其他訊息沖掉。
-        /// </summary>
-        public static string LastExporterFailure { get; private set; }
 
         /// <summary>
         /// 產生指定型別的 schema。結果不可變，可直接共用。
@@ -180,13 +115,14 @@ namespace RimLLM_Framework.Manager
                 return cached;
             }
 
-            JsonObject canonical = GetCanonical(type, OpenAIMaxSchemaDepth, out bool usedLegacyFallback);
+            // 不另外快取 canonical：Build 本身已由 ResultCache 快取，每個型別只會走到這裡一次。
+            JsonObject canonical = BuildCanonical(type, OpenAIMaxSchemaDepth);
             JsonObject shaped = ApplyOpenAiDialect(canonical);
 
             bool containsOpenEndedMap = HasOpenEndedMap(shaped);
-            bool strictCompatible = !containsOpenEndedMap && !usedLegacyFallback;
+            bool strictCompatible = !containsOpenEndedMap;
 
-            var result = new RimLLMSchemaResult(shaped.ToJsonString(), containsOpenEndedMap, strictCompatible, usedLegacyFallback);
+            var result = new RimLLMSchemaResult(shaped.ToJsonString(), containsOpenEndedMap, strictCompatible);
             ResultCache[type] = result;
             return result;
         }
@@ -211,66 +147,11 @@ namespace RimLLM_Framework.Manager
         // Stage A + B：canonical schema
         // ---------------------------------------------------------------------
 
-        private static JsonObject GetCanonical(Type type, int maxDepth, out bool usedLegacyFallback)
+        private static JsonObject BuildCanonical(Type type, int maxDepth)
         {
-            var cacheKey = new CanonicalCacheKey(type, maxDepth);
-            if (CanonicalCache.TryGetValue(cacheKey, out JsonObject cached))
-            {
-                usedLegacyFallback = cached[LegacyMarker] != null;
-                return (JsonObject)cached.DeepClone();
-            }
-
-            JsonObject canonical = BuildCanonical(type, maxDepth, out usedLegacyFallback);
-            if (usedLegacyFallback)
-            {
-                canonical[LegacyMarker] = true;
-            }
-
-            CanonicalCache[cacheKey] = canonical;
-            return (JsonObject)canonical.DeepClone();
-        }
-
-        /// <summary>快取內用來記住「這份 canonical 是降級產物」的私有關鍵字，Stage C 會移除。</summary>
-        private const string LegacyMarker = "x-rimllm-legacy";
-
-        private static JsonObject BuildCanonical(Type type, int maxDepth, out bool usedLegacyFallback)
-        {
-            if (!ForceLegacy)
-            {
-                try
-                {
-                    JsonObject raw = ExportRaw(type);
-                    JsonObject normalized = Normalize(raw, GetTypeInfo(type), new NormalizeContext(raw, maxDepth), 0);
-                    usedLegacyFallback = false;
-                    return normalized ?? CreateEmptyObjectSchema();
-                }
-                catch (Exception exception)
-                {
-                    // 一次失敗即永久降級，避免每次請求都吃例外成本。
-                    LastExporterFailure = DescribeExporterFailure(exception);
-                    ForceLegacy = true;
-                    RimLLMLog.Warning("[RimLLM] MEAI schema exporter is unavailable; permanently falling back to the legacy reflection schema builder: " + LastExporterFailure);
-                }
-            }
-
-            usedLegacyFallback = true;
-            return BuildLegacyCanonical(type, maxDepth);
-        }
-
-        /// <summary>
-        /// 展平例外鏈。exporter 的失敗常被包成 <see cref="TypeInitializationException"/> 或
-        /// <see cref="System.Reflection.TargetInvocationException"/>，只看最外層那一句幾乎沒有診斷價值。
-        /// </summary>
-        private static string DescribeExporterFailure(Exception exception)
-        {
-            var description = new System.Text.StringBuilder();
-            for (Exception current = exception; current != null; current = current.InnerException)
-            {
-                if (description.Length > 0) description.Append(" ---> ");
-                description.Append(current.GetType().FullName).Append(": ").Append(current.Message);
-            }
-
-            return description.ToString();
+            JsonObject raw = ExportRaw(type);
+            JsonObject normalized = Normalize(raw, GetTypeInfo(type), new NormalizeContext(raw, maxDepth), 0);
+            return normalized ?? CreateEmptyObjectSchema();
         }
 
         /// <summary>
@@ -289,8 +170,7 @@ namespace RimLLM_Framework.Manager
         internal static JsonObject ExportRaw(Type type)
         {
             JsonNode node = JsonSchemaExporter.GetJsonSchemaAsNode(EnsureSerializerOptions(), type);
-            // exporter 的根一律是物件 schema；若不是，轉型失敗會由 BuildCanonical 接住並永久降級
-            // （LastExporterFailure 留下原因），不會靜默產出錯誤形狀。
+            // exporter 的根一律是物件 schema；若不是，轉型失敗直接拋出，不會靜默產出錯誤形狀。
             return (JsonObject)JsonNode.Parse(node.ToJsonString());
         }
 
@@ -673,12 +553,11 @@ namespace RimLLM_Framework.Manager
         // Stage C：唯一的 OpenAI 相容方言（選填成員寫成 ["T","null"] 聯集）
         // ---------------------------------------------------------------------
 
+        /// <summary>就地改寫：canonical 每次都是新產生、沒有其他持有者，不需要先複製。</summary>
         private static JsonObject ApplyOpenAiDialect(JsonObject canonical)
         {
-            var shaped = (JsonObject)canonical.DeepClone();
-            shaped.Remove(LegacyMarker);
-            ApplyOpenAiDialectRecursive(shaped);
-            return shaped;
+            ApplyOpenAiDialectRecursive(canonical);
+            return canonical;
         }
 #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
 
@@ -847,191 +726,6 @@ namespace RimLLM_Framework.Manager
                 // 拿不到型別資訊只會讓該子樹退化成純 JSON 正規化，不該讓整份 schema 失敗。
                 return null; // NOSONAR
             }
-        }
-
-        // ---------------------------------------------------------------------
-        // 降級路徑
-        // ---------------------------------------------------------------------
-
-        /// <summary>
-        /// 純反射的降級實作（MEAI exporter 不可用時使用）。
-        /// 產出的就是 canonical 形狀（單一 type、無 <c>$ref</c>），差別只在
-        /// <c>Nullable&lt;T&gt;</c> 成員是以「不列入 required」表達，而不是 <see cref="OptionalMarker"/>。
-        /// 因此 Stage C 對它等同 no-op，而 <c>StrictCompatible</c> 會被強制為 false。
-        /// </summary>
-        private static JsonObject BuildLegacyCanonical(Type type, int maxDepth)
-        {
-            return BuildLegacySchema(type, new HashSet<Type>(), maxDepth, 0) ?? CreateEmptyObjectSchema();
-        }
-
-        /// <summary>
-        /// <paramref name="visited"/> 追蹤目前遞迴路徑上的型別，偵測到循環時回傳 null，
-        /// 由父層略過該成員（與 <c>CreateDummyInstance</c> 把循環欄位截斷為 null 的行為一致）。
-        #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
-        /// </summary>
-        [SuppressMessage("csharpsquid", "S1168", Justification = "null 表示不可表達節點，與空集合語意不同，呼叫端需區分")]
-        private static JsonObject BuildLegacySchema(Type type, HashSet<Type> visited, int maxDepth, int depth)
-        {
-            if (type == null || depth > maxDepth)
-            {
-                return null; // NOSONAR
-            }
-
-            // Nullable<T> 一律以底層型別產生 schema；父層負責不將其列入 required。
-            Type underlyingType = Nullable.GetUnderlyingType(type);
-            if (underlyingType != null)
-            {
-                return BuildLegacySchema(underlyingType, visited, maxDepth, depth);
-            }
-
-            var schema = new JsonObject();
-
-            if (type == typeof(string) || type == typeof(char))
-            {
-                schema["type"] = "string";
-            }
-            else if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte) ||
-                     type == typeof(uint) || type == typeof(ulong) || type == typeof(ushort) || type == typeof(sbyte))
-            {
-                schema["type"] = "integer";
-            }
-            else if (type == typeof(float) || type == typeof(double) || type == typeof(decimal))
-            {
-                schema["type"] = "number";
-            }
-            else if (type == typeof(bool))
-            {
-                schema["type"] = "boolean";
-            }
-            else if (type.IsEnum)
-            {
-                schema["type"] = "string";
-                var names = new JsonArray();
-                foreach (string name in Enum.GetNames(type))
-                {
-                    names.Add(name);
-                }
-                schema["enum"] = names;
-            }
-            // Dictionary 需以開放式 map 表示，否則反射會落入自訂物件分支而產生空 properties。
-            // 必須排在集合分支之前：Dictionary<,> 同時也實作 ICollection<KeyValuePair<,>>。
-            else if (IsSupportedDictionary(type, out Type keyType, out Type valueType))
-            {
-                schema["type"] = "object";
-
-                // JSON 物件的鍵一律是字串，因此只有 string 或 enum 鍵能忠實表示成 map。
-                if (keyType == typeof(string) || keyType.IsEnum)
-                {
-                    JsonObject valueSchema = BuildLegacySchema(valueType, visited, maxDepth, depth + 1);
-                    if (valueSchema != null)
-                    {
-                        schema["additionalProperties"] = valueSchema;
-                    }
-                }
-            }
-            else if (GetSequenceElementType(type) is Type elementType)
-            {
-                schema["type"] = "array";
-                JsonObject itemSchema = BuildLegacySchema(elementType, visited, maxDepth, depth + 1);
-                if (itemSchema == null) return null; // NOSONAR
-                schema["items"] = itemSchema;
-            }
-            else
-            {
-                // 循環引用偵測：若該型別已在目前遞迴路徑上，回傳 null 讓父層略過此成員。
-                if (!visited.Add(type))
-                {
-                    return null; // NOSONAR
-                }
-
-                try
-                {
-                    schema["type"] = "object";
-                    var properties = new JsonObject();
-                    var required = new JsonArray();
-
-                    // 屬性與欄位的處理完全相同（產生 schema、加入 properties、非 Nullable<T> 才列入 required），
-                    // 差別只在如何取得成員的型別與名稱。
-                    void AddMember(string memberName, Type memberType)
-                    {
-                        JsonObject memberSchema = BuildLegacySchema(memberType, visited, maxDepth, depth + 1);
-                        if (memberSchema == null) return;
-
-                        properties[memberName] = memberSchema;
-                        if (Nullable.GetUnderlyingType(memberType) == null)
-                        {
-                            required.Add(memberName);
-                        }
-                    }
-
-                    foreach (PropertyInfo prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                    {
-                        if (prop.CanRead && prop.CanWrite && prop.GetIndexParameters().Length == 0)
-                        {
-                            AddMember(prop.Name, prop.PropertyType);
-                        }
-                    }
-
-                    foreach (FieldInfo field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-                    {
-                        if (!field.IsLiteral && !field.IsInitOnly)
-                        {
-                            AddMember(field.Name, field.FieldType);
-                        }
-                    }
-
-                    schema["properties"] = properties;
-                    schema["required"] = required;
-                    schema["additionalProperties"] = false;
-                }
-                finally
-                {
-                    visited.Remove(type);
-                }
-            }
-
-            return schema;
-        }
-        #pragma warning restore S3776
-
-        private static bool IsSupportedDictionary(Type type, out Type keyType, out Type valueType)
-        {
-            keyType = null;
-            valueType = null;
-
-            if (!type.IsGenericType) return false;
-
-            Type definition = type.GetGenericTypeDefinition();
-            if (definition != typeof(Dictionary<,>) &&
-                definition != typeof(IDictionary<,>) &&
-                definition != typeof(IReadOnlyDictionary<,>))
-            {
-                return false;
-            }
-
-            Type[] args = type.GetGenericArguments();
-            keyType = args[0];
-            valueType = args[1];
-            return true;
-        }
-
-        private static Type GetSequenceElementType(Type type)
-        {
-            if (type.IsArray) return type.GetElementType();
-
-            if (type.IsGenericType)
-            {
-                Type definition = type.GetGenericTypeDefinition();
-                if (definition == typeof(List<>) ||
-                    definition == typeof(IList<>) ||
-                    definition == typeof(IReadOnlyList<>) ||
-                    definition == typeof(ICollection<>))
-                {
-                    return type.GetGenericArguments()[0];
-                }
-            }
-
-            return null; // NOSONAR
         }
 
         private static JsonObject CreateEmptyObjectSchema()

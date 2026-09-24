@@ -21,26 +21,9 @@ namespace RimLLM_Framework.Tests
     [TestFixture]
     public class SchemaBuilderTests
     {
-        [TearDown]
-        public void ResetForceLegacy()
-        {
-            RimLLMSchemaBuilder.ForceLegacy = false;
-        }
-
         // -----------------------------------------------------------------
         // 契約對齊：STJ 產 schema、STJ 反序列化
         // -----------------------------------------------------------------
-
-        [Test]
-        public void ManagedExporterIsUsedWithoutFallingBackToLegacy()
-        {
-            foreach (Type type in SampleTypes())
-            {
-                ClassicAssert.IsFalse(
-                    RimLLMSchemaBuilder.Build(type).UsedLegacyFallback,
-                    type.Name + " 不應觸發降級 —— MEAI exporter 在此環境應可用。");
-            }
-        }
 
         // -----------------------------------------------------------------
         // 契約對齊：STJ 產 schema、STJ 反序列化
@@ -284,19 +267,16 @@ namespace RimLLM_Framework.Tests
         /// <summary>
         /// 遞迴型別的 schema 體積是每次結構化請求都要付的 prompt token，
         /// 因此循環截斷點退步（例如改回只靠 JSON pointer 偵測）必須被擋下來。
+        /// 上限取目前體積的約 1.5 倍，只擋量級上的退步。
         /// </summary>
+        private const int MaxRecursiveSchemaLength = 700;
+
         [Test]
         public void RecursiveSchemaStaysCompact()
         {
-            int managed = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)).Length;
+            int size = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)).Length;
 
-            RimLLMSchemaBuilder.ForceLegacy = true;
-            int legacy = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)).Length;
-
-            ClassicAssert.Less(
-                managed,
-                legacy * 2,
-                "遞迴型別的 schema 不應比舊實作大上一個量級。managed=" + managed + " legacy=" + legacy);
+            ClassicAssert.Less(size, MaxRecursiveSchemaLength, "遞迴型別的 schema 體積退步。size=" + size);
         }
 
         /// <summary>
@@ -335,20 +315,6 @@ namespace RimLLM_Framework.Tests
         // -----------------------------------------------------------------
         // 型別對照
         // -----------------------------------------------------------------
-
-        [Test]
-        [Explicit("診斷用：比較新舊管線的 schema 體積（每次結構化請求都要送出，直接反映 token 成本）")]
-        public void DumpSchemaSizeComparison()
-        {
-            foreach (Type type in SampleTypes())
-            {
-                RimLLMSchemaBuilder.ForceLegacy = false;
-                int managed = RimLLMSchemaBuilder.BuildJson(type).Length;
-                RimLLMSchemaBuilder.ForceLegacy = true;
-                int legacy = RimLLMSchemaBuilder.BuildJson(type).Length;
-                TestContext.WriteLine(type.Name + ": managed=" + managed + " legacy=" + legacy);
-            }
-        }
 
         [Test]
         [Explicit("診斷用：印出 Stage A 的原始輸出")]
@@ -421,26 +387,8 @@ namespace RimLLM_Framework.Tests
 
 
         // -----------------------------------------------------------------
-        // 降級路徑與快取
+        // 快取
         // -----------------------------------------------------------------
-
-        [Test]
-        public void LegacyFallbackProducesUsableSchema()
-        {
-            RimLLMSchemaBuilder.ForceLegacy = true;
-
-            foreach (Type type in SampleTypes())
-            {
-                RimLLMSchemaResult result = RimLLMSchemaBuilder.Build(type);
-                var schema = JsonNode.Parse(result.Json).AsObject();
-
-                ClassicAssert.AreEqual("object", schema["type"].GetValue<string>(), type.Name + " 降級後仍應產生可用 schema。");
-                ClassicAssert.IsTrue(result.UsedLegacyFallback);
-                ClassicAssert.IsFalse(
-                    result.StrictCompatible,
-                    "降級產物的 required 語意是舊的（Nullable 不列入），不得再宣告相容於 strict。");
-            }
-        }
 
         [Test]
         public void ResultCacheReturnsSameImmutableInstance()

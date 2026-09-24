@@ -108,29 +108,12 @@ namespace RimLLM_Framework.Tests
             Assert.Throws<ArgumentNullException>(() => RimLLMSchemaBuilder.Build(null));
             ClassicAssert.IsFalse(RimLLMSchemaBuilder.ContainsOpenEndedMap(null));
 
-            // ForceLegacy toggle
-            bool originalLegacy = RimLLMSchemaBuilder.ForceLegacy;
-            try
-            {
-                RimLLMSchemaBuilder.ForceLegacy = true;
-                ClassicAssert.IsTrue(RimLLMSchemaBuilder.ForceLegacy);
+            var normalResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
+            ClassicAssert.IsNotNull(normalResult);
 
-                var legacyResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
-                ClassicAssert.IsNotNull(legacyResult);
-                ClassicAssert.IsTrue(legacyResult.UsedLegacyFallback);
-
-                RimLLMSchemaBuilder.ForceLegacy = false;
-                var normalResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
-                ClassicAssert.IsNotNull(normalResult);
-
-                // Cache hit check
-                var cachedResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
-                ClassicAssert.AreSame(normalResult, cachedResult);
-            }
-            finally
-            {
-                RimLLMSchemaBuilder.ForceLegacy = originalLegacy;
-            }
+            // Cache hit check
+            var cachedResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
+            ClassicAssert.AreSame(normalResult, cachedResult);
         }
 
         private class SimpleTestDataStructure

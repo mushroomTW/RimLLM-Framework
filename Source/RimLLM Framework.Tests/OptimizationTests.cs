@@ -11,7 +11,7 @@ using RimLLM_Framework.Providers;
 namespace RimLLM_Framework.Tests
 {
     /// <summary>
-    /// 針對回應快取、健康帳本粒度、重試退避、成本路由與新增錯誤碼的行為測試。
+    /// 針對健康帳本粒度、重試退避、成本路由與新增錯誤碼的行為測試。
     /// </summary>
     [TestFixture]
     public class OptimizationTests
@@ -192,7 +192,7 @@ namespace RimLLM_Framework.Tests
                 LLMErrorMapper.CreateException(400, "missing required field 'messages'").Error);
         }
 
-        // ---------- 回應快取 ----------
+        // ---------- 共用輔助 ----------
 
         private static List<ChatMessage> NewMessages(string prompt = "hello")
         {
@@ -201,193 +201,6 @@ namespace RimLLM_Framework.Tests
                 new ChatMessage(ChatRole.System, "sys"),
                 new ChatMessage(ChatRole.User, prompt)
             };
-        }
-
-        private static RimLLMResponseCacheChatClient BuildCache(
-            MockSettings settings,
-            Func<IEnumerable<ChatMessage>, ChatOptions, Task<ChatResponse>> handler)
-        {
-            return new RimLLMResponseCacheChatClient(
-                new MockCustomChatClient { GetResponseHandler = handler },
-                settings,
-                new RimLLMResponseCacheStore());
-        }
-
-        [Test]
-        public async Task ResponseCacheReplaysIdenticalRequestsOnlyWhenEnabled()
-        {
-            var settings = new MockSettings { EnableResponseCache = false, ResponseCacheTtlMinutes = 30f };
-            int calls = 0;
-            var cache = BuildCache(settings, (msgs, opts) =>
-            {
-                calls++;
-                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "cached-text")));
-            });
-
-            await cache.GetResponseAsync(NewMessages());
-            await cache.GetResponseAsync(NewMessages());
-            ClassicAssert.AreEqual(2, calls, "關閉時不應命中，兩次都要打到內層");
-
-            settings.EnableResponseCache = true;
-            await cache.GetResponseAsync(NewMessages());
-            ClassicAssert.AreEqual(3, calls, "關閉期間不應存入，開啟後第一次仍要打到內層");
-
-            ChatResponse replayed = await cache.GetResponseAsync(NewMessages());
-            ClassicAssert.AreEqual(3, calls, "第二次相同請求應由快取回應，不再打 API");
-            ClassicAssert.AreEqual("cached-text", replayed.Text);
-        }
-
-        [Test]
-        public async Task ResponseCacheIsBypassedWhenToolsArePresent()
-        {
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
-            int calls = 0;
-            var cache = BuildCache(settings, (msgs, opts) =>
-            {
-                calls++;
-                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "tool-result")));
-            });
-
-            var withTools = new ChatOptions
-            {
-                Tools = new List<AITool> { AIFunctionFactory.Create(() => "result", "Dummy") }
-            };
-
-            await cache.GetResponseAsync(NewMessages(), withTools);
-            await cache.GetResponseAsync(NewMessages(), withTools);
-
-            // 帶 Tools 的請求通常具有副作用或查詢即時狀態，絕不可重播。
-            ClassicAssert.AreEqual(2, calls);
-        }
-
-        [Test]
-        public async Task ResponseCacheDoesNotStoreEmptyResults()
-        {
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
-            int calls = 0;
-            var cache = BuildCache(settings, (msgs, opts) =>
-            {
-                calls++;
-                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, string.Empty)));
-            });
-
-            await cache.GetResponseAsync(NewMessages());
-            await cache.GetResponseAsync(NewMessages());
-
-            ClassicAssert.AreEqual(2, calls, "空回應不可寫入快取，否則失敗的空結果會被重播");
-        }
-
-        [Test]
-        public async Task ResponseCacheEntriesExpireAfterTheirTtl()
-        {
-            // 0.002 分鐘 = 120 毫秒
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 0.002f };
-            int calls = 0;
-            var cache = BuildCache(settings, (msgs, opts) =>
-            {
-                calls++;
-                return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "stale")));
-            });
-
-            await cache.GetResponseAsync(NewMessages());
-            await cache.GetResponseAsync(NewMessages());
-            ClassicAssert.AreEqual(1, calls);
-
-            await Task.Delay(300);
-            await cache.GetResponseAsync(NewMessages());
-            ClassicAssert.AreEqual(2, calls, "過期後必須重新打 API");
-        }
-
-        [Test]
-        public async Task CacheHitKeepsResponseMetadata()
-        {
-            // 回歸測試：快取先前只存回應文字，命中時 ModelId 與 Usage 全部遺失，
-            // 呼叫端因此看到空的 ModelId 與全零的用量——與「真的打了 API 但供應商
-            // 沒回傳模型名」無從分辨。
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
-            var cache = BuildCache(settings, (msgs, opts) => Task.FromResult(
-                new ChatResponse(new ChatMessage(ChatRole.Assistant, "generated"))
-                {
-                    ModelId = "Counting:m1",
-                    Usage = new UsageDetails { InputTokenCount = 11, OutputTokenCount = 22 }
-                }));
-
-            ChatResponse first = await cache.GetResponseAsync(NewMessages());
-            ChatResponse second = await cache.GetResponseAsync(NewMessages());
-
-            ClassicAssert.AreEqual("Counting:m1", second.ModelId, "快取重播必須保留 ModelId");
-            ClassicAssert.AreEqual(11, second.Usage.InputTokenCount);
-            ClassicAssert.AreEqual(22, second.Usage.OutputTokenCount);
-            ClassicAssert.AreEqual(first.ModelId, second.ModelId);
-        }
-
-        [Test]
-        public void ResponseCacheReplaysStreamingResponses()
-        {
-            var settings = new MockSettings { EnableResponseCache = true, ResponseCacheTtlMinutes = 30f };
-            int calls = 0;
-            var cache = new RimLLMResponseCacheChatClient(
-                new MockCustomChatClient
-                {
-                    StreamHandler = (msgs, opts, onChunk) =>
-                    {
-                        calls++;
-                        onChunk("mock-");
-                        onChunk("stream");
-                        return Task.CompletedTask;
-                    }
-                },
-                settings,
-                new RimLLMResponseCacheStore());
-
-            string first = CollectStream(cache);
-            string second = CollectStream(cache);
-
-            ClassicAssert.AreEqual("mock-stream", first);
-            ClassicAssert.AreEqual("mock-stream", second, "重播的內容必須與原本的串流一致");
-            ClassicAssert.AreEqual(1, calls, "第二次相同的串流請求應由快取重播，不再打 API");
-        }
-
-        private static string CollectStream(IChatClient client)
-        {
-            var builder = new System.Text.StringBuilder();
-            var enumerator = client.GetStreamingResponseAsync(NewMessages()).GetAsyncEnumerator();
-            try
-            {
-                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
-                {
-                    builder.Append(enumerator.Current.Text);
-                }
-            }
-            finally
-            {
-                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            }
-            return builder.ToString();
-        }
-
-        [Test]
-        public void ResponseCacheStorePrunesWhenCapacityExceeded()
-        {
-            using (var store = new RimLLMResponseCacheStore())
-            {
-                // 寫入 260 筆 (上限為 256)
-                for (int i = 0; i < 260; i++)
-                {
-                    store.Store($"k{i}", new ChatResponse(new ChatMessage(ChatRole.Assistant, $"resp{i}")), 30f);
-                }
-
-                // 最新寫入的應該仍存在
-                ClassicAssert.IsTrue(store.TryGet("k259", out ChatResponse latest));
-                ClassicAssert.AreEqual("resp259", latest.Text);
-
-                // 最早寫入的應該已被容量淘汰
-                ClassicAssert.IsFalse(store.TryGet("k0", out _));
-
-                // null 或無效參數安全防護
-                store.Store(null, null, 0);
-                ClassicAssert.IsFalse(store.TryGet(null, out _));
-            }
         }
 
 
@@ -502,74 +315,6 @@ namespace RimLLM_Framework.Tests
             Assert.ThrowsAsync<RimLLMException>(async () => await second.GetResponseAsync(NewMessages()));
         }
 
-        [Test]
-        public void ResponseCacheKeyCoversEveryFieldThatChangesTheOutput()
-        {
-            string baseKey = RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions());
-
-            ClassicAssert.AreEqual(
-                baseKey,
-                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions()),
-                "相同請求必須得到相同鍵");
-            ClassicAssert.AreNotEqual(
-                baseKey,
-                RimLLMResponseCacheKey.Build(NewMessages("different prompt"), new ChatOptions()));
-            ClassicAssert.AreNotEqual(
-                baseKey,
-                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Temperature = 0.7f }));
-            ClassicAssert.AreNotEqual(
-                baseKey,
-                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { ModelId = "openai:gpt-4o" }));
-
-            var withResponseType = new RimLLMChatOptions
-            {
-                AdditionalProperties = new AdditionalPropertiesDictionary
-                {
-                    [RimLLMChatOptions.ResponseTypeKey] = typeof(string)
-                }
-            };
-            ClassicAssert.AreNotEqual(baseKey, RimLLMResponseCacheKey.Build(NewMessages(), withResponseType));
-
-            // ModId 根本不在 options 上，Priority 只影響排隊順序，兩者都不影響模型輸出，
-            // 因此不可改變快取鍵——否則不同 Mod 的相同請求會各打一次 API。
-            ClassicAssert.AreEqual(
-                baseKey,
-                RimLLMResponseCacheKey.Build(NewMessages(), new RimLLMChatOptions { Priority = 5 }),
-                "Priority 不可改變快取鍵");
-        }
-
-        [Test]
-        public void ResponseCacheKeyCoversPassThroughSamplingFields()
-        {
-            // 這些欄位以前被 BuildOptions 整組丟棄，所以不進鍵值也無妨；
-            // 現在它們會原樣送達 provider 並改變輸出，不進鍵值就會造成快取毒化
-            // ——兩個只有 Seed 不同的請求會拿到同一份回應。
-            string baseKey = RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions());
-
-            ClassicAssert.AreNotEqual(
-                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { TopP = 0.5f }));
-            ClassicAssert.AreNotEqual(
-                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { TopK = 20 }));
-            ClassicAssert.AreNotEqual(
-                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { FrequencyPenalty = 0.3f }));
-            ClassicAssert.AreNotEqual(
-                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { PresencePenalty = 0.4f }));
-            ClassicAssert.AreNotEqual(
-                baseKey, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Seed = 1234L }));
-            ClassicAssert.AreNotEqual(
-                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Seed = 1234L }),
-                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Seed = 5678L }),
-                "只有 Seed 不同的兩個請求不可共用快取");
-            ClassicAssert.AreNotEqual(
-                baseKey,
-                RimLLMResponseCacheKey.Build(
-                    NewMessages(), new ChatOptions { StopSequences = new List<string> { "STOP" } }));
-            // MEAI 的 OpenAI client 會把 Instructions 當 system message 送出，同樣會改變輸出。
-            ClassicAssert.AreNotEqual(
-                baseKey,
-                RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions { Instructions = "answer in haiku" }));
-        }
-
         // ---------- OpenAI Patch 傳播器停用與工廠輔助測試 ----------
 
         [Test]
@@ -681,20 +426,6 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(tracker.GetModelLevel("openai", "gpt-4o"), tracker.GetModelLevel("OpenAI", "GPT-4o"));
             ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelLow, tracker.GetModelLevel("local", "anything"));
             ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelMedium, tracker.GetModelLevel("openai", "some-unknown-model-xyz"));
-        }
-
-        [Test]
-        public void ResponseCacheKeyIsStableLowercaseHex()
-        {
-            string key = RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions());
-
-            ClassicAssert.AreEqual(64, key.Length);
-            foreach (char c in key)
-            {
-                bool isHex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-                ClassicAssert.IsTrue(isHex, $"快取鍵必須為小寫十六進位，實際含 '{c}'");
-            }
-            ClassicAssert.AreEqual(key, RimLLMResponseCacheKey.Build(NewMessages(), new ChatOptions()));
         }
 
         [Test]

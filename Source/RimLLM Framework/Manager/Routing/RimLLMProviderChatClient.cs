@@ -373,8 +373,12 @@ namespace RimLLM_Framework.Manager
             if (provider?.Capabilities?.SupportsFunctionCalling == true) return options;
             stripped = true;
 
-            RimLLMLog.Warning(
-                $"[RimLLM] Provider {provider?.ProviderId} does not support native tool calling; {options.Tools.Count} tool(s) were stripped from this request.");
+            // 每次請求都會觸發，受詳細日誌開關控制；呼叫端另有 WereToolsStripped 標記可判斷。
+            if (RimLLMLog.Enabled)
+            {
+                RimLLMLog.Warning(
+                    $"[RimLLM] Provider {provider?.ProviderId} does not support native tool calling; {options.Tools.Count} tool(s) were stripped from this request.");
+            }
 
             ChatOptions clone = options.Clone();
             clone.Tools = null;

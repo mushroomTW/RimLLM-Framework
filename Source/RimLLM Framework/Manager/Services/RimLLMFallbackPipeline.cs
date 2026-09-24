@@ -44,11 +44,6 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 共用的 Fallback Chain 執行核心。
-        /// 依序遍歷符合資格的供應商條目，對每個條目套用相同的重試策略，
-        /// 並統一處理取消檢查、健康帳本記錄與用量統計。
-        /// </summary>
-        /// <summary>
         /// 解析出本次請求可用的候選，並依路由策略排序。
         /// </summary>
         /// <remarks>
