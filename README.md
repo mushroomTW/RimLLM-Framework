@@ -27,10 +27,9 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 * [Installation](#-installation) — reference the assemblies without shipping duplicates
 * [SDK Usage](#-sdk-usage) — chat, streaming, structured output, embeddings, error handling
-* [Features](#-features) — what the framework does for you
-* [Architecture](#️-architecture) — how it does it, and why
-* [Security notes](#-security-notes) — what each mechanism actually protects against
-* [License](#-license) · [Unit tests and verification](#-unit-tests-and-verification)
+* [Features](#-features) — what the framework does for you ([full details](Documentation/FEATURES.md))
+* [Architecture, security and testing](Documentation/ARCHITECTURE.md) — how it does it, why, and what each security mechanism protects against
+* [License](#-license)
 
 ---
 
@@ -128,6 +127,8 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 Message lists and `ChatOptions` behave exactly as MEAI documents them. The one framework-specific rule: leave `ModelId` unset and the player's configured fallback chain decides which provider and model actually runs — set it to a `"Provider:Model"` entry to pin one. A pinned model is always tried first, whatever the routing strategy and whether or not it is already on the chain; the rest of the chain only runs if it fails. `RimLLMProvider.GetFallbackChain()` returns a copy of the player's chain in its configured order, e.g. to offer a model picker.
 
+`RimLLMProvider.GetContextWindow("Provider:Model")` returns the model's context window in tokens, e.g. to trim history at a percentage of it. A value the player typed on the fallback chain wins; otherwise it is what was recorded the last time the player refreshed that provider's model list — the provider's own API first (OpenRouter, Groq, Gemini), then the [models.dev](https://models.dev) database for the rest. It returns `null` when the size is unknown or the argument is not an explicit `"Provider:Model"` — it does not guess which model the fallback chain will pick, so decide your own default for `null`.
+
 Two knobs get a framework default when you leave them unset: `MaxOutputTokens` becomes **1024** and `Temperature` **0.7**. Set `MaxOutputTokens` yourself for anything long — batch translations, multi-character dialogue, structured output with many fields — or the reply is cut off at 1024 tokens.
 
 The `ChatResponse` you get back is the provider's own, handed over unchanged apart from `ModelId`, which is rewritten to `"Provider:Model"` so you can tell who actually answered after a failover. `ResponseId`, `CreatedAt`, `ConversationId`, `Usage`, `FinishReason`, `RawRepresentation` and `AdditionalProperties` are whatever the provider set — including `null`. A `null` `Usage` means the provider reported no token counts, not that the call was free.
@@ -158,11 +159,11 @@ PawnIncidentDecision decision = await client.GetResponseObjectAsync<PawnIncident
 ```
 
 > [!NOTE]
-> Use this rather than MEAI's own `GetResponseAsync<T>`. MEAI's raw schema shape (union types, `$ref`, unbounded nesting) is rejected by strict structured output on several providers, and it has no JSON-repair path. RimLLM drives the same underlying `JsonSchemaExporter` but adds a normalization layer and a single OpenAI-compatible dialect on top. See [Architecture §6](#6-official-sdks-and-provider-responsibilities).
+> Use this rather than MEAI's own `GetResponseAsync<T>`. MEAI's raw schema shape (union types, `$ref`, unbounded nesting) is rejected by strict structured output on several providers, and it has no JSON-repair path. RimLLM drives the same underlying `JsonSchemaExporter` but adds a normalization layer and a single OpenAI-compatible dialect on top. See [Architecture §6](Documentation/ARCHITECTURE.md#6-official-sdks-and-provider-responsibilities).
 
 ### Native Tool Calling (Function Calling)
 
-RimLLM Framework provides native support for Microsoft.Extensions.AI Tool Calling (`AIFunction`, `ChatOptions.Tools`, `FunctionCallContent`). Every built-in provider speaks the OpenAI protocol, so tool definitions and calls use one wire shape everywhere. `AIFunctionFactory.Create` works in-game: the framework ships the `netstandard2.0` build of `Microsoft.Extensions.AI.Abstractions`, which is what keeps MEAI's schema generation off the `System.ComponentModel.DataAnnotations` assembly RimWorld's Mono does not have (see [Architecture §6](#6-official-sdks-and-provider-responsibilities)).
+RimLLM Framework provides native support for Microsoft.Extensions.AI Tool Calling (`AIFunction`, `ChatOptions.Tools`, `FunctionCallContent`). Every built-in provider speaks the OpenAI protocol, so tool definitions and calls use one wire shape everywhere. `AIFunctionFactory.Create` works in-game: the framework ships the `netstandard2.0` build of `Microsoft.Extensions.AI.Abstractions`, which is what keeps MEAI's schema generation off the `System.ComponentModel.DataAnnotations` assembly RimWorld's Mono does not have (see [Architecture §6](Documentation/ARCHITECTURE.md#6-official-sdks-and-provider-responsibilities)).
 
 #### 1. Auto-Invoking Mode with Unity Main-Thread Safety (Recommended)
 
@@ -295,132 +296,26 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
 
 ## 📖 Features
 
-1. **Multi-provider support**
-   * Native support for Google **Gemini**, **OpenAI**, **DeepSeek**, **Groq**, **Grok (xAI)**, **Z.ai**, **OpenRouter**, **Kimi**, **MiniMax**, **Qwen** and **NVIDIA**.
-   * Supports **OpenAI-compatible APIs**, so you can configure any local or third-party compatible endpoint (LM Studio, Ollama, LocalAI, vLLM, and so on). The default endpoint is `http://localhost:1234/v1` and API keys are supported.
-   * **Kimi**, **MiniMax** and **Qwen** offer a one-click "use China-specific endpoint" toggle (off by default) for better connectivity.
-2. **Failover and model fallback**
-   * **Client-side fallback chain**: configure a chain made up of a primary model and multiple exact fallback models. When the current model hits a timeout, rate limit (HTTP 429) or connection error, the framework switches down the chain seamlessly. The UI produces entries in `Provider:Model` form; the framework still parses bare provider entries for compatibility and uses that provider's default model.
-   * **OpenRouter server-side fallback**: an OpenRouter entry may name several comma-separated models — set `ChatOptions.ModelId` to `"OpenRouter:model-a, model-b, model-c"` (a fallback-chain entry accepts the same form). The provider then sends OpenRouter's `models` array instead of a single `model` field, moving the choice among those models to OpenRouter's side; a single model name still sends a plain `model`. Pinned by `TestOpenRouterFallbackPayload`. Note the settings UI builds entries from the cached model list one model at a time, so this multi-model form comes from calling code rather than from the fallback-chain editor.
-   * `Retry-After` is honoured in both forms RFC 7231 allows — delay-seconds and HTTP-date — on every path.
-   * **HTTP 402 is not retried.** A 402 means the account balance is gone; a balance does not come back within a backoff window, so the chain moves to the next candidate immediately instead of burning the retry budget first. A 429 that merely mentions "quota" (Gemini's per-minute limits) is still retried with backoff.
-   * **Backoff does not hold a concurrency slot.** The global `MaxConcurrentRequests` slot is taken per attempt, right around the actual API call, so a request waiting out an exponential backoff (up to 60 s) does not keep other mods' requests queued behind it.
-   * **Exponential backoff between retries**: the wait doubles per attempt (`RetryDelay × 2ⁿ`) with ±20% jitter, capped at 60 s. Retrying a rate limit at a fixed interval just hits the same wall again and burns the retry budget for nothing; a server-supplied `Retry-After` still wins when it asks for longer.
-   * **Cooldowns are per provider *and* model.** The health ledger is keyed on `Provider:Model`. A chain often holds several models from one provider (three OpenRouter models, say), and keying on the provider alone let one rate-limited model take its healthy siblings down with it.
-   * **One request records one failure.** Every retry of a single request counts as one failure against the health ledger. Recording each attempt meant a single network blip — 4 attempts at the default settings — pushed a healthy target straight past the circuit-breaker threshold and removed it for minutes.
-   * **Routing strategies**: `PriorityFailover` (chain order), `MinLatency`, `RoundRobin`, and `LowestCost`. `LowestCost` orders candidates by the model tier the framework already derives from API pricing, so no separate price table is needed. All sorts are stable, so equally ranked candidates keep the chain's own order. A model pinned through `ChatOptions.ModelId` sits outside the sort and stays first.
-3. **AES-256 settings encryption**
-   * API keys are stored with AES-256 symmetric encryption using a random key protected by the current OS user. New entries use the `v3:` format; `v1`/`v2` device-derived ciphertext is accepted only for migration and is replaced with the protected-key format on the next save.
-   * Keys are also **masked in the settings UI** by default (head and tail only, so you can still tell which key is which) with a per-row toggle to reveal one for editing. This is about a different leak path from encryption: screenshots, bug reports and live streams.
-   * Every provider (including Gemini) passes its API key via an HTTP header, never in the request URL, so keys don't end up in proxy or server access logs.
-   * RimWorld mods all run inside the same game process. This framework makes no claim to stop a malicious mod from reading memory, reflecting over public APIs, or otherwise bypassing in-process boundaries.
-4. **Polished scrollable multi-column GUI**
-   * Intuitive flow-grid of model chips with click menus for one-click Fallback chain addition or name copying, and full model names in tooltips.
-   * Provider menu with visual active-item accent bars and instant color-coded status badges ("Enabled", "Disabled", and "Missing Key").
-   * Chat test page upgraded to modern message bubble cards with distinct User vs AI roles, Markdig AST-driven Markdown rendering, one-click reply copying at the bottom of AI bubbles, and in-flight cancellation (Stop button). Each AI bubble also carries small bottom badges showing the model that actually answered (click to copy), elapsed latency, and token usage — exact when the provider reports usage, otherwise a marked `~` estimate — and these persist with the chat history.
-   * Embedding settings use the same three-column layout as the providers page: one sub-tab per embedding provider (Google Gemini, OpenAI, Ollama, OpenAI-compatible), each with its own model, endpoint and optional key, a preset list of known embedding models when nothing has been fetched yet, a local-server auto-detect button for the two local providers, and a "Test connection & embedding" button that reports vector dimensions and latency.
-   * Model selection dialog equipped with a one-click clear button and quick filter chips for popular model families (Gemini, GPT, Claude, DeepSeek, etc.).
-5. **Dedicated debug tab with logging control**
-   * A separate **Debug** settings tab with a "Detailed Logging" checkbox (off by default — every request writes a log line, and Verse caps the shared log at 10,000 messages), so mod developers and players can turn this mod's per-request log output on or off while troubleshooting. One-off warnings (such as an API key that can no longer be decrypted or a failed telemetry write) are always logged.
-6. **One-click connection test**
-   * Instant connectivity check that measures latency and validates the API key and model. Implemented once in the base class and shared by all providers.
-7. **Thread safety and main-thread Scribe dispatch**
-   * All settings dictionaries are guarded by locks against concurrent read/write from multiple threads.
-   * `RecordLog` updates the in-memory log on the Unity main thread through `RimLLMDispatcher`, while telemetry file writes (AES + JSON + disk) run on a background single-writer with a 15-second write throttle, preventing crashes and TPS spikes caused by background saves.
-8. **Reasoning models and chain-of-thought tagging**
-   * Native support for modern reasoning and thinking models such as **Gemini 3.7 Flash / 3.1 Pro (Thinking)**, **OpenAI GPT-5.6 Sol / GPT-5.5**, **DeepSeek-V4-Pro / Flash**, **Grok 4.6**, **Qwen3.8-Max**, **Kimi K3** and **GLM-5.3-Flash**.
-   * The framework normalizes the chain of thought returned by the API (`reasoning_content` in the OpenAI protocol) into MEAI's own `TextReasoningContent`, and hands it to you inside `ChatResponse.Messages` / `ChatResponseUpdate.Contents`. It is deliberately **not** folded into `ChatResponse.Text`: every caller that reads `Text` — structured output, JSON parsing — would otherwise have to strip tags out of it first. Filter on the content type to keep or drop it.
-   * The GUI chat test page builds `<think>...</think>` tags from those contents itself and renders the reasoning as grey italic text. That flattening is presentation, not protocol.
-   * **Reasoning effort control**: the default is "Auto", which leaves the service-side default in place (OpenAI's dynamic `reasoning_effort`, and so on). You can also disable reasoning entirely or set it manually to low / medium / high.
-   * **Effort reaches every provider and every model.** Each provider declares its own wire format instead of the framework guessing from model names: top-level `reasoning_effort` (OpenAI, Gemini via its OpenAI-compatible endpoint, xAI, Groq, MiniMax, NVIDIA, OpenAI-compatible endpoints), OpenRouter's unified `reasoning` object, `thinking: {type}` plus effort (DeepSeek, Z.ai, Kimi) and `enable_thinking` with `thinking_budget` (Qwen). Vocabulary differences are mapped per provider — Kimi only accepts low/high/max, and xAI cannot disable reasoning at all, so a disable request is ignored there rather than turned into a 400.
-   * **Unknown models are handled optimistically, then learned.** Model-name allow-lists rot: the framework previously sent effort only for names starting with `o1`/`o3`, silently dropping the setting everywhere else. Now the effort is sent unless the model is on a short deny-list of known non-reasoning families. If the service rejects the parameter with a 400, the framework records that `(provider, model)` pair, retries the request once without it, and stops sending it for the rest of the session. Missing a model therefore costs one retry instead of failing permanently. The same mechanism covers `temperature`, which reasoning models such as the GPT-5 series reject outright. A rejected *disable* request (`reasoning_effort: "none"` on a model that cannot switch reasoning off, such as the o-series) is remembered separately: only disable requests are dropped for that model afterwards, and explicit effort levels are still sent — the connection test always asks to disable reasoning, and previously that one 400 silently discarded the player's effort setting for the whole session. The memory is per game session, so a model that gains support later is retried after a restart.
-   * **Markdown rendering**: the chat test page uses the **Markdig AST parser** to convert model replies into Unity legacy rich text, so headings, bold, italics, lists, block quotes, links and code blocks render as structure instead of raw `**` and `` ` `` characters. The legacy IMGUI text system only understands `b`, `i`, `size`, `color`, `material` and `quad`, so structure with no matching tag (indentation, tables) is approximated with spacing and symbols. Underscore italics are deliberately unsupported because they collide with `snake_case` identifiers.
-9. **Context caching and prompt caching**
-   * Set `CachedContext` in `RimLLMChatOptions` and the framework merges it into the system message, so providers with server-side prompt caching (OpenAI, and Gemini through its OpenAI-compatible endpoint) discount repeated prefixes — significantly reducing input token cost and latency for high-frequency repeated requests.
-   * **Quantified savings**: usage tracking parses the cache-hit tokens returned by the API (OpenAI `cached_tokens` and equivalents) and applies the model's cached-input estimate from the rate table. These rates remain estimates; provider pricing can change.
-   * **Cost estimates come from a built-in rate table** (OpenAI, Gemini, DeepSeek, Groq, Qwen, Kimi, MiniMax, Z.ai and xAI models; dated variants such as `gpt-4o-2024-11-20` match their base model). An unknown model has **unknown cost**, not a known $0 rate: its tokens are still counted, but its cost is excluded from the displayed total and daily budget. The Debug tab shows how many requests in the current session lacked a rate. The daily budget checks accumulated estimated cost before a request and is not an exact spending cap.
-10. **Embedding SDK**
-    * The framework exposes public embedding functionality backed by Google Gemini, OpenAI, Ollama or an OpenAI-compatible endpoint. Other mods obtain a standard `IEmbeddingGenerator` through `RimLLMProvider.CreateEmbeddingGenerator` for semantic search and clustering.
-    * All online sources go through the OpenAI SDK: Google reaches Gemini through its official OpenAI-compatible endpoint, OpenAI uses its native endpoint; Ollama and self-hosted services use the OpenAI SDK's `EmbeddingClient` (Ollama via its OpenAI-compatible `/v1` endpoint). The *Embedding endpoint* field therefore takes a **service root address** such as `http://localhost:11434/v1`; a full `/embeddings` path is normalized automatically. Model, endpoint and key are stored per embedding provider, so switching the active provider does not lose the others' settings; a blank model or endpoint means "use the provider default", and a blank key inherits the matching chat provider's key.
-    * The settings page can fetch the available model list instead of requiring the name to be typed from memory, and the list is **filtered down to real embedding models** wherever the server can say which ones those are: Google via its native `/models` list (`supportedGenerationMethods` contains `embedContent`), Ollama via `/api/show` `capabilities`, LM Studio via `/api/v0/models` `type`, and OpenAI by its fixed `text-embedding-*` catalog naming. Only a generic OpenAI-compatible server with none of these falls back to the capability-less `/v1/models`, where the list is **ordered** (embedding-looking names first) rather than filtered — a server's model names may be user-defined, and filtering would hide valid choices; the status line says so when that happens. Manual entry always remains available for servers with no model list endpoint.
-    * Embeddings are a billed API, so they share the same anti-abuse checks as ordinary generation requests. Their keys use the same AES encryption as provider keys.
-11. **Native Tool Calling (Function Calling)**
-    * Full support for Microsoft.Extensions.AI Tool Calling (`AIFunction`, `ChatOptions.Tools`, `FunctionCallContent`, `FunctionResultContent`) on every provider through the shared OpenAI-protocol path.
-    * Main-thread safety scheduling via `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`, automatically dispatching tool execution onto the Unity main thread to prevent RimWorld threading crashes.
-12. **Third-party integration (force other mods through RimLLM)**
-    * The *Integrations* settings tab lists mods whose LLM traffic RimLLM can take over — currently **RimTalk** (`cj.rimtalk`), **Auto Translation** (`seohyeon.autotranslation`), and **Mod Compatibility Checker** (`modcompatchecker.main`). With the toggle on, all requests from the target mod are redirected into RimLLM's fallback chain, budget, throttling, and usage statistics. The target mod's own API key / model / endpoint settings are ignored while on; toggles take effect immediately without restarting and default to **off**.
-    * **RimTalk**: Prompt engineering is untouched; messages (including the "Output JSONL" instruction) are forwarded verbatim, and streamed text is fed chunk-by-chunk into RimTalk's own `JsonStreamParser`, so speech bubbles still appear line by line. Reasoning content is kept out of JSONL, and thinking is disabled for dialogue speed.
-    * **Auto Translation**: Fully supports single-item and XML batch translations. Uses the batch-capable and placeholder-safe `Translator_OpenAICompatible` as a sentinel adapter; placeholder protection (`__PH0__`, etc.) and batch XML handling are fully retained. Current translator automatically synchronizes with the toggle, falling back to native engine with throttled warnings if offline.
-    * **Mod Compatibility Checker**: Intercepts `AIService.CallAPIWithTimeout` to route Harmony/XML conflict analysis and diagnostic prompts through RimLLM. Automatically overrides `IsAIConfigured` to `true` when takeover is active, allowing players to run AI analysis without entering duplicate API keys in the checker, while short-circuiting balance checks to avoid 401 errors.
-    * Pure Harmony, fail-soft everywhere; the framework implements none of the third-party interfaces and never references third-party types in base classes, interfaces, or fields, allowing the framework to safely load when the target mod is absent. If an API has drifted the hook fails to attach and the settings tab shows the reason.
-    * Adding another mod is a registry entry plus one `RimLLMCompatTarget` subclass; adapters compile against checked-in reference DLLs (`Source/Libs/`) that are not shipped.
+1. **Multi-provider support** — Gemini, OpenAI, DeepSeek, Groq, Grok, Z.ai, OpenRouter, Kimi, MiniMax, Qwen and NVIDIA, plus any OpenAI-compatible endpoint (LM Studio, Ollama, vLLM, …).
+2. **Failover and model fallback** — a player-configured fallback chain with exponential backoff, per-model cooldowns, four routing strategies and context window lookup.
+3. **Encrypted API keys** — AES-256 with a key protected by the current OS user; masked in the settings UI and never sent in request URLs.
+4. **Settings UI** — multi-column provider pages, a filterable model picker and a chat test page with Markdown rendering.
+5. **Debug tab** — a per-request logging toggle (off by default).
+6. **One-click connection test** — checks latency, the API key and the model.
+7. **Thread safety** — locked settings, main-thread dispatch and throttled background telemetry writes.
+8. **Reasoning models** — chain of thought delivered as MEAI `TextReasoningContent`; reasoning effort control on every provider.
+9. **Prompt caching** — `CachedContext` for server-side caching, with cache-hit savings shown in the usage stats.
+10. **Embedding SDK** — a standard `IEmbeddingGenerator` backed by Gemini, OpenAI, Ollama or an OpenAI-compatible endpoint.
+11. **Native tool calling** — MEAI `AIFunction` on every provider, with tools executed on the main thread.
+12. **Third-party integration** — route RimTalk, Auto Translation and Mod Compatibility Checker through RimLLM.
+
+Each item's detailed behavior, and the reasons behind it: **[Documentation/FEATURES.md](Documentation/FEATURES.md)**.
 
 ---
 
-## 🛠️ Architecture
+## 🛠️ Architecture, security and testing
 
-### 1. Unified interface and dispatch core (`IChatClient` / `IEmbeddingGenerator` and `RimLLMProvider`)
-
-* The framework exposes the standard Microsoft.Extensions.AI interfaces. Callers only work against `IChatClient` or `IEmbeddingGenerator` and never need to know which provider or model handled the request — `RimLLMManager` handles dispatch and fallback rotation.
-* `CreateChatClient` returns a stack of MEAI `DelegatingChatClient` middleware — reasoning-effort normalization, anti-abuse throttle, budget guard, priority queue — terminating in a `FailoverChatClient` that routes across the fallback chain. Every layer is `internal`. The only framework-specific types a consumer touches are `RimLLMProvider`, `RimLLMChatOptions`, `RimLLMException` and `LLMError`; everything else crossing the boundary is a MEAI type.
-* `modId` is a plain label, not a credential. It keys per-mod anti-abuse throttling and telemetry attribution, and requires no registration call.
-
-### 2. Unity main-thread dispatcher (`RimLLMDispatcher`)
-
-* Network requests run asynchronously on background thread-pool threads, but most Unity APIs and RimWorld logic are not thread safe — calling them from a background thread causes crashes or TPS spikes.
-* `RimLLMDispatcher` is a MonoBehaviour singleton that collects callbacks from background threads in a `ConcurrentQueue` and dispatches them back to the main thread during Unity's per-frame `Update`.
-
-### 3. Streaming bridge (`Channel<T>`)
-
-* The executor's streaming API is callback-shaped (`Func<ChatResponseUpdate, Task> onUpdateReceived`), while MEAI expects `IAsyncEnumerable<ChatResponseUpdate>`. The bridge between them is a **bounded** `System.Threading.Channels.Channel<T>` (64 updates); the producer awaits `WriteAsync`, so a slow consumer applies backpressure to the network read instead of buffering the whole stream in memory. The consumer side is `ChannelReader.ReadAllAsync()`.
-* Updates cross that bridge **verbatim** — the object the provider produced is the object you enumerate, with only `ModelId` rewritten. The framework no longer synthesizes a closing update of its own, so `UsageContent`, `FinishReason` and `ResponseId` are present exactly when the provider emits them.
-* Because `IAsyncEnumerable` reaches this project through the `bclasync` extern alias, C# 8 cannot compile an async iterator over it. `ReadAllAsync()` sidesteps that entirely: it returns the same assembly's `IAsyncEnumerable`, so no iterator has to be hand-written.
-* A thin wrapper unwraps `ChannelClosedException` so producer failures surface to callers as the original `RimLLMException`.
-* The executor's fallback token estimate is accumulated chunk by chunk as a running count instead of buffering the streamed text, so an abnormally large stream cannot grow memory without bound.
-
-### 4. Unified HTTP error mapping (`LLMErrorMapper`)
-
-* The rules that translate HTTP status codes into `LLMError` live in a single place, `LLMErrorMapper`, shared by the official SDK path (`ClientResultException`) and the embedding service.
-* `Retry-After` parsing lives there too, built on `RetryConditionHeaderValue`, so both the delay-seconds and HTTP-date forms are handled identically everywhere.
-* As a result, "which status codes are retryable" and "which indicate a rejected schema that should be downgraded" behave identically everywhere. Third-party custom providers can reference the same mapper.
-
-### 5. Fault-tolerant structured output (structured output & JSON repair)
-
-* Developers frequently need the model to return a specific JSON shape.
-* The built-in OpenAI-family providers prefer the official SDK's native structured output through `IChatClient`'s JSON Schema response format (Gemini included, via its OpenAI-compatible endpoint). The framework validates required members and null state before deserializing into the target C# object.
-* The schema itself is generated in a single OpenAI-compatible dialect — all members land in `required`, and optionality is expressed as a `["integer","null"]` union. See [Architecture §6](#6-official-sdks-and-provider-responsibilities).
-* The `RepairJson` fallback is only used when the provider has no native schema support, the service rejects the schema, or the model still returns malformed output. It handles Markdown fences (such as ` ```json `), unclosed brackets, trailing commas and JSON block extraction.
-
-### 6. Official SDKs and provider responsibilities
-
-* The main project and the test project stay on `net472`; RimWorld mods are not required to move to .NET 8. The official SDKs' dependency DLLs ship with the mod, and `ProviderSdkIntegrationTests` loads each one and reflects over it so a missing transitive assembly fails the build rather than the game. That check runs on real .NET Framework, so it cannot catch a type that exists there but is absent from RimWorld's Mono BCL — the `DataAnnotations` case below is exactly that failure mode, which is why it is pinned by inspecting the shipped assembly's reference list rather than by executing code. Although .NET Framework treats `System.ValueTuple` as a framework assembly, the build explicitly deploys its `4.0.5.0` DLL to avoid a `ReflectionTypeLoadException` when RimWorld's Mono reflects over MEAI.
-* **OpenAI** uses the `OpenAI` SDK `2.13.0` together with `Microsoft.Extensions.AI` / `Microsoft.Extensions.AI.OpenAI` `10.10.0`. The framework works around an OpenAI SDK 2.13.0 / `System.ClientModel` 1.15.0 bug (where the experimental `ChatCompletionOptions.Patch` API threw a `NullReferenceException` inside `PropagateSet`) via `OpenAIPatchExtensions.DisablePatchPropagators()`, safely enabling direct JSON Patch manipulation for `reasoning_effort`, `response_format`, `max_tokens`, and `models`. The built-in `OpenAIProvider` enters the shared manager through `ChatClient.AsIChatClient()`. Only endpoints that genuinely implement the OpenAI Chat Completions protocol (LM Studio, Ollama, vLLM, …) are suitable for the OpenAI-compatible adapter.
-* **Gemini** is served through Google's official OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai/`), so text, streaming, native schema, thinking and tool calling all reuse the shared `OpenAIProvider` implementation. Gemini is a thin `OpenAIProvider` subclass declaring only its endpoint and default test model — the same shape as the Groq or Qwen providers.
-* **Every built-in provider goes through the OpenAI SDK**: the whole family (OpenAI, Gemini, OpenRouter, DeepSeek, Groq, Grok, Z.ai, Kimi, MiniMax, Qwen, NVIDIA, OpenAICompatible) uses the `OpenAI` SDK `2.13.0` plus MEAI's `IChatClient`. Model listings use `OpenAIModelClient.GetModelsAsync()` rather than hand-rewriting the `/models` URL and parsing JSON.
-* **There is no raw HTTP path and no second SDK left anywhere.** Removing the last native `Google.GenAI` path deleted the framework's entire second transport, its auth handling, and the Google `cachedContents` explicit-cache machinery along with it: `CachedContext` is now always delivered inline in the system message, and caching is whatever the provider applies server-side to repeated prefixes.
-* **JSON Schema generation is `System.Text.Json`'s `JsonSchemaExporter` plus a normalization layer** (`RimLLMSchemaBuilder`), in three stages. **Stage A** exports full JSON Schema through the exporter. **Stage B** normalizes it into a restricted subset every provider accepts: `$ref` pointers are resolved and inlined, cycles and over-deep nesting are truncated, nullable unions collapse to a single `type`, and only a keyword whitelist survives. **Stage C** applies the single OpenAI-compatible dialect, expressing optional members as `["integer","null"]` unions.
-  * **`Microsoft.Extensions.AI.Abstractions` ships as its `netstandard2.0` build, not the `net462` build NuGet would pick for a `net472` project.** The `net462` build reads `[EmailAddress]`, `[Range]` and friends to enrich schemas, and that code references the framework assembly `System.ComponentModel.DataAnnotations`. RimWorld's Unity Mono does not ship that DLL, so in-game `AIFunctionFactory.Create` and `AIJsonUtilities.CreateJsonSchema` threw `TypeLoadException: Could not resolve type … 'EmailAddressAttribute' in assembly 'System.ComponentModel.DataAnnotations, Version=4.0.0.0'` — even for a parameterless tool, and invisible to unit tests, which run on a real .NET Framework that has it in the GAC. The `netstandard2.0` build excludes that whole block under `#if NET || NETFRAMEWORK`, depends only on `System.Text.Json`, and carries the same `10.10.0.0` assembly version, so `Microsoft.Extensions.AI` and `Microsoft.Extensions.AI.OpenAI` bind to it unchanged. The csproj references that build explicitly; `ShippedAbstractionsHasNoDataAnnotationsDependency` inspects the shipped DLL's reference list and fails if the selection ever reverts. Consuming mods are unaffected: they compile against the package and run against whatever the framework ships.
-  * **The exporter is still called directly rather than through MEAI's `AIJsonUtilities.CreateJsonSchema` wrapper.** It is the same engine MEAI uses internally; calling it directly hands Stage B raw exporter output with no wrapper rewrites in between, so normalization only has to handle one shape. The one thing MEAI adds that is still wanted, `[Description]`, is read by Stage B itself.
-  * Two consequences of using the exporter directly: it emits `{"enum":[…]}` with no `type` keyword for enums (Stage B infers the type from the enum values, otherwise every enum member would vanish), and it has no `description` concept at all (Stage B reads `[Description]` on both members and types).
-  * **Cycles are cut at the CLR type level, not at the JSON pointer level.** The exporter expands a recursive member one full round before emitting the `$ref` back to the ancestor, so pointer-based detection ships an extra layer — measured at 789 → 3119 characters for the recursive test type, paid in prompt tokens on every request. `RecursiveSchemaStaysCompact` guards this.
-  * **The nesting limit follows the strict structured-output cap.** OpenAI's strict structured output allows at most 5 levels of nesting (and 100 object properties in total); exceeding it gets the schema rejected and silently downgraded to prompt-based JSON, so the builder truncates at 5. Note the 100-property cap is **not** enforced yet.
-  * Raw exporter output cannot be sent as-is: nullable members come out as `["string","null"]` unions that must be normalized before sending, and `$ref` pointers must be resolved — both covered by unit tests rather than left as claims in this document.
-  * `$ref` is **not** only used for recursion — MEAI also emits it to deduplicate a repeated type, so blanket-truncating every `$ref` would silently delete ordinary members. The normalizer resolves the JSON pointer and only treats it as a cycle when it points at an ancestor on the current expansion path.
-  * **Every member is listed in `required`**; optionality is carried by the type instead. OpenAI's strict structured output requires `required` to cover all properties, so the previous behaviour (leaving `Nullable<T>` out of `required` while still sending `strict: true`) was rejected server-side and silently downgraded to prompt-based JSON.
-  * Schema generation and deserialization both run on System.Text.Json under a single shared contract (fields included, `[JsonIgnore]`/`[JsonPropertyName]` honoured, read-only members dropped), and a test asserts the member sets match. **Do not use a custom `JsonConverter` on structured-output types** — it changes the wire shape in a way the exporter cannot see. Child-mod migration note: Newtonsoft's `[JsonProperty("x")]` must become STJ's `[JsonPropertyName("x")]`, and `Newtonsoft.Json.JsonIgnoreAttribute` must become `System.Text.Json.Serialization.JsonIgnoreAttribute` — old attributes are silently ignored after the migration.
-  * `JsonSchemaExporter` has been verified to run under RimWorld's Mono runtime, so there is no reflection fallback; if it ever fails, the structured request throws instead of silently degrading. The Debug tab's structured-output self-test checks this in-game.
-* Provider-specific SDKs never appear in `RimLLMManager` or the public SDK façade; the shared layer depends only on `IChatClient`, `LLMProviderCapabilities` and the existing `ILLMProvider` API. API keys always come from the encrypted settings and are never written into source code or ordinary logs.
-
----
-
-## 🔐 Security notes
-
-To avoid misunderstanding, here is an honest description of what each security mechanism actually protects against:
-
-* **API key encryption uses an OS-protected per-user key.** New entries use AES-256 with a random storage key wrapped by the current user's OS protection. Legacy `v1`/`v2` entries still use the old device-derived material only so they can be migrated; new data never derives its storage key from a source-embedded seed or `deviceUniqueIdentifier`. This protects copied settings from decryption by another user or machine, but it **cannot** defend against code running in the same user context or the same RimWorld process (including other mods), where the framework must use the key to serve requests.
-* **`modId` is an attribution label, not authentication.** Per-mod throttling preserves fair use for cooperative mods, while a shared safety ceiling (ten times the configured per-mod window) counts every actual provider call, including tool-loop continuations, and prevents rotating labels from creating unlimited provider calls. Same-process mods are still not isolated, so do not treat the SDK as a hostile-mod sandbox.
-* **Keys never reach URLs or logs.** All providers pass keys via HTTP headers; log output always goes through `SanitizeForLog` and is length-truncated, and the device identifier is masked in diagnostic exports.
-* **Provider output is untrusted UI input.** ChatTest keeps only its own grey-thinking color wrapper as rich text; raw provider HTML tags are displayed literally before Markdown reaches Unity IMGUI.
+How the framework does all this, what each security mechanism actually protects against, and how to run the test suite: **[Documentation/ARCHITECTURE.md](Documentation/ARCHITECTURE.md)**.
 
 ---
 
@@ -429,28 +324,3 @@ To avoid misunderstanding, here is an honest description of what each security m
 This mod's source code is released under the **MIT License** — Copyright (c) 2026 **mushroomTW**. See [LICENSE](LICENSE).
 
 Redistributed dependency assemblies in `Assemblies/` keep their own licenses: Microsoft.Extensions.AI and the OpenAI .NET SDK are MIT. RimWorld's own assemblies belong to Ludeon Studios and are not redistributed here.
-
----
-
-## 🧪 Unit tests and verification
-
-The project ships with a full unit test suite in `Source/RimLLM Framework.Tests` (a standalone project alongside the main one) covering AES encryption/decryption, model fallback, JSON Schema generation (normalization and repair), HTTP error mapping, `Retry-After` parsing, `ChatOptions` cloning, streaming retries and budget control.
-
-> **Prerequisite**: the tests need RimWorld's `Assembly-CSharp` and Unity DLLs at run time. Those files are not redistributable, so a local RimWorld installation is required.
-> The default path is `C:\Program Files (x86)\Steam\steamapps\common\RimWorld\RimWorldWin64_Data\Managed`,
-> and can be overridden with the MSBuild property `RimWorldManagedDir` or the environment variable `RIMWORLD_MANAGED_DIR`.
-
-Build and test from the project root with the `dotnet` CLI:
-
-```bash
-# Restore and rebuild the solution
-dotnet build "Source/RimLLM Framework.slnx"
-
-# Run all NUnit unit tests
-dotnet test "Source/RimLLM Framework.Tests/RimLLM Framework.Tests.csproj"
-```
-
-> **Note**: the `Krafs.Rimworld.Ref` reference assemblies do not restrict the BCL surface, so it is possible to
-> write code that compiles but fails inside RimWorld's Mono runtime. Known examples: `Stack<T>` throws
-> `TypeLoadException`, and the parameterless `String.TrimEnd()` overload does not exist.
-> Always verify with an actual `dotnet test` run rather than relying on a successful build.

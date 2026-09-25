@@ -680,6 +680,15 @@ namespace RimLLM_Framework.Providers
         /// </summary>
         public virtual async Task<List<string>> FetchAvailableModelsAsync()
         {
+            return (await FetchModelCatalogAsync().ConfigureAwait(false)).Models;
+        }
+
+        /// <summary>
+        /// 取得模型清單，並順便從同一份 /models 回應讀出上下文上限。
+        /// SDK 只解析 <c>id</c>，上限欄位要從原始 JSON 取。
+        /// </summary>
+        internal virtual async Task<ModelCatalog> FetchModelCatalogAsync()
+        {
             string apiKey = Settings.GetActiveApiKey(ProviderId);
             string endpoint = NormalizeEndpoint(
                 Settings.GetEndpoint(ProviderId, DefaultEndpoint));
@@ -695,17 +704,19 @@ namespace RimLLM_Framework.Providers
                 string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
 
             var list = new List<string>();
+            Dictionary<string, int> contextWindows;
             try
             {
-                OpenAIModelCollection models = await new OpenAIClient(credential, options)
+                ClientResult<OpenAIModelCollection> result = await new OpenAIClient(credential, options)
                     .GetOpenAIModelClient()
                     .GetModelsAsync()
                     .ConfigureAwait(false);
 
-                foreach (OpenAIModel model in System.Linq.Enumerable.Where(models, m => !string.IsNullOrEmpty(m?.Id)))
+                foreach (OpenAIModel model in System.Linq.Enumerable.Where(result.Value, m => !string.IsNullOrEmpty(m?.Id)))
                 {
                     list.Add(model.Id);
                 }
+                contextWindows = ParseContextWindows(result.GetRawResponse()?.Content?.ToString());
             }
             catch (ClientResultException ex)
             {
@@ -720,7 +731,66 @@ namespace RimLLM_Framework.Providers
                     LLMError.InvalidResponse,
                     $"Failed to fetch {ProviderId} models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
             }
-            return list;
+            return new ModelCatalog(list, contextWindows);
+        }
+
+        /// <summary>
+        /// /models 回應中各家表示上下文上限的欄位名稱：
+        /// OpenRouter 用 <c>context_length</c>、Groq 用 <c>context_window</c>、vLLM 用 <c>max_model_len</c>。
+        /// OpenAI 官方不回報，這類供應商的結果為空。
+        /// </summary>
+        private static readonly string[] ContextWindowFields = { "context_length", "context_window", "max_model_len" };
+
+        /// <summary>
+        /// 從 OpenAI 相容 /models 原始 JSON 讀出「模型 id → 上下文上限」。
+        /// 上限只是附帶資訊，格式不符時回傳空集合，不讓整個模型清單的重新整理失敗。
+        /// </summary>
+        internal static Dictionary<string, int> ParseContextWindows(string json)
+        {
+            var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(json)) return windows;
+
+            try
+            {
+                using (JsonDocument doc = JsonDocument.Parse(json))
+                {
+                    if (doc.RootElement.ValueKind != JsonValueKind.Object
+                        || !doc.RootElement.TryGetProperty("data", out JsonElement data)
+                        || data.ValueKind != JsonValueKind.Array)
+                    {
+                        return windows;
+                    }
+
+                    foreach (JsonElement model in data.EnumerateArray())
+                    {
+                        if (model.ValueKind != JsonValueKind.Object
+                            || !model.TryGetProperty("id", out JsonElement idElement)
+                            || idElement.ValueKind != JsonValueKind.String)
+                        {
+                            continue;
+                        }
+                        string id = idElement.GetString();
+                        if (string.IsNullOrEmpty(id)) continue;
+
+                        foreach (string field in ContextWindowFields)
+                        {
+                            if (model.TryGetProperty(field, out JsonElement value)
+                                && value.ValueKind == JsonValueKind.Number
+                                && value.TryGetInt32(out int tokens)
+                                && tokens > 0)
+                            {
+                                windows[id] = tokens;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                windows.Clear();
+            }
+            return windows;
         }
 
         /// <summary>

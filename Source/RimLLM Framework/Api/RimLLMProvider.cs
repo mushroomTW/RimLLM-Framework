@@ -95,6 +95,17 @@ namespace RimLLM_Framework
         }
 
         /// <summary>
+        /// 取得指定模型的上下文上限（token 數）。玩家在備援鏈手動填寫的值優先，其次為玩家重新整理
+        /// 模型清單時記下的值：供應商 API 有回報就用它（OpenRouter、Groq、Gemini），否則取自 models.dev 資料庫。
+        /// </summary>
+        /// <param name="modelId">格式 "ProviderId:ModelName"，同 ChatOptions.ModelId。</param>
+        /// <returns>上限不明、或 <paramref name="modelId"/> 不是明確的 "ProviderId:ModelName" 時回傳 null。</returns>
+        public static int? GetContextWindow(string modelId)
+        {
+            return Manager.GetContextWindow(modelId);
+        }
+
+        /// <summary>
         /// 依目前設定解析出一個請求可能落到的所有候選，回傳它們能力的交集——
         /// 不論 fallback 最後由誰回答，這裡為 true 的能力都保證成立。
         /// Agent 端在送出帶 Tools 的請求前可據此判斷工具是否會被送達。

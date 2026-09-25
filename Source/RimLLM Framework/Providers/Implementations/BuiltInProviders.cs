@@ -1,3 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using RimLLM_Framework.Core;
+using RimLLM_Framework.Manager;
+
 namespace RimLLM_Framework.Providers
 {
     /// <summary>
@@ -5,12 +13,77 @@ namespace RimLLM_Framework.Providers
     /// 對話、串流、工具呼叫、結構化輸出、思考強度（<c>reasoning_effort</c>）與模型清單
     /// 全由基底 <see cref="OpenAIProvider"/> 經 OpenAI SDK 處理，不再使用原生 Google.GenAI 路徑。
     /// 既有的供應商識別碼、API 金鑰與模型設定沿用不變。
+    /// 唯一例外是上下文上限：相容端點不回報，重新整理模型清單時另向原生 <c>/models</c> 讀取。
     /// </summary>
     public class GeminiProvider : OpenAIProvider
     {
         public GeminiProvider(IRimLLMSettings settings)
             : base(settings, ProviderIds.Gemini, "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash")
         {
+        }
+
+        /// <summary>
+        /// 相容端點的 /models 不回報上限，改向原生 <c>/models</c> 讀 <c>inputTokenLimit</c>。
+        /// 兩個請求彼此獨立，同時發出。上限只是附帶資訊：原生端點失敗時模型清單照常回傳。
+        /// </summary>
+        internal override async Task<ModelCatalog> FetchModelCatalogAsync()
+        {
+            Task<Dictionary<string, int>> nativeTask = FetchNativeInputTokenLimitsAsync();
+            ModelCatalog catalog = await base.FetchModelCatalogAsync().ConfigureAwait(false);
+            Dictionary<string, int> windows = await nativeTask.ConfigureAwait(false);
+            return windows == null ? catalog : new ModelCatalog(catalog.Models, windows);
+        }
+
+        /// <summary>讀取原生端點的輸入上限；無法推得原生端點或請求失敗時回傳 null（失敗會記警告）。</summary>
+        private async Task<Dictionary<string, int>> FetchNativeInputTokenLimitsAsync()
+        {
+            // 相容根位址以 /openai 結尾，去掉即為原生 API 根位址；自訂成其他代理時無從推得，略過。
+            string root = NormalizeEndpoint(Settings.GetEndpoint(ProviderId, DefaultEndpoint));
+            if (root == null || !root.EndsWith("/openai", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            float timeoutSeconds = Settings.ApiTimeout > 0 ? Settings.ApiTimeout : 30f;
+            var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
+                {
+                    bool isGoogle = await RimLLMEmbeddingService.ForEachGoogleNativeModelAsync(
+                        root, Settings.GetActiveApiKey(ProviderId), model => ReadInputTokenLimit(model, windows), cts.Token).ConfigureAwait(false);
+                    return isGoogle ? windows : null;
+                }
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Warning($"[RimLLM] Could not read Gemini context window sizes from the native models endpoint: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 把單一原生模型的 <c>inputTokenLimit</c> 寫入 <paramref name="windows"/>。
+        /// 名稱去掉 <c>models/</c> 前綴，與相容端點回傳、設定中保存的模型名稱一致。
+        /// </summary>
+        internal static void ReadInputTokenLimit(JsonElement model, Dictionary<string, int> windows)
+        {
+            const string namePrefix = "models/";
+            if (model.ValueKind == JsonValueKind.Object
+                && model.TryGetProperty("name", out JsonElement nameElement)
+                && nameElement.ValueKind == JsonValueKind.String
+                && model.TryGetProperty("inputTokenLimit", out JsonElement limit)
+                && limit.ValueKind == JsonValueKind.Number
+                && limit.TryGetInt32(out int tokens)
+                && tokens > 0)
+            {
+                string name = nameElement.GetString() ?? string.Empty;
+                if (name.StartsWith(namePrefix, StringComparison.Ordinal))
+                {
+                    name = name.Substring(namePrefix.Length);
+                }
+                if (name.Length > 0) windows[name] = tokens;
+            }
         }
     }
 

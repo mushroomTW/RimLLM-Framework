@@ -293,8 +293,34 @@ namespace RimLLM_Framework.Manager
         private static async Task<RimLLMEmbeddingModelList> FetchGoogleEmbeddingModelsAsync(
             string root, string apiKey, CancellationToken cancellationToken)
         {
-            string nativeRoot = TrimSuffix(root, "/openai");
             var ids = new List<string>();
+            bool isGoogle = await ForEachGoogleNativeModelAsync(root, apiKey, model =>
+            {
+                string name = GetString(model, "name");
+                if (!string.IsNullOrEmpty(name) &&
+                    ArrayContains(model, "supportedGenerationMethods", "embedContent"))
+                {
+                    ids.Add(TrimPrefix(name, "models/"));
+                }
+            }, cancellationToken).ConfigureAwait(false);
+
+            if (!isGoogle)
+            {
+                List<string> generic = await FetchOpenAiCompatibleModelsAsync(apiKey, root, cancellationToken).ConfigureAwait(false);
+                return new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(generic), filtered: false);
+            }
+            return new RimLLMEmbeddingModelList(ids, filtered: true);
+        }
+
+        /// <summary>
+        /// 逐頁列舉 Google 原生 <c>/models</c> 的每個模型，供 embedding 模型過濾與 Gemini 上下文上限共用。
+        /// <paramref name="compatRoot"/> 是 OpenAI 相容根位址，去掉結尾的 <c>/openai</c> 即為原生 API 根位址。
+        /// 回傳 false 代表回應沒有 <c>models</c> 陣列，也就是自訂端點不是 Google 本身（例如相容代理）。
+        /// </summary>
+        internal static async Task<bool> ForEachGoogleNativeModelAsync(
+            string compatRoot, string apiKey, Action<JsonElement> onModel, CancellationToken cancellationToken)
+        {
+            string nativeRoot = TrimSuffix(compatRoot, "/openai");
             string pageToken = null;
             do
             {
@@ -310,24 +336,18 @@ namespace RimLLM_Framework.Manager
                     {
                         if (!doc.RootElement.TryGetProperty("models", out JsonElement models) || models.ValueKind != JsonValueKind.Array)
                         {
-                            List<string> generic = await FetchOpenAiCompatibleModelsAsync(apiKey, root, cancellationToken).ConfigureAwait(false);
-                            return new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(generic), filtered: false);
+                            return false;
                         }
                         foreach (JsonElement model in models.EnumerateArray())
                         {
-                            string name = GetString(model, "name");
-                            if (!string.IsNullOrEmpty(name) &&
-                                ArrayContains(model, "supportedGenerationMethods", "embedContent"))
-                            {
-                                ids.Add(TrimPrefix(name, "models/"));
-                            }
+                            onModel(model);
                         }
                         pageToken = GetString(doc.RootElement, "nextPageToken");
                     }
                 }
             } while (!string.IsNullOrEmpty(pageToken));
 
-            return new RimLLMEmbeddingModelList(ids, filtered: true);
+            return true;
         }
 
         /// <summary>

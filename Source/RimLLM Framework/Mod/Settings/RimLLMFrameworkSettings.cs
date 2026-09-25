@@ -13,7 +13,7 @@ namespace RimLLM_Framework.Mod
     /// RimWorld Mod 設定檔。
     /// 將複雜的字典結構序列化為單一 JSON 字串儲存，並在序列化時調用 EncryptionUtility 加解密 API 金鑰。
     /// </summary>
-    public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
+    public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWindowLookup
     {
         /// <summary>
         /// API 供應商的 Fallback Chain 順序。
@@ -187,6 +187,15 @@ namespace RimLLM_Framework.Mod
         private readonly Dictionary<string, string> _endpoints = new Dictionary<string, string>();
         private readonly Dictionary<string, int> _modelLevelOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// 重新整理模型清單時 API 回報的上下文上限（providerId → 模型名稱 → token 數）。
+        /// 以供應商分開存放：同名模型在不同供應商的上限可能不同。
+        /// </summary>
+        private readonly Dictionary<string, Dictionary<string, int>> _providerContextWindows = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>玩家手動填寫的上下文上限（"Provider:Model" → token 數），優先於 API 回報的值。</summary>
+        private readonly Dictionary<string, int> _contextWindowOverrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
         private readonly Dictionary<string, string> _embeddingModels = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _embeddingEndpoints = new Dictionary<string, string>(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _embeddingApiKeys = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -255,6 +264,8 @@ namespace RimLLM_Framework.Mod
             public Dictionary<string, List<string>> ProviderModels;
             public Dictionary<string, bool> ChinaModeProviders;
             public Dictionary<string, int> ModelLevelOverrides;
+            public Dictionary<string, Dictionary<string, int>> ProviderContextWindows;
+            public Dictionary<string, int> ContextWindowOverrides;
             public float ApiTimeout;
             public int MaxRetries;
             public float RetryDelay;
@@ -378,6 +389,8 @@ namespace RimLLM_Framework.Mod
                         RetryDelay = this.RetryDelay,
                         ChinaModeProviders = this._chinaModeProviders,
                         ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
+                        ProviderContextWindows = this._providerContextWindows,
+                        ContextWindowOverrides = new Dictionary<string, int>(this._contextWindowOverrides),
                         DetailedLogging = this.DetailedLogging,
                         MaxConcurrentRequests = this.MaxConcurrentRequests,
                         DefaultReasoningEffort = EncodeReasoningEffort(this.DefaultReasoningEffort),
@@ -470,6 +483,21 @@ namespace RimLLM_Framework.Mod
                                 {
                                     _modelLevelOverrides.Clear();
                                     foreach (var kvp in dto.ModelLevelOverrides) _modelLevelOverrides[kvp.Key] = kvp.Value;
+                                }
+
+                                if (dto.ProviderContextWindows != null)
+                                {
+                                    _providerContextWindows.Clear();
+                                    foreach (var kvp in dto.ProviderContextWindows)
+                                    {
+                                        if (kvp.Value != null) SetProviderContextWindows(kvp.Key, kvp.Value);
+                                    }
+                                }
+
+                                if (dto.ContextWindowOverrides != null)
+                                {
+                                    _contextWindowOverrides.Clear();
+                                    foreach (var kvp in dto.ContextWindowOverrides) SetContextWindowOverride(kvp.Key, kvp.Value);
                                 }
 
                                 this.DefaultReasoningEffort = DecodeReasoningEffort(dto.DefaultReasoningEffort);
@@ -839,6 +867,91 @@ namespace RimLLM_Framework.Mod
                 else
                 {
                     _modelLevelOverrides[modelName] = Math.Min(level, 3);
+                }
+            }
+        }
+
+        public int? GetContextWindow(string providerId, string modelName)
+        {
+            if (string.IsNullOrEmpty(providerId) || string.IsNullOrEmpty(modelName)) return null;
+            lock (_settingsLock)
+            {
+                if (_contextWindowOverrides.TryGetValue(providerId + ":" + modelName, out int manual))
+                {
+                    return manual;
+                }
+                if (_providerContextWindows.TryGetValue(providerId, out var fetched)
+                    && fetched.TryGetValue(modelName, out int reported))
+                {
+                    return reported;
+                }
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 把本次重新整理拉到的上限併入該供應商的既有值：新值覆寫舊值，本次沒拉到的保留。
+        /// 不整份取代，是因為 models.dev 或 Gemini 原生端點偶發失敗時本次結果會缺漏，
+        /// 整份取代會把先前拿到的有效值一起清掉；已下架模型殘留舊值則無害。
+        /// </summary>
+        public void SetProviderContextWindows(string providerId, Dictionary<string, int> contextWindows)
+        {
+            if (string.IsNullOrEmpty(providerId)) return;
+            lock (_settingsLock)
+            {
+                if (!_providerContextWindows.TryGetValue(providerId, out var map))
+                {
+                    map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    _providerContextWindows[providerId] = map;
+                }
+                if (contextWindows != null)
+                {
+                    foreach (var kvp in contextWindows)
+                    {
+                        if (kvp.Value > 0) map[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
+        }
+
+        /// <summary>只取 API 回報的值（不含手動值），供設定頁顯示「自動」選項時使用。</summary>
+        public int? GetFetchedContextWindow(string providerId, string modelName)
+        {
+            if (string.IsNullOrEmpty(providerId) || string.IsNullOrEmpty(modelName)) return null;
+            lock (_settingsLock)
+            {
+                return _providerContextWindows.TryGetValue(providerId, out var fetched)
+                    && fetched.TryGetValue(modelName, out int reported)
+                    ? reported
+                    : (int?)null;
+            }
+        }
+
+        /// <summary>取得玩家手動填寫的上限，0 代表未填寫。</summary>
+        public int GetContextWindowOverride(string entry)
+        {
+            if (string.IsNullOrEmpty(entry)) return 0;
+            lock (_settingsLock)
+            {
+                return _contextWindowOverrides.TryGetValue(entry, out int manual) ? manual : 0;
+            }
+        }
+
+        /// <summary>
+        /// 設定玩家手動填寫的上限。<paramref name="entry"/> 為 "Provider:Model"；傳入 0 或負值代表移除。
+        /// </summary>
+        public void SetContextWindowOverride(string entry, int tokens)
+        {
+            if (string.IsNullOrEmpty(entry)) return;
+            lock (_settingsLock)
+            {
+                if (tokens <= 0)
+                {
+                    _contextWindowOverrides.Remove(entry);
+                }
+                else
+                {
+                    _contextWindowOverrides[entry] = tokens;
                 }
             }
         }

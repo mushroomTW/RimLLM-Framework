@@ -148,6 +148,14 @@
   <RimLLM_FallbackLevelLow>Low</RimLLM_FallbackLevelLow>
   <RimLLM_FallbackLevelMedium>Medium</RimLLM_FallbackLevelMedium>
   <RimLLM_FallbackLevelHigh>High</RimLLM_FallbackLevelHigh>
+  <RimLLM_ContextWindowAuto>Auto (API: {0})</RimLLM_ContextWindowAuto>
+  <RimLLM_ContextWindowCustom>Custom...</RimLLM_ContextWindowCustom>
+  <RimLLM_ContextWindowTooltip>Context window: {0} tokens\nSource: {1}\n\nMods can read this value to decide how much history to keep. Click to set it manually; values marked * were entered by you.</RimLLM_ContextWindowTooltip>
+  <RimLLM_ContextWindowSourceManual>entered manually</RimLLM_ContextWindowSourceManual>
+  <RimLLM_ContextWindowSourceApi>recorded when the model list was refreshed (from the provider's API, or the models.dev database)</RimLLM_ContextWindowSourceApi>
+  <RimLLM_ContextWindowSourceNone>unknown. Refresh this provider's model list, or set it manually</RimLLM_ContextWindowSourceNone>
+  <RimLLM_ContextWindowDialogTitle>Context window for {0}</RimLLM_ContextWindowDialogTitle>
+  <RimLLM_ContextWindowDialogHint>Maximum number of tokens the model accepts. Enter 0 to use the value reported by the API.</RimLLM_ContextWindowDialogHint>
   <RimLLM_StatusRequestSuccess>SUCCESS ({0}ms)</RimLLM_StatusRequestSuccess>
   <RimLLM_StatusRequestFailed>FAILED (Err: {0})</RimLLM_StatusRequestFailed>
   <RimLLM_ThinkProcessLabel>[Reasoning]</RimLLM_ThinkProcessLabel>

@@ -148,6 +148,14 @@
   <RimLLM_FallbackLevelLow>低</RimLLM_FallbackLevelLow>
   <RimLLM_FallbackLevelMedium>中</RimLLM_FallbackLevelMedium>
   <RimLLM_FallbackLevelHigh>高</RimLLM_FallbackLevelHigh>
+  <RimLLM_ContextWindowAuto>自動（API：{0}）</RimLLM_ContextWindowAuto>
+  <RimLLM_ContextWindowCustom>自訂…</RimLLM_ContextWindowCustom>
+  <RimLLM_ContextWindowTooltip>上下文上限：{0} tokens\n來源：{1}\n\n其他 Mod 可依此決定要保留多少對話歷史。點擊可手動設定；標有 * 的是你手動填寫的值。</RimLLM_ContextWindowTooltip>
+  <RimLLM_ContextWindowSourceManual>手動填寫</RimLLM_ContextWindowSourceManual>
+  <RimLLM_ContextWindowSourceApi>重新整理模型清單時記下（來自供應商 API 或 models.dev 資料庫）</RimLLM_ContextWindowSourceApi>
+  <RimLLM_ContextWindowSourceNone>未知。請重新整理此供應商的模型清單，或手動填寫</RimLLM_ContextWindowSourceNone>
+  <RimLLM_ContextWindowDialogTitle>{0} 的上下文上限</RimLLM_ContextWindowDialogTitle>
+  <RimLLM_ContextWindowDialogHint>模型可接受的最大 token 數。填 0 代表改用 API 回報的值。</RimLLM_ContextWindowDialogHint>
   <RimLLM_StatusRequestSuccess>成功 ({0}ms)</RimLLM_StatusRequestSuccess>
   <RimLLM_StatusRequestFailed>失敗 (錯誤: {0})</RimLLM_StatusRequestFailed>
   <RimLLM_ThinkProcessLabel>[思考過程]</RimLLM_ThinkProcessLabel>

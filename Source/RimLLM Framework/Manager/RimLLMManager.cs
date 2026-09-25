@@ -325,6 +325,56 @@ namespace RimLLM_Framework.Manager
             return await provider.FetchAvailableModelsAsync().ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// 同 <see cref="FetchProviderModelsAsync"/>，另附上下文上限：優先採用供應商 API 回報的值，
+        /// 沒有的再以 models.dev 資料庫補齊。不是 <see cref="OpenAIProvider"/> 衍生的外部供應商沒有這項資訊。
+        /// </summary>
+        internal async Task<ModelCatalog> FetchProviderModelCatalogAsync(string providerId)
+        {
+            if (!TryGetProvider(providerId, out ILLMProvider provider))
+            {
+                throw new RimLLMException(LLMError.ProviderOffline, $"Unknown provider ID: {providerId}");
+            }
+
+            // models.dev 與供應商清單彼此獨立，先開始下載，不必等清單回來才發出請求
+            var modelsDevTask = ModelsDevCatalog.IsCovered(providerId)
+                ? ModelsDevCatalog.GetAllAsync(_settings.ApiTimeout)
+                : null;
+
+            ModelCatalog catalog = provider is OpenAIProvider openAiProvider && !OverridesModelList(provider)
+                ? await openAiProvider.FetchModelCatalogAsync().ConfigureAwait(false)
+                : new ModelCatalog(await provider.FetchAvailableModelsAsync().ConfigureAwait(false), null);
+
+            // 供應商 API 已回報每個模型的上限時不等 models.dev：下載照樣完成並留在快取，但不拖慢這次重新整理
+            if (modelsDevTask != null && !catalog.Models.TrueForAll(catalog.ContextWindows.ContainsKey))
+            {
+                ModelsDevCatalog.FillMissing(await modelsDevTask.ConfigureAwait(false), providerId, catalog.ContextWindows);
+            }
+            return catalog;
+        }
+
+        /// <summary>
+        /// 外部 Mod 繼承 <see cref="OpenAIProvider"/> 並覆寫了 <see cref="ILLMProvider.FetchAvailableModelsAsync"/>
+        /// （例如過濾或改名）時，必須走它的覆寫，不能改走基底的 <see cref="OpenAIProvider.FetchModelCatalogAsync"/>。
+        /// </summary>
+        private static bool OverridesModelList(ILLMProvider provider)
+        {
+            var method = provider.GetType().GetMethod(nameof(ILLMProvider.FetchAvailableModelsAsync), Type.EmptyTypes);
+            return method != null && method.DeclaringType != typeof(OpenAIProvider);
+        }
+
+        /// <summary>
+        /// 查詢 "ProviderId:ModelName" 的上下文上限。只接受明確指定的模型，其餘一律回傳 null。
+        /// </summary>
+        internal int? GetContextWindow(string modelId)
+        {
+            if (string.IsNullOrEmpty(modelId)) return null;
+            int colonIndex = modelId.IndexOf(':');
+            if (colonIndex <= 0 || colonIndex >= modelId.Length - 1) return null;
+
+            return (_settings as IContextWindowLookup)?.GetContextWindow(modelId.Substring(0, colonIndex), modelId.Substring(colonIndex + 1));
+        }
+
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
         {
             return _fallbackPipeline.ResolveFallbackEntry(entry, out providerId, out modelName);

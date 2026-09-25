@@ -405,7 +405,8 @@ namespace RimLLM_Framework.Mod
                 "RimLLM_Fetching".Translate(),
                 async () =>
                 {
-                    var models = await RimLLMProvider.FetchProviderModelsAsync(providerId).ConfigureAwait(false);
+                    var catalog = await RimLLMProvider.Manager.FetchProviderModelCatalogAsync(providerId).ConfigureAwait(false);
+                    var models = catalog.Models;
                     // 寫入設定必須回到主線程，因此以延遲委派形式交還。
                     return () =>
                     {
@@ -414,6 +415,7 @@ namespace RimLLM_Framework.Mod
                             return "RimLLM_FetchSuccessEmpty".Translate();
                         }
                         Settings.SetModelList(providerId, models);
+                        Settings.SetProviderContextWindows(providerId, catalog.ContextWindows);
                         Settings.Write();
                         return "RimLLM_FetchSuccessCount".Translate(models.Count);
                     };
