@@ -82,9 +82,9 @@ namespace RimLLM_Framework.Manager
             // 以區域快取去重，避免每個條目各拿一次設定鎖。單次解析的一致快照，語意不變。
             var apiKeyCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            // PreferredModelId（格式 "ProviderId:ModelName"）指定的話，於 fallback chain 前優先嘗試
+            // PreferredModelId（格式 "ProviderId:ModelName"）指定的話，移到 fallback chain 最前面優先嘗試
             var effectiveChain = new List<string>(fallbackChain);
-            PrependPreferredModelIfUsable(effectiveChain, preferredModelId, apiKeyCache);
+            bool preferredFirst = MovePreferredModelToFrontIfUsable(effectiveChain, preferredModelId, apiKeyCache);
 
             // 1. 解析所有符合資格的供應商候選
             var resolved = new List<ResolvedCandidate>();
@@ -115,6 +115,15 @@ namespace RimLLM_Framework.Manager
             }
 
             // 3. 套用路由與負載均衡策略
+            // 呼叫端指定的模型固定在第一位、不參與排序；只有它失敗時才輪到路由策略排出的其餘候選。
+            // 前面的步驟都保持順序，所以它若仍可用必定位於索引 0。
+            ResolvedCandidate? pinnedPreferred = null;
+            if (preferredFirst && string.Equals(activeCandidates[0].Entry, effectiveChain[0], StringComparison.OrdinalIgnoreCase))
+            {
+                pinnedPreferred = activeCandidates[0];
+                activeCandidates.RemoveAt(0);
+            }
+
             switch (_settings.RoutingStrategy)
             {
                 case 1: // MinLatency (最小延遲優先)
@@ -136,6 +145,11 @@ namespace RimLLM_Framework.Manager
 
                 default: // 0 = PriorityFailover：保留原始 fallbackChain 順序
                     break;
+            }
+
+            if (pinnedPreferred.HasValue)
+            {
+                activeCandidates.Insert(0, pinnedPreferred.Value);
             }
 
             candidates = activeCandidates;
@@ -240,9 +254,13 @@ namespace RimLLM_Framework.Manager
             lock (RandomLock) { return SharedRandom.Next(maxExclusive); }
         }
 
-        private void PrependPreferredModelIfUsable(List<string> effectiveChain, string preferredModelId, Dictionary<string, string> apiKeyCache)
+        /// <summary>
+        /// 把指定模型放到鏈首。已在鏈上時移動既有條目（保留使用者設定的大小寫），否則插入。
+        /// 回傳 true 代表鏈首現在就是指定模型。
+        /// </summary>
+        private bool MovePreferredModelToFrontIfUsable(List<string> effectiveChain, string preferredModelId, Dictionary<string, string> apiKeyCache)
         {
-            if (string.IsNullOrEmpty(preferredModelId)) return;
+            if (string.IsNullOrEmpty(preferredModelId)) return false;
 
             string preferredEntry = preferredModelId;
             if (!ResolveFallbackEntry(preferredEntry, out string prefProvider, out string prefModel)
@@ -252,12 +270,20 @@ namespace RimLLM_Framework.Manager
                 prefProvider = null;
             }
 
-            if (prefProvider != null && (_providerResolver(prefProvider) is ILLMProvider prefProviderInstance)
-                && IsProviderUsable(prefProvider, prefProviderInstance, apiKeyCache)
-                && !effectiveChain.Exists(e => string.Equals(e, preferredEntry, StringComparison.OrdinalIgnoreCase)))
+            if (prefProvider == null || !(_providerResolver(prefProvider) is ILLMProvider prefProviderInstance)
+                || !IsProviderUsable(prefProvider, prefProviderInstance, apiKeyCache))
             {
-                effectiveChain.Insert(0, preferredEntry);
+                return false;
             }
+
+            int existingIndex = effectiveChain.FindIndex(e => string.Equals(e, preferredEntry, StringComparison.OrdinalIgnoreCase));
+            if (existingIndex >= 0)
+            {
+                preferredEntry = effectiveChain[existingIndex];
+                effectiveChain.RemoveAt(existingIndex);
+            }
+            effectiveChain.Insert(0, preferredEntry);
+            return true;
         }
 
         internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)

@@ -85,6 +85,16 @@ namespace RimLLM_Framework
         }
 
         /// <summary>
+        /// 取得使用者設定的備援鏈（格式 "ProviderId:ModelName"，依設定順序）。
+        /// 回傳的是副本，修改它不會影響框架設定。
+        /// </summary>
+        public static List<string> GetFallbackChain()
+        {
+            var chain = Manager.Settings.FallbackChain;
+            return chain != null ? new List<string>(chain) : new List<string>();
+        }
+
+        /// <summary>
         /// 依目前設定解析出一個請求可能落到的所有候選，回傳它們能力的交集——
         /// 不論 fallback 最後由誰回答，這裡為 true 的能力都保證成立。
         /// Agent 端在送出帶 Tools 的請求前可據此判斷工具是否會被送達。

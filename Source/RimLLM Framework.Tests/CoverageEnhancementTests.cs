@@ -920,6 +920,76 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual("default-model", res[0].ModelName);
         }
 
+        private static RimLLMFallbackPipeline CreateThreeModelPipeline(MockSettings settings)
+        {
+            var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
+            foreach (string id in new[] { "P1", "P2", "P3" })
+            {
+                providers[id] = new MockTestProvider { ProviderId = id };
+                settings.EnabledProviders[id] = true;
+                settings.ApiKeys[id] = "k-" + id;
+            }
+            settings.FallbackChain = new List<string> { "P1:m1", "P2:m2", "P3:m3" };
+
+            return new RimLLMFallbackPipeline(
+                settings,
+                new RimLLMHealthLedger(),
+                new RimLLMUsageTracker(settings),
+                id => providers.TryGetValue(id, out var p) ? p : null,
+                id => settings.EnabledProviders.TryGetValue(id, out bool enabled) && enabled);
+        }
+
+        [Test]
+        public void TestPreferredModelAlreadyInChainMovesToFront()
+        {
+            var settings = new MockSettings();
+            var pipeline = CreateThreeModelPipeline(settings);
+
+            var res = pipeline.ResolveCandidates("P3:M3", null);
+
+            ClassicAssert.AreEqual(3, res.Count);
+            ClassicAssert.AreEqual("P3", res[0].ProviderId);
+            // 移動的是鏈上既有條目，模型名稱沿用使用者設定的大小寫
+            ClassicAssert.AreEqual("m3", res[0].ModelName);
+            ClassicAssert.AreEqual("P1", res[1].ProviderId);
+            ClassicAssert.AreEqual("P2", res[2].ProviderId);
+        }
+
+        [Test]
+        public void TestPreferredModelStaysFirstUnderEveryRoutingStrategy()
+        {
+            var settings = new MockSettings();
+            var pipeline = CreateThreeModelPipeline(settings);
+            // P2 最貴、P1 最便宜：LowestCost 排序若不固定選定模型，P2 會被排到最後
+            settings.ModelLevelOverrides["m1"] = 1;
+            settings.ModelLevelOverrides["m2"] = 3;
+            settings.ModelLevelOverrides["m3"] = 2;
+
+            foreach (int strategy in new[] { 0, 1, 2, 3 })
+            {
+                settings.RoutingStrategy = strategy;
+                for (int i = 0; i < 20; i++)
+                {
+                    var res = pipeline.ResolveCandidates("P2:m2", null);
+                    ClassicAssert.AreEqual(3, res.Count, $"strategy {strategy}");
+                    ClassicAssert.AreEqual("P2", res[0].ProviderId, $"strategy {strategy}");
+                }
+            }
+        }
+
+        [Test]
+        public void TestGetFallbackChainReturnsDefensiveCopy()
+        {
+            var settings = new MockSettings { FallbackChain = new List<string> { "P1:m1", "P2:m2" } };
+            RimLLMProvider.Initialize(new RimLLMManager(settings));
+
+            var chain = RimLLMProvider.GetFallbackChain();
+            CollectionAssert.AreEqual(new[] { "P1:m1", "P2:m2" }, chain);
+
+            chain.Clear();
+            CollectionAssert.AreEqual(new[] { "P1:m1", "P2:m2" }, RimLLMProvider.GetFallbackChain());
+        }
+
 #pragma warning disable CS0649
         private class TestStructureWithRequiredField
         {

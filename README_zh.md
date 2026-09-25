@@ -124,7 +124,7 @@ IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
 Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 ```
 
-訊息清單與 `ChatOptions` 的用法與 MEAI 文件完全相同。唯一與本框架有關的規則是：不設定 `ModelId` 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定；要指定就填 `"供應商:模型"` 形式的項目。
+訊息清單與 `ChatOptions` 的用法與 MEAI 文件完全相同。唯一與本框架有關的規則是：不設定 `ModelId` 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定；要指定就填 `"供應商:模型"` 形式的項目。指定的模型不論路由策略為何、是否已在鏈上，一律最先嘗試，失敗後才輪到鏈上其餘候選。`RimLLMProvider.GetFallbackChain()` 會依設定順序回傳玩家備援鏈的副本，可用來做模型選單。
 
 有兩個欄位沒設定時框架會補預設值：`MaxOutputTokens` 為 **1024**、`Temperature` 為 **0.7**。批次翻譯、多角色對話、欄位很多的結構化輸出這類長回應請自行設定 `MaxOutputTokens`，否則回覆會在 1024 個 token 處被截斷。
 
@@ -306,7 +306,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
    * **重試間的指數退避**：等待時間每次翻倍（`RetryDelay × 2ⁿ`）並加上 ±20% 抖動，上限 60 秒。遇到限流還用固定間隔連打，只會再一次撞上同一面牆，把重試額度白白耗光；伺服器透過 `Retry-After` 要求更長的等待時仍以其為準。
    * **冷卻以「供應商 + 模型」為單位。**健康帳本以 `Provider:Model` 為鍵。備用鏈上常同時掛著同一個供應商的多個模型（例如三個 OpenRouter 模型），只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐。
    * **一次請求只記一次失敗。**同一次請求的所有重試合計只計一次失敗。逐次記錄的話，單一次網路抖動（預設設定下共 4 次嘗試）就能把健康的目標推過熔斷門檻，冤枉凍結數分鐘。
-   * **路由策略**：`PriorityFailover`（依鏈順序）、`MinLatency`、`RoundRobin` 與 `LowestCost`。`LowestCost` 直接沿用框架已經依 API 費率自動判定的模型分級排序，不需要另外維護一份價格表。所有排序都是穩定的，同級的候選會保留鏈本身的順序。
+   * **路由策略**：`PriorityFailover`（依鏈順序）、`MinLatency`、`RoundRobin` 與 `LowestCost`。`LowestCost` 直接沿用框架已經依 API 費率自動判定的模型分級排序，不需要另外維護一份價格表。所有排序都是穩定的，同級的候選會保留鏈本身的順序。透過 `ChatOptions.ModelId` 指定的模型不參與排序，固定排在第一位。
 3. **AES-256 設定加密**
    * API 金鑰以 AES-256 對稱加密儲存，金鑰由目前 OS 使用者的保護機制包裝。新資料使用 `v3:` 格式；`v1`／`v2` 的裝置衍生密文僅供遷移，下一次存檔時會改寫成受保護金鑰格式。
    * 設定介面預設也會**遮罩金鑰**（只留頭尾，仍可辨認自己設定了哪一把），每一列另有切換鈕可暫時顯示以便編輯。這防的是與加密不同的外洩途徑：截圖、回報問題與直播。
