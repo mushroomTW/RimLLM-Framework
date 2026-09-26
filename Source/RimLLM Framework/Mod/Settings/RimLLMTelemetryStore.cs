@@ -36,6 +36,7 @@ namespace RimLLM_Framework.Mod
         public long TotalCompletionTokens { get; set; }
         public float TotalEstimatedCost { get; set; }
         public float DailyAccumulatedCost { get; set; }
+        public long DailyAccumulatedTokens { get; set; }
         public string DailyBudgetResetDate { get; set; } = "";
 
         /// <summary>
@@ -62,6 +63,7 @@ namespace RimLLM_Framework.Mod
             public long TotalCompletionTokens;
             public float TotalEstimatedCost;
             public float DailyAccumulatedCost;
+            public long DailyAccumulatedTokens;
             public string DailyBudgetResetDate;
         }
 
@@ -153,6 +155,7 @@ namespace RimLLM_Framework.Mod
                 TotalCompletionTokens = dto.TotalCompletionTokens;
                 TotalEstimatedCost = dto.TotalEstimatedCost;
                 DailyAccumulatedCost = dto.DailyAccumulatedCost;
+                DailyAccumulatedTokens = dto.DailyAccumulatedTokens;
                 DailyBudgetResetDate = dto.DailyBudgetResetDate ?? "";
                 return true;
             }
@@ -253,6 +256,7 @@ namespace RimLLM_Framework.Mod
                         TotalCompletionTokens = TotalCompletionTokens,
                         TotalEstimatedCost = TotalEstimatedCost,
                         DailyAccumulatedCost = DailyAccumulatedCost,
+                        DailyAccumulatedTokens = DailyAccumulatedTokens,
                         DailyBudgetResetDate = DailyBudgetResetDate
                     };
 

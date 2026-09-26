@@ -748,7 +748,7 @@ namespace RimLLM_Framework.Tests
         public string Message { get; set; } = "default";
     }
 
-    public class MockSettings : IRimLLMSettings
+    public class MockSettings : IRimLLMSettings, IDailyTokenBudget
     {
         public List<string> FallbackChain { get; set; } = new List<string>();
         public float ApiTimeout { get; set; } = 30f;
@@ -761,12 +761,14 @@ namespace RimLLM_Framework.Tests
         public long TotalCompletionTokens { get; set; } = 0;
         public float TotalEstimatedCost { get; set; } = 0f;
         public float DailyBudgetLimit { get; set; } = 0f;
+        public long DailyTokenBudgetLimit { get; set; } = 0;
         public int BudgetPolicy { get; set; } = 0;
         public bool EnableAntiAbuse { get; set; } = true;
         public int MaxRequestsPerWindow { get; set; } = 10;
         public int ThrottlingWindowSeconds { get; set; } = 10;
         public int CoolDownDurationSeconds { get; set; } = 60;
         public float DailyAccumulatedCost { get; set; } = 0f;
+        public long DailyAccumulatedTokens { get; set; } = 0;
         public string DailyBudgetResetDate { get; set; } = "";
         public int RoutingStrategy { get; set; } = 0;
         public bool EnableNativeSchema { get; set; } = true;

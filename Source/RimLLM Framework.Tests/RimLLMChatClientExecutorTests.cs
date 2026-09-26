@@ -249,6 +249,48 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestGenerateAsync_FiresUsageCallbackWithReportedUsage()
+        {
+            var client = new CapturingChatClient
+            {
+                ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))
+                {
+                    Usage = new UsageDetails { InputTokenCount = 100, OutputTokenCount = 50 }
+                }
+            };
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            int prompt = -1, completion = -1;
+
+            RimLLMChatClientExecutor.GenerateAsync(
+                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None,
+                onUsage: tokens => { prompt = tokens.Prompt; completion = tokens.Completion; }).GetAwaiter().GetResult();
+
+            ClassicAssert.AreEqual(100, prompt);
+            ClassicAssert.AreEqual(50, completion);
+        }
+
+        [Test]
+        public void TestGenerateAsync_FiresUsageCallbackWithEstimatesWhenUnreported()
+        {
+            var client = new CapturingChatClient
+            {
+                ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok"))
+            };
+
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
+            int prompt = -1, completion = -1;
+
+            RimLLMChatClientExecutor.GenerateAsync(
+                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None,
+                onUsage: tokens => { prompt = tokens.Prompt; completion = tokens.Completion; }).GetAwaiter().GetResult();
+
+            // "hi" 與 "ok" 各 2 個拉丁字元 → 0.5 token，無條件進位後至少為 1。
+            ClassicAssert.AreEqual(1, prompt);
+            ClassicAssert.AreEqual(1, completion);
+        }
+
+        [Test]
         public void TestGenerateAsync_MapsClientResultException()
         {
             var client = new CapturingChatClient

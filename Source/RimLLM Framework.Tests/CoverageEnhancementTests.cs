@@ -534,8 +534,8 @@ namespace RimLLM_Framework.Tests
 
             // 2. Silent mocking when daily budget is exceeded (BudgetPolicy = 1)
             settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
-            settings.DailyBudgetLimit = 1.0f;
-            settings.DailyAccumulatedCost = 2.0f;
+            settings.DailyTokenBudgetLimit = 100000;
+            settings.DailyAccumulatedTokens = 200000;
             settings.BudgetPolicy = 1; // SilentMocking
 
             // 預算檢查與靜默模擬已上移為中介層，不再由 pipeline 負責。
@@ -563,7 +563,7 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(mockRes.Text, streamedText, "串流與非串流的模擬內容必須一致");
 
             // 3. ResponseType with SilentMocking returns "{}"
-            settings.DailyAccumulatedCost = 2.0f;
+            settings.DailyAccumulatedTokens = 200000;
             var structuredOptions = new RimLLMChatOptions
             {
                 AdditionalProperties = new AdditionalPropertiesDictionary
@@ -624,8 +624,8 @@ namespace RimLLM_Framework.Tests
 
             // 7. HardBlock 預算政策 (BudgetPolicy = 0)：改由預算中介層負責攔阻。
             settings.BudgetPolicy = 0;
-            settings.DailyBudgetLimit = 1.0f;
-            settings.DailyAccumulatedCost = 2.0f;
+            settings.DailyTokenBudgetLimit = 100000;
+            settings.DailyAccumulatedTokens = 200000;
             var hardBlockClient = new RimLLMBudgetChatClient(
                 new MockCustomChatClient(), new RimLLMUsageTracker(settings));
             Assert.ThrowsAsync<RimLLMException>(
@@ -789,10 +789,10 @@ namespace RimLLM_Framework.Tests
             float unknownCost = tracker.EstimateCost("unknown-prov", "unknown-model", 1000, 1000, 0);
             ClassicAssert.AreEqual(0f, unknownCost);
 
-            // 4. 預算政策審查
+            // 4. 預算政策審查（token 制）
             settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
-            settings.DailyBudgetLimit = 1.0f;
-            settings.DailyAccumulatedCost = 2.0f;
+            settings.DailyTokenBudgetLimit = 100000;
+            settings.DailyAccumulatedTokens = 200000;
 
             // Policy 0 = HardBlock
             settings.BudgetPolicy = 0;
@@ -815,6 +815,7 @@ namespace RimLLM_Framework.Tests
             settings.DailyBudgetResetDate = "2000-01-01";
             tracker.CheckDailyReset();
             ClassicAssert.AreEqual(0f, settings.DailyAccumulatedCost);
+            ClassicAssert.AreEqual(0, settings.DailyAccumulatedTokens);
             ClassicAssert.AreEqual(DateTime.Today.ToString("yyyy-MM-dd"), settings.DailyBudgetResetDate);
         }
 

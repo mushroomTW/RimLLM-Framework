@@ -28,19 +28,21 @@ namespace RimLLM_Framework.Mod
             return height;
         }
 
+        /// <summary>每日 token 預算滑桿上限。0 代表無限制。</summary>
+        private const float MaxDailyTokenBudget = 10000000f;
+
         public static void DrawBudgetSettings(Listing_Standard listing)
         {
-            float prevDailyLimit = Settings.DailyBudgetLimit;
+            long prevDailyLimit = Settings.DailyTokenBudgetLimit;
             int prevPolicy = Settings.BudgetPolicy;
             bool prevEnableAntiAbuse = Settings.EnableAntiAbuse;
             int prevMaxRequests = Settings.MaxRequestsPerWindow;
             int prevWindow = Settings.ThrottlingWindowSeconds;
             int prevCooldown = Settings.CoolDownDurationSeconds;
 
-            // 1. 今日預算上限 (Daily Budget Limit)
-            listing.Label("RimLLM_DailyBudgetLimitLabel".Translate(Settings.DailyBudgetLimit.ToString("F2")));
-            // 提供 0.0 ~ 20.0 的滑桿，若為 0.0 代表無限制
-            Settings.DailyBudgetLimit = listing.Slider(Settings.DailyBudgetLimit, 0f, 20f);
+            // 1. 今日 token 預算上限（輸入＋輸出合計），0 代表無限制
+            listing.Label("RimLLM_DailyBudgetLimitLabel".Translate(Settings.DailyTokenBudgetLimit.ToString("N0")));
+            Settings.DailyTokenBudgetLimit = (long)Math.Round(listing.Slider((float)Settings.DailyTokenBudgetLimit, 0f, MaxDailyTokenBudget));
             
             // 2. 預算超限應對策略 (Budget Policy)
             Rect policyRect = listing.GetRect(30f);
@@ -95,7 +97,7 @@ namespace RimLLM_Framework.Mod
             // 4. 遙測統計與重置
             listing.GapLine(12f);
             listing.Label("RimLLM_DailyAccumulatedCostLabel".Translate(
-                Settings.DailyAccumulatedCost.ToString("F4"), 
+                Settings.DailyAccumulatedTokens.ToString("N0"),
                 string.IsNullOrEmpty(Settings.DailyBudgetResetDate) ? DateTime.Today.ToString("yyyy-MM-dd") : Settings.DailyBudgetResetDate
             ));
             listing.Gap(6f);
@@ -104,6 +106,7 @@ namespace RimLLM_Framework.Mod
             resetBtnRect.width = 180f;
             if (Widgets.ButtonText(resetBtnRect, "RimLLM_ResetDailyCostBtn".Translate()))
             {
+                Settings.DailyAccumulatedTokens = 0;
                 Settings.DailyAccumulatedCost = 0f;
                 Settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
                 Settings.SaveTelemetry();
@@ -111,7 +114,7 @@ namespace RimLLM_Framework.Mod
             }
 
             // 檢查變更並寫入（僅在釋放滑鼠或非 GUI 呼叫時寫入，避免拖曳滑桿時每幀觸發同步磁碟 I/O）
-            bool changed = Math.Abs(prevDailyLimit - Settings.DailyBudgetLimit) > 0.001f ||
+            bool changed = prevDailyLimit != Settings.DailyTokenBudgetLimit ||
                 prevPolicy != Settings.BudgetPolicy ||
                 prevEnableAntiAbuse != Settings.EnableAntiAbuse ||
                 prevMaxRequests != Settings.MaxRequestsPerWindow ||

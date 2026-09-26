@@ -250,8 +250,9 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>
         /// 記錄一次請求的日誌與結果，並在背景以節流機制寫入 XML 設定檔中。
+        /// token 數由呼叫端在成功且供應商有回報時填入；拿不到時保持 0，顯示層會省略。
         /// </summary>
-        public void RecordLog(DateTime startTime, string modId, string provider, string model, bool success, string err, long latency)
+        public void RecordLog(DateTime startTime, string modId, string provider, string model, bool success, string err, long latency, int promptTokens = 0, int completionTokens = 0)
         {
             var entry = new RimLLMManager.RequestLogEntry
             {
@@ -261,7 +262,9 @@ namespace RimLLM_Framework.Manager
                 Model = model,
                 Success = success,
                 ErrorMessage = RimLLMLog.SanitizeForLog(err, 300),
-                LatencyMs = latency
+                LatencyMs = latency,
+                PromptTokens = Math.Max(0, promptTokens),
+                CompletionTokens = Math.Max(0, completionTokens)
             };
 
             RequestLogs.Enqueue(entry);
@@ -424,7 +427,7 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
-        /// 檢查並執行跨天重置日預算累計。
+        /// 檢查並執行跨天重置日預算累計（token 與舊版美元估計值一併重置）。
         /// </summary>
         public void CheckDailyReset()
         {
@@ -434,6 +437,10 @@ namespace RimLLM_Framework.Manager
                 if (string.IsNullOrEmpty(_settings.DailyBudgetResetDate) || _settings.DailyBudgetResetDate != todayStr)
                 {
                     _settings.DailyAccumulatedCost = 0f;
+                    if (_settings is IDailyTokenBudget tokenLedger)
+                    {
+                        tokenLedger.DailyAccumulatedTokens = 0;
+                    }
                     _settings.DailyBudgetResetDate = todayStr;
                 }
             }
@@ -460,6 +467,12 @@ namespace RimLLM_Framework.Manager
             {
                 _settings.TotalPromptTokens += promptTokens;
                 _settings.TotalCompletionTokens += completionTokens;
+
+                // Token 預算不看費率：免費、本地與查無費率的請求一樣消耗 token。
+                if (_settings is IDailyTokenBudget tokenLedger)
+                {
+                    tokenLedger.DailyAccumulatedTokens += (long)promptTokens + completionTokens;
+                }
 
                 if (TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost))
                 {
@@ -597,13 +610,14 @@ namespace RimLLM_Framework.Manager
         #region Budget Ledger & Policy Gatekeeping
 
         /// <summary>
-        /// 審查每日預算限額。
+        /// 審查每日預算限額（輸入＋輸出 token 合計）。上限為 0 代表無限制。
+        /// 未實作 token 帳本的外來設定退回舊版美元門檻。
         /// </summary>
         internal bool CheckBudgetLimit()
         {
             CheckDailyReset();
 
-            if (_settings.DailyBudgetLimit <= 0f || _settings.DailyAccumulatedCost < _settings.DailyBudgetLimit)
+            if (!DailyTokenBudget.IsOverBudget(_settings))
             {
                 return true;
             }
@@ -619,9 +633,7 @@ namespace RimLLM_Framework.Manager
         {
             mockResult = null;
 
-            if (_settings.BudgetPolicy != 1 ||
-                _settings.DailyBudgetLimit <= 0f ||
-                _settings.DailyAccumulatedCost < _settings.DailyBudgetLimit)
+            if (_settings.BudgetPolicy != 1 || !DailyTokenBudget.IsOverBudget(_settings))
             {
                 return false;
             }

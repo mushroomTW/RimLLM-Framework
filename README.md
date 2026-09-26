@@ -217,7 +217,7 @@ IEmbeddingGenerator<string, Embedding<float>> generator =
 
 `GenerateAsync`, `GeneratedEmbeddings<T>` and `Embedding<float>` behave as MEAI documents them. Each `Embedding<float>` carries the `ModelId` that actually produced it, and `GeneratedEmbeddings.Usage` carries the input token count when the provider reports one — OpenAI-compatible endpoints do, Gemini's public API does not (its `tokenCount` is Enterprise-only), so there `Usage` stays `null`. As with chat, `null` means the provider reported nothing, not that the call was free. The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws `RimLLMException`.
 
-The inputs of one `GenerateAsync` call go out as a single batch request (split into chunks of 100 for endpoints with smaller limits) rather than one HTTP round trip per string, and the reported input tokens are counted in the usage dashboard and the daily budget exactly like chat calls.
+The inputs of one `GenerateAsync` call go out as a single batch request (split into chunks of 100 for endpoints with smaller limits) rather than one HTTP round trip per string, and the reported input tokens are counted in the usage dashboard and the daily token budget exactly like chat calls.
 
 ### Error handling
 
@@ -273,7 +273,7 @@ This is the point of the framework. All of the following already happens behind 
 | Failover between providers | Automatic descent through the fallback chain before the reply starts |
 | Dead-provider handling | Circuit breaker with exponential cooldown after repeated failures |
 | Rate limiting across mods | Global priority queue and concurrency cap, so mods don't stutter the game |
-| Cost control | Daily budget with hard-block / mock / free-tier / prompt policies |
+| Cost control | Daily token budget with hard-block / mock / free-tier / prompt policies |
 | Usage and cost reporting | Per-provider token and cost dashboard in the Debug tab |
 | Reasoning-model quirks | `reasoning_content` normalized into MEAI `TextReasoningContent` |
 | Malformed JSON | Markdown fences, unclosed brackets and trailing commas repaired, then the JSON block re-extracted before a second parse |

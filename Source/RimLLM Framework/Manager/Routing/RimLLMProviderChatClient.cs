@@ -36,15 +36,19 @@ namespace RimLLM_Framework.Manager
         private readonly ILLMProvider _provider;
         private readonly string _model;
         private readonly IRimLLMSettings _settings;
+        /// <summary>本次嘗試結算的 token 回呼，由路由層傳入供請求日誌附帶顯示。</summary>
+        private readonly Action<UsageTokens> _onUsage;
 
         public RimLLMProviderChatClient(
             ILLMProvider provider,
             string model,
-            IRimLLMSettings settings)
+            IRimLLMSettings settings,
+            Action<UsageTokens> onUsage = null)
         {
             _provider = provider ?? throw new ArgumentNullException(nameof(provider));
             _model = model;
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            _onUsage = onUsage;
         }
 
         public async Task<ChatResponse> GetResponseAsync(
@@ -87,7 +91,8 @@ namespace RimLLM_Framework.Manager
                             useNativeSchema: true,
                             _provider.ProviderId,
                             _settings.ApiTimeout,
-                            cancellationToken).ConfigureAwait(false);
+                            cancellationToken,
+                            onUsage: _onUsage).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex) when (IsNativeSchemaRejected(ex))
@@ -124,7 +129,8 @@ namespace RimLLM_Framework.Manager
                     useNativeSchema: false,
                     _provider.ProviderId,
                     _settings.ApiTimeout,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    onUsage: _onUsage).ConfigureAwait(false);
             }
         }
 
@@ -248,7 +254,8 @@ namespace RimLLM_Framework.Manager
                                     await writer.WriteAsync(update, cancellationToken).ConfigureAwait(false);
                                 },
                                 _client._settings.ApiTimeout,
-                                cancellationToken).ConfigureAwait(false);
+                                cancellationToken,
+                                onUsage: _client._onUsage).ConfigureAwait(false);
 
                             writer.TryComplete();
                         }

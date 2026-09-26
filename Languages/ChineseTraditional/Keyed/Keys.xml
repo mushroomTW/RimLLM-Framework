@@ -120,14 +120,14 @@
   <RimLLM_ResetUsageBtn>重置累計統計</RimLLM_ResetUsageBtn>
   <RimLLM_UsageHeader>Token 與費用累計統計</RimLLM_UsageHeader>
   <RimLLM_UsageInfo>輸入: {0} | 輸出: {1} | 估計花費: ${2} USD</RimLLM_UsageInfo>
-  <RimLLM_UnpricedUsageNotice>本次執行有 {0} 筆請求查無費率；其費用未計入估算與每日預算。</RimLLM_UnpricedUsageNotice>
+  <RimLLM_UnpricedUsageNotice>本次執行有 {0} 筆請求查無費率；其費用未計入估算，但 token 照計入每日預算。</RimLLM_UnpricedUsageNotice>
   <RimLLM_MsgUsageReset>Token 與費用累計統計已重置。</RimLLM_MsgUsageReset>
   <RimLLM_ModelLevelOverrideTitle>模型分級覆寫</RimLLM_ModelLevelOverrideTitle>
   <RimLLM_ModelLevelOverrideExplanation>手動指定模型分級 (Lv.1=低, Lv.2=中, Lv.3=高)，供 MinFallbackLevel 過濾使用；預設依模型 API 輸出費率客觀自動分級。</RimLLM_ModelLevelOverrideExplanation>
   
   <RimLLM_TabBudget>預算與防護</RimLLM_TabBudget>
   <RimLLM_TitleBudget>預算與防護安全設定</RimLLM_TitleBudget>
-  <RimLLM_DailyBudgetLimitLabel>今日預算上限: {0} USD (0.0 為無限制)</RimLLM_DailyBudgetLimitLabel>
+  <RimLLM_DailyBudgetLimitLabel>今日 Token 預算上限: {0} (0 為無限制)</RimLLM_DailyBudgetLimitLabel>
   <RimLLM_BudgetPolicyLabel>預算超限應對策略: </RimLLM_BudgetPolicyLabel>
   <RimLLM_BudgetPolicy_HardBlock>直接阻斷並警告</RimLLM_BudgetPolicy_HardBlock>
   <RimLLM_BudgetPolicy_SilentMocking>靜默回傳沉思字樣</RimLLM_BudgetPolicy_SilentMocking>
@@ -136,9 +136,9 @@
   <RimLLM_MaxRequestsPerWindowLabel>時間窗口內最大請求次數: {0} 次</RimLLM_MaxRequestsPerWindowLabel>
   <RimLLM_ThrottlingWindowSecondsLabel>防護監測時間窗口: {0} 秒</RimLLM_ThrottlingWindowSecondsLabel>
   <RimLLM_CoolDownDurationSecondsLabel>超限後強制冷卻時間: {0} 秒</RimLLM_CoolDownDurationSecondsLabel>
-  <RimLLM_DailyAccumulatedCostLabel>當日已累計消耗: ${0} USD (重置基準日: {1})</RimLLM_DailyAccumulatedCostLabel>
-  <RimLLM_ResetDailyCostBtn>手動重置今日花費</RimLLM_ResetDailyCostBtn>
-  <RimLLM_MsgDailyCostReset>今日花費累計已重置。</RimLLM_MsgDailyCostReset>
+  <RimLLM_DailyAccumulatedCostLabel>當日已累計用量: {0} tokens (重置基準日: {1})</RimLLM_DailyAccumulatedCostLabel>
+  <RimLLM_ResetDailyCostBtn>手動重置今日用量</RimLLM_ResetDailyCostBtn>
+  <RimLLM_MsgDailyCostReset>今日用量累計已重置。</RimLLM_MsgDailyCostReset>
   <RimLLM_SilentMockResponse>*說書人因當日預算上限限制陷入沉思...*</RimLLM_SilentMockResponse>
   <RimLLM_RoutingStrategyLabel>智慧路由與動態負載均衡策略: </RimLLM_RoutingStrategyLabel>
   <RimLLM_RoutingStrategy_PriorityFailover>優先順序自動容錯</RimLLM_RoutingStrategy_PriorityFailover>
@@ -212,6 +212,8 @@
   <RimLLM_StatusNoApiKey>⚠ 未設定金鑰</RimLLM_StatusNoApiKey>
   <RimLLM_ChatStop>停止</RimLLM_ChatStop>
   <RimLLM_ChatCopyMessage>複製回覆</RimLLM_ChatCopyMessage>
+  <RimLLM_ChatTestModelLabel>測試模型: </RimLLM_ChatTestModelLabel>
+  <RimLLM_ChatTestModelAuto>自動（備援鏈順序）</RimLLM_ChatTestModelAuto>
   <RimLLM_FilterAll>全部</RimLLM_FilterAll>
   <RimLLM_ClearFilter>清空</RimLLM_ClearFilter>
   <RimLLM_ChatModelBadgeTooltip>實際應答模型：{0}&#10;點擊可複製模型名稱</RimLLM_ChatModelBadgeTooltip>

@@ -102,7 +102,8 @@ namespace RimLLM_Framework
         float TotalEstimatedCost { get; set; }
 
         /// <summary>
-        /// 今日預算上限 (USD)。
+        /// 舊版每日預算上限 (USD)。每日預算已改以 token 計（見 <see cref="IDailyTokenBudget"/>），
+        /// 此值不再作為門檻，僅保留供舊存檔讀取。
         /// </summary>
         float DailyBudgetLimit { get; set; }
 
@@ -132,7 +133,8 @@ namespace RimLLM_Framework
         int CoolDownDurationSeconds { get; set; }
 
         /// <summary>
-        /// 今日累計估計消耗。
+        /// 舊版今日累計估計消耗 (USD)。每日預算已改以 token 計（見 <see cref="IDailyTokenBudget"/>），
+        /// 此值僅保留作費用顯示，不再作為門檻。
         /// </summary>
         float DailyAccumulatedCost { get; set; }
 

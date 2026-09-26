@@ -120,14 +120,14 @@
   <RimLLM_ResetUsageBtn>Reset Usage Statistics</RimLLM_ResetUsageBtn>
   <RimLLM_UsageHeader>Token &amp; Cost Usage Statistics</RimLLM_UsageHeader>
   <RimLLM_UsageInfo>Prompt: {0} | Completion: {1} | Est. Cost: ${2} USD</RimLLM_UsageInfo>
-  <RimLLM_UnpricedUsageNotice>{0} request(s) this session have unknown rates. Their cost is excluded from the estimate and daily budget.</RimLLM_UnpricedUsageNotice>
+  <RimLLM_UnpricedUsageNotice>{0} request(s) this session have unknown rates. Their cost is excluded from the estimate, but their tokens still count toward the daily budget.</RimLLM_UnpricedUsageNotice>
   <RimLLM_MsgUsageReset>Usage statistics have been reset.</RimLLM_MsgUsageReset>
   <RimLLM_ModelLevelOverrideTitle>Model Tier Overrides</RimLLM_ModelLevelOverrideTitle>
   <RimLLM_ModelLevelOverrideExplanation>Manually assign model tiers (Lv.1=Low, Lv.2=Medium, Lv.3=High) used by MinFallbackLevel filtering. Defaults to objective auto-tiering based on model API output cost rates.</RimLLM_ModelLevelOverrideExplanation>
   
   <RimLLM_TabBudget>Budget &amp; Safety</RimLLM_TabBudget>
   <RimLLM_TitleBudget>Budget &amp; Safety Configuration</RimLLM_TitleBudget>
-  <RimLLM_DailyBudgetLimitLabel>Daily Budget Limit: {0} USD (0.0 for unlimited)</RimLLM_DailyBudgetLimitLabel>
+  <RimLLM_DailyBudgetLimitLabel>Daily Token Budget: {0} tokens (0 for unlimited)</RimLLM_DailyBudgetLimitLabel>
   <RimLLM_BudgetPolicyLabel>Budget Exceeded Policy: </RimLLM_BudgetPolicyLabel>
   <RimLLM_BudgetPolicy_HardBlock>Block requests and warn (HardBlock)</RimLLM_BudgetPolicy_HardBlock>
   <RimLLM_BudgetPolicy_SilentMocking>Return canned silent message (SilentMocking)</RimLLM_BudgetPolicy_SilentMocking>
@@ -136,9 +136,9 @@
   <RimLLM_MaxRequestsPerWindowLabel>Max Requests in Window: {0}</RimLLM_MaxRequestsPerWindowLabel>
   <RimLLM_ThrottlingWindowSecondsLabel>Window Duration: {0}s</RimLLM_ThrottlingWindowSecondsLabel>
   <RimLLM_CoolDownDurationSecondsLabel>Cooldown Duration: {0}s</RimLLM_CoolDownDurationSecondsLabel>
-  <RimLLM_DailyAccumulatedCostLabel>Daily Accumulated Cost: ${0} USD (Reset base: {1})</RimLLM_DailyAccumulatedCostLabel>
-  <RimLLM_ResetDailyCostBtn>Reset Daily Cost</RimLLM_ResetDailyCostBtn>
-  <RimLLM_MsgDailyCostReset>Daily accumulated cost has been reset.</RimLLM_MsgDailyCostReset>
+  <RimLLM_DailyAccumulatedCostLabel>Daily Accumulated Usage: {0} tokens (Reset base: {1})</RimLLM_DailyAccumulatedCostLabel>
+  <RimLLM_ResetDailyCostBtn>Reset Daily Usage</RimLLM_ResetDailyCostBtn>
+  <RimLLM_MsgDailyCostReset>Daily accumulated usage has been reset.</RimLLM_MsgDailyCostReset>
   <RimLLM_SilentMockResponse>*AI is temporarily resting due to daily budget limits...*</RimLLM_SilentMockResponse>
   <RimLLM_RoutingStrategyLabel>Smart Routing &amp; Load Balancing Strategy: </RimLLM_RoutingStrategyLabel>
   <RimLLM_RoutingStrategy_PriorityFailover>Priority Failover with Cooldowns (PriorityFailover)</RimLLM_RoutingStrategy_PriorityFailover>
@@ -212,6 +212,8 @@
   <RimLLM_StatusNoApiKey>⚠ No API Key</RimLLM_StatusNoApiKey>
   <RimLLM_ChatStop>Stop</RimLLM_ChatStop>
   <RimLLM_ChatCopyMessage>Copy Reply</RimLLM_ChatCopyMessage>
+  <RimLLM_ChatTestModelLabel>Test Model: </RimLLM_ChatTestModelLabel>
+  <RimLLM_ChatTestModelAuto>Auto (fallback chain order)</RimLLM_ChatTestModelAuto>
   <RimLLM_FilterAll>All</RimLLM_FilterAll>
   <RimLLM_ClearFilter>Clear</RimLLM_ClearFilter>
   <RimLLM_ChatModelBadgeTooltip>Actual Model: {0}&#10;Click to copy model name</RimLLM_ChatModelBadgeTooltip>

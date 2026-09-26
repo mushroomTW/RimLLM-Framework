@@ -173,6 +173,8 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(100000, mockSettings.TotalPromptTokens);
             ClassicAssert.AreEqual(50000, mockSettings.TotalCompletionTokens);
             ClassicAssert.AreEqual(0f, mockSettings.TotalEstimatedCost);
+            // 查無費率的請求費用未知，但 token 照計入每日預算。
+            ClassicAssert.AreEqual(150000, mockSettings.DailyAccumulatedTokens);
 
             // 3. 已知精確費率模型累計估算金額。
             manager.RecordUsage("Gemini", "gemini-2.5-flash", 1000000, 1000000);
@@ -180,6 +182,7 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(1100000, mockSettings.TotalPromptTokens);
             ClassicAssert.AreEqual(1050000, mockSettings.TotalCompletionTokens);
             ClassicAssert.AreEqual(2.80f, mockSettings.TotalEstimatedCost, 0.0001f);
+            ClassicAssert.AreEqual(2150000, mockSettings.DailyAccumulatedTokens);
 
             // 4. Gemini 模型若帶官方 models/ 前綴也能正規化。
             manager.RecordUsage("Gemini", "models/gemini-2.5-flash", 1000000, 1000000);
@@ -268,6 +271,7 @@ namespace RimLLM_Framework.Tests
             // 設置非今日重置日期
             mockSettings.DailyBudgetResetDate = "2026-01-01";
             mockSettings.DailyAccumulatedCost = 5.5f;
+            mockSettings.DailyAccumulatedTokens = 5500;
 
             // 觸發重置
             tracker.CheckDailyReset();
@@ -275,6 +279,7 @@ namespace RimLLM_Framework.Tests
             string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
             ClassicAssert.AreEqual(todayStr, mockSettings.DailyBudgetResetDate);
             ClassicAssert.AreEqual(0f, mockSettings.DailyAccumulatedCost);
+            ClassicAssert.AreEqual(0, mockSettings.DailyAccumulatedTokens);
         }
 
         [Test]
@@ -323,8 +328,8 @@ namespace RimLLM_Framework.Tests
         {
             var mockSettings = new MockSettings
             {
-                DailyBudgetLimit = 1.0f,
-                DailyAccumulatedCost = 1.2f,
+                DailyTokenBudgetLimit = 100000,
+                DailyAccumulatedTokens = 120000,
                 DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd"),
                 BudgetPolicy = 0, // HardBlock
                 FallbackChain = new List<string> { "MockSuccess:model-z" }
@@ -358,8 +363,8 @@ namespace RimLLM_Framework.Tests
         {
             var mockSettings = new MockSettings
             {
-                DailyBudgetLimit = 1.0f,
-                DailyAccumulatedCost = 1.2f,
+                DailyTokenBudgetLimit = 100000,
+                DailyAccumulatedTokens = 120000,
                 DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd"),
                 BudgetPolicy = 1, // SilentMocking
                 FallbackChain = new List<string> { "MockSuccess:model-z" }
@@ -575,6 +580,27 @@ namespace RimLLM_Framework.Tests
             // 2. 清空日誌後應清空統計
             tracker.ClearLogs();
             ClassicAssert.AreEqual(0, tracker.ProviderStatistics.Count);
+        }
+
+        [Test]
+        public void TestRecordLogStoresTokenCounts()
+        {
+            var mockSettings = new MockSettings();
+            var tracker = new RimLLMUsageTracker(mockSettings);
+
+            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", true, "", 100, 1200, 300);
+
+            ClassicAssert.AreEqual(1, tracker.RequestLogs.Count);
+            Assert.IsTrue(tracker.RequestLogs.TryPeek(out var entry));
+            ClassicAssert.AreEqual(1200, entry.PromptTokens);
+            ClassicAssert.AreEqual(300, entry.CompletionTokens);
+
+            // 舊呼叫（不帶 token）預設為 0，顯示層會省略。
+            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", false, "Error", 100);
+            Assert.IsTrue(tracker.RequestLogs.TryPeek(out _));
+            var all = tracker.RequestLogs.ToArray();
+            ClassicAssert.AreEqual(0, all[all.Length - 1].PromptTokens);
+            ClassicAssert.AreEqual(0, all[all.Length - 1].CompletionTokens);
         }
 
         /// <summary>

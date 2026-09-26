@@ -18,6 +18,7 @@ namespace RimLLM_Framework.Manager
         /// 官方 SDK 的 client 本身沒有套用使用者設定的 ApiTimeout，因此在此統一補上，
         /// 使 SDK 路徑與 raw HTTP 路徑的逾時語意一致。
         /// <paramref name="customizeOptions"/> 為供應商專屬的 options 客製化（如 reasoning、Patch 逃生門）。
+        /// <paramref name="onUsage"/> 為本次請求結算的 token 回呼，供請求日誌附帶顯示；可為 null。
         /// </summary>
 #pragma warning disable S107 // reason: 內部轉接器協調 IChatClient、逾時與逐候選參數，參數物件無重用價值且降低可讀性，維持窄範圍抑制
         public static async Task<ChatResponse> GenerateAsync(
@@ -29,7 +30,8 @@ namespace RimLLM_Framework.Manager
             string providerId,
             float timeoutSeconds,
             CancellationToken cancellationToken,
-            Action<ChatOptions> customizeOptions = null)
+            Action<ChatOptions> customizeOptions = null,
+            Action<UsageTokens> onUsage = null)
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
 
@@ -76,7 +78,7 @@ namespace RimLLM_Framework.Manager
                 }
 
                 // 要不要用估算值只由 RecordUsage 決定；逐字元估算相較網路往返可忽略。
-                RecordUsage(providerId, model, builtMessages, response.Usage, EstimateTokensRaw(response.Text));
+                RecordUsage(providerId, model, builtMessages, response.Usage, EstimateTokensRaw(response.Text), onUsage);
                 return response;
             }
         }
@@ -97,7 +99,8 @@ namespace RimLLM_Framework.Manager
             Func<ChatResponseUpdate, Task> onUpdateReceived,
             float timeoutSeconds,
             CancellationToken cancellationToken,
-            Action<ChatOptions> customizeOptions = null)
+            Action<ChatOptions> customizeOptions = null,
+            Action<UsageTokens> onUsage = null)
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
 
@@ -181,7 +184,7 @@ namespace RimLLM_Framework.Manager
                 throw new RimLLMException(LLMError.NetworkError, $"{providerId} returned an empty stream.");
             }
 
-            RecordUsage(providerId, model, builtMessages, lastUsage, completionEstimate);
+            RecordUsage(providerId, model, builtMessages, lastUsage, completionEstimate, onUsage);
         }
         #pragma warning restore S107, S3776
 
@@ -360,12 +363,14 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <param name="completionEstimate">provider 沒回報用量時使用的 completion token 估算值（<see cref="EstimateTokensRaw"/> 的累計）。</param>
+        /// <param name="onUsage">結算後的 token 回呼；回報與否都照帳本同一套數字。</param>
         private static void RecordUsage(
             string providerId,
             string model,
             IList<ChatMessage> messages,
             UsageDetails usage,
-            double completionEstimate)
+            double completionEstimate,
+            Action<UsageTokens> onUsage = null)
         {
             int promptTokens;
             int completionTokens;
@@ -386,13 +391,24 @@ namespace RimLLM_Framework.Manager
                 completionTokens = ToTokenCount(completionEstimate);
             }
 
+            int billedPrompt = Math.Max(1, promptTokens);
+            int billedCompletion = Math.Max(1, completionTokens);
+            // 日誌附帶的單次用量與帳本同源；manager 缺席（直接測試 provider）時帳本略過、回呼照觸發。
+            try
+            {
+                onUsage?.Invoke(new UsageTokens(billedPrompt, billedCompletion));
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Warning($"[RimLLM] Usage callback failed: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+            }
             try
             {
                 RimLLMProvider.Manager.RecordUsage(
                     providerId,
                     model,
-                    Math.Max(1, promptTokens),
-                    Math.Max(1, completionTokens),
+                    billedPrompt,
+                    billedCompletion,
                     Math.Max(0, cachedPromptTokens));
             }
             catch (InvalidOperationException)

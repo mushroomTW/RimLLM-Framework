@@ -81,8 +81,8 @@ namespace RimLLM_Framework.Mod
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
             {
                 string usageText = "RimLLM_UsageInfo".Translate(
-                    Settings.TotalPromptTokens.ToString(),
-                    Settings.TotalCompletionTokens.ToString(),
+                    Settings.TotalPromptTokens.ToString("N0"),
+                    Settings.TotalCompletionTokens.ToString("N0"),
                     Settings.TotalEstimatedCost.ToString("F4")
                 );
                 Widgets.Label(usageInfoRect, usageText);
@@ -243,8 +243,11 @@ namespace RimLLM_Framework.Mod
                 string statusText = log.Success
                     ? $"<color=#22c55e>{"RimLLM_StatusRequestSuccess".Translate(log.LatencyMs)}</color>"
                     : $"<color=#ef4444>{"RimLLM_StatusRequestFailed".Translate(RimLLMLog.SanitizeForLog(log.ErrorMessage, 160))}</color>";
+                // token 拿不到（失敗、或供應商未回報用量）時省略，避免 0 誤導。
+                int totalTokens = log.PromptTokens + log.CompletionTokens;
+                string tokenText = totalTokens > 0 ? $" | {totalTokens:N0} tok" : string.Empty;
 
-                _cachedLogLines.Add($"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}");
+                _cachedLogLines.Add($"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}{tokenText}");
             }
             return _cachedLogLines;
         }
@@ -386,7 +389,9 @@ namespace RimLLM_Framework.Mod
                         foreach (var log in logs)
                         {
                             string status = log.Success ? "SUCCESS" : $"FAILED ({RimLLMLog.SanitizeForLog(log.ErrorMessage, 200)})";
-                            sb.AppendLine($"  [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Mod: {log.ModId} | Provider: {log.Provider} ({log.Model}) | {status} | Latency: {log.LatencyMs}ms");
+                            int totalTokens = log.PromptTokens + log.CompletionTokens;
+                            string tokenInfo = totalTokens > 0 ? $" | Tokens: {totalTokens:N0} (prompt {log.PromptTokens:N0}, completion {log.CompletionTokens:N0})" : "";
+                            sb.AppendLine($"  [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Mod: {log.ModId} | Provider: {log.Provider} ({log.Model}) | {status} | Latency: {log.LatencyMs}ms{tokenInfo}");
                         }
                     }
                 }

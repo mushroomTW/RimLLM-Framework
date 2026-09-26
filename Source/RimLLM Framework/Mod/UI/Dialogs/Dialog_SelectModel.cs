@@ -84,7 +84,7 @@ namespace RimLLM_Framework.Mod
         private void DrawQuickFilters(Rect inRect)
         {
             Rect quickFilterRow = new Rect(0f, 75f, inRect.width, 26f);
-            string[] presetFilters = { "", "gemini", "gpt", "claude", "deepseek", "qwen", "flash" };
+            string[] presetFilters = { "", "gemini", "gpt", "claude", "deepseek", "qwen", "flash", "free" };
             float chipX = quickFilterRow.x;
             for (int p = 0; p < presetFilters.Length; p++)
             {

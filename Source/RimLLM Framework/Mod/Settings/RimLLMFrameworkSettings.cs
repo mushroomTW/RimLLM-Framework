@@ -13,7 +13,7 @@ namespace RimLLM_Framework.Mod
     /// RimWorld Mod 設定檔。
     /// 將複雜的字典結構序列化為單一 JSON 字串儲存，並在序列化時調用 EncryptionUtility 加解密 API 金鑰。
     /// </summary>
-    public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWindowLookup
+    public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWindowLookup, IDailyTokenBudget
     {
         /// <summary>
         /// API 供應商的 Fallback Chain 順序。
@@ -77,6 +77,8 @@ namespace RimLLM_Framework.Mod
         }
 
         public float DailyBudgetLimit { get; set; } = 0.0f;
+        /// <summary>每日 token 預算上限（輸入＋輸出合計）。0 代表無限制，存於設定 XML。</summary>
+        public long DailyTokenBudgetLimit { get; set; } = 0;
         public int BudgetPolicy { get; set; } = 0; // 0 = HardBlock
         public bool EnableAntiAbuse { get; set; } = true;
         public int MaxRequestsPerWindow { get; set; } = 10;
@@ -117,6 +119,12 @@ namespace RimLLM_Framework.Mod
         {
             get => _telemetry.DailyAccumulatedCost;
             set => _telemetry.DailyAccumulatedCost = value;
+        }
+        /// <summary>當日已累計 token（輸入＋輸出合計），存於遙測檔，每日跨天重置。</summary>
+        public long DailyAccumulatedTokens
+        {
+            get => _telemetry.DailyAccumulatedTokens;
+            set => _telemetry.DailyAccumulatedTokens = value;
         }
         public string DailyBudgetResetDate
         {
@@ -278,6 +286,7 @@ namespace RimLLM_Framework.Mod
             public long TotalCompletionTokens;
             public float TotalEstimatedCost;
             public float DailyBudgetLimit;
+            public long DailyTokenBudgetLimit;
             public int BudgetPolicy;
             public bool EnableAntiAbuse;
             public int MaxRequestsPerWindow;
@@ -395,6 +404,7 @@ namespace RimLLM_Framework.Mod
                         MaxConcurrentRequests = this.MaxConcurrentRequests,
                         DefaultReasoningEffort = EncodeReasoningEffort(this.DefaultReasoningEffort),
                         DailyBudgetLimit = this.DailyBudgetLimit,
+                        DailyTokenBudgetLimit = this.DailyTokenBudgetLimit,
                         BudgetPolicy = this.BudgetPolicy,
                         EnableAntiAbuse = this.EnableAntiAbuse,
                         MaxRequestsPerWindow = this.MaxRequestsPerWindow,
@@ -526,6 +536,7 @@ namespace RimLLM_Framework.Mod
                                 RimLLMLog.Enabled = this.DetailedLogging;
 
                                 this.DailyBudgetLimit = dto.DailyBudgetLimit < 0f ? 0f : dto.DailyBudgetLimit;
+                                this.DailyTokenBudgetLimit = dto.DailyTokenBudgetLimit < 0 ? 0 : dto.DailyTokenBudgetLimit;
                                 this.BudgetPolicy = dto.BudgetPolicy < 0 ? 0 : dto.BudgetPolicy;
                                 this.EnableAntiAbuse = dto.EnableAntiAbuse;
                                 // Use 10 as default if the value is <= 0 for MaxRequestsPerWindow and ThrottlingWindowSeconds

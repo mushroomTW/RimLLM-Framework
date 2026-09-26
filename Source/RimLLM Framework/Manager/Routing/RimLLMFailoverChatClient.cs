@@ -61,6 +61,12 @@ namespace RimLLM_Framework.Manager
             public Exception LastException;
             public DateTime StartTime = DateTime.Now;
             public Stopwatch Total = Stopwatch.StartNew();
+            /// <summary>
+            /// 目前這次嘗試結算的 token。嘗試之間循序執行，失敗的嘗試不會觸發用量回呼，
+            /// 因此單一欄位足以保存「最後一次成功結算」；每次選擇候選時先歸零。
+            /// 寫入發生在背景執行緒、讀取在路由回呼，兩者由嘗試 Task 的完成先後排序。
+            /// </summary>
+            public UsageTokens LastUsage;
 
             public RimLLMFallbackPipeline.ResolvedCandidate Current => Candidates[Index];
         }
@@ -160,7 +166,11 @@ namespace RimLLM_Framework.Manager
                     : $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName})");
             }
 
-            IChatClient candidateClient = new RimLLMProviderChatClient(candidate.Provider, candidate.ModelName, _settings);
+            IChatClient candidateClient = new RimLLMProviderChatClient(
+                candidate.Provider, candidate.ModelName, _settings,
+                tokens => { state.LastUsage = tokens; });
+            // 新嘗試先歸零：失敗的嘗試不會觸發回呼，殘留值會誤植到下一次成功的日誌。
+            state.LastUsage = default;
             // 名額包在單一嘗試外面：嘗試結束（成功、失敗或串流列舉完）即歸還，退避等待不占名額。
             return _queue != null ? new RimLLMRequestQueueChatClient(candidateClient, _queue) : candidateClient;
         }
@@ -278,7 +288,8 @@ namespace RimLLM_Framework.Manager
                     {
                         _healthLedger.RecordSuccess(healthKey, elapsedMs);
                         _usageTracker.RecordLog(
-                            state.StartTime, _modId, candidate.ProviderId, candidate.ModelName, true, null, elapsedMs);
+                            state.StartTime, _modId, candidate.ProviderId, candidate.ModelName, true, null, elapsedMs,
+                            state.LastUsage.Prompt, state.LastUsage.Completion);
                     }
                 }
                 else

@@ -235,7 +235,7 @@ namespace RimLLM_Framework.Mod
         }
 
         /// <summary>常用的上下文上限，讓玩家一鍵選取；其他數值走自訂視窗。</summary>
-        private static readonly int[] ContextWindowPresets = { 8192, 32768, 131072, 200000, 1048576 };
+        private static readonly int[] ContextWindowPresets = { 131072, 200000, 262144, 1048576 };
 
         /// <summary>
         /// 繪製上下文上限按鈕：顯示目前生效的值（手動值優先於 API 回報值），點擊可手動設定或改回自動。

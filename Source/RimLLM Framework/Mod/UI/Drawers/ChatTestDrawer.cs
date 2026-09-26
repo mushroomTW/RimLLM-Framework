@@ -25,6 +25,8 @@ namespace RimLLM_Framework.Mod
         private static bool chatLoading;
         private static ReasoningEffort? chatReasoningEffort;
         private static bool chatReasoningInitialized;
+        /// <summary>對話測試釘選的模型（"Provider:Model"），null 代表自動、沿用備援鏈順序。</summary>
+        private static string chatModelId;
 
         /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
         private const string ChatInputControlName = "RimLLM_ChatInput";
@@ -192,7 +194,7 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         public static float GetHeight(float width)
         {
-            return 650f;
+            return 686f;
         }
 
         /// <summary>
@@ -302,6 +304,10 @@ namespace RimLLM_Framework.Mod
 
             listing.Gap(6f);
 
+            // 測試模型選擇列：釘選後本次對話走該模型優先（備援鏈首），失敗仍可沿鏈降級。
+            DrawModelSelectorRow(listing);
+            listing.Gap(6f);
+
             // 思考強度設定列
             Rect effortRowRect = listing.GetRect(30f);
             float effortLabelWidth = Text.CalcSize("RimLLM_ReasoningEffortLabel".Translate()).x;
@@ -381,6 +387,7 @@ namespace RimLLM_Framework.Mod
                     CancelActiveChatRequest();
 
                     string userPrompt = chatInput.Trim();
+                    string pinnedModel = chatModelId;
                     chatHistory.Add(EntryPrefix("RimLLM_ChatUser") + userPrompt);
 
                     // 先新增一個 AI 回覆的佔位項目，以利後續串流更新
@@ -417,6 +424,8 @@ namespace RimLLM_Framework.Mod
                                 DisableReasoning = false,
                                 Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null
                             };
+                            // 釘選測試模型：路由層會把它移到備援鏈首優先嘗試；null 則沿用鏈順序。
+                            options.ModelId = pinnedModel;
                             // 框架的串流只傳遞 MEAI 原生的 TextReasoningContent，
                             // <think> 標記由這裡自己組——顯示成灰色的邏輯需要它。
                             var thinkFormatter = new RimLLMThinkTagFormatter();
@@ -592,6 +601,64 @@ namespace RimLLM_Framework.Mod
             }
         }
         #pragma warning restore S3776
+
+        /// <summary>備援鏈去空去重後的有序條目，供測試模型下拉選單使用。</summary>
+        private static List<string> CollectChainEntries()
+        {
+            var entries = new List<string>();
+            foreach (string entry in Settings.FallbackChain)
+            {
+                if (!string.IsNullOrEmpty(entry) && !entries.Contains(entry))
+                {
+                    entries.Add(entry);
+                }
+            }
+            return entries;
+        }
+
+        /// <summary>
+        /// 測試模型選擇列。選單列出備援鏈上的 "Provider:Model" 條目，選中後以
+        /// <see cref="ChatOptions.ModelId"/> 釘選為鏈首；選自動則不指定、沿用備援鏈順序。
+        /// </summary>
+        private static void DrawModelSelectorRow(Listing_Standard listing)
+        {
+            List<string> entries = CollectChainEntries();
+            // 備援鏈被改掉後，舊的釘選已無意義，退回自動。
+            if (!string.IsNullOrEmpty(chatModelId) && !entries.Contains(chatModelId))
+            {
+                chatModelId = null;
+            }
+
+            Rect rowRect = listing.GetRect(30f);
+            float labelWidth = Text.CalcSize("RimLLM_ChatTestModelLabel".Translate()).x;
+            Rect labelRect = new Rect(rowRect.x, rowRect.y, labelWidth + 5f, rowRect.height);
+            Rect btnRect = new Rect(rowRect.x + labelWidth + 15f, rowRect.y, 300f, rowRect.height);
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+            {
+                Widgets.Label(labelRect, "RimLLM_ChatTestModelLabel".Translate());
+            }
+
+            string btnLabel = string.IsNullOrEmpty(chatModelId)
+                ? "RimLLM_ChatTestModelAuto".Translate().ToString()
+                : chatModelId;
+            if (Widgets.ButtonText(btnRect, btnLabel))
+            {
+                var options = new List<FloatMenuOption>
+                {
+                    new FloatMenuOption("RimLLM_ChatTestModelAuto".Translate(), () => { chatModelId = null; })
+                };
+                foreach (string entry in entries)
+                {
+                    string captured = entry;
+                    options.Add(new FloatMenuOption(captured, () => { chatModelId = captured; }));
+                }
+                if (entries.Count == 0)
+                {
+                    options.Add(new FloatMenuOption("RimLLM_ModelsEmptyWarning".Translate(), null));
+                }
+                Find.WindowStack.Add(new FloatMenu(options));
+            }
+        }
 
         private static string ThinkStartLabel => "RimLLM_ThinkProcessLabel".Translate();
         private static string ThinkEndLabel => "RimLLM_ThinkProcessEndLabel".Translate();
@@ -871,8 +938,8 @@ namespace RimLLM_Framework.Mod
                 ChatEntryMeta meta = layout.Meta;
                 float timeSec = meta.ElapsedMs / 1000f;
                 string statTip = meta.IsEstimatedTokens
-                    ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens)
-                    : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens, meta.PromptTokens, meta.CompletionTokens);
+                    ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens.ToString("N0"))
+                    : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens.ToString("N0"), meta.PromptTokens.ToString("N0"), meta.CompletionTokens.ToString("N0"));
                 TooltipHandler.TipRegion(statRect, statTip);
             }
         }
@@ -982,7 +1049,7 @@ namespace RimLLM_Framework.Mod
 
                 string timeStr = meta.ElapsedMs < 1000 ? $"{meta.ElapsedMs}ms" : $"{(meta.ElapsedMs / 1000f):F1}s";
                 string tokenPrefix = meta.IsEstimatedTokens ? "~" : "";
-                string tokenStr = meta.TotalTokens > 0 ? $"{tokenPrefix}{meta.TotalTokens} tok" : "";
+                string tokenStr = meta.TotalTokens > 0 ? $"{tokenPrefix}{meta.TotalTokens:N0} tok" : "";
                 layout.StatText = string.IsNullOrEmpty(tokenStr)
                     ? $"<color=#64748b>{timeStr}</color>"
                     : $"<color=#64748b>{timeStr}</color>  <color=#475569>•</color>  <color=#64748b>{tokenStr}</color>";

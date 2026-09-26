@@ -6,7 +6,7 @@
 
 1. **多供應商支援**
    * 原生支援 Google **Gemini**、**OpenAI**、**DeepSeek**、**Groq**、**Grok (xAI)**、**Z.ai**、**OpenRouter**、**Kimi**、**MiniMax**、**Qwen**、**NVIDIA** 與 **Player2**。
-   * **Player2**（https://player2.game/）預設連向本機 Player2 App（`http://127.0.0.1:4315/v1`）：開著 App 就能用，本機模式不需 API 金鑰，實際模型由 App 內的 AI Selection 決定。它沒有 `/models` 端點，快取清單固定只有一個 `player2`。改用雲端 API 時，把端點改為 `https://api.player2.game/v1` 並填入 p2Key —— 雲端模式必須填金鑰，未填時設定頁會警告。它不受 `FallbackToFree` 預算篩選限制，美元費率記為已知的 $0（本地免費；雲端以 joules 計費，每日美元預算不含 joules）。
+   * **Player2**（https://player2.game/）預設連向本機 Player2 App（`http://127.0.0.1:4315/v1`）：開著 App 就能用，本機模式不需 API 金鑰，實際模型由 App 內的 AI Selection 決定。它沒有 `/models` 端點，快取清單固定只有一個 `player2`。改用雲端 API 時，把端點改為 `https://api.player2.game/v1` 並填入 p2Key —— 雲端模式必須填金鑰，未填時設定頁會警告。它不受 `FallbackToFree` 預算篩選限制，美元費率記為已知的 $0（本地免費；雲端以 joules 計費，joules 不列入費用估算）。
    * 支援 **OpenAI 相容 API**，可設定任何本地或第三方相容端點（LM Studio、Ollama、LocalAI、vLLM 等）。預設端點為 `http://localhost:1234/v1`，並支援 API 金鑰。
    * **Kimi**、**MiniMax**、**Qwen** 提供一鍵切換「使用中國專用端點」（預設關閉），以改善連線品質。
 2. **容錯與模型 Fallback**
@@ -28,10 +28,10 @@
 4. **設定介面**
    * 多欄供應商頁面，附狀態標示（已啟用／已停用／缺少金鑰）；快取的模型以標籤呈現，點一下就能加入備援鏈。
    * 模型選擇器支援搜尋與常見模型系列的快速過濾。
-   * 對話測試頁：每則回覆會標示實際回答的模型、延遲與 token 用量（`~` 表示估計值），可以複製，也可以在串流途中停止。回覆以 Markdig 解析 Markdown 後轉成 Unity rich text；Unity 表達不了的結構（例如表格）以近似方式呈現。
+   * 對話測試頁：每則回覆會標示實際回答的模型、延遲與 token 用量（`~` 表示估計值），可以複製，也可以在串流途中停止。模型選擇器可把備援鏈上某一項釘選到鏈首測試（失敗仍會沿鏈降級），選自動則沿用備援鏈順序。回覆以 Markdig 解析 Markdown 後轉成 Unity rich text；Unity 表達不了的結構（例如表格）以近似方式呈現。
    * Embedding 設定沿用同樣的版面，提供本地伺服器自動偵測，以及會回報向量維度的連線測試。
 5. **獨立除錯分頁與日誌開關**
-   * 獨立的**除錯**設定分頁，含「詳細日誌」核取方塊（預設關閉——每次請求都會寫一行日誌，而 Verse 的共用日誌上限為 10000 筆），讓 Mod 開發者與玩家在排查問題時自由開關本 Mod 逐次請求的日誌輸出。一次性的警告（例如 API 金鑰無法解密、遙測寫檔失敗）則一律記錄。
+   * 獨立的**除錯**設定分頁，含「詳細日誌」核取方塊（預設關閉——每次請求都會寫一行日誌，而 Verse 的共用日誌上限為 10000 筆），讓 Mod 開發者與玩家在排查問題時自由開關本 Mod 逐次請求的日誌輸出。一次性的警告（例如 API 金鑰無法解密、遙測寫檔失敗）則一律記錄。最近請求歷史會在供應商有回報用量時附上該次 token 數；拿不到用量的條目省略不顯示。
 6. **一鍵連線測試**
    * 即時連線檢查，量測延遲並驗證 API 金鑰與模型。在基底類別實作一次，所有供應商共用。
 7. **執行緒安全與主執行緒 Scribe 派送**
@@ -44,7 +44,7 @@
 9. **上下文快取與 Prompt 快取**
    * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位），並依費率表中該模型的快取輸入估計費率計算。供應商定價可能變動，因此金額仍是估算值。
-   * **成本估算來自內建費率表**（OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai、Player2 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。Player2 記為已知的 $0（本地免費，雲端以 joules 而非美元計費，每日預算不含 joules）。查無費率代表**費用未知**，不是已知免費：token 數仍會累計，但其費用不列入顯示總額與每日預算。Debug 分頁會顯示本次執行中查無費率的請求數。每日預算在請求前檢查已累計的估算金額，並非精確的消費上限。
+   * **成本估算來自內建費率表**（OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai、Player2 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。Player2 記為已知的 $0（本地免費，雲端以 joules 而非美元計費，joules 不列入費用估算）。查無費率代表**費用未知**，不是已知免費：其 token 照計入每日預算，但費用不列入顯示總額。Debug 分頁會顯示本次執行中查無費率的請求數。每日預算在請求前檢查已累計的輸入＋輸出 token，並非精確的消費上限。
 10. **Embedding SDK**
     * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
     * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini，OpenAI 走其原生端點；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。模型、端點與金鑰依 Embedding 供應商分別保存，切換啟用的供應商不會遺失其他供應商的設定；模型或端點留空代表使用該供應商預設值，金鑰留空則繼承對應對話供應商的金鑰。

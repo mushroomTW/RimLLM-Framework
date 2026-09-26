@@ -215,7 +215,7 @@ IEmbeddingGenerator<string, Embedding<float>> generator =
 
 `GenerateAsync`、`GeneratedEmbeddings<T>` 與 `Embedding<float>` 的行為與 MEAI 文件相同。每個 `Embedding<float>` 都帶著實際算出它的 `ModelId`，`GeneratedEmbeddings.Usage` 則在供應商有回報時帶回輸入 token 數—— OpenAI 相容端點會回報，Gemini 公開 API 不會（它的 `tokenCount` 限 Enterprise 平台），因此在 Gemini 下 `Usage` 維持 `null`。與對話一樣，`null` 代表供應商沒有回報，不是這次呼叫免費。Embedding 供應商預設為**停用**；玩家選擇之前，`GenerateAsync` 會擲出 `RimLLMException`。
 
-同一次 `GenerateAsync` 的多筆輸入會合成一次批次請求送出（為了上限較小的端點，每 100 筆分一批），不再每筆一次 HTTP 來回；供應商回報的輸入 token 也和對話請求一樣計入用量看板與每日預算。
+同一次 `GenerateAsync` 的多筆輸入會合成一次批次請求送出（為了上限較小的端點，每 100 筆分一批），不再每筆一次 HTTP 來回；供應商回報的輸入 token 也和對話請求一樣計入用量看板與每日 token 預算。
 
 ### 錯誤處理
 
@@ -271,7 +271,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 供應商之間的容錯切換 | 回應開始輸出之前，自動沿 Fallback 鏈降級 |
 | 處理掛掉的供應商 | 熔斷器，連續失敗後以指數退避冷卻 |
 | 跨 Mod 的流量控制 | 全域優先佇列與並行上限，避免多個 Mod 同時打 API 造成掉幀 |
-| 費用控管 | 每日預算，可選硬性阻擋／模擬回應／改用免費模型／詢問玩家 |
+| 費用控管 | 每日 token 預算，可選硬性阻擋／模擬回應／改用免費模型／詢問玩家 |
 | 用量與費用回報 | Debug 分頁的各供應商 Token 與成本看板 |
 | 推理模型的差異 | `reasoning_content` 統一正規化為 MEAI 的 `TextReasoningContent` |
 | 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，再抽出 JSON 區塊做第二次解析 |

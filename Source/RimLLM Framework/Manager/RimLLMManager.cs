@@ -51,6 +51,10 @@ namespace RimLLM_Framework.Manager
             public bool Success { get; set; }
             public string ErrorMessage { get; set; }
             public long LatencyMs { get; set; }
+            /// <summary>本次請求的輸入 token（供應商有回報才有值，否則為 0）。</summary>
+            public int PromptTokens { get; set; }
+            /// <summary>本次請求的輸出 token（供應商有回報才有值，否則為 0）。</summary>
+            public int CompletionTokens { get; set; }
         }
 
         /// <summary>
