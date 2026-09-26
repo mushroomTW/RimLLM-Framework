@@ -296,7 +296,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
 
 ## 📖 Features
 
-1. **Multi-provider support** — Gemini, OpenAI, DeepSeek, Groq, Grok, Z.ai, OpenRouter, Kimi, MiniMax, Qwen and NVIDIA, plus any OpenAI-compatible endpoint (LM Studio, Ollama, vLLM, …).
+1. **Multi-provider support** — Gemini, OpenAI, DeepSeek, Groq, Grok, Z.ai, OpenRouter, Kimi, MiniMax, Qwen, NVIDIA and Player2, plus any OpenAI-compatible endpoint (LM Studio, Ollama, vLLM, …).
 2. **Failover and model fallback** — a player-configured fallback chain with exponential backoff, per-model cooldowns, four routing strategies and context window lookup.
 3. **Encrypted API keys** — AES-256 with a key protected by the current OS user; masked in the settings UI and never sent in request URLs.
 4. **Settings UI** — multi-column provider pages, a filterable model picker and a chat test page with Markdown rendering.

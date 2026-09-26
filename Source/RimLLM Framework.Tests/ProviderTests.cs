@@ -195,6 +195,85 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestManagerRegistersPlayer2Provider()
+        {
+            var mockSettings = new MockSettings();
+            var manager = new RimLLMManager(mockSettings);
+
+            ClassicAssert.Contains(ProviderIds.Player2, manager.GetRegisteredProviderIds());
+        }
+
+        [Test]
+        public void TestPlayer2UsesLocalEndpointAndFixedModel()
+        {
+            var mockSettings = new MockSettings();
+
+            var provider = new TestPlayer2Provider(mockSettings);
+            var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
+            string response = provider.GenerateAsync(messages, null, Player2Provider.DefaultModelName).GetAwaiter().GetResult();
+
+            ClassicAssert.AreEqual("ok", response);
+            ClassicAssert.IsTrue(
+                provider.InterceptedUrl.StartsWith(Player2Provider.LocalDefaultEndpoint),
+                "Player2 預設應連向本機 App，實際：" + provider.InterceptedUrl);
+            var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+            ClassicAssert.AreEqual(Player2Provider.DefaultModelName, (string)payload["model"]);
+        }
+
+        [Test]
+        public void TestPlayer2ConnectionTestNeedsNoApiKey()
+        {
+            // 本機 App 模式不需要金鑰：未填金鑰時連線測試仍應送出請求，而非直接回報未設定。
+            var mockSettings = new MockSettings();
+
+            var provider = new TestPlayer2Provider(mockSettings);
+            TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
+
+            ClassicAssert.IsTrue(result.Success);
+            ClassicAssert.AreEqual(Player2Provider.DefaultModelName, result.Model);
+        }
+
+        [Test]
+        public void TestPlayer2FetchModelsReturnsFixedList()
+        {
+            // Player2 沒有 /models 端點，固定回傳單一佔位模型，不發網路請求。
+            var mockSettings = new MockSettings();
+
+            var provider = new Player2Provider(mockSettings);
+            List<string> models = provider.FetchAvailableModelsAsync().GetAwaiter().GetResult();
+
+            ClassicAssert.AreEqual(1, models.Count);
+            ClassicAssert.AreEqual(Player2Provider.DefaultModelName, models[0]);
+        }
+
+        [Test]
+        public void TestPlayer2RequiresKeyOnlyOnCloudEndpoint()
+        {
+            // 本機 App 模式免金鑰，雲端（api.player2.game）需 p2Key；其餘供應商不受端點影響。
+            ClassicAssert.IsFalse(ProviderIds.RequiresApiKey(ProviderIds.Player2, Player2Provider.LocalDefaultEndpoint));
+            ClassicAssert.IsFalse(ProviderIds.RequiresApiKey(ProviderIds.Player2, null));
+            ClassicAssert.IsFalse(ProviderIds.RequiresApiKey(ProviderIds.Player2, "http://localhost:4315/v1/"));
+            ClassicAssert.IsTrue(ProviderIds.RequiresApiKey(ProviderIds.Player2, "https://api.player2.game/v1"));
+            ClassicAssert.IsTrue(ProviderIds.RequiresApiKey(ProviderIds.Player2, "https://api.player2.game/v1/chat/completions"));
+            ClassicAssert.IsFalse(ProviderIds.RequiresApiKey(ProviderIds.OpenAICompatible, "https://api.player2.game/v1"));
+            ClassicAssert.IsTrue(ProviderIds.RequiresApiKey(ProviderIds.OpenAI, "https://api.openai.com/v1"));
+        }
+
+        [Test]
+        public void TestPlayer2InstanceRequiresKeyFollowsEndpoint()
+        {
+            // 實例屬性與靜態 helper 為同一判斷：路由層與 UI 前置檢查看到的語義一致。
+            var localSettings = new MockSettings();
+            var localProvider = new Player2Provider(localSettings);
+            ClassicAssert.IsFalse(localProvider.RequiresApiKey);
+
+            var cloudSettings = new MockSettings();
+            cloudSettings.Endpoints[ProviderIds.Player2] = "https://api.player2.game/v1";
+            var cloudProvider = new Player2Provider(cloudSettings);
+            ClassicAssert.IsTrue(cloudProvider.RequiresApiKey);
+        }
+
+        [Test]
         public void TestReasoningEffortPayloads()
         {
             var mockSettings = new MockSettings();
@@ -879,8 +958,12 @@ namespace RimLLM_Framework.Tests
             {
                 options.Endpoint = new Uri(endpoint, UriKind.Absolute);
             }
+            // 免金鑰供應商（Player2 本機模式等）測項不填金鑰：與正式版 CreateChatClient 一致改用佔位憑證，
+            // 其餘測項本來就有金鑰，不受影響。
+            string apiKey = settings.GetActiveApiKey(providerId);
+            if (string.IsNullOrEmpty(apiKey)) apiKey = "not-required";
             options.Transport = new HttpClientPipelineTransport(new System.Net.Http.HttpClient(handler));
-            var client = new ChatClient(model, new ApiKeyCredential(settings.GetActiveApiKey(providerId)), options);
+            var client = new ChatClient(model, new ApiKeyCredential(apiKey), options);
             return client.AsIChatClient();
         }
     }
@@ -1039,6 +1122,28 @@ namespace RimLLM_Framework.Tests
         public string InterceptedUrl => WireHandler.LastRequestUrl;
 
         public TestZaiProvider(IRimLLMSettings settings) : base(settings) {}
+
+        public override IChatClient CreateChatClient(string model)
+        {
+            var rawClient = WireChatClientFactory.Create(
+                Settings,
+                ProviderId,
+                Settings.GetEndpoint(ProviderId, DefaultEndpoint),
+                model,
+                WireHandler);
+            return new OpenAIChatClientAdapter(rawClient, this, model);
+        }
+    }
+
+    public class TestPlayer2Provider : Player2Provider
+    {
+        public CapturingHttpMessageHandler WireHandler { get; } = new CapturingHttpMessageHandler();
+
+        public string InterceptedPayload => WireHandler.LastRequestBody;
+
+        public string InterceptedUrl => WireHandler.LastRequestUrl;
+
+        public TestPlayer2Provider(IRimLLMSettings settings) : base(settings) {}
 
         public override IChatClient CreateChatClient(string model)
         {

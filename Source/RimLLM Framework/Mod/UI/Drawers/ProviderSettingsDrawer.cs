@@ -28,6 +28,7 @@ namespace RimLLM_Framework.Mod
             new KeyValuePair<string, string>("MiniMax", ProviderIds.MiniMax),
             new KeyValuePair<string, string>("Qwen", ProviderIds.Qwen),
             new KeyValuePair<string, string>("NVIDIA", ProviderIds.Nvidia),
+            new KeyValuePair<string, string>("Player2", ProviderIds.Player2),
             new KeyValuePair<string, string>("OpenAI Compatible", ProviderIds.OpenAICompatible)
         };
 
@@ -64,7 +65,7 @@ namespace RimLLM_Framework.Mod
             {
                 extraHeight = 30f;
             }
-            else if (ActiveProviderSubTab == ProviderIds.OpenAICompatible)
+            else if (ProviderIds.HasCustomEndpoint(ActiveProviderSubTab))
             {
                 extraHeight = 60f;
             }
@@ -132,7 +133,8 @@ namespace RimLLM_Framework.Mod
                 statusText = "RimLLM_StatusDisabled".Translate();
                 statusColor = RimLLMUIStyle.Muted;
             }
-            else if (providerId != ProviderIds.OpenAICompatible && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
+            // 端點相關是因為 Player2 有雙模式：判斷需代入實際端點（未設定時傳 null，視為本機模式）。
+            else if (ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, null)) && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
             {
                 statusText = "RimLLM_StatusNoApiKey".Translate();
                 statusColor = RimLLMUIStyle.Warning;

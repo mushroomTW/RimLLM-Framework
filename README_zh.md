@@ -294,7 +294,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 
 ## 📖 功能特色
 
-1. **多供應商支援** —— Gemini、OpenAI、DeepSeek、Groq、Grok、Z.ai、OpenRouter、Kimi、MiniMax、Qwen、NVIDIA，以及任何 OpenAI 相容端點（LM Studio、Ollama、vLLM 等）。
+1. **多供應商支援** —— Gemini、OpenAI、DeepSeek、Groq、Grok、Z.ai、OpenRouter、Kimi、MiniMax、Qwen、NVIDIA、Player2，以及任何 OpenAI 相容端點（LM Studio、Ollama、vLLM 等）。
 2. **容錯與模型 Fallback** —— 玩家設定的備援鏈，搭配指數退避、以模型為單位的冷卻、四種路由策略與上下文上限查詢。
 3. **API 金鑰加密** —— AES-256，金鑰由目前 OS 使用者保護；設定介面預設遮蔽，也不會出現在請求 URL。
 4. **設定介面** —— 多欄供應商頁面、可過濾的模型選擇器、支援 Markdown 的對話測試頁。

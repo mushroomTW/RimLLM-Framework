@@ -5,6 +5,7 @@ using UnityEngine;
 using Verse;
 using RimWorld;
 using RimLLM_Framework.Core;
+using RimLLM_Framework.Providers;
 
 namespace RimLLM_Framework.Mod
 {
@@ -65,14 +66,21 @@ namespace RimLLM_Framework.Mod
             // 2. API 金鑰列表
             DrawApiKeyList(listing, providerId);
 
-            // 3. Endpoint 設定（OpenAICompatible 模式顯示自訂端點與本地偵測；其他供應商若有中國端點則顯示切換）
-            if (providerId == ProviderIds.OpenAICompatible)
+            // 3. Endpoint 設定（端點可自訂的供應商：OpenAICompatible 的本地偵測、Player2 的本機／雲端切換；
+            // 其他供應商若有中國端點則顯示切換）
+            if (ProviderIds.HasCustomEndpoint(providerId))
             {
-                string endpoint = Settings.GetEndpoint(providerId, "http://localhost:1234/v1");
+                string defaultEndpoint = providerId == ProviderIds.Player2
+                    ? Player2Provider.LocalDefaultEndpoint
+                    : "http://localhost:1234/v1";
+                string endpoint = Settings.GetEndpoint(providerId, defaultEndpoint);
                 listing.Label("RimLLM_ApiEndpoint".Translate());
                 endpoint = listing.TextEntry(endpoint);
                 Settings.SetEndpoint(providerId, endpoint?.Trim());
-                LocalProviderSubTabDrawer.DrawLocalDetectionControls(listing, providerId);
+                if (providerId == ProviderIds.OpenAICompatible)
+                {
+                    LocalProviderSubTabDrawer.DrawLocalDetectionControls(listing, providerId);
+                }
                 listing.Gap(8f);
             }
             else
@@ -454,8 +462,9 @@ namespace RimLLM_Framework.Mod
             Func<Task<Func<string>>> operation,
             Func<Exception, string> describeError)
         {
-            // 本地相容介面不需要金鑰；其餘供應商未填金鑰時不必真的送出請求。
-            if (providerId != ProviderIds.OpenAICompatible && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
+            // 免金鑰的供應商不需要金鑰（本地相容介面；Player2 本機 App 模式，雲端模式仍需 p2Key，
+            // 因此判斷需代入實際端點）；其餘供應商未填金鑰時不必真的送出請求。
+            if (ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, null)) && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
             {
                 statusMessages[providerId] = "RimLLM_EnterApiKey".Translate();
                 return;

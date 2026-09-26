@@ -92,6 +92,7 @@ namespace RimLLM_Framework.Manager
             RegisterBuiltInProvider(new QwenProvider(settings));
             RegisterBuiltInProvider(new NvidiaProvider(settings));
             RegisterBuiltInProvider(new ZaiProvider(settings));
+            RegisterBuiltInProvider(new Player2Provider(settings));
 
             _embeddingService = new RimLLMEmbeddingService(settings);
         }

@@ -5,7 +5,8 @@
 各項功能的詳細行為與設計理由。SDK 用法請見 README。
 
 1. **多供應商支援**
-   * 原生支援 Google **Gemini**、**OpenAI**、**DeepSeek**、**Groq**、**Grok (xAI)**、**Z.ai**、**OpenRouter**、**Kimi**、**MiniMax**、**Qwen** 與 **NVIDIA**。
+   * 原生支援 Google **Gemini**、**OpenAI**、**DeepSeek**、**Groq**、**Grok (xAI)**、**Z.ai**、**OpenRouter**、**Kimi**、**MiniMax**、**Qwen**、**NVIDIA** 與 **Player2**。
+   * **Player2**（https://player2.game/）預設連向本機 Player2 App（`http://127.0.0.1:4315/v1`）：開著 App 就能用，本機模式不需 API 金鑰，實際模型由 App 內的 AI Selection 決定。它沒有 `/models` 端點，快取清單固定只有一個 `player2`。改用雲端 API 時，把端點改為 `https://api.player2.game/v1` 並填入 p2Key —— 雲端模式必須填金鑰，未填時設定頁會警告。它不受 `FallbackToFree` 預算篩選限制，美元費率記為已知的 $0（本地免費；雲端以 joules 計費，每日美元預算不含 joules）。
    * 支援 **OpenAI 相容 API**，可設定任何本地或第三方相容端點（LM Studio、Ollama、LocalAI、vLLM 等）。預設端點為 `http://localhost:1234/v1`，並支援 API 金鑰。
    * **Kimi**、**MiniMax**、**Qwen** 提供一鍵切換「使用中國專用端點」（預設關閉），以改善連線品質。
 2. **容錯與模型 Fallback**
@@ -43,7 +44,7 @@
 9. **上下文快取與 Prompt 快取**
    * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位），並依費率表中該模型的快取輸入估計費率計算。供應商定價可能變動，因此金額仍是估算值。
-   * **成本估算來自內建費率表**（OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。查無費率代表**費用未知**，不是已知免費：token 數仍會累計，但其費用不列入顯示總額與每日預算。Debug 分頁會顯示本次執行中查無費率的請求數。每日預算在請求前檢查已累計的估算金額，並非精確的消費上限。
+   * **成本估算來自內建費率表**（OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai、Player2 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。Player2 記為已知的 $0（本地免費，雲端以 joules 而非美元計費，每日預算不含 joules）。查無費率代表**費用未知**，不是已知免費：token 數仍會累計，但其費用不列入顯示總額與每日預算。Debug 分頁會顯示本次執行中查無費率的請求數。每日預算在請求前檢查已累計的估算金額，並非精確的消費上限。
 10. **Embedding SDK**
     * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
     * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini，OpenAI 走其原生端點；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。模型、端點與金鑰依 Embedding 供應商分別保存，切換啟用的供應商不會遺失其他供應商的設定；模型或端點留空代表使用該供應商預設值，金鑰留空則繼承對應對話供應商的金鑰。

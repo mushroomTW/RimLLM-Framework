@@ -190,7 +190,10 @@ namespace RimLLM_Framework.Manager
             { "grok:grok-3", new CostRate(3.00f, 15.00f) },
             { "grok:grok-3-mini", new CostRate(0.30f, 0.50f) },
             { "grok:grok-2", new CostRate(2.00f, 10.00f) },
-            { "grok:grok-beta", new CostRate(5.00f, 15.00f) }
+            { "grok:grok-beta", new CostRate(5.00f, 15.00f) },
+
+            // Player2：本地 App 免費，雲端以 joules 而非美元計費，因此 USD 費率記為已知的 0。
+            { "player2:player2", new CostRate(0f, 0f) }
         };
 
         private struct CostRate

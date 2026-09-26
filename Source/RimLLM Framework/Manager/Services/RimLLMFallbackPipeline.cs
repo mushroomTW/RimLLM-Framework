@@ -348,9 +348,12 @@ namespace RimLLM_Framework.Manager
                 return false;
 
             // Budget fallback to free (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)
+            // 不走美元計費的供應商超支時仍可使用，不受免費模型篩選限制：
+            // OpenAICompatible 的本地伺服器、Player2 的本機 App／joules 制（雲端用量不進美元預算）。
             if (_settings.BudgetPolicy == 2 &&
                 _settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit &&
-                providerId != ProviderIds.OpenAICompatible && (modelName == null || modelName.IndexOf("free", StringComparison.OrdinalIgnoreCase) < 0))
+                providerId != ProviderIds.OpenAICompatible && providerId != ProviderIds.Player2 &&
+                (modelName == null || modelName.IndexOf("free", StringComparison.OrdinalIgnoreCase) < 0))
             {
                 return false;
             }
