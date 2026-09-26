@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.AI;
 using Verse;
+using RimWorld;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 #pragma warning disable S2365, S3260, S3267, S3459 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
@@ -79,6 +80,12 @@ namespace RimLLM_Framework.Mod
         public float DailyBudgetLimit { get; set; } = 0.0f;
         /// <summary>每日 token 預算上限（輸入＋輸出合計）。0 代表無限制，存於設定 XML。</summary>
         public long DailyTokenBudgetLimit { get; set; } = 0;
+        /// <summary>
+        /// 最大合法的預算超限應對策略值。新增策略時要同步更新這裡與
+        /// <see cref="BudgetSettingsDrawer"/> 的策略名稱清單。
+        /// </summary>
+        public const int MaxBudgetPolicy = 1; // 0=HardBlock, 1=WarnOnly
+
         public int BudgetPolicy { get; set; } = 0; // 0 = HardBlock
         public bool EnableAntiAbuse { get; set; } = true;
         public int MaxRequestsPerWindow { get; set; } = 10;
@@ -537,7 +544,16 @@ namespace RimLLM_Framework.Mod
 
                                 this.DailyBudgetLimit = dto.DailyBudgetLimit < 0f ? 0f : dto.DailyBudgetLimit;
                                 this.DailyTokenBudgetLimit = dto.DailyTokenBudgetLimit < 0 ? 0 : dto.DailyTokenBudgetLimit;
-                                this.BudgetPolicy = dto.BudgetPolicy < 0 ? 0 : dto.BudgetPolicy;
+                                int storedPolicy = dto.BudgetPolicy;
+                                if (SanitizeBudgetPolicy(storedPolicy) != storedPolicy)
+                                {
+                                    // 這是行為變更：原本的軟性策略會變成硬性阻斷，必須讓使用者自己知道原因，
+                                    // 否則他只會看到 AI 突然回報 QuotaExceeded 而找不到緣由。
+                                    RimLLMLog.Warning(
+                                        $"[RimLLM] Unsupported budget policy {storedPolicy} in settings; reset to HardBlock (0).");
+                                    NotifyBudgetPolicyReset();
+                                }
+                                this.BudgetPolicy = SanitizeBudgetPolicy(storedPolicy);
                                 this.EnableAntiAbuse = dto.EnableAntiAbuse;
                                 // Use 10 as default if the value is <= 0 for MaxRequestsPerWindow and ThrottlingWindowSeconds
                                 this.MaxRequestsPerWindow = dto.MaxRequestsPerWindow <= 0 ? 10 : dto.MaxRequestsPerWindow;
@@ -622,6 +638,34 @@ namespace RimLLM_Framework.Mod
             }
         }
 #pragma warning restore S3776
+
+        /// <summary>
+        /// 設定檔中的預算策略值正規化。已移除的策略（SilentMocking / FallbackToFree / DialogPrompt）
+        /// 與未知值一律退回 HardBlock：不得靜默變成放行，否則舊存檔升級後會在無預警的情況下繼續燒 token。
+        /// </summary>
+        internal static int SanitizeBudgetPolicy(int stored)
+        {
+            return stored < 0 || stored > MaxBudgetPolicy ? 0 : stored;
+        }
+
+        /// <summary>
+        /// 設定值被重設時的一次性提示。翻譯與訊息佇列都依賴 Defs 與語言資料，
+        /// 而 ExposeData 在載入階段就會執行，因此延後到主執行緒的第一幀再送出。
+        /// </summary>
+        private static void NotifyBudgetPolicyReset()
+        {
+            RimLLMDispatcher.EnqueueOnMainThread(() =>
+            {
+                try
+                {
+                    Messages.Message("RimLLM_MsgBudgetPolicyReset".Translate(), MessageTypeDefOf.CautionInput, false);
+                }
+                catch (Exception ex)
+                {
+                    RimLLMLog.Warning($"[RimLLM] Budget policy reset notice unavailable: {ex.Message}");
+                }
+            });
+        }
 
         /// <summary>
         /// 存檔路徑專用的加密：失敗時回傳 false 並略過該金鑰，而不是讓例外穿出 <see cref="ExposeData"/>。

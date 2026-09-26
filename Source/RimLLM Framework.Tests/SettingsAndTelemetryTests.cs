@@ -72,6 +72,27 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(ReasoningEffort.High, RimLLMFrameworkSettings.DecodeReasoningEffort(4));
         }
 
+        [Test]
+        public void BudgetPolicy_StoredValuesOutsideTheSupportedRangeFallBackToHardBlock()
+        {
+            // 現存策略必須原樣讀回
+            for (int i = 0; i <= RimLLMFrameworkSettings.MaxBudgetPolicy; i++)
+            {
+                ClassicAssert.AreEqual(i, RimLLMFrameworkSettings.SanitizeBudgetPolicy(i),
+                    $"策略 {i} 是現存選項，不得被改寫");
+            }
+
+            // 已移除的 FallbackToFree(2) / DialogPrompt(3) 與負值、未知值一律退回 HardBlock(0)：
+            // 要不要繼續燒 token 是使用者自己的決定，升級時不得替他決定。
+            foreach (int stale in new[] { 2, 3, 99, -1 })
+            {
+                ClassicAssert.AreEqual(0, RimLLMFrameworkSettings.SanitizeBudgetPolicy(stale),
+                    $"已移除或未知的策略 {stale} 必須退回 HardBlock");
+            }
+
+            // 舊值 1 (SilentMocking) 仍在範圍內，讀回後等同 WarnOnly：同樣是預期中的行為變更。
+        }
+
         /// <summary>
         /// 存檔路徑的加密失敗必須被吞掉：ExposeData 在 Scribe 存檔中途執行，
         /// 例外一旦冒出去，備援鏈、端點與所有開關都會跟著存不下來。
@@ -359,14 +380,14 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestBudgetPolicySilentMocking()
+        public void TestBudgetPolicyWarnOnly()
         {
             var mockSettings = new MockSettings
             {
                 DailyTokenBudgetLimit = 100000,
                 DailyAccumulatedTokens = 120000,
                 DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd"),
-                BudgetPolicy = 1, // SilentMocking
+                BudgetPolicy = 1, // WarnOnly
                 FallbackChain = new List<string> { "MockSuccess:model-z" }
             };
             mockSettings.EnabledProviders["MockSuccess"] = true;
@@ -380,20 +401,14 @@ namespace RimLLM_Framework.Tests
             };
             manager.RegisterProvider(mockSuccess);
 
-            const string modId = "test.budget.mock.mod";
+            const string modId = "test.budget.warnonly.mod";
             RimLLMProvider.Initialize(manager);
             IChatClient client = RimLLMProvider.CreateChatClient(modId);
 
-            // 1. 一般文字請求
+            // 超限只警告，請求照樣送到供應商
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hello") };
             string resText = client.GetResponseAsync(messages).GetAwaiter().GetResult().Text;
-            ClassicAssert.IsTrue(resText.Contains("沉思") || resText.Contains("resting") || resText.Contains("thinking") || resText.Contains("REST"));
-
-            // 2. 結構化輸出請求，預期回傳空 JSON "{}"
-            var resObj = client.GetResponseObjectAsync<TestDataStructure>(messages).GetAwaiter().GetResult();
-            ClassicAssert.IsNotNull(resObj);
-            ClassicAssert.AreEqual(100, resObj.Value);
-            ClassicAssert.AreEqual("default", resObj.Message);
+            ClassicAssert.AreEqual("ok", resText);
         }
 
         [Test]

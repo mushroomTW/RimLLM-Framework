@@ -350,18 +350,6 @@ namespace RimLLM_Framework.Manager
             if (!IsProviderUsable(providerId, provider, apiKeyCache))
                 return false;
 
-            // Budget fallback to free (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)
-            // 免費／本地供應商超支時仍可使用，不受免費模型篩選限制：
-            // OpenAICompatible 的本地伺服器、Player2 的本機 App／joules 制。
-            // 其 token 照計入每日預算（token 不看費率），只是候選不過濾。
-            if (_settings.BudgetPolicy == 2 &&
-                DailyTokenBudget.IsOverBudget(_settings) &&
-                providerId != ProviderIds.OpenAICompatible && providerId != ProviderIds.Player2 &&
-                (modelName == null || modelName.IndexOf("free", StringComparison.OrdinalIgnoreCase) < 0))
-            {
-                return false;
-            }
-
             // 評估 MinFallbackLevel 模型分級
             int minLevel = ParseMinFallbackLevel(minFallbackLevel);
             if (minLevel > 0)

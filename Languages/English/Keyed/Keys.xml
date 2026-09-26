@@ -130,8 +130,9 @@
   <RimLLM_DailyBudgetLimitLabel>Daily Token Budget: {0} tokens (0 for unlimited)</RimLLM_DailyBudgetLimitLabel>
   <RimLLM_BudgetPolicyLabel>Budget Exceeded Policy: </RimLLM_BudgetPolicyLabel>
   <RimLLM_BudgetPolicy_HardBlock>Block requests and warn (HardBlock)</RimLLM_BudgetPolicy_HardBlock>
-  <RimLLM_BudgetPolicy_SilentMocking>Return canned silent message (SilentMocking)</RimLLM_BudgetPolicy_SilentMocking>
-  <RimLLM_BudgetPolicy_FallbackToFree>Fallback to free/local models (FallbackToFree)</RimLLM_BudgetPolicy_FallbackToFree>
+  <RimLLM_BudgetPolicy_WarnOnly>Warn only, still send (WarnOnly)</RimLLM_BudgetPolicy_WarnOnly>
+  <RimLLM_BudgetWarnOnlyExceeded>Daily budget limit exceeded. Requests are still being sent because the exceeded policy is set to 'warn only'. Raise the budget or switch the policy to 'block requests and warn' in RimLLM settings -&gt; Budget &amp; Safety.</RimLLM_BudgetWarnOnlyExceeded>
+  <RimLLM_MsgBudgetPolicyReset>The budget exceeded policy stored in your settings is no longer supported and was reset to 'block requests and warn'. Change it under Budget &amp; Safety.</RimLLM_MsgBudgetPolicyReset>
   <RimLLM_EnableAntiAbuseLabel>Enable Anti-Abuse Throttling</RimLLM_EnableAntiAbuseLabel>
   <RimLLM_MaxRequestsPerWindowLabel>Max Requests in Window: {0}</RimLLM_MaxRequestsPerWindowLabel>
   <RimLLM_ThrottlingWindowSecondsLabel>Window Duration: {0}s</RimLLM_ThrottlingWindowSecondsLabel>
@@ -139,7 +140,6 @@
   <RimLLM_DailyAccumulatedCostLabel>Daily Accumulated Usage: {0} tokens (Reset base: {1})</RimLLM_DailyAccumulatedCostLabel>
   <RimLLM_ResetDailyCostBtn>Reset Daily Usage</RimLLM_ResetDailyCostBtn>
   <RimLLM_MsgDailyCostReset>Daily accumulated usage has been reset.</RimLLM_MsgDailyCostReset>
-  <RimLLM_SilentMockResponse>*AI is temporarily resting due to daily budget limits...*</RimLLM_SilentMockResponse>
   <RimLLM_RoutingStrategyLabel>Smart Routing &amp; Load Balancing Strategy: </RimLLM_RoutingStrategyLabel>
   <RimLLM_RoutingStrategy_PriorityFailover>Priority Failover with Cooldowns (PriorityFailover)</RimLLM_RoutingStrategy_PriorityFailover>
   <RimLLM_RoutingStrategy_MinLatency>Minimum Latency First (MinLatency)</RimLLM_RoutingStrategy_MinLatency>

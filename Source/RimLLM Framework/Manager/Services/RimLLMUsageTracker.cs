@@ -610,9 +610,29 @@ namespace RimLLM_Framework.Manager
         #region Budget Ledger & Policy Gatekeeping
 
         /// <summary>
+        /// 預算超限應對策略：只警告並照常送出（<c>BudgetPolicy = 1</c>）。
+        /// </summary>
+        private const int BudgetPolicyWarnOnly = 1;
+
+        /// <summary>
+        /// 沒有翻譯資料時（單元測試、headless）使用的英文字串，同時也是日誌內容。
+        /// </summary>
+        private const string BudgetWarnOnlyFallbackText =
+            "Daily budget limit exceeded. Requests are still being sent because the exceeded policy " +
+            "is set to 'warn only'. Raise the budget or switch the policy to 'block requests and " +
+            "warn' in RimLLM settings -> Budget & Safety.";
+
+        /// <summary>最後一次發出超限警告的重置基準日，讓 WarnOnly 每天只吵一次。</summary>
+        private string _budgetWarnedDate = "";
+
+        /// <summary>
         /// 審查每日預算限額（輸入＋輸出 token 合計）。上限為 0 代表無限制。
         /// 未實作 token 帳本的外來設定退回舊版美元門檻。
         /// </summary>
+        /// <remarks>
+        /// WarnOnly 不攔截：超支要不要繼續是使用者自己的取捨，
+        /// 框架的責任是把數字講清楚，而不是代替他決定要不要繼續花錢。
+        /// </remarks>
         internal bool CheckBudgetLimit()
         {
             CheckDailyReset();
@@ -622,40 +642,70 @@ namespace RimLLM_Framework.Manager
                 return true;
             }
 
-            // 0=HardBlock, 1=SilentMocking, 2=FallbackToFree
-            return _settings.BudgetPolicy == 1 || _settings.BudgetPolicy == 2;
-        }
-
-        /// <summary>
-        /// 判斷請求是否處於靜默模擬模式並產出模擬字串。
-        /// </summary>
-        internal bool IsBudgetMocked(bool hasResponseType, out string mockResult)
-        {
-            mockResult = null;
-
-            if (_settings.BudgetPolicy != 1 || !DailyTokenBudget.IsOverBudget(_settings))
+            // 0=HardBlock, 1=WarnOnly
+            if (_settings.BudgetPolicy == BudgetPolicyWarnOnly)
             {
-                return false;
-            }
-
-            if (hasResponseType)
-            {
-                mockResult = "{}";
+                WarnBudgetExceeded();
                 return true;
             }
 
-            const string fallbackMock = "*AI is temporarily resting due to daily budget limits...*";
+            return false;
+        }
+
+        /// <summary>
+        /// WarnOnly 的超限警告，每天只發一次。這個檢查每個請求（含串流）都會跑，
+        /// 逐次輸出會把日誌洗成一片空白，反而讓真正要看的警告被淹沒。
+        /// </summary>
+        private void WarnBudgetExceeded()
+        {
+            if (!ShouldWarnBudgetExceeded())
+            {
+                return;
+            }
+
+            RimLLMLog.Warning("[RimLLM] " + BudgetWarnOnlyFallbackText);
+            RimLLMDispatcher.EnqueueOnMainThread(ShowBudgetExceededMessage);
+        }
+
+        /// <summary>
+        /// 判斷這次超限是否該再次警告，並記下已警告的基準日。
+        /// </summary>
+        /// <remarks>
+        /// 以重置基準日為去重鍵：跨日後自然會再警告一次。當日手動重置不會重新允許警告，
+        /// 因為重置後預算已不再超限，沒有再吵一次的道理。
+        /// </remarks>
+        internal bool ShouldWarnBudgetExceeded()
+        {
+            string resetDate = _settings.DailyBudgetResetDate;
+            lock (UsageLock)
+            {
+                if (_budgetWarnedDate == resetDate)
+                {
+                    return false;
+                }
+                _budgetWarnedDate = resetDate;
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 在主執行緒弹出遊戲訊息。這個檢查可能發生在背景執行緒（呼叫端自行決定 await 續行的位置），
+        /// 而 <see cref="Messages"/> 是主執行緒狀態，直接呼叫並不安全。
+        /// </summary>
+        private static void ShowBudgetExceededMessage()
+        {
             try
             {
-                mockResult = LanguageDatabase.activeLanguage != null
-                    ? "RimLLM_SilentMockResponse".Translate().ToString()
-                    : fallbackMock;
+                // 語言資料尚未就緒時（單元測試、headless）跳過翻譯，改用英文字串。
+                string text = LanguageDatabase.activeLanguage != null
+                    ? "RimLLM_BudgetWarnOnlyExceeded".Translate().ToString()
+                    : BudgetWarnOnlyFallbackText;
+                Messages.Message(text, MessageTypeDefOf.CautionInput, false);
             }
-            catch
+            catch (Exception ex)
             {
-                mockResult = fallbackMock;
+                RimLLMLog.Warning($"[RimLLM] In-game budget warning unavailable: {ex.Message}");
             }
-            return true;
         }
 
         #endregion

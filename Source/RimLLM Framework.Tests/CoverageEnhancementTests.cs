@@ -532,23 +532,22 @@ namespace RimLLM_Framework.Tests
             var settings = new MockSettings();
             var manager = new RimLLMManager(settings);
 
-            // 2. Silent mocking when daily budget is exceeded (BudgetPolicy = 1)
+            // 2. WarnOnly when daily budget is exceeded (BudgetPolicy = 1)
             settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
             settings.DailyTokenBudgetLimit = 100000;
             settings.DailyAccumulatedTokens = 200000;
-            settings.BudgetPolicy = 1; // SilentMocking
+            settings.BudgetPolicy = 1; // WarnOnly
 
-            // 預算檢查與靜默模擬已上移為中介層，不再由 pipeline 負責。
-            var budgetClient = new RimLLMBudgetChatClient(
+            // 預算檢查上移為中介層；WarnOnly 只警告，請求必須原樣送到下游。
+            var warnOnlyClient = new RimLLMBudgetChatClient(
                 new MockCustomChatClient(), new RimLLMUsageTracker(settings));
             var mockMessages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
 
-            ChatResponse mockRes = await budgetClient.GetResponseAsync(mockMessages);
-            ClassicAssert.IsNotNull(mockRes?.Text);
-            ClassicAssert.AreEqual("rimllm:budget-mock", mockRes.ModelId, "模擬回應要有可辨識的來源");
+            ChatResponse passThrough = await warnOnlyClient.GetResponseAsync(mockMessages);
+            ClassicAssert.AreEqual("mock-text", passThrough?.Text, "WarnOnly 必須放行到下游，不得取代回應");
 
             string streamedText = "";
-            var streamEnumerator = budgetClient.GetStreamingResponseAsync(mockMessages).GetAsyncEnumerator();
+            var streamEnumerator = warnOnlyClient.GetStreamingResponseAsync(mockMessages).GetAsyncEnumerator();
             try
             {
                 while (streamEnumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
@@ -560,9 +559,9 @@ namespace RimLLM_Framework.Tests
             {
                 streamEnumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
-            ClassicAssert.AreEqual(mockRes.Text, streamedText, "串流與非串流的模擬內容必須一致");
+            ClassicAssert.AreEqual("mock-stream-text", streamedText, "串流路徑同樣不該被預算攔截");
 
-            // 3. ResponseType with SilentMocking returns "{}"
+            // 3. Structured request under WarnOnly still reaches the inner client
             settings.DailyAccumulatedTokens = 200000;
             var structuredOptions = new RimLLMChatOptions
             {
@@ -571,8 +570,8 @@ namespace RimLLM_Framework.Tests
                     [RimLLMChatOptions.ResponseTypeKey] = typeof(NullableTestDataStructure)
                 }
             };
-            ChatResponse objRes = await budgetClient.GetResponseAsync(mockMessages, structuredOptions);
-            ClassicAssert.AreEqual("{}", objRes.Text);
+            ChatResponse objRes = await warnOnlyClient.GetResponseAsync(mockMessages, structuredOptions);
+            ClassicAssert.AreEqual("mock-text", objRes?.Text);
 
             // 4. JSON Repair disabled throws RimLLMException
             settings.EnableJsonRepair = false;
@@ -799,19 +798,25 @@ namespace RimLLM_Framework.Tests
             bool ok = tracker.CheckBudgetLimit();
             ClassicAssert.IsFalse(ok);
 
-            // Policy 1 = SilentMocking
+            // Policy 1 = WarnOnly：超限只警告，請求照樣放行
             settings.BudgetPolicy = 1;
             ok = tracker.CheckBudgetLimit();
             ClassicAssert.IsTrue(ok);
-            ClassicAssert.IsTrue(tracker.IsBudgetMocked(false, out string mockStr));
-            ClassicAssert.IsNotNull(mockStr);
 
-            // Policy 2 = FallbackToFree
-            settings.BudgetPolicy = 2;
-            ok = tracker.CheckBudgetLimit();
-            ClassicAssert.IsTrue(ok);
+            // 5. WarnOnly 的警告去重：同一天只吵一次，換日後才重新允許
+            var warnTracker = new RimLLMUsageTracker(settings);
+            settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
+            ClassicAssert.IsTrue(warnTracker.ShouldWarnBudgetExceeded(), "當日第一次超限必須警告");
+            ClassicAssert.IsFalse(warnTracker.ShouldWarnBudgetExceeded(), "同一天不得重複警告");
 
-            // 5. 跨天重置
+            // 當日手動重置只會把基準日重寫成同一個字串，因此不會重新允許警告
+            ClassicAssert.IsFalse(warnTracker.ShouldWarnBudgetExceeded(), "當日手動重置後仍不得重複警告");
+
+            // 換日後重新允許
+            settings.DailyBudgetResetDate = DateTime.Today.AddDays(-1).ToString("yyyy-MM-dd");
+            ClassicAssert.IsTrue(warnTracker.ShouldWarnBudgetExceeded(), "換日後須重新允許警告");
+
+            // 6. 跨天重置
             settings.DailyBudgetResetDate = "2000-01-01";
             tracker.CheckDailyReset();
             ClassicAssert.AreEqual(0f, settings.DailyAccumulatedCost);

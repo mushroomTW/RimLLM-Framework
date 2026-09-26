@@ -273,7 +273,7 @@ This is the point of the framework. All of the following already happens behind 
 | Failover between providers | Automatic descent through the fallback chain before the reply starts |
 | Dead-provider handling | Circuit breaker with exponential cooldown after repeated failures |
 | Rate limiting across mods | Global priority queue and concurrency cap, so mods don't stutter the game |
-| Cost control | Daily token budget with hard-block / mock / free-tier / prompt policies |
+| Cost control | Daily token budget with warn-only or hard-block policies |
 | Usage and cost reporting | Per-provider token and cost dashboard in the Debug tab |
 | Reasoning-model quirks | `reasoning_content` normalized into MEAI `TextReasoningContent` |
 | Malformed JSON | Markdown fences, unclosed brackets and trailing commas repaired, then the JSON block re-extracted before a second parse |

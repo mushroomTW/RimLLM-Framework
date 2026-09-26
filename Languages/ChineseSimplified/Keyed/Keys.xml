@@ -130,8 +130,9 @@
   <RimLLM_DailyBudgetLimitLabel>今日 Token 预算上限: {0} (0 为无限制)</RimLLM_DailyBudgetLimitLabel>
   <RimLLM_BudgetPolicyLabel>预算超限应对策略: </RimLLM_BudgetPolicyLabel>
   <RimLLM_BudgetPolicy_HardBlock>直接阻断并警告</RimLLM_BudgetPolicy_HardBlock>
-  <RimLLM_BudgetPolicy_SilentMocking>静默回传沉思字样</RimLLM_BudgetPolicy_SilentMocking>
-  <RimLLM_BudgetPolicy_FallbackToFree>自动降级至免费/本地模型</RimLLM_BudgetPolicy_FallbackToFree>
+  <RimLLM_BudgetPolicy_WarnOnly>只警告并照常送出</RimLLM_BudgetPolicy_WarnOnly>
+  <RimLLM_BudgetWarnOnlyExceeded>当日 Token 预算已超限。因为超限应对策略设为「只警告并照常送出」，请求仍会继续送出。请提高预算上限，或在 RimLLM 设置（预算与防护）改为「直接阻断并警告」。</RimLLM_BudgetWarnOnlyExceeded>
+  <RimLLM_MsgBudgetPolicyReset>设置中已保存的预算超限应对策略不再受支持，已重设为「直接阻断并警告」。可在「预算与防护」分页更换。</RimLLM_MsgBudgetPolicyReset>
   <RimLLM_EnableAntiAbuseLabel>启用防爆限制 (防止 Mod Bug 死循环)</RimLLM_EnableAntiAbuseLabel>
   <RimLLM_MaxRequestsPerWindowLabel>时间窗口内最大请求次数: {0} 次</RimLLM_MaxRequestsPerWindowLabel>
   <RimLLM_ThrottlingWindowSecondsLabel>防护监测时间窗口: {0} 秒</RimLLM_ThrottlingWindowSecondsLabel>
@@ -139,7 +140,6 @@
   <RimLLM_DailyAccumulatedCostLabel>当日已累计用量: {0} tokens (重置基准日: {1})</RimLLM_DailyAccumulatedCostLabel>
   <RimLLM_ResetDailyCostBtn>手动重置今日用量</RimLLM_ResetDailyCostBtn>
   <RimLLM_MsgDailyCostReset>今日用量累计已重置。</RimLLM_MsgDailyCostReset>
-  <RimLLM_SilentMockResponse>*说书人因当日预算上限限制陷入沉思...*</RimLLM_SilentMockResponse>
   <RimLLM_RoutingStrategyLabel>智慧路由与动态负载均衡策略: </RimLLM_RoutingStrategyLabel>
   <RimLLM_RoutingStrategy_PriorityFailover>优先顺序自动容错</RimLLM_RoutingStrategy_PriorityFailover>
   <RimLLM_RoutingStrategy_MinLatency>最小延迟优先</RimLLM_RoutingStrategy_MinLatency>

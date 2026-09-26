@@ -271,7 +271,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 供應商之間的容錯切換 | 回應開始輸出之前，自動沿 Fallback 鏈降級 |
 | 處理掛掉的供應商 | 熔斷器，連續失敗後以指數退避冷卻 |
 | 跨 Mod 的流量控制 | 全域優先佇列與並行上限，避免多個 Mod 同時打 API 造成掉幀 |
-| 費用控管 | 每日 token 預算，可選硬性阻擋／模擬回應／改用免費模型／詢問玩家 |
+| 費用控管 | 每日 token 預算，可選只警告／直接阻斷並警告 |
 | 用量與費用回報 | Debug 分頁的各供應商 Token 與成本看板 |
 | 推理模型的差異 | `reasoning_content` 統一正規化為 MEAI 的 `TextReasoningContent` |
 | 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，再抽出 JSON 區塊做第二次解析 |

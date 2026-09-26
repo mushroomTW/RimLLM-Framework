@@ -108,7 +108,7 @@ namespace RimLLM_Framework
         float DailyBudgetLimit { get; set; }
 
         /// <summary>
-        /// 預算超限應對策略 (0=HardBlock, 1=SilentMocking, 2=FallbackToFree, 3=DialogPrompt)。
+        /// 預算超限應對策略 (0=HardBlock 直接阻斷並警告, 1=WarnOnly 只警告並照常送出)。
         /// </summary>
         int BudgetPolicy { get; set; }
 

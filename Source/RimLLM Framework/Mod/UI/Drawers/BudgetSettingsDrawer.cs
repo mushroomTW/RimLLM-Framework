@@ -131,7 +131,7 @@ namespace RimLLM_Framework.Mod
         /// 預算政策的名稱，索引即為 <see cref="RimLLMFrameworkSettings.BudgetPolicy"/> 的值。
         /// 目前選項的顯示與下拉選單共用這份清單，不需要另外維護一份 switch 對照。
         /// </summary>
-        private static readonly string[] PolicyNames = { "HardBlock", "SilentMocking", "FallbackToFree" };
+        private static readonly string[] PolicyNames = { "HardBlock", "WarnOnly" };
 
         private static string PolicyLabelKey(int policy)
         {
