@@ -99,6 +99,53 @@ namespace RimLLM_Framework.Tests
             CollectionAssert.IsEmpty(OpenAIProvider.ParseContextWindows(@"{""data"":[{""context_length"":""128k""}]}"));
         }
 
+        /// <summary>裸 HTTP 補救路徑的樁：回固定 JSON 並記下請求，供斷言 URL 與 Authorization 標頭。</summary>
+        private sealed class StubModelsHandler : System.Net.Http.HttpMessageHandler
+        {
+            public string ResponseBody { get; set; } = @"{""data"":[{""id"":""google/gemini-3.5-flash-lite"",""context_length"":1048576}]}";
+            public System.Net.HttpStatusCode Status { get; set; } = System.Net.HttpStatusCode.OK;
+            public System.Net.Http.HttpRequestMessage LastRequest { get; private set; }
+
+            protected override System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage> SendAsync(
+                System.Net.Http.HttpRequestMessage request,
+                System.Threading.CancellationToken cancellationToken)
+            {
+                LastRequest = request;
+                var response = new System.Net.Http.HttpResponseMessage(Status);
+                response.Content = new System.Net.Http.StringContent(
+                    ResponseBody ?? string.Empty, System.Text.Encoding.UTF8, "application/json");
+                return System.Threading.Tasks.Task.FromResult(response);
+            }
+        }
+
+        [Test]
+        public void RawFetchParsesOpenRouterShapedListAndSendsBearerKey()
+        {
+            var handler = new StubModelsHandler();
+            var windows = OpenAIProvider.FetchRawContextWindowsAsync(
+                "https://openrouter.ai/api/v1/", "test-key", 30f, handler).GetAwaiter().GetResult();
+
+            ClassicAssert.AreEqual(1, windows.Count);
+            ClassicAssert.AreEqual(1048576, windows["google/gemini-3.5-flash-lite"]);
+            ClassicAssert.AreEqual("https://openrouter.ai/api/v1/models", handler.LastRequest.RequestUri.ToString());
+            ClassicAssert.AreEqual("Bearer", handler.LastRequest.Headers.Authorization.Scheme);
+            ClassicAssert.AreEqual("test-key", handler.LastRequest.Headers.Authorization.Parameter);
+        }
+
+        [Test]
+        public void RawFetchReturnsEmptyInsteadOfThrowing()
+        {
+            // 空端點直接回空；HTTP 失敗只記警告，同樣回空（上限只是附帶資訊）。
+            var empty = OpenAIProvider.FetchRawContextWindowsAsync(
+                null, null, 30f, new StubModelsHandler()).GetAwaiter().GetResult();
+            CollectionAssert.IsEmpty(empty);
+
+            var failing = new StubModelsHandler { Status = System.Net.HttpStatusCode.InternalServerError };
+            var windows = OpenAIProvider.FetchRawContextWindowsAsync(
+                "https://openrouter.ai/api/v1", "k", 30f, failing).GetAwaiter().GetResult();
+            CollectionAssert.IsEmpty(windows);
+        }
+
         private const string ModelsDevSample = @"{
             ""moonshotai"": { ""id"": ""moonshotai"", ""models"": {
                 ""kimi-k3"": { ""id"": ""kimi-k3"", ""limit"": { ""context"": 1048576, ""output"": 131072 } },

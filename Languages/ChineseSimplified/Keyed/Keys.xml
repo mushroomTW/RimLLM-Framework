@@ -42,7 +42,7 @@
   <RimLLM_TestStatusError>&lt;color=red&gt;异常&lt;/color&gt; ({0})</RimLLM_TestStatusError>
   
   <RimLLM_FallbackExplanation>当调用 SDK 时，框架将依此清单顺序尝试，前一项失败则尝试下一项。</RimLLM_FallbackExplanation>
-  <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;目前 Fallback 链为空，请从下方选择模型新增！&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
+  <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;目前 Fallback 链为空，请到「模型设置」分页新增！&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
   <RimLLM_AddToFallbackTitle><b>新增模型至 Fallback 链</b></RimLLM_AddToFallbackTitle>
   <RimLLM_ModelsExplanation>微调备援链上每个模型：分级（影响 LowestCost 路由与 MinFallbackLevel 过滤）与上下文上限（标 * 的手动值优先于 API 回报值）。</RimLLM_ModelsExplanation>
   <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;备援链目前没有模型，请先到「备援链」分页新增！&lt;/color&gt;</RimLLM_ModelsEmptyWarning>
@@ -102,7 +102,7 @@
   <RimLLM_ReasoningEffort_High>高</RimLLM_ReasoningEffort_High>
   <RimLLM_ReasoningEffort_None>关闭</RimLLM_ReasoningEffort_None>
   <RimLLM_ReasoningEffortSelectBtn>思考强度: {0}</RimLLM_ReasoningEffortSelectBtn>
-  <RimLLM_SettingsIntro>在此配置 API 供应商、模型备用链、全局并行限制，以及测试模型对话。</RimLLM_SettingsIntro>
+  <RimLLM_SettingsIntro>在此配置 API 供应商、模型备援链、全局并行限制，以及测试模型对话。</RimLLM_SettingsIntro>
   <RimLLM_OpenSettingsBtn>打开高级设置窗口</RimLLM_OpenSettingsBtn>
   <RimLLM_NoEnabledProviders>无已启用的供应商 (请先至设置页面启用！)</RimLLM_NoEnabledProviders>
   <RimLLM_ClearRequestsBtn>清除历史记录</RimLLM_ClearRequestsBtn>

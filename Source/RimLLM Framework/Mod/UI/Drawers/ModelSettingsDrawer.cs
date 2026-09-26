@@ -1,17 +1,23 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Verse;
+using RimWorld;
 
 namespace RimLLM_Framework.Mod
 {
     /// <summary>
-    /// 負責逐模型設置頁的 UI 渲染：備援鏈上每個模型的分級覆寫與上下文上限手寫值。
-    /// 備援鏈頁（<see cref="FallbackSettingsDrawer"/>）只保留順序與增刪，模型級的數值調整一律在這裡。
+    /// 負責逐模型設置頁的 UI 渲染：備援鏈上每個模型的分級覆寫與上下文上限手寫值，
+    /// 以及新增模型至備援鏈。備援鏈頁（<see cref="FallbackSettingsDrawer"/>）只保留
+    /// 順序、增刪與路由策略。
     /// 存檔結構不變（沿用既有的分級覆寫與上下文上限覆寫字典），因此舊存檔無需遷移。
     /// </summary>
     public static class ModelSettingsDrawer
     {
         private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
+
+        // 新增模型專屬的 UI 暫存狀態
+        private static string addProviderId = ProviderIds.Gemini;
+        private static string addModelName = "";
 
         /// <summary>
         /// 獲取模型設置詳細內容的滾動高度。
@@ -23,7 +29,7 @@ namespace RimLLM_Framework.Mod
 
         public static float GetHeight(float width)
         {
-            return 120f + (RowCount() * 36f);
+            return 280f + (RowCount() * 36f);
         }
 
         /// <summary>
@@ -55,31 +61,148 @@ namespace RimLLM_Framework.Mod
             if (entries.Count == 0)
             {
                 listing.Label("RimLLM_ModelsEmptyWarning".Translate());
-                return;
             }
-
-            for (int i = 0; i < entries.Count; i++)
+            else
             {
-                string entry = entries[i];
-                Rect itemRect = listing.GetRect(30f);
+                for (int i = 0; i < entries.Count; i++)
+                {
+                    string entry = entries[i];
+                    Rect itemRect = listing.GetRect(30f);
 
-                int colonIndex = entry.IndexOf(':');
-                bool hasModelName = colonIndex >= 0;
-                float labelWidth = hasModelName ? (itemRect.width - 170f) : itemRect.width;
-                Rect labelRect = new Rect(itemRect.x, itemRect.y, labelWidth, itemRect.height);
-                Widgets.Label(labelRect, $" <color=cyan>{entry}</color>");
+                    int colonIndex = entry.IndexOf(':');
+                    bool hasModelName = colonIndex >= 0;
+                    float labelWidth = hasModelName ? (itemRect.width - 170f) : itemRect.width;
+                    Rect labelRect = new Rect(itemRect.x, itemRect.y, labelWidth, itemRect.height);
+                    Widgets.Label(labelRect, $" <color=cyan>{entry}</color>");
 
-                // 純供應商條目沒有可調的模型級數值，只顯示名稱。
-                if (!hasModelName) continue;
+                    // 純供應商條目沒有可調的模型級數值，只顯示名稱。
+                    if (!hasModelName) continue;
 
-                string modelName = entry.Substring(colonIndex + 1);
-                DrawLevelButton(
-                    new Rect(itemRect.x + itemRect.width - 80f, itemRect.y, 70f, itemRect.height),
-                    modelName);
-                DrawContextWindowButton(
-                    new Rect(itemRect.x + itemRect.width - 160f, itemRect.y, 70f, itemRect.height),
-                    entry, entry.Substring(0, colonIndex), modelName);
+                    string modelName = entry.Substring(colonIndex + 1);
+                    DrawLevelButton(
+                        new Rect(itemRect.x + itemRect.width - 80f, itemRect.y, 70f, itemRect.height),
+                        modelName);
+                    DrawContextWindowButton(
+                        new Rect(itemRect.x + itemRect.width - 160f, itemRect.y, 70f, itemRect.height),
+                        entry, entry.Substring(0, colonIndex), modelName);
+                }
             }
+            listing.GapLine(10f);
+
+            DrawAddModelSection(listing);
+        }
+
+        /// <summary>
+        /// 取得所有已註冊供應商識別碼（含第三方 Mod 註冊的外部供應商）。
+        /// </summary>
+        private static List<string> GetRegisteredProviderIds()
+        {
+            // SDK 尚未初始化時退回內建清單
+            return RimLLMProvider.TryGetManager(out var manager)
+                ? manager.GetRegisteredProviderIds()
+                : new List<string>(ProviderIds.BuiltIn);
+        }
+
+        /// <summary>
+        /// 判斷供應商在 UI 中是否可選（內建依設定啟用狀態；外部供應商註冊即啟用）。
+        /// </summary>
+        private static bool IsProviderSelectable(string providerId)
+        {
+            return RimLLMProvider.TryGetManager(out var manager)
+                ? manager.IsProviderEnabled(providerId)
+                : Settings.IsProviderEnabled(providerId);
+        }
+
+        private static void SetDefaultAddModelName(string providerId)
+        {
+            addProviderId = providerId;
+            // GetDefaultModel 已是「有快取清單就取第一筆，否則用預設值」的語意。
+            addModelName = Settings.GetDefaultModel(providerId, "default");
+        }
+
+        /// <summary>
+        /// 新增模型至備援鏈：選供應商、選該供應商快取模型、加入。加入後本頁列表即出現該列。
+        /// </summary>
+        private static void DrawAddModelSection(Listing_Standard listing)
+        {
+            // 確保 addProviderId 是已啟用的供應商（如果有啟用的話）
+            if (!IsProviderSelectable(addProviderId))
+            {
+                string firstEnabled = null;
+                foreach (string prov in GetRegisteredProviderIds())
+                {
+                    if (IsProviderSelectable(prov))
+                    {
+                        firstEnabled = prov;
+                        break;
+                    }
+                }
+                if (firstEnabled != null)
+                {
+                    addProviderId = firstEnabled;
+                    addModelName = ""; // 重設模型名稱以重新加載預設值
+                }
+            }
+
+            // 確保 addModelName 已經初始化
+            if (string.IsNullOrEmpty(addModelName))
+            {
+                SetDefaultAddModelName(addProviderId);
+            }
+
+            listing.Label("RimLLM_AddToFallbackTitle".Translate());
+
+            // 選擇供應商
+            Rect addRect = listing.GetRect(30f);
+            Rect addProvBtn = new Rect(addRect.x, addRect.y, 150f, addRect.height);
+            Rect addModBtn = new Rect(addRect.x + 160f, addRect.y, 250f, addRect.height);
+            Rect addSubmitBtn = new Rect(addRect.x + 420f, addRect.y, 100f, addRect.height);
+            if (Widgets.ButtonText(addProvBtn, "RimLLM_SelectProviderBtn".Translate(addProviderId)))
+            {
+                List<FloatMenuOption> options = new List<FloatMenuOption>();
+                foreach (string prov in GetRegisteredProviderIds())
+                {
+                    if (IsProviderSelectable(prov))
+                    {
+                        string captured = prov;
+                        options.Add(new FloatMenuOption(captured, () => SetDefaultAddModelName(captured)));
+                    }
+                }
+
+                if (options.Count == 0)
+                {
+                    options.Add(new FloatMenuOption("RimLLM_NoEnabledProviders".Translate(), null));
+                }
+                Find.WindowStack.Add(new FloatMenu(options));
+            }
+
+            // 選擇該供應商底下的快取模型
+            var models = Settings.GetModelList(addProviderId);
+            string modelBtnLabel = string.IsNullOrEmpty(addModelName) ? "default" : addModelName;
+
+            if (Widgets.ButtonText(addModBtn, "RimLLM_SelectModelBtn".Translate(modelBtnLabel)))
+            {
+                Find.WindowStack.Add(new Dialog_SelectModel(models, (selectedM) => addModelName = selectedM));
+            }
+
+            // 點擊新增
+            if (Widgets.ButtonText(addSubmitBtn, "RimLLM_AddBtn".Translate()))
+            {
+                string entry = $"{addProviderId}:{addModelName}";
+                var chain = Settings.FallbackChain;
+                if (chain.Contains(entry))
+                {
+                    Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, false);
+                }
+                else
+                {
+                    chain.Add(entry);
+                    Settings.FallbackChain = chain;
+                    Settings.Write();
+                    Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
+                }
+            }
+            listing.GapLine(10f);
         }
 
         /// <summary>分級標籤鍵，索引即為覆寫值（0＝自動）。</summary>

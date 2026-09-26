@@ -236,19 +236,19 @@ namespace RimLLM_Framework.Mod
             },
             new DetailPage
             {
-                Id = "Fallback",
-                MenuLabelKey = "RimLLM_TabFallback",
-                Title = () => "RimLLM_TitleFallback".Translate(),
-                Draw = FallbackSettingsDrawer.DrawFallbackSettings,
-                EstimateHeight = FallbackSettingsDrawer.GetHeight
-            },
-            new DetailPage
-            {
                 Id = "Models",
                 MenuLabelKey = "RimLLM_TabModels",
                 Title = () => "RimLLM_TitleModels".Translate(),
                 Draw = ModelSettingsDrawer.DrawModelSettings,
                 EstimateHeight = ModelSettingsDrawer.GetHeight
+            },
+            new DetailPage
+            {
+                Id = "Fallback",
+                MenuLabelKey = "RimLLM_TabFallback",
+                Title = () => "RimLLM_TitleFallback".Translate(),
+                Draw = FallbackSettingsDrawer.DrawFallbackSettings,
+                EstimateHeight = FallbackSettingsDrawer.GetHeight
             },
             new DetailPage
             {

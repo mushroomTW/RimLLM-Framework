@@ -4,8 +4,11 @@ using System;
 using System.ClientModel;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using OpenAI;
@@ -716,7 +719,18 @@ namespace RimLLM_Framework.Providers
                 {
                     list.Add(model.Id);
                 }
-                contextWindows = ParseContextWindows(result.GetRawResponse()?.Content?.ToString());
+                string rawJson = result.GetRawResponse()?.Content?.ToString();
+                contextWindows = ParseContextWindows(rawJson);
+                if (list.Count > 0 && contextWindows.Count == 0 && string.IsNullOrEmpty(rawJson))
+                {
+                    // SDK 有時不保留原始回應（回傳的 Content 為空），此時模型 id 照常解析，
+                    // 上下文上限卻會靜默全空。改以裸 HTTP GET 同一個 /models 再解析一次；
+                    // 原本就有回應內容、只是該服務端不回報上限時（如 OpenAI 官方）不走這條路。
+                    contextWindows = await FetchRawContextWindowsAsync(
+                        endpoint,
+                        string.IsNullOrEmpty(apiKey) ? null : apiKey,
+                        timeoutSeconds: Settings.ApiTimeout).ConfigureAwait(false);
+                }
             }
             catch (ClientResultException ex)
             {
@@ -792,6 +806,53 @@ namespace RimLLM_Framework.Providers
             }
             return windows;
         }
+
+        /// <summary>
+        /// SDK 未保留 /models 原始回應時的補救：以裸 HTTP GET 直接讀取並解析上下文上限。
+        /// 解析沿用 <see cref="ParseContextWindows"/>，上限只是附帶資訊，失敗只記警告，
+        /// 不讓整個模型清單的重新整理失敗。<paramref name="handler"/> 僅供測試注入，正式路徑傳 null。
+        /// </summary>
+        internal static async Task<Dictionary<string, int>> FetchRawContextWindowsAsync(
+            string endpoint, string apiKey, float timeoutSeconds, HttpMessageHandler handler = null)
+        {
+            var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(endpoint)) return windows;
+
+            bool disposeClient = handler != null;
+            HttpClient http = handler != null
+                ? new HttpClient(handler, false)
+                : ModelListHttp;
+            try
+            {
+                string url = endpoint.Trim().TrimEnd(SlashChars) + "/models";
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 30f)))
+                using (var request = new HttpRequestMessage(HttpMethod.Get, url))
+                {
+                    if (!string.IsNullOrEmpty(apiKey))
+                    {
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                    }
+                    using (HttpResponseMessage response = await http.SendAsync(request, cts.Token).ConfigureAwait(false))
+                    {
+                        response.EnsureSuccessStatusCode();
+                        string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        return ParseContextWindows(body);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Warning($"[RimLLM] Could not read context window sizes from {endpoint}/models: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                return windows;
+            }
+            finally
+            {
+                if (disposeClient) http.Dispose();
+            }
+        }
+
+        private static readonly HttpClient ModelListHttp = new HttpClient(
+            new HttpClientHandler { AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate });
 
         /// <summary>
         /// 本地相容伺服器未設定金鑰時使用的佔位憑證。

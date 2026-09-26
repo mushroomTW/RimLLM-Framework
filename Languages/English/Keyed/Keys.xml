@@ -42,7 +42,7 @@
   <RimLLM_TestStatusError>&lt;color=red&gt;Error&lt;/color&gt; ({0})</RimLLM_TestStatusError>
   
   <RimLLM_FallbackExplanation>When calling the SDK, the framework will try in this order. If the previous one fails, it tries the next one.</RimLLM_FallbackExplanation>
-  <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;Fallback chain is currently empty, please select a model below to add!&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
+  <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;Fallback chain is currently empty, please add models on the Model Settings tab!&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
   <RimLLM_AddToFallbackTitle><b>Add Model to Fallback Chain</b></RimLLM_AddToFallbackTitle>
   <RimLLM_ModelsExplanation>Fine-tune each model in the fallback chain: its level (for LowestCost routing and MinFallbackLevel filtering) and its context window (manual values marked * take priority over API-reported ones).</RimLLM_ModelsExplanation>
   <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;No models in the fallback chain yet. Add some on the Fallback Chain tab first!&lt;/color&gt;</RimLLM_ModelsEmptyWarning>

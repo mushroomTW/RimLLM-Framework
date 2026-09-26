@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using Verse;
-using RimWorld;
 
 namespace RimLLM_Framework.Mod
 {
@@ -12,38 +11,13 @@ namespace RimLLM_Framework.Mod
     {
         private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
-        // Fallback 分頁專屬的 UI 暫存狀態
-        private static string addProviderId = ProviderIds.Gemini;
-        private static string addModelName = "";
-
         /// <summary>
-        /// 獲取 Fallback 設定詳細內容的滾動高度。
+        /// 獲取 Fallback 設定詳細內容的滾動高度。本頁只剩路由策略與鏈條順序，新增模型已搬至模型設置頁。
         /// </summary>
         public static float GetHeight(float width)
         {
             int chainCount = Settings.FallbackChain.Count;
-            return 150f + (chainCount * 36f) + 260f;
-        }
-
-        /// <summary>
-        /// 取得所有已註冊供應商識別碼（含第三方 Mod 註冊的外部供應商）。
-        /// </summary>
-        private static List<string> GetRegisteredProviderIds()
-        {
-            // SDK 尚未初始化時退回內建清單
-            return RimLLMProvider.TryGetManager(out var manager)
-                ? manager.GetRegisteredProviderIds()
-                : new List<string>(ProviderIds.BuiltIn);
-        }
-
-        /// <summary>
-        /// 判斷供應商在 UI 中是否可選（內建依設定啟用狀態；外部供應商註冊即啟用）。
-        /// </summary>
-        private static bool IsProviderSelectable(string providerId)
-        {
-            return RimLLMProvider.TryGetManager(out var manager)
-                ? manager.IsProviderEnabled(providerId)
-                : Settings.IsProviderEnabled(providerId);
+            return 150f + (chainCount * 36f);
         }
 
         /// <summary>
@@ -89,32 +63,7 @@ namespace RimLLM_Framework.Mod
                 Settings.Write();
             }
 
-            // 確保 addProviderId 是已啟用的供應商（如果有啟用的話）
-            if (!IsProviderSelectable(addProviderId))
-            {
-                string firstEnabled = null;
-                foreach (string prov in GetRegisteredProviderIds())
-                {
-                    if (IsProviderSelectable(prov))
-                    {
-                        firstEnabled = prov;
-                        break;
-                    }
-                }
-                if (firstEnabled != null)
-                {
-                    addProviderId = firstEnabled;
-                    addModelName = ""; // 重設模型名稱以重新加載預設值
-                }
-            }
-
-            // 確保 addModelName 已經初始化
-            if (string.IsNullOrEmpty(addModelName))
-            {
-                SetDefaultAddModelName(addProviderId);
-            }
-
-            // 1. 繪製 Fallback 鏈列表
+            // 1. 繪製 Fallback 鏈列表（只管順序與增刪；新增模型改在模型設置頁）
             if (chain.Count == 0)
             {
                 listing.Label("RimLLM_FallbackEmptyWarning".Translate());
@@ -187,60 +136,6 @@ namespace RimLLM_Framework.Mod
             }
             listing.GapLine(10f);
 
-            // 2. 新增項目區域
-            listing.Label("RimLLM_AddToFallbackTitle".Translate());
-
-            // 2.1 選擇供應商
-            Rect addRect = listing.GetRect(30f);
-            Rect addProvBtn = new Rect(addRect.x, addRect.y, 150f, addRect.height);
-            Rect addModBtn = new Rect(addRect.x + 160f, addRect.y, 250f, addRect.height);
-            Rect addSubmitBtn = new Rect(addRect.x + 420f, addRect.y, 100f, addRect.height);
-            if (Widgets.ButtonText(addProvBtn, "RimLLM_SelectProviderBtn".Translate(addProviderId)))
-            {
-                List<FloatMenuOption> options = new List<FloatMenuOption>();
-                foreach (string prov in GetRegisteredProviderIds())
-                {
-                    if (IsProviderSelectable(prov))
-                    {
-                        string captured = prov;
-                        options.Add(new FloatMenuOption(captured, () => SetDefaultAddModelName(captured)));
-                    }
-                }
-
-                if (options.Count == 0)
-                {
-                    options.Add(new FloatMenuOption("RimLLM_NoEnabledProviders".Translate(), null));
-                }
-                Find.WindowStack.Add(new FloatMenu(options));
-            }
-
-            // 2.2 選擇該供應商底下的快取模型
-            var models = Settings.GetModelList(addProviderId);
-            string modelBtnLabel = string.IsNullOrEmpty(addModelName) ? "default" : addModelName;
-
-            if (Widgets.ButtonText(addModBtn, "RimLLM_SelectModelBtn".Translate(modelBtnLabel)))
-            {
-                Find.WindowStack.Add(new Dialog_SelectModel(models, (selectedM) => addModelName = selectedM));
-            }
-
-            // 2.3 點擊新增
-            if (Widgets.ButtonText(addSubmitBtn, "RimLLM_AddBtn".Translate()))
-            {
-                string entry = $"{addProviderId}:{addModelName}";
-                if (chain.Contains(entry))
-                {
-                    Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, false);
-                }
-                else
-                {
-                    chain.Add(entry);
-                    Settings.FallbackChain = chain;
-                    Settings.Write();
-                    Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
-                }
-            }
-            listing.GapLine(10f);
-
         }
         #pragma warning restore S3776
 
@@ -254,13 +149,6 @@ namespace RimLLM_Framework.Mod
         {
             string name = strategy >= 0 && strategy < StrategyNames.Length ? StrategyNames[strategy] : StrategyNames[0];
             return "RimLLM_RoutingStrategy_" + name;
-        }
-
-        private static void SetDefaultAddModelName(string providerId)
-        {
-            addProviderId = providerId;
-            // GetDefaultModel 已是「有快取清單就取第一筆，否則用預設值」的語意。
-            addModelName = Settings.GetDefaultModel(providerId, "default");
         }
     }
 #pragma warning restore S3267
