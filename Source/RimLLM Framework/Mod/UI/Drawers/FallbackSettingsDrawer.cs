@@ -126,57 +126,14 @@ namespace RimLLM_Framework.Mod
                     string entry = chain[i];
                     Rect itemRect = listing.GetRect(30f);
 
-                    // 左右劃分
-                    int colonIndex = entry.IndexOf(':');
-                    bool hasModelName = colonIndex >= 0;
-                    float labelWidth = hasModelName ? (itemRect.width - 275f) : (itemRect.width - 120f);
-                    Rect labelRect = new Rect(itemRect.x, itemRect.y, labelWidth, itemRect.height);
+                    // 左右劃分：本頁只管順序與增刪，模型級數值（分級、上下文上限）改在模型設置頁調整。
+                    Rect labelRect = new Rect(itemRect.x, itemRect.y, itemRect.width - 120f, itemRect.height);
                     Rect upRect = new Rect(itemRect.x + itemRect.width - 110f, itemRect.y, 30f, itemRect.height);
                     Rect downRect = new Rect(itemRect.x + itemRect.width - 75f, itemRect.y, 30f, itemRect.height);
                     Rect deleteRect = new Rect(itemRect.x + itemRect.width - 40f, itemRect.y, 30f, itemRect.height);
 
                     // 繪製順序標記與名稱
                     Widgets.Label(labelRect, $" {i + 1}. <color=cyan>{entry}</color>");
-
-                    // 若包含模型名稱，則在右側繪製分級按鈕
-                    if (hasModelName)
-                    {
-                        string modelName = entry.Substring(colonIndex + 1);
-                        Rect levelRect = new Rect(itemRect.x + itemRect.width - 190f, itemRect.y, 70f, itemRect.height);
-                        int currentLevel = Settings.GetModelLevelOverride(modelName);
-                        string levelLabel;
-                        switch (currentLevel)
-                        {
-                            case 1:
-                                levelLabel = "RimLLM_FallbackLevelLow".Translate();
-                                break;
-                            case 2:
-                                levelLabel = "RimLLM_FallbackLevelMedium".Translate();
-                                break;
-                            case 3:
-                                levelLabel = "RimLLM_FallbackLevelHigh".Translate();
-                                break;
-                            default:
-                                levelLabel = "RimLLM_FallbackLevelAuto".Translate();
-                                break;
-                        }
-
-                        if (Widgets.ButtonText(levelRect, levelLabel))
-                        {
-                            List<FloatMenuOption> options = new List<FloatMenuOption>
-                            {
-                                new FloatMenuOption("RimLLM_FallbackLevelAuto".Translate(), () => { Settings.SetModelLevelOverride(modelName, 0); Settings.Write(); }),
-                                new FloatMenuOption("RimLLM_FallbackLevelLow".Translate(), () => { Settings.SetModelLevelOverride(modelName, 1); Settings.Write(); }),
-                                new FloatMenuOption("RimLLM_FallbackLevelMedium".Translate(), () => { Settings.SetModelLevelOverride(modelName, 2); Settings.Write(); }),
-                                new FloatMenuOption("RimLLM_FallbackLevelHigh".Translate(), () => { Settings.SetModelLevelOverride(modelName, 3); Settings.Write(); })
-                            };
-                            Find.WindowStack.Add(new FloatMenu(options));
-                        }
-
-                        DrawContextWindowButton(
-                            new Rect(itemRect.x + itemRect.width - 265f, itemRect.y, 70f, itemRect.height),
-                            entry, entry.Substring(0, colonIndex), modelName);
-                    }
 
                     // 上移按鈕
                     if (i > 0)
@@ -304,68 +261,6 @@ namespace RimLLM_Framework.Mod
             addProviderId = providerId;
             // GetDefaultModel 已是「有快取清單就取第一筆，否則用預設值」的語意。
             addModelName = Settings.GetDefaultModel(providerId, "default");
-        }
-
-        /// <summary>常用的上下文上限，讓玩家一鍵選取；其他數值走自訂視窗。</summary>
-        private static readonly int[] ContextWindowPresets = { 8192, 32768, 131072, 200000, 1048576 };
-
-        /// <summary>
-        /// 繪製上下文上限按鈕：顯示目前生效的值（手動值優先於 API 回報值），點擊可手動設定或改回自動。
-        /// </summary>
-        private static void DrawContextWindowButton(Rect rect, string entry, string providerId, string modelName)
-        {
-            int manual = Settings.GetContextWindowOverride(entry);
-            int? fetched = Settings.GetFetchedContextWindow(providerId, modelName);
-            int? effective = manual > 0 ? manual : fetched;
-
-            string label = effective.HasValue ? FormatTokens(effective.Value) : "?";
-            if (manual > 0) label += "*";
-
-            // 提示文字只在滑鼠停留時才需要，以延遲委派產生，避免每幀每列都翻譯與格式化
-            TooltipHandler.TipRegion(rect, () =>
-            {
-                string source = manual > 0
-                    ? "RimLLM_ContextWindowSourceManual".Translate()
-                    : fetched.HasValue
-                        ? "RimLLM_ContextWindowSourceApi".Translate()
-                        : "RimLLM_ContextWindowSourceNone".Translate();
-                return "RimLLM_ContextWindowTooltip".Translate(
-                    effective.HasValue ? effective.Value.ToString("N0") : "?", source);
-            }, entry.GetHashCode());
-
-            if (Widgets.ButtonText(rect, label))
-            {
-                var options = new List<FloatMenuOption>
-                {
-                    new FloatMenuOption(
-                        "RimLLM_ContextWindowAuto".Translate(fetched.HasValue ? fetched.Value.ToString("N0") : "?"),
-                        () => { Settings.SetContextWindowOverride(entry, 0); Settings.Write(); })
-                };
-                foreach (int preset in ContextWindowPresets)
-                {
-                    int captured = preset;
-                    options.Add(new FloatMenuOption(
-                        FormatTokens(captured) + " (" + captured.ToString("N0") + ")",
-                        () => { Settings.SetContextWindowOverride(entry, captured); Settings.Write(); }));
-                }
-                options.Add(new FloatMenuOption("RimLLM_ContextWindowCustom".Translate(), () =>
-                    Find.WindowStack.Add(new Dialog_SetContextWindow(entry, manual, tokens =>
-                    {
-                        Settings.SetContextWindowOverride(entry, tokens);
-                        Settings.Write();
-                    }))));
-                Find.WindowStack.Add(new FloatMenu(options));
-            }
-        }
-
-        /// <summary>以 K / M 縮寫 token 數，例如 131072 → 131K、1048576 → 1M。</summary>
-        private static string FormatTokens(int tokens)
-        {
-            return tokens >= 1000000
-                ? (tokens / 1000000.0).ToString("0.#") + "M"
-                : tokens >= 1000
-                    ? (tokens / 1000.0).ToString("0") + "K"
-                    : tokens.ToString();
         }
     }
 #pragma warning restore S3267

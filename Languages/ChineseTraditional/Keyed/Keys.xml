@@ -2,7 +2,8 @@
 <LanguageData>
   <RimLLM_MainMenu><b>主選單</b></RimLLM_MainMenu>
   <RimLLM_TabProviders>供應商設定</RimLLM_TabProviders>
-  <RimLLM_TabFallback>模型設置</RimLLM_TabFallback>
+  <RimLLM_TabFallback>備援鏈</RimLLM_TabFallback>
+  <RimLLM_TabModels>模型設置</RimLLM_TabModels>
   <RimLLM_TabGlobalConfig>全域請求配置</RimLLM_TabGlobalConfig>
   
   <RimLLM_ApiProviders><b>API 供應商</b></RimLLM_ApiProviders>
@@ -11,7 +12,8 @@
   <RimLLM_ModelsCount>{0} 模型</RimLLM_ModelsCount>
   
   <RimLLM_TitleProviderSettings>供應商設定 - {0}</RimLLM_TitleProviderSettings>
-  <RimLLM_TitleFallback>全域模型設置</RimLLM_TitleFallback>
+  <RimLLM_TitleFallback>備援鏈與路由</RimLLM_TitleFallback>
+  <RimLLM_TitleModels>逐模型設置</RimLLM_TitleModels>
   <RimLLM_TitleGlobalConfig>全域請求與重試配置</RimLLM_TitleGlobalConfig>
   
   <RimLLM_EnableProvider>啟用此 API 供應商</RimLLM_EnableProvider>
@@ -42,6 +44,8 @@
   <RimLLM_FallbackExplanation>當呼叫 SDK 時，框架將依此清單順序嘗試，前一項失敗則嘗試下一項。</RimLLM_FallbackExplanation>
   <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;目前 Fallback 鏈為空，請從下方選擇模型新增！&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
   <RimLLM_AddToFallbackTitle><b>新增模型至 Fallback 鏈</b></RimLLM_AddToFallbackTitle>
+  <RimLLM_ModelsExplanation>微調備援鏈上每個模型：分級（影響 LowestCost 路由與 MinFallbackLevel 過濾）與上下文上限（標 * 的手動值優先於 API 回報值）。</RimLLM_ModelsExplanation>
+  <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;備援鏈目前沒有模型，請先到「備援鏈」分頁新增！&lt;/color&gt;</RimLLM_ModelsEmptyWarning>
   <RimLLM_SelectProviderBtn>供應商: {0}</RimLLM_SelectProviderBtn>
   <RimLLM_SelectModelBtn>模型: {0}</RimLLM_SelectModelBtn>
   <RimLLM_SelectModelPlaceholder>請選擇模型</RimLLM_SelectModelPlaceholder>

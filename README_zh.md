@@ -123,9 +123,9 @@ IChatClient client = RimLLMProvider.CreateChatClient("myai.mod");
 Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 ```
 
-訊息清單與 `ChatOptions` 的用法與 MEAI 文件完全相同。唯一與本框架有關的規則是：不設定 `ModelId` 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定；要指定就填 `"供應商:模型"` 形式的項目。指定的模型不論路由策略為何、是否已在鏈上，一律最先嘗試，失敗後才輪到鏈上其餘候選。`RimLLMProvider.GetFallbackChain()` 會依設定順序回傳玩家備援鏈的副本，可用來做模型選單。
+訊息清單與 `ChatOptions` 的用法與 MEAI 文件完全相同。唯一與本框架有關的規則是：不設定 `ModelId` —— 或填 `"fallback"`（`RimLLMChatOptions.FallbackModelId`，大小寫不限）—— 時，實際由哪個供應商與模型執行，交給玩家設定的 Fallback 鏈決定。對外而言備援鏈就是一個叫 `fallback` 的模型；要指定就填 `"供應商:模型"` 形式的項目。帶後綴的 `"fallback:…"` 視為一般項目，走相同的 `"供應商:模型"` 規則。指定的模型不論路由策略為何、是否已在鏈上，一律最先嘗試，失敗後才輪到鏈上其餘候選。`RimLLMProvider.GetFallbackChain()` 會依設定順序回傳玩家備援鏈的副本，可用來做模型選單。
 
-`RimLLMProvider.GetContextWindow("供應商:模型")` 回傳該模型的上下文上限（token 數），可用來依上限的百分比壓縮對話歷史。玩家在備援鏈手動填寫的值優先，否則是玩家上次重新整理該供應商模型清單時記下的值 —— 優先採用供應商自己的 API（OpenRouter、Groq、Gemini），其餘由 [models.dev](https://models.dev) 資料庫補齊。上限不明、或傳入的不是明確的 `"供應商:模型"` 時回傳 `null` —— 它不會替你猜備援鏈最後會選哪個模型，拿到 `null` 時請用你自己的預設值。
+`RimLLMProvider.GetContextWindow("供應商:模型")` 回傳該模型的上下文上限（token 數），可用來依上限的百分比壓縮對話歷史。玩家在模型設置分頁手動填寫的值優先，否則是玩家上次重新整理該供應商模型清單時記下的值 —— 優先採用供應商自己的 API（OpenRouter、Groq、Gemini），其餘由 [models.dev](https://models.dev) 資料庫補齊。上限不明、或傳入的不是明確的 `"供應商:模型"` 時回傳 `null` —— 它不會替你猜備援鏈最後會選哪個模型，拿到 `null` 時請用你自己的預設值。
 
 有兩個欄位沒設定時框架會補預設值：`MaxOutputTokens` 為 **1024**、`Temperature` 為 **0.7**。批次翻譯、多角色對話、欄位很多的結構化輸出這類長回應請自行設定 `MaxOutputTokens`，否則回覆會在 1024 個 token 處被截斷。
 

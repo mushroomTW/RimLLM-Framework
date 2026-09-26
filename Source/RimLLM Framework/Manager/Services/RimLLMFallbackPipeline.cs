@@ -262,6 +262,9 @@ namespace RimLLM_Framework.Manager
         {
             if (string.IsNullOrEmpty(preferredModelId)) return false;
 
+            // 備援鏈別名：明確要求走整條鏈，不釘選任何候選（與不指定模型同義）。
+            if (RimLLMChatOptions.IsFallbackModelId(preferredModelId)) return false;
+
             string preferredEntry = preferredModelId;
             if (!ResolveFallbackEntry(preferredEntry, out string prefProvider, out string prefModel)
                 || string.IsNullOrEmpty(prefModel))

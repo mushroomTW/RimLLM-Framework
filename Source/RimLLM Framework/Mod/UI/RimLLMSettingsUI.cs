@@ -244,6 +244,14 @@ namespace RimLLM_Framework.Mod
             },
             new DetailPage
             {
+                Id = "Models",
+                MenuLabelKey = "RimLLM_TabModels",
+                Title = () => "RimLLM_TitleModels".Translate(),
+                Draw = ModelSettingsDrawer.DrawModelSettings,
+                EstimateHeight = ModelSettingsDrawer.GetHeight
+            },
+            new DetailPage
+            {
                 Id = "GlobalConfig",
                 MenuLabelKey = "RimLLM_TabGlobalConfig",
                 Title = () => "RimLLM_TitleGlobalConfig".Translate(),

@@ -978,6 +978,23 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
+        public void TestFallbackAliasResolvesWholeChainWithoutPinning()
+        {
+            var settings = new MockSettings();
+            var pipeline = CreateThreeModelPipeline(settings);
+            settings.RoutingStrategy = 0; // PriorityFailover：保留鏈序，別名不得釘選打亂
+
+            foreach (string alias in new[] { "fallback", "Fallback", "FALLBACK" })
+            {
+                var res = pipeline.ResolveCandidates(alias, null);
+                ClassicAssert.AreEqual(3, res.Count, $"alias {alias}");
+                ClassicAssert.AreEqual("P1", res[0].ProviderId, $"alias {alias}");
+                ClassicAssert.AreEqual("P2", res[1].ProviderId, $"alias {alias}");
+                ClassicAssert.AreEqual("P3", res[2].ProviderId, $"alias {alias}");
+            }
+        }
+
+        [Test]
         public void TestGetFallbackChainReturnsDefensiveCopy()
         {
             var settings = new MockSettings { FallbackChain = new List<string> { "P1:m1", "P2:m2" } };

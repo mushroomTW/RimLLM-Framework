@@ -64,6 +64,20 @@ namespace RimLLM_Framework
             set => WriteAdditional(DisableReasoningKey, value);
         }
 
+        /// <summary>
+        /// 備援鏈的模型別名。呼叫端把 <see cref="ChatOptions.ModelId"/> 設為此值（大小寫不限），
+        /// 等同不指定模型：走玩家設定的整條備援鏈，不釘選任何候選。
+        /// 對外而言備援鏈就是一個叫 fallback 的模型；回應的 ModelId 仍是實際回答者的
+        /// "Provider:Model"，可據此得知最後是誰回答的。
+        /// </summary>
+        public const string FallbackModelId = "fallback";
+
+        /// <summary>是否為備援鏈別名（大小寫不限）。路由層據此跳過釘選，直接走整條鏈。</summary>
+        public static bool IsFallbackModelId(string modelId)
+        {
+            return string.Equals(modelId, FallbackModelId, StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>寫入框架私有欄位，必要時延遲建立 AdditionalProperties。</summary>
         private void WriteAdditional(string key, object value)
         {
