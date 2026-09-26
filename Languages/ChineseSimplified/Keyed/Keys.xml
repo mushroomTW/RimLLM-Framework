@@ -45,7 +45,7 @@
   <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;目前 Fallback 链为空，请到「模型设置」分页新增！&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
   <RimLLM_AddToFallbackTitle><b>新增模型至 Fallback 链</b></RimLLM_AddToFallbackTitle>
   <RimLLM_ModelsExplanation>微调备援链上每个模型：分级（影响 LowestCost 路由与 MinFallbackLevel 过滤）与上下文上限（标 * 的手动值优先于 API 回报值）。</RimLLM_ModelsExplanation>
-  <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;备援链目前没有模型，请先到「备援链」分页新增！&lt;/color&gt;</RimLLM_ModelsEmptyWarning>
+  <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;备援链目前没有模型，请先到「模型设置」分页新增！&lt;/color&gt;</RimLLM_ModelsEmptyWarning>
   <RimLLM_SelectProviderBtn>供应商: {0}</RimLLM_SelectProviderBtn>
   <RimLLM_SelectModelBtn>模型: {0}</RimLLM_SelectModelBtn>
   <RimLLM_SelectModelPlaceholder>请选择模型</RimLLM_SelectModelPlaceholder>
@@ -132,6 +132,8 @@
   <RimLLM_BudgetPolicy_HardBlock>直接阻断并警告</RimLLM_BudgetPolicy_HardBlock>
   <RimLLM_BudgetPolicy_WarnOnly>只警告并照常送出</RimLLM_BudgetPolicy_WarnOnly>
   <RimLLM_BudgetWarnOnlyExceeded>当日 Token 预算已超限。因为超限应对策略设为「只警告并照常送出」，请求仍会继续送出。请提高预算上限，或在 RimLLM 设置（预算与防护）改为「直接阻断并警告」。</RimLLM_BudgetWarnOnlyExceeded>
+  <RimLLM_BudgetHardBlockExceeded>当日 Token 预算已超限，RimLLM 将阻断 AI 请求直到明日重置。请提高预算上限，或在 RimLLM 设置（预算与防护）改为「只警告并照常送出」。</RimLLM_BudgetHardBlockExceeded>
+  <RimLLM_MsgLegacyBudgetLimitDropped>每日预算已改以 Token 计，旧版的美元上限无法换算、已被移除，目前没有每日上限。请到「预算与防护」分页重新设置 Token 预算。</RimLLM_MsgLegacyBudgetLimitDropped>
   <RimLLM_MsgBudgetPolicyReset>设置中已保存的预算超限应对策略不再受支持，已重设为「直接阻断并警告」。可在「预算与防护」分页更换。</RimLLM_MsgBudgetPolicyReset>
   <RimLLM_EnableAntiAbuseLabel>启用防爆限制 (防止 Mod Bug 死循环)</RimLLM_EnableAntiAbuseLabel>
   <RimLLM_MaxRequestsPerWindowLabel>时间窗口内最大请求次数: {0} 次</RimLLM_MaxRequestsPerWindowLabel>

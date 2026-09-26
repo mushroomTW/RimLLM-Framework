@@ -79,6 +79,10 @@ namespace RimLLM_Framework.Mod
 
         /// <summary>每日 token 預算上限（輸入＋輸出合計）。0 代表無限制，存於設定 XML。</summary>
         public long DailyTokenBudgetLimit { get; set; } = 0;
+
+        /// <summary>舊版美元門檻僅為介面相容而保留；內建設定改看 token 預算，恆為 0 且不存檔。</summary>
+        float IRimLLMSettings.DailyBudgetLimit { get => 0f; set { } }
+
         /// <summary>
         /// 最大合法的預算超限應對策略值。新增策略時要同步更新這裡與
         /// <see cref="BudgetSettingsDrawer"/> 的策略名稱清單。
@@ -292,6 +296,10 @@ namespace RimLLM_Framework.Mod
             public long TotalCompletionTokens;
             public float TotalEstimatedCost;
             public long DailyTokenBudgetLimit;
+            /// <summary>
+            /// 舊版美元上限，只讀不寫：新版存檔寫出 null，因此有值即代表這是舊版存檔（見載入處的遷移）。
+            /// </summary>
+            public float? DailyBudgetLimit;
             public int BudgetPolicy;
             public bool EnableAntiAbuse;
             public int MaxRequestsPerWindow;
@@ -540,16 +548,28 @@ namespace RimLLM_Framework.Mod
                                 RimLLMLog.Enabled = this.DetailedLogging;
 
                                 this.DailyTokenBudgetLimit = dto.DailyTokenBudgetLimit < 0 ? 0 : dto.DailyTokenBudgetLimit;
+                                // 舊版存檔（以美元計的每日預算）：美元無法換算成 token，上限無法沿用，
+                                // 必須明確告知玩家預算已失效，不能讓保護在升級後無聲消失。
+                                bool legacyBudgetSave = dto.DailyBudgetLimit.HasValue;
+                                if (legacyBudgetSave && dto.DailyBudgetLimit.Value > 0f)
+                                {
+                                    RimLLMLog.Warning(
+                                        $"[RimLLM] The daily budget is now counted in tokens; the old USD limit ({dto.DailyBudgetLimit.Value:F2}) cannot be converted and was removed. Set a token budget under Budget & Safety.");
+                                    NotifyBudgetSettingReset("RimLLM_MsgLegacyBudgetLimitDropped");
+                                }
+
                                 int storedPolicy = dto.BudgetPolicy;
-                                if (SanitizeBudgetPolicy(storedPolicy) != storedPolicy)
+                                // 舊版的 1 是 SilentMocking（超限不送出），與新版 1 = WarnOnly（照常送出）撞號，不得沿用成放行。
+                                bool legacySilentMocking = legacyBudgetSave && storedPolicy == 1;
+                                if (legacySilentMocking || SanitizeBudgetPolicy(storedPolicy) != storedPolicy)
                                 {
                                     // 這是行為變更：原本的軟性策略會變成硬性阻斷，必須讓使用者自己知道原因，
                                     // 否則他只會看到 AI 突然回報 QuotaExceeded 而找不到緣由。
                                     RimLLMLog.Warning(
                                         $"[RimLLM] Unsupported budget policy {storedPolicy} in settings; reset to HardBlock (0).");
-                                    NotifyBudgetPolicyReset();
+                                    NotifyBudgetSettingReset("RimLLM_MsgBudgetPolicyReset");
                                 }
-                                this.BudgetPolicy = SanitizeBudgetPolicy(storedPolicy);
+                                this.BudgetPolicy = legacySilentMocking ? 0 : SanitizeBudgetPolicy(storedPolicy);
                                 this.EnableAntiAbuse = dto.EnableAntiAbuse;
                                 // Use 10 as default if the value is <= 0 for MaxRequestsPerWindow and ThrottlingWindowSeconds
                                 this.MaxRequestsPerWindow = dto.MaxRequestsPerWindow <= 0 ? 10 : dto.MaxRequestsPerWindow;
@@ -638,6 +658,7 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// 設定檔中的預算策略值正規化。已移除的策略（SilentMocking / FallbackToFree / DialogPrompt）
         /// 與未知值一律退回 HardBlock：不得靜默變成放行，否則舊存檔升級後會在無預警的情況下繼續燒 token。
+        /// 舊版 SilentMocking 的值 1 與新版 WarnOnly 撞號，單看數值無法分辨，由載入處依舊版存檔另行處理。
         /// </summary>
         internal static int SanitizeBudgetPolicy(int stored)
         {
@@ -648,17 +669,17 @@ namespace RimLLM_Framework.Mod
         /// 設定值被重設時的一次性提示。翻譯與訊息佇列都依賴 Defs 與語言資料，
         /// 而 ExposeData 在載入階段就會執行，因此延後到主執行緒的第一幀再送出。
         /// </summary>
-        private static void NotifyBudgetPolicyReset()
+        private static void NotifyBudgetSettingReset(string translationKey)
         {
             RimLLMDispatcher.EnqueueOnMainThread(() =>
             {
                 try
                 {
-                    Messages.Message("RimLLM_MsgBudgetPolicyReset".Translate(), MessageTypeDefOf.CautionInput, false);
+                    Messages.Message(translationKey.Translate(), MessageTypeDefOf.CautionInput, false);
                 }
                 catch (Exception ex)
                 {
-                    RimLLMLog.Warning($"[RimLLM] Budget policy reset notice unavailable: {ex.Message}");
+                    RimLLMLog.Warning($"[RimLLM] Budget setting reset notice unavailable: {ex.Message}");
                 }
             });
         }

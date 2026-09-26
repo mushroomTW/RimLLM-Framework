@@ -622,7 +622,12 @@ namespace RimLLM_Framework.Manager
             "is set to 'warn only'. Raise the budget or switch the policy to 'block requests and " +
             "warn' in RimLLM settings -> Budget & Safety.";
 
-        /// <summary>最後一次發出超限警告的重置基準日，讓 WarnOnly 每天只吵一次。</summary>
+        /// <summary>HardBlock 超限警告的英文字串（無翻譯資料時使用，同時也是日誌內容）。</summary>
+        private const string BudgetHardBlockFallbackText =
+            "Daily budget limit exceeded. RimLLM is blocking AI requests until the budget resets tomorrow. " +
+            "Raise the budget or switch the policy to 'warn only' in RimLLM settings -> Budget & Safety.";
+
+        /// <summary>最後一次發出超限警告的重置基準日，讓超限警告每天只吵一次。</summary>
         private string _budgetWarnedDate = "";
 
         /// <summary>
@@ -637,8 +642,11 @@ namespace RimLLM_Framework.Manager
             CheckDailyReset();
 
             bool overBudget = _settings is IDailyTokenBudget tokenLedger
-                && tokenLedger.DailyTokenBudgetLimit > 0
-                && tokenLedger.DailyAccumulatedTokens >= tokenLedger.DailyTokenBudgetLimit;
+                ? tokenLedger.DailyTokenBudgetLimit > 0
+                    && tokenLedger.DailyAccumulatedTokens >= tokenLedger.DailyTokenBudgetLimit
+                // 外部自行實作的設定沒有 token 帳本，退回舊版美元門檻。
+                : _settings.DailyBudgetLimit > 0f
+                    && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit;
 
             if (!overBudget)
             {
@@ -648,26 +656,28 @@ namespace RimLLM_Framework.Manager
             // 0=HardBlock, 1=WarnOnly
             if (_settings.BudgetPolicy == BudgetPolicyWarnOnly)
             {
-                WarnBudgetExceeded();
+                WarnBudgetExceeded("RimLLM_BudgetWarnOnlyExceeded", BudgetWarnOnlyFallbackText);
                 return true;
             }
 
+            // HardBlock 也要讓玩家知道是 RimLLM 預算擋下的，否則只會看到各 Mod 回報 QuotaExceeded。
+            WarnBudgetExceeded("RimLLM_BudgetHardBlockExceeded", BudgetHardBlockFallbackText);
             return false;
         }
 
         /// <summary>
-        /// WarnOnly 的超限警告，每天只發一次。這個檢查每個請求（含串流）都會跑，
+        /// 超限警告，每天只發一次。這個檢查每個請求（含串流）都會跑，
         /// 逐次輸出會把日誌洗成一片空白，反而讓真正要看的警告被淹沒。
         /// </summary>
-        private void WarnBudgetExceeded()
+        private void WarnBudgetExceeded(string translationKey, string fallbackText)
         {
             if (!ShouldWarnBudgetExceeded())
             {
                 return;
             }
 
-            RimLLMLog.Warning("[RimLLM] " + BudgetWarnOnlyFallbackText);
-            RimLLMDispatcher.EnqueueOnMainThread(ShowBudgetExceededMessage);
+            RimLLMLog.Warning("[RimLLM] " + fallbackText);
+            RimLLMDispatcher.EnqueueOnMainThread(() => ShowBudgetExceededMessage(translationKey, fallbackText));
         }
 
         /// <summary>
@@ -695,14 +705,14 @@ namespace RimLLM_Framework.Manager
         /// 在主執行緒弹出遊戲訊息。這個檢查可能發生在背景執行緒（呼叫端自行決定 await 續行的位置），
         /// 而 <see cref="Messages"/> 是主執行緒狀態，直接呼叫並不安全。
         /// </summary>
-        private static void ShowBudgetExceededMessage()
+        private static void ShowBudgetExceededMessage(string translationKey, string fallbackText)
         {
             try
             {
                 // 語言資料尚未就緒時（單元測試、headless）跳過翻譯，改用英文字串。
                 string text = LanguageDatabase.activeLanguage != null
-                    ? "RimLLM_BudgetWarnOnlyExceeded".Translate().ToString()
-                    : BudgetWarnOnlyFallbackText;
+                    ? translationKey.Translate().ToString()
+                    : fallbackText;
                 Messages.Message(text, MessageTypeDefOf.CautionInput, false);
             }
             catch (Exception ex)

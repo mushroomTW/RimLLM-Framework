@@ -363,7 +363,7 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <param name="completionEstimate">provider 沒回報用量時使用的 completion token 估算值（<see cref="EstimateTokensRaw"/> 的累計）。</param>
-        /// <param name="onUsage">結算後的 token 回呼；回報與否都照帳本同一套數字。</param>
+        /// <param name="onUsage">供應商有回報用量時的 token 回呼（數字與帳本相同）；只有估算值時不觸發，以免日誌把估算當實際值顯示。</param>
         private static void RecordUsage(
             string providerId,
             string model,
@@ -375,7 +375,8 @@ namespace RimLLM_Framework.Manager
             int promptTokens;
             int completionTokens;
             int cachedPromptTokens = 0;
-            if (usage != null && (usage.InputTokenCount.HasValue || usage.OutputTokenCount.HasValue))
+            bool reported = usage != null && (usage.InputTokenCount.HasValue || usage.OutputTokenCount.HasValue);
+            if (reported)
             {
                 ReadUsage(usage, out promptTokens, out completionTokens, out cachedPromptTokens);
             }
@@ -394,13 +395,17 @@ namespace RimLLM_Framework.Manager
             int billedPrompt = Math.Max(1, promptTokens);
             int billedCompletion = Math.Max(1, completionTokens);
             // 日誌附帶的單次用量與帳本同源；manager 缺席（直接測試 provider）時帳本略過、回呼照觸發。
-            try
+            // 估算值不回呼：請求日誌沒有「估算」標示，顯示層以 0 代表未回報而省略。
+            if (reported)
             {
-                onUsage?.Invoke(new UsageTokens(billedPrompt, billedCompletion));
-            }
-            catch (Exception ex)
-            {
-                RimLLMLog.Warning($"[RimLLM] Usage callback failed: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                try
+                {
+                    onUsage?.Invoke(new UsageTokens(billedPrompt, billedCompletion));
+                }
+                catch (Exception ex)
+                {
+                    RimLLMLog.Warning($"[RimLLM] Usage callback failed: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+                }
             }
             try
             {

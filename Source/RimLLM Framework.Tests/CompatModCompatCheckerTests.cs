@@ -26,10 +26,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void ModCompatCheckerTarget_DeclaresStablePackageId()
         {
-            var target = new ModCompatCheckerCompatTarget();
-            ClassicAssert.AreEqual("modcompatchecker.main", target.ModId);
-            ClassicAssert.AreEqual("Mod 兼容性檢查器 (Mod Compatibility Checker)", target.DisplayName);
-            ClassicAssert.IsFalse(target.IsPatched);
+            ClassicAssert.AreEqual("modcompatchecker.main", ModCompatCheckerCompatTarget.PackageId);
         }
 
         [Test]

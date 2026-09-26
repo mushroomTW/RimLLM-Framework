@@ -45,7 +45,7 @@
    * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位），並依費率表中該模型的快取輸入估計費率計算。供應商定價可能變動，因此金額仍是估算值。
    * **成本估算來自內建費率表**（OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai、Player2 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。Player2 記為已知的 $0（本地免費，雲端以 joules 而非美元計費，joules 不列入費用估算）。查無費率代表**費用未知**，不是已知免費：其 token 照計入每日預算，但費用不列入顯示總額。Debug 分頁會顯示本次執行中查無費率的請求數。每日預算在請求前檢查已累計的輸入＋輸出 token，並非精確的消費上限。
-   * **預算超限應對策略只有兩種**：**直接阻斷並警告**（預設，請求被擋下並回報 `LLMError.QuotaExceeded`）與**只警告並照常送出**（每天彈一次遊戲內提示後繼續呼叫，超支要不要繼續由使用者自己決定）。設定檔若還留著已移除的策略，載入時會重設為「直接阻斷並警告」並提示一次，不會靜默變成放行。兩者都不改寫回應內容 —— 框架不會代你偽造一句看似正常的回答，那會讓呼叫端與玩家都誤以為模型真的回應了。
+   * **預算超限應對策略只有兩種**：**直接阻斷並警告**（預設，請求被擋下並回報 `LLMError.QuotaExceeded`，每天彈一次遊戲內提示說明是 RimLLM 預算擋下的）與**只警告並照常送出**（每天彈一次遊戲內提示後繼續呼叫，超支要不要繼續由使用者自己決定）。設定檔若還留著已移除的策略（包含數值與「只警告」撞號的舊 SilentMocking），載入時會重設為「直接阻斷並警告」並提示一次，不會靜默變成放行。舊版以美元計的每日上限無法換算成 token，載入時會移除並提示一次，請玩家重新設定 token 預算。其他 Mod 自行實作、不記錄 token 的設定則退回舊版美元門檻。兩者都不改寫回應內容 —— 框架不會代你偽造一句看似正常的回答，那會讓呼叫端與玩家都誤以為模型真的回應了。
 10. **Embedding SDK**
     * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。
     * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini，OpenAI 走其原生端點；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。模型、端點與金鑰依 Embedding 供應商分別保存，切換啟用的供應商不會遺失其他供應商的設定；模型或端點留空代表使用該供應商預設值，金鑰留空則繼承對應對話供應商的金鑰。

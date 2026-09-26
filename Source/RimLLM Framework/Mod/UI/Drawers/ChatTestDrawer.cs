@@ -602,27 +602,14 @@ namespace RimLLM_Framework.Mod
         }
         #pragma warning restore S3776
 
-        /// <summary>備援鏈去空去重後的有序條目，供測試模型下拉選單使用。</summary>
-        private static List<string> CollectChainEntries()
-        {
-            var entries = new List<string>();
-            foreach (string entry in Settings.FallbackChain)
-            {
-                if (!string.IsNullOrEmpty(entry) && !entries.Contains(entry))
-                {
-                    entries.Add(entry);
-                }
-            }
-            return entries;
-        }
-
         /// <summary>
         /// 測試模型選擇列。選單列出備援鏈上的 "Provider:Model" 條目，選中後以
         /// <see cref="ChatOptions.ModelId"/> 釘選為鏈首；選自動則不指定、沿用備援鏈順序。
         /// </summary>
         private static void DrawModelSelectorRow(Listing_Standard listing)
         {
-            List<string> entries = CollectChainEntries();
+            // 與模型設置頁共用同一份去空去重邏輯，兩處列出的條目才不會漂移。
+            List<string> entries = ModelSettingsDrawer.CollectEntries();
             // 備援鏈被改掉後，舊的釘選已無意義，退回自動。
             if (!string.IsNullOrEmpty(chatModelId) && !entries.Contains(chatModelId))
             {

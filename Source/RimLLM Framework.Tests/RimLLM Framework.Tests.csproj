@@ -58,6 +58,9 @@
          避免與 .NET Framework 4.8 mscorlib 內建型別產生 CS0433 歧義。 -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.12" Aliases="bclasync" />
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" Aliases="ste" />
+    <!-- 主專案以 ExcludeAssets="runtime" 參考 Harmony（遊戲執行期由 Harmony Mod 提供），不會帶進測試輸出；
+         型別載入防線測試會反射解析 Action<Harmony> 等欄位型別，因此這裡另外複製 0Harmony.dll。版本須與主專案一致。 -->
+    <PackageReference Include="Lib.Harmony" Version="2.3.6" />
     <!-- 相容層轉接器測試需要 RimTalk 的 Role / Payload 型別；主專案 Private=false 不會帶進來，這裡另外複製到測試輸出。 -->
     <Reference Include="RimTalk">
       <HintPath>..\Libs\RimTalk\RimTalk.dll</HintPath>

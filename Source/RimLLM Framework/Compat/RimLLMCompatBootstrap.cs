@@ -25,16 +25,16 @@ namespace RimLLM_Framework.Compat
         public static readonly IReadOnlyList<RimLLMCompatTarget> Targets = new RimLLMCompatTarget[]
         {
             new DelegateCompatTarget(
-                "cj.rimtalk",
+                RimTalkCompatTarget.PackageId,
                 "RimTalk",
                 h => RimTalkCompatPatch.Apply(h)),
             new DelegateCompatTarget(
-                "seohyeon.autotranslation",
+                AutoTranslationCompatTarget.PackageId,
                 "Auto Translation",
                 h => AutoTranslationCompatPatch.Apply(h),
                 enabled => AutoTranslationCompatPatch.OnTakeoverToggled(enabled)),
             new DelegateCompatTarget(
-                "modcompatchecker.main",
+                ModCompatCheckerCompatTarget.PackageId,
                 "Mod 兼容性檢查器 (Mod Compatibility Checker)",
                 h => ModCompatCheckerCompatPatch.Apply(h))
         };

@@ -102,6 +102,13 @@ namespace RimLLM_Framework
         float TotalEstimatedCost { get; set; }
 
         /// <summary>
+        /// 舊版今日預算上限 (USD)。保留此成員以維持既有外部 Mod 的二進位相容（移除會讓讀取它的呼叫端擲 MissingMethodException）。
+        /// 內建設定已改以 token 計（見 <see cref="IDailyTokenBudget"/>），此值恆為 0；
+        /// 只有未實作 <see cref="IDailyTokenBudget"/> 的外部設定才會以它搭配 <see cref="DailyAccumulatedCost"/> 作為門檻。
+        /// </summary>
+        float DailyBudgetLimit { get; set; }
+
+        /// <summary>
         /// 預算超限應對策略 (0=HardBlock 直接阻斷並警告, 1=WarnOnly 只警告並照常送出)。
         /// </summary>
         int BudgetPolicy { get; set; }

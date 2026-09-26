@@ -113,6 +113,8 @@ namespace RimLLM_Framework.Compat
 
         public override void OnTakeoverToggled(bool enabled)
         {
+            // 委派會觸及引用目標 Mod 型別的方法，只有目標已安裝且攔截已掛上時才能呼叫（型別載入防線）。
+            if (!IsInstalled || !IsPatched) return;
             _onTakeoverToggled?.Invoke(enabled);
         }
     }

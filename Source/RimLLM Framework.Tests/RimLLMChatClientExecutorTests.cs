@@ -271,7 +271,7 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestGenerateAsync_FiresUsageCallbackWithEstimatesWhenUnreported()
+        public void TestGenerateAsync_SkipsUsageCallbackWhenUnreported()
         {
             var client = new CapturingChatClient
             {
@@ -279,15 +279,14 @@ namespace RimLLM_Framework.Tests
             };
 
             var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
-            int prompt = -1, completion = -1;
+            bool fired = false;
 
             RimLLMChatClientExecutor.GenerateAsync(
                 client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None,
-                onUsage: tokens => { prompt = tokens.Prompt; completion = tokens.Completion; }).GetAwaiter().GetResult();
+                onUsage: tokens => { fired = true; }).GetAwaiter().GetResult();
 
-            // "hi" 與 "ok" 各 2 個拉丁字元 → 0.5 token，無條件進位後至少為 1。
-            ClassicAssert.AreEqual(1, prompt);
-            ClassicAssert.AreEqual(1, completion);
+            // 供應商沒回報用量時只有估算值，不得交給請求日誌冒充實際值。
+            ClassicAssert.IsFalse(fired);
         }
 
         [Test]

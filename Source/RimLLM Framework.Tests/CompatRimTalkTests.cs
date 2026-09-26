@@ -361,10 +361,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void RimTalkTarget_DeclaresStablePackageId()
         {
-            var target = new RimTalkCompatTarget();
-            ClassicAssert.AreEqual("cj.rimtalk", target.ModId);
-            ClassicAssert.AreEqual("RimTalk", target.DisplayName);
-            ClassicAssert.IsFalse(target.IsPatched);
+            ClassicAssert.AreEqual("cj.rimtalk", RimTalkCompatTarget.PackageId);
         }
     }
 }

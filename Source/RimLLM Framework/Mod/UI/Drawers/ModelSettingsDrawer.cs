@@ -36,7 +36,7 @@ namespace RimLLM_Framework.Mod
         /// 備援鏈去空去重後的有序模型條目，供本頁逐列顯示。鏈內保證唯一，
         /// 但舊存檔可能殘留重複，去重後顯示才不會出現調了兩次的同一列。
         /// </summary>
-        private static List<string> CollectEntries()
+        internal static List<string> CollectEntries()
         {
             var entries = new List<string>();
             foreach (string entry in Settings.FallbackChain)

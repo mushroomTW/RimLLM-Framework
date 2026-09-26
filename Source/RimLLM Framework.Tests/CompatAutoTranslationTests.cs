@@ -22,10 +22,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void AutoTranslationTarget_DeclaresStablePackageId()
         {
-            var target = new AutoTranslationCompatTarget();
-            ClassicAssert.AreEqual("seohyeon.autotranslation", target.ModId);
-            ClassicAssert.AreEqual("Auto Translation", target.DisplayName);
-            ClassicAssert.IsFalse(target.IsPatched);
+            ClassicAssert.AreEqual("seohyeon.autotranslation", AutoTranslationCompatTarget.PackageId);
         }
 
         [Test]
