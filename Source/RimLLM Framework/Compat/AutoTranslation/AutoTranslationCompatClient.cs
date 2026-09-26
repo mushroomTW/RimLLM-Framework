@@ -17,21 +17,18 @@ namespace RimLLM_Framework.Compat
     /// 本類別刻意不引用任何 Auto Translation 專有型別，以求徹底解耦與高測試性；
     /// 它的公開介面只處理中性型別（string、JSON）。
     /// </remarks>
-    internal sealed class AutoTranslationCompatClient
+    internal sealed class AutoTranslationCompatClient : CompatClientBase
     {
-        private IChatClient _chat;
-
-        private IChatClient Chat => _chat ?? (_chat = RimLLMProvider.CreateChatClient(AutoTranslationCompatTarget.PackageId));
-
         /// <summary>正式路徑：延遲到第一次請求才向 RimLLM 取 client，避免在攔截掛載階段觸碰 manager。</summary>
         public AutoTranslationCompatClient()
+            : base(AutoTranslationCompatTarget.PackageId)
         {
         }
 
         /// <summary>測試用：注入假的 <see cref="IChatClient"/>，驗證訊息建構、參數傳遞與 JSON 回傳格式。</summary>
         internal AutoTranslationCompatClient(IChatClient chat)
+            : base(AutoTranslationCompatTarget.PackageId, chat)
         {
-            _chat = chat;
         }
 
         /// <summary>
@@ -51,17 +48,7 @@ namespace RimLLM_Framework.Compat
 
             ChatOptions options = BuildOptions();
 
-            ChatResponse response;
-            try
-            {
-                response = Task.Run(() => Chat.GetResponseAsync(messages, options, CancellationToken.None)).GetAwaiter().GetResult();
-            }
-            catch (AggregateException agg) when (agg.InnerExceptions.Count > 0)
-            {
-                // 保留原始堆疊：直接 throw 會遺失跨執行緒的呼叫資訊。
-                ExceptionDispatchInfo.Capture(agg.Flatten().InnerExceptions[0]).Throw();
-                throw;
-            }
+            ChatResponse response = RunSync(() => Chat.GetResponseAsync(messages, options, CancellationToken.None));
 
             string responseText = response.Text ?? string.Empty;
             int inputTokens = ToInt32Saturating(response.Usage?.InputTokenCount);
@@ -99,7 +86,7 @@ namespace RimLLM_Framework.Compat
         /// <summary>
         /// 翻譯任務著重精準度與低延遲，預設關閉思考鏈（DisableReasoning）並使用溫和的溫度（0.3）。
         /// </summary>
-        private static ChatOptions BuildOptions()
+        protected override ChatOptions BuildOptions()
         {
             return new RimLLMChatOptions
             {

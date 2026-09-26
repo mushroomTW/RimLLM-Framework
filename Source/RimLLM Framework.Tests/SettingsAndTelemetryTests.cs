@@ -741,7 +741,7 @@ namespace RimLLM_Framework.Tests
                 "\"Stamp\":\"2026-01-02T03:04:05+08:00\"," +
                 "\"Count\":\"7\"}";
 
-            SettingsLikeDto dto = RimLLMJson.Deserialize<SettingsLikeDto>(NewtonsoftGolden);
+            SettingsLikeDto dto = RimLLMJsonHelper.Deserialize<SettingsLikeDto>(NewtonsoftGolden);
 
             ClassicAssert.IsNotNull(dto);
             CollectionAssert.AreEqual(new[] { "Gemini:gemini-2.5-flash" }, dto.FallbackChain);

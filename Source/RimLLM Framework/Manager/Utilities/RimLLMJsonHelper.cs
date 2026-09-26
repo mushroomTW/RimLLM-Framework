@@ -2,6 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using RimLLM_Framework.Core;
 #pragma warning disable S108, S1133, S1643, S2486, S6610 // reason: 批次抑制 MINOR/INFO 規則，語意保留，重構風險高於收益，維持現狀
@@ -19,6 +21,45 @@ namespace RimLLM_Framework.Manager
         private static readonly Regex JsonBlockRegex = new Regex(@"(\{.*\}|\[.*\])", RegexOptions.Compiled | RegexOptions.Singleline, TimeSpan.FromSeconds(1));
         private static readonly Regex ThinkTagRegex = new Regex(@"<think>.*?</think>", RegexOptions.Compiled | RegexOptions.Singleline, TimeSpan.FromSeconds(1));
         private static readonly ConcurrentDictionary<Type, string> SampleJsonCache = new ConcurrentDictionary<Type, string>();
+
+        // 全框架共用的 JSON 引擎與寬容設定（原 RimLLMJson，已併入此檔）。
+        // DTO 大量使用 public field（STJ 預設只看 property），反序列化大小寫不敏感，
+        // 並對齊舊 Newtonsoft 寬容度：數字可由字串讀入、尾隨逗號與註解略過、列舉接受名稱。
+        private static readonly JsonSerializerOptions SharedOptions = CreateSharedOptions();
+
+        private static JsonSerializerOptions CreateSharedOptions()
+        {
+            var options = new JsonSerializerOptions
+            {
+                IncludeFields = true,
+                PropertyNameCaseInsensitive = true,
+                NumberHandling = JsonNumberHandling.AllowReadingFromString,
+                AllowTrailingCommas = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+            };
+            options.Converters.Add(new JsonStringEnumConverter());
+            return options;
+        }
+
+        /// <summary>共用設定。JsonSerializerOptions 建構後即凍結語意，可多執行緒共用。</summary>
+        public static JsonSerializerOptions Options => SharedOptions;
+
+        /// <summary>以執行期型別序列化（DTO 可能是 object 宣告，泛型推斷會丟失成員）。</summary>
+        public static string Serialize(object value)
+        {
+            if (value == null) return "null";
+            return JsonSerializer.Serialize(value, value.GetType(), SharedOptions);
+        }
+
+        public static string Serialize<T>(T value)
+        {
+            return JsonSerializer.Serialize(value, SharedOptions);
+        }
+
+        public static T Deserialize<T>(string json)
+        {
+            return JsonSerializer.Deserialize<T>(json, SharedOptions);
+        }
 
         /// <summary>
         /// 獲取指定型別的 Sample JSON 字串。
@@ -41,7 +82,7 @@ namespace RimLLM_Framework.Manager
             try
             {
                 object instance = CreateDummyInstance(type);
-                string generatedJson = RimLLMJson.Serialize(instance);
+                string generatedJson = Serialize(instance);
                 SampleJsonCache[type] = generatedJson;
                 return generatedJson;
             }
@@ -319,7 +360,7 @@ namespace RimLLM_Framework.Manager
         /// </summary>
         public static T DeserializeAndValidate<T>(string json)
         {
-            T result = RimLLMJson.Deserialize<T>(json);
+            T result = Deserialize<T>(json);
             ValidateStructuredObject(result);
             return result;
         }

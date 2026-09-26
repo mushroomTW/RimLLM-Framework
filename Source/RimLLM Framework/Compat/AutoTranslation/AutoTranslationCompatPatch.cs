@@ -39,12 +39,10 @@ namespace RimLLM_Framework.Compat
         /// <summary>在接管前或接管停用時的原生 translator 實例。</summary>
         private static object _nativeTranslator;
 
-        private static bool _cachedTakeOver;
-        private static DateTime _cachedAt = DateTime.MinValue;
-        private static readonly TimeSpan TakeOverCacheTtl = TimeSpan.FromSeconds(1);
-
-        private static DateTime _lastOfflineWarning = DateTime.MinValue;
-        private static readonly TimeSpan OfflineWarningInterval = TimeSpan.FromMinutes(1);
+        private static readonly CompatTakeoverGate _gate = new CompatTakeoverGate(
+            AutoTranslationCompatTarget.PackageId,
+            "Auto Translation 接管已開啟，但框架尚未就緒，本次退回 Auto Translation 原生路徑。原因：{0}",
+            "Auto Translation 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 Auto Translation 原生路徑。原因：{0}");
 
         internal static AutoTranslationCompatClient Client
         {
@@ -155,7 +153,7 @@ namespace RimLLM_Framework.Compat
                 return true;
             }
 
-            if (!ShouldTakeOver())
+            if (!_gate.ShouldTakeOver())
             {
                 try
                 {
@@ -195,7 +193,7 @@ namespace RimLLM_Framework.Compat
         public static void OnTakeoverToggled(bool enabled)
         {
             _ = enabled;
-            InvalidateTakeOverCache();
+            _gate.OnTakeoverToggled();
             try
             {
                 SyncCurrentTranslator();
@@ -203,30 +201,6 @@ namespace RimLLM_Framework.Compat
             catch (Exception)
             {
             }
-        }
-
-        /// <summary>使接管判定快取失效，下次 <see cref="ShouldTakeOver"/> 重算。</summary>
-        internal static void InvalidateTakeOverCache()
-        {
-            _cachedAt = DateTime.MinValue;
-        }
-
-        /// <summary>測試隔離用：還原判定快取與警告節流，避免測試間順序相依。</summary>
-        internal static void ResetCacheForTests()
-        {
-            _cachedTakeOver = false;
-            _cachedAt = DateTime.MinValue;
-            _lastOfflineWarning = DateTime.MinValue;
-        }
-
-        /// <summary>
-        /// 測試用：直接指定接管判定結果（繞過開關＋供應商檢查）。
-        /// 生產程式不得呼叫；離線降級分支請用 <c>false</c> 覆蓋。
-        /// </summary>
-        internal static void SetTakeOverCacheForTests(bool value)
-        {
-            _cachedTakeOver = value;
-            _cachedAt = DateTime.UtcNow;
         }
 
         /// <summary>
@@ -250,7 +224,7 @@ namespace RimLLM_Framework.Compat
         {
             if (_sentinel == null) return;
 
-            if (ShouldTakeOver())
+            if (_gate.ShouldTakeOver())
             {
                 if (!ReferenceEquals(TranslatorManager.CurrentTranslator, _sentinel))
                 {
@@ -291,25 +265,6 @@ namespace RimLLM_Framework.Compat
             }
         }
 
-        /// <summary>
-        /// 每次請求時判定是否接管：設定開關開啟且 RimLLM 當下有可用供應商。
-        /// </summary>
-        internal static bool ShouldTakeOver()
-        {
-            DateTime now = DateTime.UtcNow;
-            if (now - _cachedAt < TakeOverCacheTtl) return _cachedTakeOver;
-
-            _cachedTakeOver = EvaluateTakeOver();
-            _cachedAt = now;
-            return _cachedTakeOver;
-        }
-
-        private static bool IsToggleEnabled()
-        {
-            RimLLMFrameworkSettings settings = RimLLMFrameworkMod.Settings;
-            return settings != null && settings.IsCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId);
-        }
-
         /// <summary>還原用翻譯器挑選：就緒者優先，其次即時值，最後快照。</summary>
         private static ITranslator PickRestoreTranslator(ITranslator live, ITranslator snap)
         {
@@ -318,39 +273,25 @@ namespace RimLLM_Framework.Compat
             return live ?? snap;
         }
 
-        private static bool EvaluateTakeOver()
+        /// <summary>測試隔離用：還原判定快取與警告節流，避免測試間順序相依。</summary>
+        internal static void ResetCacheForTests()
         {
-            if (!IsToggleEnabled())
-            {
-                return false;
-            }
-
-            // 高頻輪詢走非拋版查詢：離線與未就緒都不再以例外控制流程。
-            // Try 版已把 Manager 未初始化等啟動順序異常收斂為 false + 原因字串。
-            if (RimLLMProvider.TryGetEffectiveCapabilities(out _, out string failureReason))
-            {
-                return true;
-            }
-
-            if (RimLLMCompatTarget.IsNotReadyReason(failureReason))
-            {
-                WarnOfflineThrottled($"框架尚未就緒，本次退回 Auto Translation 原生路徑。原因：{failureReason}");
-            }
-            else
-            {
-                WarnOfflineThrottled($"RimLLM 目前沒有可用的供應商，本次退回 Auto Translation 原生路徑。原因：{failureReason}");
-            }
-            return false;
+            _gate.ResetCacheForTests();
         }
 
-        private static void WarnOfflineThrottled(string reason)
+        /// <summary>
+        /// 測試用：直接指定接管判定結果（繞過開關＋供應商檢查）。
+        /// 生產程式不得呼叫；離線降級分支請用 <c>false</c> 覆蓋。
+        /// </summary>
+        internal static void SetTakeOverCacheForTests(bool value)
         {
-            DateTime now = DateTime.UtcNow;
-            if (now - _lastOfflineWarning >= OfflineWarningInterval)
-            {
-                _lastOfflineWarning = now;
-                Log.Warning($"[RimLLM] 相容層：Auto Translation 接管已開啟，但{reason}");
-            }
+            _gate.SetTakeOverCacheForTests(value);
+        }
+
+        /// <summary>測試用：直接讀取當前判定結果（用於斷言驗證）。</summary>
+        internal static bool ShouldTakeOver()
+        {
+            return _gate.ShouldTakeOver();
         }
     }
 }

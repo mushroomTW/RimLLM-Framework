@@ -84,8 +84,8 @@ namespace RimLLM_Framework
 
             string raw = response?.Text ?? string.Empty;
             return RimLLMProvider.TryGetManager(out RimLLMManager manager)
-                ? manager.DeserializeStructured<T>(raw, manager.Settings)
-                : RimLLMManager.DeserializeAndValidate<T>(raw);
+                ? RimLLMJsonHelper.DeserializeStructured<T>(raw, manager.Settings)
+                : RimLLMJsonHelper.DeserializeAndValidate<T>(raw);
         }
 
         private static async Task<T> SimplifiedPathAsync<T>(
@@ -113,12 +113,12 @@ namespace RimLLM_Framework
             string raw = response?.Text ?? string.Empty;
             try
             {
-                return RimLLMManager.DeserializeAndValidate<T>(raw);
+                return RimLLMJsonHelper.DeserializeAndValidate<T>(raw);
             }
             catch (Exception)
             {
                 string repaired = RimLLMJsonHelper.RepairJson(raw);
-                return RimLLMManager.DeserializeAndValidate<T>(RimLLMJsonHelper.ExtractJsonBlock(repaired));
+                return RimLLMJsonHelper.DeserializeAndValidate<T>(RimLLMJsonHelper.ExtractJsonBlock(repaired));
             }
         }
     }

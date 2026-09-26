@@ -79,7 +79,7 @@ namespace RimLLM_Framework.Mod
                 Settings.SetEndpoint(providerId, endpoint?.Trim());
                 if (providerId == ProviderIds.OpenAICompatible)
                 {
-                    LocalProviderSubTabDrawer.DrawLocalDetectionControls(listing, providerId);
+                    DrawLocalDetectionControls(listing, providerId);
                 }
                 listing.Gap(8f);
             }
@@ -493,6 +493,100 @@ namespace RimLLM_Framework.Mod
                 });
             });
         }
+
+        /// <summary>
+        /// 本地模型自動偵測（Ollama / LM Studio 等）的繪製與啟動邏輯。
+        /// 原為 LocalProviderSubTabDrawer，併入以消除單一呼叫者檔案。
+        /// </summary>
+        private static bool IsDetectingLocal { get; set; } = false;
+    private static string DetectStatusMsg { get; set; } = "";
+    private static readonly System.Net.Http.HttpClient DetectClient = new System.Net.Http.HttpClient
+    {
+        Timeout = TimeSpan.FromMilliseconds(600)
+    };
+
+    private static void DrawLocalDetectionControls(Listing_Standard listing, string providerId)
+    {
+        Rect detectRect = listing.GetRect(30f);
+        Rect detectBtnRect = new Rect(detectRect.x, detectRect.y, 250f, detectRect.height);
+        Rect detectStatusRect = new Rect(detectRect.x + 260f, detectRect.y, detectRect.width - 260f, detectRect.height);
+
+        if (IsDetectingLocal)
+        {
+            GUI.color = Color.gray;
+            Widgets.ButtonText(detectBtnRect, "RimLLM_DetectingLocal".Translate());
+            GUI.color = Color.white;
+        }
+        else
+        {
+            if (Widgets.ButtonText(detectBtnRect, "RimLLM_DetectLocalBtn".Translate()))
+            {
+                StartDetectLocalEndpoint(providerId);
+            }
+        }
+
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            Widgets.Label(detectStatusRect, DetectStatusMsg);
+        }
+
+        listing.Gap(4f);
     }
-#pragma warning restore S1066, S3267
+
+    private static void StartDetectLocalEndpoint(string providerId = "OpenAICompatible")
+    {
+        IsDetectingLocal = true;
+        DetectStatusMsg = "RimLLM_DetectingLocal".Translate();
+
+        Task.Run(async () =>
+        {
+            var targets = new (string Name, string BaseUrl, string TestUrl)[]
+            {
+                ("LM Studio", "http://localhost:1234/v1", "http://localhost:1234/v1/models"),
+                ("Ollama", "http://localhost:11434/v1", "http://localhost:11434/v1/models"),
+                ("Ollama (Raw)", "http://localhost:11434", "http://localhost:11434/api/tags"),
+                ("LocalAI/vLLM (8080)", "http://localhost:8080/v1", "http://localhost:8080/v1/models"),
+                ("LocalAI/vLLM (8000)", "http://localhost:8000/v1", "http://localhost:8000/v1/models")
+            };
+
+            foreach (var target in targets)
+            {
+                try
+                {
+                    var response = await DetectClient.GetAsync(target.TestUrl).ConfigureAwait(false);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string finalUrl = target.BaseUrl;
+                        if (target.Name == "Ollama (Raw)")
+                        {
+                            finalUrl = "http://localhost:11434/v1";
+                        }
+
+                        RimLLMDispatcher.EnqueueOnMainThread(() =>
+                        {
+                            Settings.SetEndpoint(providerId, finalUrl);
+                            Settings.Write();
+                            IsDetectingLocal = false;
+                            DetectStatusMsg = "RimLLM_DetectSuccess".Translate(target.Name, finalUrl);
+                            Messages.Message("RimLLM_MsgDetectSuccess".Translate(target.Name), MessageTypeDefOf.PositiveEvent, false);
+                        });
+                        return;
+                    }
+                }
+                catch
+                {
+                    // 探測失敗屬正常情形（服務未啟動），繼續試下一個候選端點。
+                }
+            }
+
+            RimLLMDispatcher.EnqueueOnMainThread(() =>
+            {
+                IsDetectingLocal = false;
+                DetectStatusMsg = "RimLLM_DetectFailed".Translate();
+                Messages.Message("RimLLM_MsgDetectFailed".Translate(), MessageTypeDefOf.RejectInput, false);
+            });
+        });
+    }
 }
+}
+

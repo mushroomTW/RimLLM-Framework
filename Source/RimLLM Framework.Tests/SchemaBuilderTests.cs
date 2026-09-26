@@ -35,8 +35,8 @@ namespace RimLLM_Framework.Tests
             foreach (Type type in SampleTypes())
             {
                 // 以 STJ 自身的中繼資料解析反序列化契約，再與 schema 成員比對。
-                // 用的是生產路徑同一份設定（RimLLMJson.Options），契約漂移會在這裡現形。
-                JsonTypeInfo typeInfo = new DefaultJsonTypeInfoResolver().GetTypeInfo(type, RimLLMJson.Options);
+                // 用的是生產路徑同一份設定（RimLLMJsonHelper.Options），契約漂移會在這裡現形。
+                JsonTypeInfo typeInfo = new DefaultJsonTypeInfoResolver().GetTypeInfo(type, RimLLMJsonHelper.Options);
                 var expected = new List<string>();
                 foreach (JsonPropertyInfo property in typeInfo.Properties)
                 {
@@ -79,7 +79,7 @@ namespace RimLLM_Framework.Tests
                 if (type != typeof(ComplexTestDataStructure))
                 {
                     Assert.DoesNotThrow(
-                        () => JsonSerializer.Deserialize(sample.ToJsonString(), type, RimLLMJson.Options),
+                        () => JsonSerializer.Deserialize(sample.ToJsonString(), type, RimLLMJsonHelper.Options),
                         type.Name + " 的範例 JSON 應能被 STJ 反序列化。");
                 }
 
@@ -94,7 +94,7 @@ namespace RimLLM_Framework.Tests
                         () => JsonSerializer.Deserialize(
                             "{\"Name\":\"x\",\"Age\":1,\"IsActive\":true,\"Skills\":[],\"Mapping\":{},\"Nested\":null}",
                             type,
-                            RimLLMJson.Options),
+                            RimLLMJsonHelper.Options),
                         "無法綁定的建構子參數應明確失敗，而非靜默產出半初始化物件。");
                 }
             }
@@ -111,14 +111,14 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void NullOptionalMemberPassesValidationButNullRequiredMemberDoesNot()
         {
-            NullableTestDataStructure parsed = RimLLMManager.DeserializeAndValidate<NullableTestDataStructure>(
+            NullableTestDataStructure parsed = RimLLMJsonHelper.DeserializeAndValidate<NullableTestDataStructure>(
                 "{\"Name\":\"Randy\",\"OptionalCount\":null}");
 
             ClassicAssert.AreEqual("Randy", parsed.Name);
             ClassicAssert.IsNull(parsed.OptionalCount, "Nullable<T> 成員為 null 是合法的，schema 也明確允許。");
 
             Assert.Throws<InvalidOperationException>(
-                () => RimLLMManager.DeserializeAndValidate<NullableTestDataStructure>(
+                () => RimLLMJsonHelper.DeserializeAndValidate<NullableTestDataStructure>(
                     "{\"Name\":null,\"OptionalCount\":3}"),
                 "非選填成員為 null 仍應被擋下 —— 這才是這道驗證原本要防的情況。");
         }
@@ -332,7 +332,7 @@ namespace RimLLM_Framework.Tests
             // schema 把列舉宣告為字串名稱，LLM 會照 schema 回傳 "Kind":"Beta"。
             // 反序列化必須接受名稱（與舊 Newtonsoft 預設一致），否則含列舉的結構化輸出
             // 會拋 JsonException —— 而該例外被歸類為不可重試，連備援都不會觸發。
-            EnumTestDataStructure parsed = RimLLMManager.DeserializeAndValidate<EnumTestDataStructure>(
+            EnumTestDataStructure parsed = RimLLMJsonHelper.DeserializeAndValidate<EnumTestDataStructure>(
                 "{\"Kind\":\"Beta\",\"Label\":\"x\"}");
 
             ClassicAssert.AreEqual(TestKind.Beta, parsed.Kind);

@@ -960,13 +960,13 @@ namespace RimLLM_Framework.Tests
             Assert.Throws<RimLLMException>(() =>
             {
                 string raw = GenerateText(manager, modId, messages);
-                manager.DeserializeStructured<TestDataStructure>(raw, mockSettings);
+                RimLLMJsonHelper.DeserializeStructured<TestDataStructure>(raw, mockSettings);
             });
 
             // 2. 當 EnableJsonRepair 為 true 時，預期成功修復並解析
             mockSettings.EnableJsonRepair = true;
             string rawRepaired = GenerateText(manager, modId, messages);
-            var res = manager.DeserializeStructured<TestDataStructure>(rawRepaired, mockSettings);
+            var res = RimLLMJsonHelper.DeserializeStructured<TestDataStructure>(rawRepaired, mockSettings);
             ClassicAssert.IsNotNull(res);
             ClassicAssert.AreEqual(42, res.Value);
             ClassicAssert.AreEqual("ok", okStr(res.Message));

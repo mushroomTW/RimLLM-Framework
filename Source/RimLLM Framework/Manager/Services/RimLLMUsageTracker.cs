@@ -627,7 +627,6 @@ namespace RimLLM_Framework.Manager
 
         /// <summary>
         /// 審查每日預算限額（輸入＋輸出 token 合計）。上限為 0 代表無限制。
-        /// 未實作 token 帳本的外來設定退回舊版美元門檻。
         /// </summary>
         /// <remarks>
         /// WarnOnly 不攔截：超支要不要繼續是使用者自己的取捨，
@@ -637,7 +636,11 @@ namespace RimLLM_Framework.Manager
         {
             CheckDailyReset();
 
-            if (!DailyTokenBudget.IsOverBudget(_settings))
+            bool overBudget = _settings is IDailyTokenBudget tokenLedger
+                && tokenLedger.DailyTokenBudgetLimit > 0
+                && tokenLedger.DailyAccumulatedTokens >= tokenLedger.DailyTokenBudgetLimit;
+
+            if (!overBudget)
             {
                 return true;
             }

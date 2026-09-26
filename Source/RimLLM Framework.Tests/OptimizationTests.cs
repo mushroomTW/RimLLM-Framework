@@ -303,10 +303,10 @@ namespace RimLLM_Framework.Tests
             };
             var store = new RimLLMThrottleStore(settings);
 
-            IChatClient first = new RimLLMAntiAbuseChatClient(
-                new MockCustomChatClient(), settings, store, "same.mod");
-            IChatClient second = new RimLLMAntiAbuseChatClient(
-                new MockCustomChatClient(), settings, store, "same.mod");
+            IChatClient first = new RimLLMGuardChatClient(
+                new MockCustomChatClient(), settings, store, "same.mod", new RimLLMUsageTracker(settings));
+            IChatClient second = new RimLLMGuardChatClient(
+                new MockCustomChatClient(), settings, store, "same.mod", new RimLLMUsageTracker(settings));
 
             first.GetResponseAsync(NewMessages()).GetAwaiter().GetResult();
             second.GetResponseAsync(NewMessages()).GetAwaiter().GetResult();

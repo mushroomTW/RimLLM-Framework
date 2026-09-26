@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Providers;
@@ -130,7 +131,10 @@ namespace RimLLM_Framework.Manager
                     // 尚無延遲記錄的候選其平均延遲為 0，會自然排到最前面——這是刻意的探索行為：
                     // 每個候選都得先被呼叫一次才會有延遲數字，若把無記錄者排到最後，
                     // 第一個拿到記錄的候選就會被永久鎖定，其餘候選永遠沒有機會被測量。
-                    StableSortBy(activeCandidates, c => _healthLedger.GetAverageLatency(HealthKey(c)));
+                    // LINQ OrderBy 保證穩定排序：同延遲候選維持備用鏈原順序。
+                    var byLatency = activeCandidates.OrderBy(c => _healthLedger.GetAverageLatency(HealthKey(c))).ToList();
+                    activeCandidates.Clear();
+                    activeCandidates.AddRange(byLatency);
                     break;
 
                 case 2: // RoundRobin / Random (隨機輪詢負載均衡)
@@ -140,7 +144,10 @@ namespace RimLLM_Framework.Manager
                 case 3: // LowestCost (成本優先)
                     // 直接沿用既有的模型分級（含使用者覆寫）作為成本代理值，由低到高排序。
                     // 分級本來就是依 API 費率自動判定的，不需要另外維護一份價格表。
-                    StableSortBy(activeCandidates, c => GetModelLevel(c.Entry, c.ProviderId, c.ModelName));
+                    // LINQ OrderBy 保證穩定排序：同級模型維持備用鏈原順序。
+                    var byCost = activeCandidates.OrderBy(c => GetModelLevel(c.Entry, c.ProviderId, c.ModelName)).ToList();
+                    activeCandidates.Clear();
+                    activeCandidates.AddRange(byCost);
                     break;
 
                 default: // 0 = PriorityFailover：保留原始 fallbackChain 順序
@@ -194,35 +201,6 @@ namespace RimLLM_Framework.Manager
             }
 
             return Math.Min(delay, maxDelaySeconds);
-        }
-
-        /// <summary>
-        /// 以指定鍵值穩定排序候選清單。
-        /// <see cref="List{T}.Sort(Comparison{T})"/> 不保證穩定，鍵值相同時會打亂備用鏈原本的
-        /// 順序（成本排序時同級模型很常見），因此在此以原索引作為次要鍵。
-        /// </summary>
-        private static void StableSortBy(List<ResolvedCandidate> candidates, Func<ResolvedCandidate, float> keySelector)
-        {
-            var keyed = new List<KeyValuePair<float, int>>(candidates.Count);
-            for (int i = 0; i < candidates.Count; i++)
-            {
-                keyed.Add(new KeyValuePair<float, int>(keySelector(candidates[i]), i));
-            }
-
-            keyed.Sort((a, b) =>
-            {
-                int comparison = a.Key.CompareTo(b.Key);
-                return comparison != 0 ? comparison : a.Value.CompareTo(b.Value);
-            });
-
-            var sorted = new List<ResolvedCandidate>(candidates.Count);
-            foreach (var pair in keyed)
-            {
-                sorted.Add(candidates[pair.Value]);
-            }
-
-            candidates.Clear();
-            candidates.AddRange(sorted);
         }
 
         /// <summary>Fisher-Yates 洗牌，用於隨機輪詢負載均衡。</summary>

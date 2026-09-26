@@ -77,7 +77,6 @@ namespace RimLLM_Framework.Mod
             set => _telemetry.TotalEstimatedCost = value;
         }
 
-        public float DailyBudgetLimit { get; set; } = 0.0f;
         /// <summary>每日 token 預算上限（輸入＋輸出合計）。0 代表無限制，存於設定 XML。</summary>
         public long DailyTokenBudgetLimit { get; set; } = 0;
         /// <summary>
@@ -292,7 +291,6 @@ namespace RimLLM_Framework.Mod
             public long TotalPromptTokens;
             public long TotalCompletionTokens;
             public float TotalEstimatedCost;
-            public float DailyBudgetLimit;
             public long DailyTokenBudgetLimit;
             public int BudgetPolicy;
             public bool EnableAntiAbuse;
@@ -410,7 +408,6 @@ namespace RimLLM_Framework.Mod
                         DetailedLogging = this.DetailedLogging,
                         MaxConcurrentRequests = this.MaxConcurrentRequests,
                         DefaultReasoningEffort = EncodeReasoningEffort(this.DefaultReasoningEffort),
-                        DailyBudgetLimit = this.DailyBudgetLimit,
                         DailyTokenBudgetLimit = this.DailyTokenBudgetLimit,
                         BudgetPolicy = this.BudgetPolicy,
                         EnableAntiAbuse = this.EnableAntiAbuse,
@@ -433,7 +430,7 @@ namespace RimLLM_Framework.Mod
                         SettingsVersion = CurrentSettingsVersion
                     };
      
-                    jsonStr = RimLLMJson.Serialize(dto);
+                    jsonStr = RimLLMJsonHelper.Serialize(dto);
                     Scribe_Values.Look(ref jsonStr, "SettingsData", "");
                 }
                 else if (Scribe.mode == LoadSaveMode.LoadingVars)
@@ -443,7 +440,7 @@ namespace RimLLM_Framework.Mod
                     {
                         try
                         {
-                            var dto = RimLLMJson.Deserialize<SettingsDto>(jsonStr);
+                            var dto = RimLLMJsonHelper.Deserialize<SettingsDto>(jsonStr);
                             if (dto != null)
                             {
                                 if (dto.FallbackChain != null)
@@ -542,7 +539,6 @@ namespace RimLLM_Framework.Mod
                                 this.MaxConcurrentRequests = dto.MaxConcurrentRequests <= 0 ? 2 : dto.MaxConcurrentRequests;
                                 RimLLMLog.Enabled = this.DetailedLogging;
 
-                                this.DailyBudgetLimit = dto.DailyBudgetLimit < 0f ? 0f : dto.DailyBudgetLimit;
                                 this.DailyTokenBudgetLimit = dto.DailyTokenBudgetLimit < 0 ? 0 : dto.DailyTokenBudgetLimit;
                                 int storedPolicy = dto.BudgetPolicy;
                                 if (SanitizeBudgetPolicy(storedPolicy) != storedPolicy)

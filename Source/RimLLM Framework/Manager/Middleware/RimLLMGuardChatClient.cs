@@ -10,28 +10,32 @@ namespace RimLLM_Framework.Manager
 {
 #pragma warning disable S101 // reason: RimLLM 為品牌縮寫，維持現狀
     /// <summary>
-    /// 防濫用節流：限制單一 Mod 在時間視窗內的請求次數，超出即進入冷卻。
+    /// 前置守衛：防濫用節流在先、每日預算在後，通過才放行到下游。
+    /// 排在佇列之前：被守衛擋下的請求不該佔用併發名額。
     /// </summary>
     /// <remarks>
     /// modId 在建立 client 時就綁定，不是逐次請求帶進來的，因此這一層是 per-mod 實例；
     /// 節流狀態則放在所有實例共用的 <see cref="RimLLMThrottleStore"/>。
     /// </remarks>
-    internal sealed class RimLLMAntiAbuseChatClient : DelegatingChatClient
+    internal sealed class RimLLMGuardChatClient : DelegatingChatClient
     {
         private readonly IRimLLMSettings _settings;
         private readonly RimLLMThrottleStore _throttleStore;
+        private readonly RimLLMUsageTracker _usageTracker;
         private readonly string _modId;
 
-        public RimLLMAntiAbuseChatClient(
+        public RimLLMGuardChatClient(
             IChatClient innerClient,
             IRimLLMSettings settings,
             RimLLMThrottleStore throttleStore,
-            string modId)
+            string modId,
+            RimLLMUsageTracker usageTracker)
             : base(innerClient)
         {
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _throttleStore = throttleStore ?? throw new ArgumentNullException(nameof(throttleStore));
             _modId = modId ?? throw new ArgumentNullException(nameof(modId));
+            _usageTracker = usageTracker ?? throw new ArgumentNullException(nameof(usageTracker));
         }
 
         public override Task<ChatResponse> GetResponseAsync(
@@ -39,7 +43,7 @@ namespace RimLLM_Framework.Manager
             ChatOptions options = null,
             CancellationToken cancellationToken = default)
         {
-            Check(messages);
+            Guard(messages);
             return base.GetResponseAsync(messages, options, cancellationToken);
         }
 
@@ -51,14 +55,21 @@ namespace RimLLM_Framework.Manager
             // 刻意在建立列舉器之前就檢查，與非串流路徑同時計入同一個視窗：
             // 若延後到第一次 MoveNextAsync 才檢查，尚未開始列舉的請求就不會計數，
             // 送出大量請求卻不列舉即可繞過節流。
-            Check(messages);
+            Guard(messages);
             return base.GetStreamingResponseAsync(messages, options, cancellationToken);
         }
 
-        private void Check(IEnumerable<ChatMessage> messages)
+        private void Guard(IEnumerable<ChatMessage> messages)
         {
-            if (!_settings.EnableAntiAbuse) return;
-            _throttleStore.CheckAntiAbuse(_modId, countTowardWindow: !IsToolLoopContinuation(messages));
+            if (_settings.EnableAntiAbuse)
+            {
+                _throttleStore.CheckAntiAbuse(_modId, countTowardWindow: !IsToolLoopContinuation(messages));
+            }
+
+            if (!_usageTracker.CheckBudgetLimit())
+            {
+                throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
+            }
         }
 
         /// <summary>

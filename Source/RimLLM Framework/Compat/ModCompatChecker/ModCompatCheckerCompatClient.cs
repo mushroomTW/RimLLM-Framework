@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,21 +20,18 @@ namespace RimLLM_Framework.Compat
     /// 所有呼叫端（UnifiedWindow、ErrorAnalysisWindow）都在背景執行緒同步呼叫 AIService.CallAPIWithTimeout，
     /// 因此本 Client 也以同步阻塞方式執行。
     /// </remarks>
-    internal sealed class ModCompatCheckerCompatClient
+    internal sealed class ModCompatCheckerCompatClient : CompatClientBase
     {
-        private IChatClient _chat;
-
-        private IChatClient Chat => _chat ?? (_chat = RimLLMProvider.CreateChatClient(ModCompatCheckerCompatTarget.PackageId));
-
         /// <summary>正式路徑：延遲到第一次請求才向 RimLLM 取 client，避免在攔截掛載階段觸碰 manager。</summary>
         public ModCompatCheckerCompatClient()
+            : base(ModCompatCheckerCompatTarget.PackageId)
         {
         }
 
         /// <summary>測試用：注入假的 <see cref="IChatClient"/>，驗證訊息建構與參數傳遞。</summary>
         internal ModCompatCheckerCompatClient(IChatClient chat)
+            : base(ModCompatCheckerCompatTarget.PackageId, chat)
         {
-            _chat = chat;
         }
 
         /// <summary>
@@ -116,7 +114,7 @@ namespace RimLLM_Framework.Compat
         /// <summary>
         /// 診斷分析著重精準度，預設關閉思考鏈（DisableReasoning）並使用溫和的溫度（0.3）。
         /// </summary>
-        private static ChatOptions BuildOptions()
+        protected override ChatOptions BuildOptions()
         {
             return new RimLLMChatOptions
             {

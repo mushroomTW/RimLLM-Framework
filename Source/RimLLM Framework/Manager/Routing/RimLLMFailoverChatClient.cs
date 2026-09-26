@@ -176,6 +176,20 @@ namespace RimLLM_Framework.Manager
         }
 
         /// <summary>
+        /// 結算候選：一次請求對同一個候選的所有重試合計只記一次失敗。
+        /// 逐次記錄會讓單一次網路抖動就把連續失敗數推過熔斷門檻
+        ///（預設重試 3 次即記 4 次失敗），把健康的目標冤枉冷卻數分鐘。
+        /// </summary>
+        private void SettleCandidate(RequestState state, string healthKey)
+        {
+            if (state.SawRetryableFailureOnCurrent)
+            {
+                _healthLedger.RecordFailure(healthKey, isRetryable: true);
+                state.SawRetryableFailureOnCurrent = false;
+            }
+        }
+
+        /// <summary>
         /// 決定重試或換手，並在重試前套用退避延遲。
         /// </summary>
         private async Task AdvanceAsync(RequestState state, CancellationToken cancellationToken)
@@ -220,17 +234,11 @@ namespace RimLLM_Framework.Manager
                 }
             }
 
-            // 換手之前結算這個候選的健康度。一次請求對同一個候選的所有重試合計只記一次
-            // 失敗：逐次記錄會讓單一次網路抖動就把連續失敗數推過熔斷門檻
-            //（預設重試 3 次即記 4 次失敗），把健康的目標冤枉冷卻數分鐘。
-            if (state.SawRetryableFailureOnCurrent)
-            {
-                _healthLedger.RecordFailure(RimLLMFallbackPipeline.HealthKey(candidate), isRetryable: true);
-            }
+            // 換手之前結算這個候選的健康度。
+            SettleCandidate(state, RimLLMFallbackPipeline.HealthKey(candidate));
 
             state.Index++;
             state.AttemptOnCurrent = 0;
-            state.SawRetryableFailureOnCurrent = false;
         }
 
         /// <summary>
@@ -300,10 +308,9 @@ namespace RimLLM_Framework.Manager
 
                     // 終結更新代表基底類別不會再選下一個候選（例如串流已吐出內容），
                     // 此時 SelectClientAsync 不會再被呼叫，結算只能在這裡做。
-                    if (isTerminal && state.SawRetryableFailureOnCurrent)
+                    if (isTerminal)
                     {
-                        _healthLedger.RecordFailure(healthKey, isRetryable: true);
-                        state.SawRetryableFailureOnCurrent = false;
+                        SettleCandidate(state, healthKey);
                     }
                 }
             }

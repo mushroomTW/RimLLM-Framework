@@ -539,8 +539,11 @@ namespace RimLLM_Framework.Tests
             settings.BudgetPolicy = 1; // WarnOnly
 
             // 預算檢查上移為中介層；WarnOnly 只警告，請求必須原樣送到下游。
-            var warnOnlyClient = new RimLLMBudgetChatClient(
-                new MockCustomChatClient(), new RimLLMUsageTracker(settings));
+            // 此處只測預算行為，關掉節流避免視窗計數干擾。
+            settings.EnableAntiAbuse = false;
+            var warnOnlyClient = new RimLLMGuardChatClient(
+                new MockCustomChatClient(), settings, new RimLLMThrottleStore(settings),
+                "warn-only-mod", new RimLLMUsageTracker(settings));
             var mockMessages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "hi") };
 
             ChatResponse passThrough = await warnOnlyClient.GetResponseAsync(mockMessages);
@@ -621,17 +624,20 @@ namespace RimLLM_Framework.Tests
                 () => toolLoopStore.CheckAntiAbuse("tool-loop-mod", countTowardWindow: false));
             toolLoopStore.ClearCooldowns();
 
-            // 7. HardBlock 預算政策 (BudgetPolicy = 0)：改由預算中介層負責攔阻。
+            // 7. HardBlock 預算政策 (BudgetPolicy = 0)：改由守衛中介層負責攔阻。
+            // 此處只測預算行為，關掉節流避免視窗計數干擾。
+            settings.EnableAntiAbuse = false;
             settings.BudgetPolicy = 0;
             settings.DailyTokenBudgetLimit = 100000;
             settings.DailyAccumulatedTokens = 200000;
-            var hardBlockClient = new RimLLMBudgetChatClient(
-                new MockCustomChatClient(), new RimLLMUsageTracker(settings));
+            var hardBlockClient = new RimLLMGuardChatClient(
+                new MockCustomChatClient(), settings, new RimLLMThrottleStore(settings),
+                "hard-block-mod", new RimLLMUsageTracker(settings));
             Assert.ThrowsAsync<RimLLMException>(
                 async () => await hardBlockClient.GetResponseAsync(mockMessages));
 
             // 8. 驗證空物件與結構化必填驗證
-            Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<NullableTestDataStructure>("null"));
+            Assert.Throws<InvalidOperationException>(() => RimLLMJsonHelper.DeserializeAndValidate<NullableTestDataStructure>("null"));
         }
 
         [Test]
@@ -679,8 +685,8 @@ namespace RimLLM_Framework.Tests
             Assert.Throws<RimLLMException>(() => RimLLMJsonHelper.DeserializeStructured<NullableTestDataStructure>("totally broken no json anywhere", settings));
 
             // 4. 結構化欄位驗證 (Field 必填為 null 拋出 InvalidOperationException)
-            Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<TestStructureWithRequiredField>("{\"RequiredField\":null}"));
-            Assert.Throws<InvalidOperationException>(() => RimLLMManager.DeserializeAndValidate<List<TestStructureWithRequiredField>>("[{\"RequiredField\":null}]"));
+            Assert.Throws<InvalidOperationException>(() => RimLLMJsonHelper.DeserializeAndValidate<TestStructureWithRequiredField>("{\"RequiredField\":null}"));
+            Assert.Throws<InvalidOperationException>(() => RimLLMJsonHelper.DeserializeAndValidate<List<TestStructureWithRequiredField>>("[{\"RequiredField\":null}]"));
 
         }
 
@@ -825,30 +831,30 @@ namespace RimLLM_Framework.Tests
         }
 
         [Test]
-        public void TestAntiAbuseChatClientIsToolLoopContinuationDetailed()
+        public void TestGuardChatClientIsToolLoopContinuationDetailed()
         {
             // Null / empty cases
-            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(null));
-            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage>()));
+            ClassicAssert.IsFalse(RimLLMGuardChatClient.IsToolLoopContinuation(null));
+            ClassicAssert.IsFalse(RimLLMGuardChatClient.IsToolLoopContinuation(new List<ChatMessage>()));
 
             // Message with null contents
             var msgNullContents = new ChatMessage(ChatRole.User, (IList<AIContent>)null);
-            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgNullContents }));
+            ClassicAssert.IsFalse(RimLLMGuardChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgNullContents }));
 
             // Message with empty contents
             var msgEmptyContents = new ChatMessage(ChatRole.User, new List<AIContent>());
-            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgEmptyContents }));
+            ClassicAssert.IsFalse(RimLLMGuardChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgEmptyContents }));
 
             // Message with non-tool contents (TextContent)
             var msgTextOnly = new ChatMessage(ChatRole.User, new List<AIContent> { new TextContent("Hello") });
-            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgTextOnly }));
+            ClassicAssert.IsFalse(RimLLMGuardChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgTextOnly }));
 
             // Message with FunctionResultContent
             var msgToolResult = new ChatMessage(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("call1", "result") });
-            ClassicAssert.IsTrue(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgTextOnly, msgToolResult }));
+            ClassicAssert.IsTrue(RimLLMGuardChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgTextOnly, msgToolResult }));
 
             // Last message is not tool result even if previous was
-            ClassicAssert.IsFalse(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgToolResult, msgTextOnly }));
+            ClassicAssert.IsFalse(RimLLMGuardChatClient.IsToolLoopContinuation(new List<ChatMessage> { msgToolResult, msgTextOnly }));
         }
 
         [Test]

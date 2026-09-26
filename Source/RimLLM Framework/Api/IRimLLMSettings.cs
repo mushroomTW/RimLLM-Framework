@@ -102,12 +102,6 @@ namespace RimLLM_Framework
         float TotalEstimatedCost { get; set; }
 
         /// <summary>
-        /// 舊版每日預算上限 (USD)。每日預算已改以 token 計（見 <see cref="IDailyTokenBudget"/>），
-        /// 此值不再作為門檻，僅保留供舊存檔讀取。
-        /// </summary>
-        float DailyBudgetLimit { get; set; }
-
-        /// <summary>
         /// 預算超限應對策略 (0=HardBlock 直接阻斷並警告, 1=WarnOnly 只警告並照常送出)。
         /// </summary>
         int BudgetPolicy { get; set; }

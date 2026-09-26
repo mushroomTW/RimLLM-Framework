@@ -434,7 +434,7 @@ namespace RimLLM_Framework.Manager
                 using (var request = new HttpRequestMessage(HttpMethod.Post, nativeRoot + "/api/show"))
                 {
                     request.Content = new StringContent(
-                        RimLLMJson.Serialize(new Dictionary<string, string> { { "model", name } }),
+                        RimLLMJsonHelper.Serialize(new Dictionary<string, string> { { "model", name } }),
                         Encoding.UTF8, "application/json");
                     using (JsonDocument doc = await SendForJsonAsync(request, cancellationToken).ConfigureAwait(false))
                     {

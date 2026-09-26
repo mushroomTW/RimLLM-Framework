@@ -34,12 +34,10 @@ namespace RimLLM_Framework.Compat
     {
         private static ModCompatCheckerCompatClient _client;
 
-        private static bool _cachedTakeOver;
-        private static DateTime _cachedAt = DateTime.MinValue;
-        private static readonly TimeSpan TakeOverCacheTtl = TimeSpan.FromSeconds(1);
-
-        private static DateTime _lastOfflineWarning = DateTime.MinValue;
-        private static readonly TimeSpan OfflineWarningInterval = TimeSpan.FromMinutes(1);
+        private static readonly CompatTakeoverGate _gate = new CompatTakeoverGate(
+            ModCompatCheckerCompatTarget.PackageId,
+            "ModCompatChecker 接管已開啟，但框架尚未就緒，本次退回 ModCompatChecker 原生路徑。原因：{0}",
+            "ModCompatChecker 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 ModCompatChecker 原生路徑。原因：{0}");
 
         internal static ModCompatCheckerCompatClient Client
         {
@@ -114,7 +112,7 @@ namespace RimLLM_Framework.Compat
             ref bool cancelFlag,
             ref string __result)
         {
-            if (!ShouldTakeOver())
+            if (!_gate.ShouldTakeOver())
             {
                 return true; // 放行原生
             }
@@ -134,7 +132,7 @@ namespace RimLLM_Framework.Compat
             catch (Exception ex)
             {
                 // 呼叫失敗時退回原生路徑
-                WarnThrottled($"ModCompatChecker 接管請求失敗，退回原生路徑。原因：{ex.Message}");
+                _gate.WarnThrottled($"ModCompatChecker 接管請求失敗，退回原生路徑。原因：{ex.Message}");
                 return true;
             }
         }
@@ -144,7 +142,7 @@ namespace RimLLM_Framework.Compat
         /// </summary>
         public static void IsAIConfiguredPostfix(ref bool __result)
         {
-            if (!__result && ShouldTakeOver())
+            if (!__result && _gate.ShouldTakeOver())
             {
                 __result = true;
             }
@@ -155,28 +153,13 @@ namespace RimLLM_Framework.Compat
         /// </summary>
         public static bool CheckBalancePrefix()
         {
-            return !ShouldTakeOver();
-        }
-
-        /// <summary>
-        /// 每次請求時判定是否接管：設定開關開啟且 RimLLM 當下有可用供應商。
-        /// </summary>
-        internal static bool ShouldTakeOver()
-        {
-            DateTime now = DateTime.UtcNow;
-            if (now - _cachedAt < TakeOverCacheTtl) return _cachedTakeOver;
-
-            _cachedTakeOver = EvaluateTakeOver();
-            _cachedAt = now;
-            return _cachedTakeOver;
+            return !_gate.ShouldTakeOver();
         }
 
         /// <summary>測試隔離用：還原判定快取與警告節流，避免測試間順序相依。</summary>
         internal static void ResetCacheForTests()
         {
-            _cachedTakeOver = false;
-            _cachedAt = DateTime.MinValue;
-            _lastOfflineWarning = DateTime.MinValue;
+            _gate.ResetCacheForTests();
         }
 
         /// <summary>
@@ -185,56 +168,7 @@ namespace RimLLM_Framework.Compat
         /// </summary>
         internal static void SetTakeOverCacheForTests(bool value)
         {
-            _cachedTakeOver = value;
-            _cachedAt = DateTime.UtcNow;
-        }
-
-        private static bool IsToggleEnabled()
-        {
-            RimLLMFrameworkSettings settings = RimLLMFrameworkMod.Settings;
-            return settings != null && settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatTarget.PackageId);
-        }
-
-        private static bool EvaluateTakeOver()
-        {
-            if (!IsToggleEnabled())
-            {
-                return false;
-            }
-
-            // 高頻查詢走非拋版路徑：離線與未就緒都不再以例外控制流程。
-            if (RimLLMProvider.TryGetEffectiveCapabilities(out _, out string failureReason))
-            {
-                return true;
-            }
-
-            if (RimLLMCompatTarget.IsNotReadyReason(failureReason))
-            {
-                WarnThrottled($"ModCompatChecker 接管已開啟，但框架尚未就緒，本次退回 ModCompatChecker 原生路徑。原因：{failureReason}");
-            }
-            else
-            {
-                WarnThrottled($"ModCompatChecker 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 ModCompatChecker 原生路徑。原因：{failureReason}");
-            }
-            return false;
-        }
-
-        private static void WarnThrottled(string reason)
-        {
-            DateTime now = DateTime.UtcNow;
-            if (now - _lastOfflineWarning >= OfflineWarningInterval)
-            {
-                _lastOfflineWarning = now;
-                try
-                {
-                    Log.Warning($"[RimLLM] 相容層：{reason}");
-                }
-                catch (Exception)
-                {
-                    // 警告屬 best-effort：單元測試環境沒有 Unity ECall，Verse.Log 會擲錯；
-                    // 不可讓記警告本身拖累退回原生的 fallback 路徑。
-                }
-            }
+            _gate.SetTakeOverCacheForTests(value);
         }
     }
 }

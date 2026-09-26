@@ -21,21 +21,17 @@ namespace RimLLM_Framework.Compat
     /// <list type="number">
     /// <item><c>AIClientFactory.GetAIClientAsync</c>（唯一的 client 取得點）：接管生效時回傳一個由本類別持有的
     /// RimTalk 原生 <see cref="OpenAIClient"/> 哨兵實例。RimTalk 的串流對話（ChatStreaming）與結構化查詢
-    /// （Query&lt;T&gt;）都經由 <c>AIService.ExecuteWithRetry</c> 取得 client，因此 OpenAI／Gemini／Custom／
+    /// （Query<T>）都經由 <c>AIService.ExecuteWithRetry</c> 取得 client，因此 OpenAI／Gemini／Custom／
     /// Local／Player2 全部流量都會落到哨兵上。</item>
     /// <item><see cref="OpenAIClient"/> 的兩個非泛型漏斗 <c>GetChatCompletionAsync(prefix, messages, imageBase64, onRequestPrepared)</c>
     /// 與私有 <c>StreamAsync(…, onChunk, onRequestPrepared)</c>：<c>__instance</c> 是哨兵時改呼叫
     /// <see cref="RimTalkCompatClient"/>，不是哨兵（玩家自己的原生 client）則原樣放行。RimTalk 的泛型
-    /// <c>GetStreamingChatCompletionAsync&lt;T&gt;</c> 與三參數 <c>GetChatCompletionAsync</c> 都是這兩個方法的包裝，
+    /// <c>GetStreamingChatCompletionAsync<T></c> 與三參數 <c>GetChatCompletionAsync</c> 都是這兩個方法的包裝，
     /// 不必碰泛型方法的 Harmony 攔截。</item>
     /// </list>
     /// 為什麼不直接讓 <see cref="RimTalkCompatClient"/> 實作 <see cref="IAIClient"/>：那是型別定義層級的參考，
     /// RimWorld 載入 DLL 時的 <c>Assembly.GetTypes()</c> 會在 RimTalk 缺席時整顆拒載框架。哨兵是 RimTalk 自己的型別，
     /// 建構它只是方法本體裡的一次 <c>newobj</c>，只在 RimTalk 存在時才會被 JIT。
-    /// </para>
-    /// <para>
-    /// 目標方法都是 <c>async</c>：Harmony 攔的是產生狀態機的 stub，所以 Prefix 攔下時
-    /// 必須把 <c>__result</c> 設成一個 <see cref="Task{TResult}"/>。
     /// </para>
     /// <para>
     /// 第二個攔截點 <c>RimTalkSettings.GetActiveConfig</c>：RimTalk 在 <c>TalkService</c> 與
@@ -64,17 +60,10 @@ namespace RimLLM_Framework.Compat
             get => _client ?? (_client = new RimTalkCompatClient());
             set => _client = value;
         }
-        private static DateTime _lastOfflineWarning = DateTime.MinValue;
-        private static readonly TimeSpan OfflineWarningInterval = TimeSpan.FromMinutes(1);
-
-        /// <summary>
-        /// 判定結果的短暫快取。RimTalk 的 TickManagerPatch 每個 tick 都會呼叫 GetActiveConfig，
-        /// 沒有這層的話 Postfix 每 tick 都要跑一次候選解析（含 lock 與配置），備援鏈為空時還每 tick 擲一次例外。
-        /// 一秒的延遲對「開關即時生效」在體感上沒有差別。
-        /// </summary>
-        private static bool _cachedTakeOver;
-        private static DateTime _cachedAt = DateTime.MinValue;
-        private static readonly TimeSpan TakeOverCacheTtl = TimeSpan.FromSeconds(1);
+        private static readonly CompatTakeoverGate _gate = new CompatTakeoverGate(
+            RimTalkCompatTarget.PackageId,
+            "框架尚未就緒，RimTalk 接管本次退回原生路徑。原因：{0}",
+            "RimLLM 目前沒有可用的供應商，RimTalk 接管本次退回原生路徑。原因：{0}");
 
         public static void Apply(Harmony harmony)
         {
@@ -133,7 +122,7 @@ namespace RimLLM_Framework.Compat
         /// </summary>
         public static void GetActiveConfigPostfix(ref ApiConfig __result)
         {
-            if (__result != null || !ShouldTakeOver()) return;
+            if (__result != null || !_gate.ShouldTakeOver()) return;
 
             __result = new ApiConfig
             {
@@ -151,7 +140,7 @@ namespace RimLLM_Framework.Compat
             // 走到這裡時若供應商剛好全部不可用而判定翻轉，原生路徑會因設定為 null 而回傳 null client，
             // RimTalk 接著對 null 呼叫方法。開關仍開著時這種情況交給轉接器，讓它以清楚的 ProviderOffline 錯誤結束；
             // 開關已被關掉則一律放行，尊重玩家的選擇。
-            if (!ShouldTakeOver() && (!IsToggleEnabled() || Settings.Get()?.GetActiveConfig() != null)) return true;
+            if (!_gate.ShouldTakeOver() && (!_gate.IsToggleEnabled() || Settings.Get()?.GetActiveConfig() != null)) return true;
             // 沒有哨兵（掛載未完成）時寧可放行原生路徑，也不能交出 null client。
             if (_sentinel == null) return true;
 
@@ -190,49 +179,31 @@ namespace RimLLM_Framework.Compat
             return false;
         }
 
+        /// <summary>測試隔離用：還原判定快取與警告節流，避免測試間順序相依。</summary>
+        internal static void ResetCacheForTests()
+        {
+            _gate.ResetCacheForTests();
+        }
+
         /// <summary>
-        /// 每次請求時決定是否接管：設定開關必須開啟，且 RimLLM 當下要有至少一個可用候選。
-        /// 後者是 Player2／離線使用者誤開開關的降級保護——fallback 鏈沒設定或全部不合格時
-        /// 放行原生路徑，而不是讓 RimTalk 收到一連串 ProviderOffline 錯誤。
+        /// 測試用：直接指定接管判定結果（繞過開關＋供應商檢查）。
+        /// 生產程式不得呼叫。
         /// </summary>
+        internal static void SetTakeOverCacheForTests(bool value)
+        {
+            _gate.SetTakeOverCacheForTests(value);
+        }
+
+        /// <summary>測試用：直接讀取當前判定結果（用於斷言驗證）。</summary>
         internal static bool ShouldTakeOver()
         {
-            DateTime now = DateTime.UtcNow;
-            if (now - _cachedAt < TakeOverCacheTtl) return _cachedTakeOver;
-
-            _cachedTakeOver = EvaluateTakeOver();
-            _cachedAt = now;
-            return _cachedTakeOver;
+            return _gate.ShouldTakeOver();
         }
 
-        private static bool IsToggleEnabled()
+        /// <summary>測試用：直接讀取開關狀態（用於斷言驗證）。</summary>
+        internal static bool IsToggleEnabled()
         {
-            RimLLMFrameworkSettings settings = RimLLMFrameworkMod.Settings;
-            return settings != null && settings.IsCompatTakeoverEnabled(RimTalkCompatTarget.PackageId);
-        }
-
-        private static bool EvaluateTakeOver()
-        {
-            if (!IsToggleEnabled())
-            {
-                return false;
-            }
-
-            // 高頻輪詢走非拋版查詢：離線時不再每秒配置例外與堆疊，警告內容與節流維持不變。
-            if (RimLLMProvider.TryGetEffectiveCapabilities(out _, out string failureReason))
-            {
-                return true;
-            }
-
-            // RimTalk 對話頻率高，警告限一分鐘一次，避免洗版。
-            // 刻意不走 RimLLMLog（受 DetailedLogging 開關遮蔽）：這是玩家唯一能得知接管被降級的線索。
-            DateTime now = DateTime.UtcNow;
-            if (now - _lastOfflineWarning >= OfflineWarningInterval)
-            {
-                _lastOfflineWarning = now;
-                Log.Warning($"[RimLLM] 相容層：RimTalk 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 RimTalk 原生路徑。原因：{failureReason}");
-            }
-            return false;
+            return _gate.IsToggleEnabled();
         }
     }
 }

@@ -74,14 +74,46 @@ namespace RimLLM_Framework.Compat
         {
         }
 
-        /// <summary>
-        /// 判斷是否為框架未就緒（Manager 尚未初始化）的啟動順序異常，而非單純無可用供應商。
-        /// </summary>
+        /// <summary>判斷是否為框架未就緒（Manager 尚未初始化）的啟動順序異常，而非單純無可用供應商。</summary>
         internal static bool IsNotReadyReason(string failureReason)
         {
             return !string.IsNullOrEmpty(failureReason) &&
                 (failureReason.IndexOf("InvalidOperationException", StringComparison.OrdinalIgnoreCase) >= 0 ||
                  failureReason.IndexOf("has not been initialized", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+    }
+
+    /// <summary>
+    /// 委派式相容目標：以建構參數取代三個獨立子類。
+    /// 這樣可以只用一個類別定義，透過參數化 PackageId、DisplayName 與 ApplyPatch 委派來覆蓋三個目標。
+    /// </summary>
+    internal sealed class DelegateCompatTarget : RimLLMCompatTarget
+    {
+        private readonly string _modId;
+        private readonly string _displayName;
+        private readonly Action<Harmony> _applyPatch;
+        private readonly Action<bool> _onTakeoverToggled;
+
+        public DelegateCompatTarget(string modId, string displayName, Action<Harmony> applyPatch, Action<bool> onTakeoverToggled = null)
+        {
+            _modId = modId;
+            _displayName = displayName;
+            _applyPatch = applyPatch;
+            _onTakeoverToggled = onTakeoverToggled;
+        }
+
+        public override string ModId => _modId;
+
+        public override string DisplayName => _displayName;
+
+        protected override void ApplyPatch(Harmony harmony)
+        {
+            _applyPatch(harmony);
+        }
+
+        public override void OnTakeoverToggled(bool enabled)
+        {
+            _onTakeoverToggled?.Invoke(enabled);
         }
     }
 #pragma warning restore S101

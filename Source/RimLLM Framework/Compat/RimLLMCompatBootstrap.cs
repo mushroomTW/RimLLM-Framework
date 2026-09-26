@@ -14,7 +14,7 @@ namespace RimLLM_Framework.Compat
     /// 其他 Mod 的組件不一定已載入；StaticConstructorOnStartup 保證所有 Mod 組件都已就緒，
     /// 載入順序因此不影響攔截是否成功。
     ///
-    /// 新增一個目標 Mod 只需：實作一個 <see cref="RimLLMCompatTarget"/>，並加進 <see cref="Targets"/>。
+    /// 新增一個目標 Mod 只需：在 Targets 清單加入一個 DelegateCompatTarget，指定 PackageId、顯示名稱與 ApplyPatch 委派。
     /// </remarks>
     [StaticConstructorOnStartup]
     internal static class RimLLMCompatBootstrap
@@ -24,9 +24,19 @@ namespace RimLLM_Framework.Compat
         /// <summary>所有已知的接管目標（依設定頁顯示順序）。</summary>
         public static readonly IReadOnlyList<RimLLMCompatTarget> Targets = new RimLLMCompatTarget[]
         {
-            new RimTalkCompatTarget(),
-            new AutoTranslationCompatTarget(),
-            new ModCompatCheckerCompatTarget()
+            new DelegateCompatTarget(
+                "cj.rimtalk",
+                "RimTalk",
+                h => RimTalkCompatPatch.Apply(h)),
+            new DelegateCompatTarget(
+                "seohyeon.autotranslation",
+                "Auto Translation",
+                h => AutoTranslationCompatPatch.Apply(h),
+                enabled => AutoTranslationCompatPatch.OnTakeoverToggled(enabled)),
+            new DelegateCompatTarget(
+                "modcompatchecker.main",
+                "Mod 兼容性檢查器 (Mod Compatibility Checker)",
+                h => ModCompatCheckerCompatPatch.Apply(h))
         };
 
         static RimLLMCompatBootstrap()

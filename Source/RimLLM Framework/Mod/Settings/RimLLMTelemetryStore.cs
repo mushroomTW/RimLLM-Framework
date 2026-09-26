@@ -142,7 +142,7 @@ namespace RimLLM_Framework.Mod
             {
                 if (!File.Exists(path)) return false;
 
-                var dto = RimLLMJson.Deserialize<TelemetryDto>(File.ReadAllText(path));
+                var dto = RimLLMJsonHelper.Deserialize<TelemetryDto>(File.ReadAllText(path));
                 if (dto == null) return false;
 
                 ChatHistory = ReadChatHistory(
@@ -188,7 +188,7 @@ namespace RimLLM_Framework.Mod
 
                 try
                 {
-                    return RimLLMJson.Deserialize<List<string>>(plain) ?? new List<string>();
+                    return RimLLMJsonHelper.Deserialize<List<string>>(plain) ?? new List<string>();
                 }
                 catch
                 {
@@ -238,7 +238,7 @@ namespace RimLLM_Framework.Mod
                     if (ChatHistory != null && ChatHistory.Count > 0)
                     {
                         encryptedHistory = EncryptionUtility.Encrypt(
-                            RimLLMJson.Serialize(ChatHistory));
+                            RimLLMJsonHelper.Serialize(ChatHistory));
                     }
                     else
                     {
@@ -260,7 +260,7 @@ namespace RimLLM_Framework.Mod
                         DailyBudgetResetDate = DailyBudgetResetDate
                     };
 
-                    File.WriteAllText(tempPath, RimLLMJson.Serialize(dto));
+                    File.WriteAllText(tempPath, RimLLMJsonHelper.Serialize(dto));
                     ReplaceAtomically(tempPath, path, backupPath);
 
                     LoadedFromDisk = true;

@@ -261,13 +261,12 @@ namespace RimLLM_Framework.Manager
 
             // 由內往外堆疊。層序是語意性的，不可調換：
             // 正規化在最外層，下游各層看到的都是已套用預設值的選項；
-            // 預算排在防濫用之後，被擋下的請求不該佔用併發名額；
+            // 守衛（防濫用在先、預算在後）排在佇列之前，被擋下的請求不該佔用併發名額；
             // 併發名額不在這裡疊：由路由對每一個候選嘗試各包一層佇列，名額只留給真正
             // 要打 API 的那一次呼叫，重試前的指數退避不會占著名額讓其他 Mod 排隊。
             IChatClient client = RimLLMFailoverChatClient.Create(
                 _settings, _healthLedger, _usageTracker, _fallbackPipeline, modId, _requestQueue);
-            client = new RimLLMBudgetChatClient(client, _usageTracker);
-            client = new RimLLMAntiAbuseChatClient(client, _settings, _throttleStore, modId);
+            client = new RimLLMGuardChatClient(client, _settings, _throttleStore, modId, _usageTracker);
             client = new RimLLMOptionsNormalizingChatClient(client, _settings);
             return client;
         }
@@ -289,19 +288,6 @@ namespace RimLLM_Framework.Manager
             {
                 _throttleStore.CheckAntiAbuse(modId);
             }
-        }
-
-        /// <summary>
-        /// 結構化輸出的核心流程轉發。
-        /// </summary>
-        internal T DeserializeStructured<T>(string rawResponse, IRimLLMSettings settings)
-        {
-            return RimLLMJsonHelper.DeserializeStructured<T>(rawResponse, settings ?? _settings);
-        }
-
-        internal static T DeserializeAndValidate<T>(string json)
-        {
-            return RimLLMJsonHelper.DeserializeAndValidate<T>(json);
         }
 
         public async Task<TestResult> TestProviderAsync(string providerId)

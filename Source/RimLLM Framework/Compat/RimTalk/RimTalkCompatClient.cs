@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
+using RimLLM_Framework.Manager;
 using RimTalk.Client;
 using RimTalk.Data;
 using RimTalk.Error;
@@ -41,7 +42,7 @@ namespace RimLLM_Framework.Compat
     /// <para>
     /// 串流粒度與原生一致：RimTalk 的回應是 JSONL（多行、一行一個 pawn 氣泡），<see cref="StreamAsync"/>
     /// 把 MEAI 串流的文字塊逐塊交給 RimTalk 自己的 <see cref="JsonStreamParser{T}"/>（在 RimTalk 的
-    /// <c>GetStreamingChatCompletionAsync&lt;T&gt;</c> 包裝層裡），每湊齊一個完整物件就回呼一次——
+    /// <c>GetStreamingChatCompletionAsync<T></c> 包裝層裡），每湊齊一個完整物件就回呼一次——
     /// 第一個氣泡不必等整段對話生成完。
     /// </para>
     /// <para>
@@ -87,8 +88,8 @@ namespace RimLLM_Framework.Compat
             string imageBase64,
             Action<Payload> onRequestPrepared)
         {
-            List<ChatMessage> chatMessages = RimTalkMessageConverter.Build(prefixMessages, messages, imageBase64);
-            string requestJson = RimTalkMessageConverter.DescribeRequest(chatMessages, stream: false, PendingModel);
+            List<ChatMessage> chatMessages = MessageConverter.Build(prefixMessages, messages, imageBase64);
+            string requestJson = MessageConverter.DescribeRequest(chatMessages, stream: false, PendingModel);
             onRequestPrepared?.Invoke(new Payload(Endpoint, PendingModel, requestJson, null, 0));
 
             return ToPayload(CompleteAsync(chatMessages), requestJson);
@@ -105,8 +106,8 @@ namespace RimLLM_Framework.Compat
             Action<string> onChunk,
             Action<Payload> onRequestPrepared)
         {
-            List<ChatMessage> chatMessages = RimTalkMessageConverter.Build(prefixMessages, messages, imageBase64);
-            string requestJson = RimTalkMessageConverter.DescribeRequest(chatMessages, stream: true, PendingModel);
+            List<ChatMessage> chatMessages = MessageConverter.Build(prefixMessages, messages, imageBase64);
+            string requestJson = MessageConverter.DescribeRequest(chatMessages, stream: true, PendingModel);
             onRequestPrepared?.Invoke(new Payload(Endpoint, PendingModel, requestJson, null, 0));
 
             return ToPayload(StreamCoreAsync(chatMessages, onChunk), requestJson);
@@ -177,7 +178,7 @@ namespace RimLLM_Framework.Compat
         /// 把中性結果包回 RimTalk 的 <see cref="Payload"/>；失敗一律包成 <see cref="AIRequestException"/> 並附上
         /// <see cref="Payload"/>，RimTalk 的重試與 API Log 才能照常運作；取消原樣往外丟。
         /// lambda 必須捕捉 <paramref name="requestJson"/>：不捕捉的 lambda 會被編譯器快取成
-        /// <c>Func&lt;Task&lt;Completion&gt;, Payload&gt;</c> 型別的靜態欄位，違反欄位不得含 RimTalk 型別的防線。
+        /// <c>Func<Task<Completion>, Payload></c> 型別的靜態欄位，違反欄位不得含 RimTalk 型別的防線。
         /// </summary>
         private static Task<Payload> ToPayload(Task<Completion> core, string requestJson)
         {
@@ -223,6 +224,115 @@ namespace RimLLM_Framework.Compat
         {
             string message = ex is RimLLMException llmEx ? $"[RimLLM:{llmEx.Error}] {ex.Message}" : ex.Message;
             return new AIRequestException(message, new Payload(Endpoint, PendingModel, requestJson, null, 0, message));
+        }
+
+        /// <summary>
+        /// RimTalk 訊息轉換器：把 <c>(Role, string)</c> 列表轉成 MEAI <see cref="ChatMessage"/>。
+        /// 內部實作，供單元測試直接驗證。
+        /// </summary>
+        internal static class MessageConverter
+        {
+            /// <summary>RimTalk 截圖一律以 JPEG base64 傳遞（見其 ChatMessage.ToPayload 的 data:image/jpeg）。</summary>
+            private const string ImageMediaType = "image/jpeg";
+
+            internal static ChatRole ToChatRole(Role role)
+            {
+                switch (role)
+                {
+                    case Role.System: return ChatRole.System;
+                    case Role.AI: return ChatRole.Assistant;
+                    default: return ChatRole.User;
+                }
+            }
+
+            /// <summary>
+            /// 合併 prefix 與 messages 後轉為 MEAI 訊息。
+            /// 與 RimTalk 原生 OpenAIClient.BuildMessages 行為一致：連續同角色訊息以空行合併成一則
+            /// （部分供應商拒絕連續同角色訊息）；圖片掛在最後一則 user 訊息上，若最後一則不是 user
+            /// 則另外補一則只含圖片的 user 訊息。
+            /// </summary>
+            internal static List<ChatMessage> Build(
+                List<(Role role, string message)> prefixMessages,
+                List<(Role role, string message)> messages,
+                string imageBase64)
+            {
+                var merged = new List<(ChatRole role, string text)>();
+                AppendMerged(merged, prefixMessages);
+                AppendMerged(merged, messages);
+
+                var result = new List<ChatMessage>(merged.Count + 1);
+                foreach ((ChatRole role, string text) in merged)
+                {
+                    result.Add(new ChatMessage(role, text));
+                }
+
+                if (!string.IsNullOrEmpty(imageBase64))
+                {
+                    var image = new DataContent(Convert.FromBase64String(imageBase64), ImageMediaType);
+                    ChatMessage last = result.Count > 0 ? result[result.Count - 1] : null;
+                    if (last != null && last.Role == ChatRole.User)
+                    {
+                        last.Contents.Add(image);
+                    }
+                    else
+                    {
+                        result.Add(new ChatMessage(ChatRole.User, new List<AIContent> { image }));
+                    }
+                }
+                return result;
+            }
+
+            private static void AppendMerged(List<(ChatRole role, string text)> target, List<(Role role, string message)> source)
+            {
+                if (source == null) return;
+                foreach ((Role role, string message) in source)
+                {
+                    ChatRole chatRole = ToChatRole(role);
+                    string text = message ?? string.Empty;
+                    if (target.Count > 0 && target[target.Count - 1].role == chatRole)
+                    {
+                        (ChatRole _, string existing) = target[target.Count - 1];
+                        target[target.Count - 1] = (chatRole, existing + "\n\n" + text);
+                    }
+                    else
+                    {
+                        target.Add((chatRole, text));
+                    }
+                }
+            }
+
+            /// <summary>
+            /// 產生寫進 RimTalk API Log 的請求描述。維持 OpenAI 風格的 {model, stream, messages[{role, content}]}
+            /// 形狀，讓 RimTalk 的 Debug 視窗照常可讀；圖片只標記存在，不把整段 base64 塞進日誌。
+            /// </summary>
+            internal static string DescribeRequest(IReadOnlyList<ChatMessage> messages, bool stream, string model)
+            {
+                var payloadMessages = new List<Dictionary<string, object>>(messages.Count);
+                foreach (ChatMessage message in messages)
+                {
+                    var entry = new Dictionary<string, object>
+                    {
+                        ["role"] = message.Role.Value,
+                        ["content"] = message.Text
+                    };
+                    foreach (AIContent content in message.Contents)
+                    {
+                        if (content is DataContent data && data.HasTopLevelMediaType("image"))
+                        {
+                            entry["image"] = $"<{data.MediaType}, {data.Data.Length} bytes>";
+                            break;
+                        }
+                    }
+                    payloadMessages.Add(entry);
+                }
+
+                return RimLLMJsonHelper.Serialize(new Dictionary<string, object>
+                {
+                    ["model"] = model,
+                    ["stream"] = stream,
+                    ["messages"] = payloadMessages
+                });
+            }
         }
     }
 }

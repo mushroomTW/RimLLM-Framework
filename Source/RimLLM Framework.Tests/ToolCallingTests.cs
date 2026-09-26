@@ -287,7 +287,7 @@ namespace RimLLM_Framework.Tests
                 new ChatMessage(ChatRole.Assistant, new List<AIContent> { new FunctionCallContent("c1", "Ping", null) }),
                 new ChatMessage(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("c1", "pong") })
             };
-            ClassicAssert.IsTrue(RimLLMAntiAbuseChatClient.IsToolLoopContinuation(continuation));
+            ClassicAssert.IsTrue(RimLLMGuardChatClient.IsToolLoopContinuation(continuation));
             var ex = Assert.ThrowsAsync<RimLLMException>(() => client.GetResponseAsync(continuation));
             ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error, "冷卻中的續輪也要擋");
         }
