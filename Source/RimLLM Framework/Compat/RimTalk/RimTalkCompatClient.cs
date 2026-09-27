@@ -145,12 +145,10 @@ namespace RimLLM_Framework.Compat
                     {
                         modelId = update.ModelId;
                     }
-                    foreach (AIContent part in update.Contents)
+                    int updateTokens = ExtractTokens(update);
+                    if (updateTokens > 0)
                     {
-                        if (part is UsageContent usage && usage.Details?.TotalTokenCount > 0)
-                        {
-                            tokens = (int)usage.Details.TotalTokenCount.Value;
-                        }
+                        tokens = updateTokens;
                     }
 
                     // update.Text 只串接 TextContent，推理內容（TextReasoningContent）不會混進來污染 JSONL 解析。
@@ -163,6 +161,18 @@ namespace RimLLM_Framework.Compat
             }
 
             return new Completion { ModelId = modelId, Text = fullText.ToString(), Tokens = tokens };
+        }
+
+        private static int ExtractTokens(ChatResponseUpdate update)
+        {
+            foreach (AIContent part in update.Contents)
+            {
+                if (part is UsageContent usage && usage.Details?.TotalTokenCount > 0)
+                {
+                    return (int)usage.Details.TotalTokenCount.Value;
+                }
+            }
+            return 0;
         }
 
         /// <summary>

@@ -57,7 +57,7 @@ namespace RimLLM_Framework.Compat
         /// </summary>
         protected static T RunSync<T>(Func<CancellationToken, Task<T>> asyncFunc, CancellationToken ct)
         {
-            Task<T> task = Task.Run(() => asyncFunc(ct));
+            Task<T> task = Task.Run(() => asyncFunc(ct), ct);
             try
             {
                 return task.GetAwaiter().GetResult();

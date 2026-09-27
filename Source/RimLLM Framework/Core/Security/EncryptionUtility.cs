@@ -28,7 +28,7 @@ namespace RimLLM_Framework.Core
             Encoding.UTF8.GetBytes("GreenMushroom.RimLLMFramework");
 
         // 讓測試使用隔離的 key 檔案；正式環境固定走每使用者的 OS 保護儲存。
-        internal static Func<string> SecureKeyPathResolver = GetDefaultSecureKeyPath;
+        internal static Func<string> SecureKeyPathResolver { get; set; } = GetDefaultSecureKeyPath;
 
         // 允許單元測試注入舊版 Salt；不參與新的安全格式。
         private static string _customSalt;

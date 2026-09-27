@@ -983,7 +983,7 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static List<BubbleLayout> ResolveBubbleLayouts(GUIStyle richLabelStyle, float bubbleInnerWidth)
         {
-            if (_layoutCacheWidth != bubbleInnerWidth || _layoutCacheFont != Text.Font)
+            if (Math.Abs(_layoutCacheWidth - bubbleInnerWidth) > 0.001f || _layoutCacheFont != Text.Font)
             {
                 _layoutCache.Clear();
                 _layoutCacheWidth = bubbleInnerWidth;

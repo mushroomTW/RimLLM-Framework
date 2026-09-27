@@ -48,11 +48,8 @@ namespace RimLLM_Framework.Compat
 
         private static RimTalkCompatClient _client;
 
-        /// <summary>
-        /// 交給 RimTalk 的哨兵 client（RimTalk 原生 <see cref="OpenAIClient"/>）。欄位型別刻意用 <see cref="object"/>，
-        /// 讓這個類別的欄位描述完全不含 RimTalk 型別。只以參考相等判定，永遠不會真的對它發請求。
-        /// </summary>
-        private static object _sentinel;
+        /// <summary>目前的哨兵。setter 僅供測試不經 Harmony 掛載就驗證路由。</summary>
+        internal static object Sentinel { get; set; }
 
         /// <summary>轉接器；測試可注入帶假 <c>IChatClient</c> 的實例。</summary>
         internal static RimTalkCompatClient Client
@@ -104,15 +101,8 @@ namespace RimLLM_Framework.Compat
             harmony.Patch(completion, prefix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(GetChatCompletionAsyncPrefix)));
             harmony.Patch(stream, prefix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(StreamAsyncPrefix)));
             harmony.Patch(activeConfig, postfix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(GetActiveConfigPostfix)));
-            _sentinel = sentinel;
+            Sentinel = sentinel;
             harmony.Patch(target, prefix: new HarmonyMethod(typeof(RimTalkCompatPatch), nameof(GetAIClientAsyncPrefix)));
-        }
-
-        /// <summary>目前的哨兵。setter 僅供測試不經 Harmony 掛載就驗證路由。</summary>
-        internal static object Sentinel
-        {
-            get => _sentinel;
-            set => _sentinel = value;
         }
 
         /// <summary>
@@ -142,9 +132,9 @@ namespace RimLLM_Framework.Compat
             // 開關已被關掉則一律放行，尊重玩家的選擇。
             if (!_gate.ShouldTakeOver() && (!_gate.IsToggleEnabled() || Settings.Get()?.GetActiveConfig() != null)) return true;
             // 沒有哨兵（掛載未完成）時寧可放行原生路徑，也不能交出 null client。
-            if (_sentinel == null) return true;
+            if (Sentinel == null) return true;
 
-            __result = Task.FromResult((IAIClient)_sentinel);
+            __result = Task.FromResult((IAIClient)Sentinel);
             return false;
         }
 
@@ -157,7 +147,7 @@ namespace RimLLM_Framework.Compat
             Action<Payload> onRequestPrepared,
             ref Task<Payload> __result)
         {
-            if (!ReferenceEquals(__instance, _sentinel)) return true;
+            if (!ReferenceEquals(__instance, Sentinel)) return true;
 
             __result = Client.GetChatCompletionAsync(prefixMessages, messages, imageBase64, onRequestPrepared);
             return false;
@@ -173,7 +163,7 @@ namespace RimLLM_Framework.Compat
             Action<Payload> onRequestPrepared,
             ref Task<Payload> __result)
         {
-            if (!ReferenceEquals(__instance, _sentinel)) return true;
+            if (!ReferenceEquals(__instance, Sentinel)) return true;
 
             __result = Client.StreamAsync(prefixMessages, messages, imageBase64, onChunk, onRequestPrepared);
             return false;

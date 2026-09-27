@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Verse;
 using RimWorld;
@@ -38,15 +39,7 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         internal static List<string> CollectEntries()
         {
-            var entries = new List<string>();
-            foreach (string entry in Settings.FallbackChain)
-            {
-                if (!string.IsNullOrEmpty(entry) && !entries.Contains(entry))
-                {
-                    entries.Add(entry);
-                }
-            }
-            return entries;
+            return Settings.FallbackChain.Where(entry => !string.IsNullOrEmpty(entry)).Distinct().ToList();
         }
 
         /// <summary>
@@ -123,20 +116,11 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// 新增模型至備援鏈：選供應商、選該供應商快取模型、加入。加入後本頁列表即出現該列。
         /// </summary>
-        private static void DrawAddModelSection(Listing_Standard listing)
+        private static void EnsureActiveProvider()
         {
-            // 確保 addProviderId 是已啟用的供應商（如果有啟用的話）
             if (!IsProviderSelectable(addProviderId))
             {
-                string firstEnabled = null;
-                foreach (string prov in GetRegisteredProviderIds())
-                {
-                    if (IsProviderSelectable(prov))
-                    {
-                        firstEnabled = prov;
-                        break;
-                    }
-                }
+                string firstEnabled = GetRegisteredProviderIds().FirstOrDefault(IsProviderSelectable);
                 if (firstEnabled != null)
                 {
                     addProviderId = firstEnabled;
@@ -144,11 +128,49 @@ namespace RimLLM_Framework.Mod
                 }
             }
 
-            // 確保 addModelName 已經初始化
             if (string.IsNullOrEmpty(addModelName))
             {
                 SetDefaultAddModelName(addProviderId);
             }
+        }
+
+        private static void ShowProviderSelectionMenu()
+        {
+            List<FloatMenuOption> options = GetRegisteredProviderIds()
+                .Where(IsProviderSelectable)
+                .Select(prov => new FloatMenuOption(prov, () => SetDefaultAddModelName(prov)))
+                .ToList();
+
+            if (options.Count == 0)
+            {
+                options.Add(new FloatMenuOption("RimLLM_NoEnabledProviders".Translate(), null));
+            }
+            Find.WindowStack.Add(new FloatMenu(options));
+        }
+
+        private static void TryAddModelToChain()
+        {
+            string entry = $"{addProviderId}:{addModelName}";
+            var chain = Settings.FallbackChain;
+            if (chain.Contains(entry))
+            {
+                Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, false);
+            }
+            else
+            {
+                chain.Add(entry);
+                Settings.FallbackChain = chain;
+                Settings.Write();
+                Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
+            }
+        }
+
+        /// <summary>
+        /// 新增模型至備援鏈：選供應商、選該供應商快取模型、加入。加入後本頁列表即出現該列。
+        /// </summary>
+        private static void DrawAddModelSection(Listing_Standard listing)
+        {
+            EnsureActiveProvider();
 
             listing.Label("RimLLM_AddToFallbackTitle".Translate());
 
@@ -159,21 +181,7 @@ namespace RimLLM_Framework.Mod
             Rect addSubmitBtn = new Rect(addRect.x + 420f, addRect.y, 100f, addRect.height);
             if (Widgets.ButtonText(addProvBtn, "RimLLM_SelectProviderBtn".Translate(addProviderId)))
             {
-                List<FloatMenuOption> options = new List<FloatMenuOption>();
-                foreach (string prov in GetRegisteredProviderIds())
-                {
-                    if (IsProviderSelectable(prov))
-                    {
-                        string captured = prov;
-                        options.Add(new FloatMenuOption(captured, () => SetDefaultAddModelName(captured)));
-                    }
-                }
-
-                if (options.Count == 0)
-                {
-                    options.Add(new FloatMenuOption("RimLLM_NoEnabledProviders".Translate(), null));
-                }
-                Find.WindowStack.Add(new FloatMenu(options));
+                ShowProviderSelectionMenu();
             }
 
             // 選擇該供應商底下的快取模型
@@ -188,19 +196,7 @@ namespace RimLLM_Framework.Mod
             // 點擊新增
             if (Widgets.ButtonText(addSubmitBtn, "RimLLM_AddBtn".Translate()))
             {
-                string entry = $"{addProviderId}:{addModelName}";
-                var chain = Settings.FallbackChain;
-                if (chain.Contains(entry))
-                {
-                    Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, false);
-                }
-                else
-                {
-                    chain.Add(entry);
-                    Settings.FallbackChain = chain;
-                    Settings.Write();
-                    Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
-                }
+                TryAddModelToChain();
             }
             listing.GapLine(10f);
         }
@@ -252,11 +248,20 @@ namespace RimLLM_Framework.Mod
             // 提示文字只在滑鼠停留時才需要，以延遲委派產生，避免每幀每列都翻譯與格式化
             TooltipHandler.TipRegion(rect, () =>
             {
-                string source = manual > 0
-                    ? "RimLLM_ContextWindowSourceManual".Translate()
-                    : fetched.HasValue
-                        ? "RimLLM_ContextWindowSourceApi".Translate()
-                        : "RimLLM_ContextWindowSourceNone".Translate();
+                string source;
+                if (manual > 0)
+                {
+                    source = "RimLLM_ContextWindowSourceManual".Translate();
+                }
+                else if (fetched.HasValue)
+                {
+                    source = "RimLLM_ContextWindowSourceApi".Translate();
+                }
+                else
+                {
+                    source = "RimLLM_ContextWindowSourceNone".Translate();
+                }
+
                 return "RimLLM_ContextWindowTooltip".Translate(
                     effective.HasValue ? effective.Value.ToString("N0") : "?", source);
             }, entry.GetHashCode());
@@ -289,11 +294,15 @@ namespace RimLLM_Framework.Mod
         /// <summary>以 K / M 縮寫 token 數，例如 131072 → 131K、1048576 → 1M。</summary>
         private static string FormatTokens(int tokens)
         {
-            return tokens >= 1000000
-                ? (tokens / 1000000.0).ToString("0.#") + "M"
-                : tokens >= 1000
-                    ? (tokens / 1000.0).ToString("0") + "K"
-                    : tokens.ToString();
+            if (tokens >= 1000000)
+            {
+                return (tokens / 1000000.0).ToString("0.#") + "M";
+            }
+            if (tokens >= 1000)
+            {
+                return (tokens / 1000.0).ToString("0") + "K";
+            }
+            return tokens.ToString();
         }
     }
 }

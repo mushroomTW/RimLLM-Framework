@@ -81,7 +81,7 @@ namespace RimLLM_Framework.Mod
         public long DailyTokenBudgetLimit { get; set; } = 0;
 
         /// <summary>舊版美元門檻僅為介面相容而保留；內建設定改看 token 預算，恆為 0 且不存檔。</summary>
-        float IRimLLMSettings.DailyBudgetLimit { get => 0f; set { } }
+        float IRimLLMSettings.DailyBudgetLimit { get => 0f; set { /* 介面相容性：已棄用且不儲存 */ } }
 
         /// <summary>
         /// 最大合法的預算超限應對策略值。新增策略時要同步更新這裡與

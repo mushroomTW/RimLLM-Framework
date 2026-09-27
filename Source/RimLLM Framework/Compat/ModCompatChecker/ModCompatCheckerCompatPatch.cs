@@ -102,6 +102,7 @@ namespace RimLLM_Framework.Compat
         /// 例外分流：取消／逾時直接回提示文字並跳過原生——原生會再用同樣的
         /// <c>timeoutSeconds</c> 跑一次，總等待時間翻倍；離線等其他失敗才退回原生。
         /// </remarks>
+#pragma warning disable S107 // Harmony prefix method parameters are bound by name to the target method signature
         public static bool CallAPIWithTimeoutPrefix(
             string endpoint,
             string apiKey,
@@ -111,6 +112,7 @@ namespace RimLLM_Framework.Compat
             int timeoutSeconds,
             ref bool cancelFlag,
             ref string __result)
+#pragma warning restore S107
         {
             if (!_gate.ShouldTakeOver())
             {

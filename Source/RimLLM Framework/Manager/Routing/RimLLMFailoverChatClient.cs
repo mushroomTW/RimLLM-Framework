@@ -248,9 +248,16 @@ namespace RimLLM_Framework.Manager
         {
             // 最後一個候選的失敗已由 AdvanceAsync 在換手前結算，這裡只需寫收尾日誌。
             state.Total.Stop();
-            _usageTracker.RecordLog(
-                state.StartTime, _modId, "FallbackChain", "None", false,
-                state.LastException?.Message ?? "All fallbacks failed", state.Total.ElapsedMilliseconds);
+            _usageTracker.RecordLog(new RimLLMManager.RequestLogEntry
+            {
+                Timestamp = state.StartTime,
+                ModId = _modId,
+                Provider = "FallbackChain",
+                Model = "None",
+                Success = false,
+                ErrorMessage = state.LastException?.Message ?? "All fallbacks failed",
+                LatencyMs = state.Total.ElapsedMilliseconds
+            });
 
             // 串流沿用舊管線的 ProviderOffline：下游是以 LLMError 分支顯示離線提示的。
             bool streaming = RimLLMChatOptions.ReadAdditional(options, StreamingKey, false);
@@ -295,9 +302,18 @@ namespace RimLLM_Framework.Manager
                     if (attempt.ResponseCompleted)
                     {
                         _healthLedger.RecordSuccess(healthKey, elapsedMs);
-                        _usageTracker.RecordLog(
-                            state.StartTime, _modId, candidate.ProviderId, candidate.ModelName, true, null, elapsedMs,
-                            state.LastUsage.Prompt, state.LastUsage.Completion);
+                        _usageTracker.RecordLog(new RimLLMManager.RequestLogEntry
+                        {
+                            Timestamp = state.StartTime,
+                            ModId = _modId,
+                            Provider = candidate.ProviderId,
+                            Model = candidate.ModelName,
+                            Success = true,
+                            ErrorMessage = null,
+                            LatencyMs = elapsedMs,
+                            PromptTokens = state.LastUsage.Prompt,
+                            CompletionTokens = state.LastUsage.Completion
+                        });
                     }
                 }
                 else

@@ -34,10 +34,10 @@ namespace RimLLM_Framework.Compat
         private static AutoTranslationCompatClient _client;
 
         /// <summary>哨兵 translator 實例，欄位型別刻意用 object 隔絕型別載入依賴。</summary>
-        private static object _sentinel;
+        internal static object Sentinel { get; set; }
 
         /// <summary>在接管前或接管停用時的原生 translator 實例。</summary>
-        private static object _nativeTranslator;
+        internal static object NativeTranslator { get; set; }
 
         private static readonly CompatTakeoverGate _gate = new CompatTakeoverGate(
             AutoTranslationCompatTarget.PackageId,
@@ -48,18 +48,6 @@ namespace RimLLM_Framework.Compat
         {
             get => _client ?? (_client = new AutoTranslationCompatClient());
             set => _client = value;
-        }
-
-        internal static object Sentinel
-        {
-            get => _sentinel;
-            set => _sentinel = value;
-        }
-
-        internal static object NativeTranslator
-        {
-            get => _nativeTranslator;
-            set => _nativeTranslator = value;
         }
 
         public static void Apply(Harmony harmony)
@@ -97,7 +85,7 @@ namespace RimLLM_Framework.Compat
             sentinel.Prepare();
             sentinel.Ready = true;
 
-            _sentinel = sentinel;
+            Sentinel = sentinel;
 
             harmony.Patch(getResponse, prefix: new HarmonyMethod(typeof(AutoTranslationCompatPatch), nameof(GetResponseUnsafePrefix)));
             harmony.Patch(translate, prefix: new HarmonyMethod(typeof(AutoTranslationCompatPatch), nameof(TranslatePrefix)));
@@ -148,7 +136,7 @@ namespace RimLLM_Framework.Compat
             string prompt,
             ref string __result)
         {
-            if (!ReferenceEquals(__instance, _sentinel))
+            if (!ReferenceEquals(__instance, Sentinel))
             {
                 return true;
             }
@@ -161,6 +149,7 @@ namespace RimLLM_Framework.Compat
                 }
                 catch (Exception)
                 {
+                    // 忽略同步例外，避免中斷調用流程
                 }
                 __result = BuildEchoResponse(text);
                 return false;
@@ -180,6 +169,7 @@ namespace RimLLM_Framework.Compat
                 }
                 catch (Exception)
                 {
+                    // 忽略同步例外，避免中斷調用流程
                 }
                 throw;
             }
@@ -200,6 +190,7 @@ namespace RimLLM_Framework.Compat
             }
             catch (Exception)
             {
+                // 忽略同步例外，避免中斷調用流程
             }
         }
 
@@ -222,47 +213,57 @@ namespace RimLLM_Framework.Compat
         /// </summary>
         internal static void SyncCurrentTranslator()
         {
-            if (_sentinel == null) return;
+            if (Sentinel == null) return;
 
             if (_gate.ShouldTakeOver())
             {
-                if (!ReferenceEquals(TranslatorManager.CurrentTranslator, _sentinel))
-                {
-                    _nativeTranslator = TranslatorManager.CurrentTranslator;
-                    TranslatorManager.CurrentTranslator = (ITranslator)_sentinel;
-                    TranslatorManager.Ready = true;
-
-                    if (!TranslatorManager.Working)
-                    {
-                        TranslatorManager.StartThread();
-                    }
-                }
+                ApplySentinelTranslator();
             }
             else
             {
-                if (ReferenceEquals(TranslatorManager.CurrentTranslator, _sentinel))
+                RestoreNativeTranslator();
+            }
+        }
+
+        private static void ApplySentinelTranslator()
+        {
+            if (!ReferenceEquals(TranslatorManager.CurrentTranslator, Sentinel))
+            {
+                NativeTranslator = TranslatorManager.CurrentTranslator;
+                TranslatorManager.CurrentTranslator = (ITranslator)Sentinel;
+                TranslatorManager.Ready = true;
+
+                if (!TranslatorManager.Working)
                 {
-                    // 還原優先用即時查詢：接管期間玩家可能在 Auto Translation 自家設定改了翻譯器，
-                    // 快照此時已陳舊。快照僅作後備；兩者皆 null 則不寫入，避免 CurrentTranslator=null 停擺。
-                    ITranslator live = null;
-                    try
-                    {
-                        live = TranslatorManager.GetTranslator(global::AutoTranslation.Settings.TranslatorName);
-                    }
-                    catch (Exception)
-                    {
-                    }
-                    ITranslator snap = _nativeTranslator as ITranslator;
-                    ITranslator native = PickRestoreTranslator(live, snap);
-                    if (native == null)
-                    {
-                        Log.Warning("[RimLLM] 相容層：Auto Translation 還原原生翻譯器失敗（即時查詢與快照皆為 null），保留哨兵避免停擺。");
-                        return;
-                    }
-                    TranslatorManager.CurrentTranslator = native;
-                    TranslatorManager.Ready = native.Ready;
+                    TranslatorManager.StartThread();
                 }
             }
+        }
+
+        private static void RestoreNativeTranslator()
+        {
+            if (!ReferenceEquals(TranslatorManager.CurrentTranslator, Sentinel)) return;
+
+            // 還原優先用即時查詢：接管期間玩家可能在 Auto Translation 自家設定改了翻譯器，
+            // 快照此時已陳舊。快照僅作後備；兩者皆 null 則不寫入，避免 CurrentTranslator=null 停擺。
+            ITranslator live = null;
+            try
+            {
+                live = TranslatorManager.GetTranslator(global::AutoTranslation.Settings.TranslatorName);
+            }
+            catch (Exception)
+            {
+                // 忽略設定讀取錯誤，後續嘗試使用快照還原
+            }
+            ITranslator snap = NativeTranslator as ITranslator;
+            ITranslator native = PickRestoreTranslator(live, snap);
+            if (native == null)
+            {
+                Log.Warning("[RimLLM] 相容層：Auto Translation 還原原生翻譯器失敗（即時查詢與快照皆為 null），保留哨兵避免停擺。");
+                return;
+            }
+            TranslatorManager.CurrentTranslator = native;
+            TranslatorManager.Ready = native.Ready;
         }
 
         /// <summary>還原用翻譯器挑選：就緒者優先，其次即時值，最後快照。</summary>

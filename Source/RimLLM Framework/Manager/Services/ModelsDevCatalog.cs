@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -15,7 +16,9 @@ namespace RimLLM_Framework.Manager
     /// </summary>
     internal static class ModelsDevCatalog
     {
+#pragma warning disable S1075 // Canonical public endpoint for models.dev catalog
         private const string ApiUrl = "https://models.dev/api.json";
+#pragma warning restore S1075
 
         /// <summary>
         /// 框架供應商 → models.dev 供應商鍵。OpenRouter 的 API 本身就回報全部模型的上限，不需要另外下載；
@@ -118,23 +121,28 @@ namespace RimLLM_Framework.Manager
                     continue;
                 }
 
-                var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                foreach (JsonProperty model in models.EnumerateObject())
-                {
-                    if (model.Value.ValueKind != JsonValueKind.Object
-                        || !model.Value.TryGetProperty("limit", out JsonElement limit)
-                        || limit.ValueKind != JsonValueKind.Object)
-                    {
-                        continue;
-                    }
-
-                    int tokens = ReadPositiveInt(limit, "input");
-                    if (tokens <= 0) tokens = ReadPositiveInt(limit, "context");
-                    if (tokens > 0) windows[model.Name] = tokens;
-                }
-                all[mapping.Key] = windows;
+                all[mapping.Key] = ReadModelWindows(models);
             }
             return all;
+        }
+
+        private static Dictionary<string, int> ReadModelWindows(JsonElement models)
+        {
+            var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty model in models.EnumerateObject())
+            {
+                if (model.Value.ValueKind != JsonValueKind.Object
+                    || !model.Value.TryGetProperty("limit", out JsonElement limit)
+                    || limit.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                int tokens = ReadPositiveInt(limit, "input");
+                if (tokens <= 0) tokens = ReadPositiveInt(limit, "context");
+                if (tokens > 0) windows[model.Name] = tokens;
+            }
+            return windows;
         }
 
         /// <summary>把該供應商的上限補進 <paramref name="windows"/>，已有的值（供應商 API 回報）不覆寫。</summary>
@@ -146,9 +154,9 @@ namespace RimLLM_Framework.Manager
                 return;
             }
 
-            foreach (var kvp in fromDatabase)
+            foreach (var kvp in fromDatabase.Where(k => !windows.ContainsKey(k.Key)))
             {
-                if (!windows.ContainsKey(kvp.Key)) windows[kvp.Key] = kvp.Value;
+                windows[kvp.Key] = kvp.Value;
             }
         }
 

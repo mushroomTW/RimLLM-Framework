@@ -252,26 +252,18 @@ namespace RimLLM_Framework.Manager
         /// 記錄一次請求的日誌與結果，並在背景以節流機制寫入 XML 設定檔中。
         /// token 數由呼叫端在成功且供應商有回報時填入；拿不到時保持 0，顯示層會省略。
         /// </summary>
-        public void RecordLog(DateTime startTime, string modId, string provider, string model, bool success, string err, long latency, int promptTokens = 0, int completionTokens = 0)
+        public void RecordLog(RimLLMManager.RequestLogEntry entry)
         {
-            var entry = new RimLLMManager.RequestLogEntry
-            {
-                Timestamp = startTime,
-                ModId = modId,
-                Provider = provider,
-                Model = model,
-                Success = success,
-                ErrorMessage = RimLLMLog.SanitizeForLog(err, 300),
-                LatencyMs = latency,
-                PromptTokens = Math.Max(0, promptTokens),
-                CompletionTokens = Math.Max(0, completionTokens)
-            };
+            if (entry == null) return;
+            entry.ErrorMessage = RimLLMLog.SanitizeForLog(entry.ErrorMessage, 300);
+            entry.PromptTokens = Math.Max(0, entry.PromptTokens);
+            entry.CompletionTokens = Math.Max(0, entry.CompletionTokens);
 
             RequestLogs.Enqueue(entry);
             Interlocked.Increment(ref _logCount);
             TrimLogs();
 
-            CountOutcome(provider, success);
+            CountOutcome(entry.Provider, entry.Success);
 
             RimLLMDispatcher.EnqueueOnMainThread(() =>
             {
@@ -280,7 +272,7 @@ namespace RimLLM_Framework.Manager
                 {
                     _settings.RequestLogs = new List<RimLLMManager.RequestLogEntry>(RequestLogs.ToArray());
                     // 節流：非成功或過了 15 秒以上才執行實體寫入（僅寫遙測 JSON，不動設定 XML）
-                    if (!success || (DateTime.UtcNow - _lastLogWriteTime).TotalSeconds > 15)
+                    if (!entry.Success || (DateTime.UtcNow - _lastLogWriteTime).TotalSeconds > 15)
                     {
                         _lastLogWriteTime = DateTime.UtcNow;
                         // 寫檔在背景非同步進行：先標記待寫入，讓關閉時的 FlushTelemetryIfDirty

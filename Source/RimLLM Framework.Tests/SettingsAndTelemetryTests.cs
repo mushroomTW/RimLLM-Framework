@@ -582,9 +582,9 @@ namespace RimLLM_Framework.Tests
             var tracker = new RimLLMUsageTracker(mockSettings);
 
             // 1. 記錄 2 次成功與 1 次失敗
-            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", true, "", 100);
-            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", true, "", 100);
-            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", false, "Error", 100);
+            tracker.RecordLog(new RimLLMManager.RequestLogEntry { Timestamp = DateTime.UtcNow, ModId = "mod", Provider = "Gemini", Model = "gemini-model", Success = true, ErrorMessage = "", LatencyMs = 100 });
+            tracker.RecordLog(new RimLLMManager.RequestLogEntry { Timestamp = DateTime.UtcNow, ModId = "mod", Provider = "Gemini", Model = "gemini-model", Success = true, ErrorMessage = "", LatencyMs = 100 });
+            tracker.RecordLog(new RimLLMManager.RequestLogEntry { Timestamp = DateTime.UtcNow, ModId = "mod", Provider = "Gemini", Model = "gemini-model", Success = false, ErrorMessage = "Error", LatencyMs = 100 });
 
             ClassicAssert.IsTrue(tracker.ProviderStatistics.TryGetValue("Gemini", out var stats));
             ClassicAssert.AreEqual(3, stats.TotalCount);
@@ -603,7 +603,18 @@ namespace RimLLM_Framework.Tests
             var mockSettings = new MockSettings();
             var tracker = new RimLLMUsageTracker(mockSettings);
 
-            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", true, "", 100, 1200, 300);
+            tracker.RecordLog(new RimLLMManager.RequestLogEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                ModId = "mod",
+                Provider = "Gemini",
+                Model = "gemini-model",
+                Success = true,
+                ErrorMessage = "",
+                LatencyMs = 100,
+                PromptTokens = 1200,
+                CompletionTokens = 300
+            });
 
             ClassicAssert.AreEqual(1, tracker.RequestLogs.Count);
             Assert.IsTrue(tracker.RequestLogs.TryPeek(out var entry));
@@ -611,7 +622,16 @@ namespace RimLLM_Framework.Tests
             ClassicAssert.AreEqual(300, entry.CompletionTokens);
 
             // 舊呼叫（不帶 token）預設為 0，顯示層會省略。
-            tracker.RecordLog(DateTime.UtcNow, "mod", "Gemini", "gemini-model", false, "Error", 100);
+            tracker.RecordLog(new RimLLMManager.RequestLogEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                ModId = "mod",
+                Provider = "Gemini",
+                Model = "gemini-model",
+                Success = false,
+                ErrorMessage = "Error",
+                LatencyMs = 100
+            });
             Assert.IsTrue(tracker.RequestLogs.TryPeek(out _));
             var all = tracker.RequestLogs.ToArray();
             ClassicAssert.AreEqual(0, all[all.Length - 1].PromptTokens);

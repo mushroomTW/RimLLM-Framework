@@ -786,16 +786,10 @@ namespace RimLLM_Framework.Providers
                         string id = idElement.GetString();
                         if (string.IsNullOrEmpty(id)) continue;
 
-                        foreach (string field in ContextWindowFields)
+                        int tokens = TryReadContextWindowTokens(model);
+                        if (tokens > 0)
                         {
-                            if (model.TryGetProperty(field, out JsonElement value)
-                                && value.ValueKind == JsonValueKind.Number
-                                && value.TryGetInt32(out int tokens)
-                                && tokens > 0)
-                            {
-                                windows[id] = tokens;
-                                break;
-                            }
+                            windows[id] = tokens;
                         }
                     }
                 }
@@ -805,6 +799,21 @@ namespace RimLLM_Framework.Providers
                 windows.Clear();
             }
             return windows;
+        }
+
+        private static int TryReadContextWindowTokens(JsonElement model)
+        {
+            foreach (string field in ContextWindowFields)
+            {
+                if (model.TryGetProperty(field, out JsonElement value)
+                    && value.ValueKind == JsonValueKind.Number
+                    && value.TryGetInt32(out int tokens)
+                    && tokens > 0)
+                {
+                    return tokens;
+                }
+            }
+            return 0;
         }
 
         /// <summary>

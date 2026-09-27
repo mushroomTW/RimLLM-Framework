@@ -161,41 +161,69 @@ namespace RimLLM_Framework.Manager
 
             // 以 ApiTimeout 建立逾時來源，並與呼叫端的取消 Token 連動。逾時以整批為單位。
             float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
+            var batchContext = new EmbeddingBatchContext(model, provider, apiKey, endpoint, defaultEndpoint, timeoutSeconds);
             for (int offset = 0; offset < inputs.Count; offset += MaxEmbeddingBatchSize)
             {
                 List<string> batch = inputs.GetRange(offset, Math.Min(MaxEmbeddingBatchSize, inputs.Count - offset));
-                using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds)))
-                using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
-                {
-                    try
-                    {
-                        results.AddRange(await ComputeOpenAiCompatibleEmbeddingsAsync(
-                            batch, model, provider, apiKey, endpoint, defaultEndpoint, linkedCts.Token).ConfigureAwait(false));
-                    }
-                    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                    {
-                        // 呼叫端沒有取消，代表是 ApiTimeout 觸發的逾時。
-                        throw new RimLLMException(LLMError.Timeout, $"Embedding request timed out after {timeoutSeconds} seconds.");
-                    }
-                    catch (ClientResultException ex)
-                    {
-                        throw LLMErrorMapper.CreateException(
-                            ex.Status,
-                            $"Embedding API: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
-                            innerException: ex);
-                    }
-                    catch (RimLLMException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        throw WrapUnknownEmbeddingError("Embedding API", ex);
-                    }
-                }
+                var batchResults = await ComputeBatchAsync(batch, batchContext, cancellationToken).ConfigureAwait(false);
+                results.AddRange(batchResults);
             }
 
             return results;
+        }
+
+        private readonly struct EmbeddingBatchContext
+        {
+            public string Model { get; }
+            public string Provider { get; }
+            public string ApiKey { get; }
+            public string Endpoint { get; }
+            public string DefaultEndpoint { get; }
+            public float TimeoutSeconds { get; }
+
+            public EmbeddingBatchContext(string model, string provider, string apiKey, string endpoint, string defaultEndpoint, float timeoutSeconds)
+            {
+                Model = model;
+                Provider = provider;
+                ApiKey = apiKey;
+                Endpoint = endpoint;
+                DefaultEndpoint = defaultEndpoint;
+                TimeoutSeconds = timeoutSeconds;
+            }
+        }
+
+        private static async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeBatchAsync(
+            List<string> batch, EmbeddingBatchContext ctx, CancellationToken cancellationToken)
+        {
+            using (var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(ctx.TimeoutSeconds)))
+            using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
+            {
+                try
+                {
+                    return await ComputeOpenAiCompatibleEmbeddingsAsync(
+                        batch, ctx.Model, ctx.Provider, ctx.ApiKey, ctx.Endpoint, ctx.DefaultEndpoint, linkedCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // 呼叫端沒有取消，代表是 ApiTimeout 觸發的逾時。
+                    throw new RimLLMException(LLMError.Timeout, $"Embedding request timed out after {ctx.TimeoutSeconds} seconds.");
+                }
+                catch (ClientResultException ex)
+                {
+                    throw LLMErrorMapper.CreateException(
+                        ex.Status,
+                        $"Embedding API: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                        innerException: ex);
+                }
+                catch (RimLLMException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    throw WrapUnknownEmbeddingError("Embedding API", ex);
+                }
+            }
         }
 
         /// <summary>
@@ -359,6 +387,23 @@ namespace RimLLM_Framework.Manager
             string root, CancellationToken cancellationToken)
         {
             string nativeRoot = TrimSuffix(root, "/v1");
+            List<string> names = await FetchOllamaTagNamesAsync(nativeRoot, cancellationToken).ConfigureAwait(false);
+            bool?[] verdicts = await ProbeOllamaModelsAsync(nativeRoot, names, cancellationToken).ConfigureAwait(false);
+
+            var ids = new List<string>();
+            bool allKnown = true;
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (verdicts[i] == null) allKnown = false;
+                if (verdicts[i] != false) ids.Add(names[i]);
+            }
+            return allKnown
+                ? new RimLLMEmbeddingModelList(ids, filtered: true)
+                : new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(ids), filtered: false);
+        }
+
+        private static async Task<List<string>> FetchOllamaTagNamesAsync(string nativeRoot, CancellationToken cancellationToken)
+        {
             var names = new List<string>();
             using (var request = new HttpRequestMessage(HttpMethod.Get, nativeRoot + "/api/tags"))
             using (JsonDocument doc = await SendForJsonAsync(request, cancellationToken).ConfigureAwait(false))
@@ -384,9 +429,11 @@ namespace RimLLM_Framework.Manager
                     }
                 }
             }
+            return names;
+        }
 
-            // 固定大小 worker pool：同時在飛的 /api/show 請求不超過 MaxOllamaProbeConcurrency 個。
-            // worker 數量本身即為並行上限，不再另設 SemaphoreSlim。
+        private static async Task<bool?[]> ProbeOllamaModelsAsync(string nativeRoot, List<string> names, CancellationToken cancellationToken)
+        {
             var verdicts = new bool?[names.Count];
             int nextIndex = -1;
             var workers = new List<Task>(MaxOllamaProbeConcurrency);
@@ -404,17 +451,7 @@ namespace RimLLM_Framework.Manager
                 }, cancellationToken));
             }
             await Task.WhenAll(workers).ConfigureAwait(false);
-
-            var ids = new List<string>();
-            bool allKnown = true;
-            for (int i = 0; i < names.Count; i++)
-            {
-                if (verdicts[i] == null) allKnown = false;
-                if (verdicts[i] != false) ids.Add(names[i]);
-            }
-            return allKnown
-                ? new RimLLMEmbeddingModelList(ids, filtered: true)
-                : new RimLLMEmbeddingModelList(OrderEmbeddingCandidatesFirst(ids), filtered: false);
+            return verdicts;
         }
 
         /// <summary>Ollama 模型清單最多探測的模型數，避免異常大的本地模型庫造成連線尖峰。超過時只取前 N 個並寫警告日誌。</summary>
@@ -646,7 +683,7 @@ namespace RimLLM_Framework.Manager
         /// 讓單元測試以假的 HTTP 傳輸攔截 embedding 請求（與 <c>EncryptionUtility.SecureKeyPathResolver</c>
         /// 同一種測試接縫）；正式環境一律 null，走 SDK 預設傳輸。
         /// </summary>
-        internal static System.ClientModel.Primitives.PipelineTransport TransportOverride;
+        internal static System.ClientModel.Primitives.PipelineTransport TransportOverride { get; set; }
 
         /// <summary>
         /// 沒有能力資訊的通用 <c>/v1/models</c>。<paramref name="root"/> 已正規化並套用過預設值。
@@ -742,7 +779,12 @@ namespace RimLLM_Framework.Manager
             long remainder = totalInputTokens.HasValue ? totalInputTokens.Value % embeddings.Count : 0;
             for (int i = 0; i < embeddings.Count; i++)
             {
-                long? perItem = totalInputTokens.HasValue ? share + (i < remainder ? 1 : 0) : (long?)null;
+                long? perItem = null;
+                if (totalInputTokens.HasValue)
+                {
+                    long extra = i < remainder ? 1 : 0;
+                    perItem = share + extra;
+                }
                 results.Add(new RimLLMEmbeddingResult(embeddings[i].ToFloats().ToArray(), perItem, modelId, providerId));
             }
             return results;

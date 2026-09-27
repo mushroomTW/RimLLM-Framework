@@ -87,35 +87,6 @@ namespace RimLLM_Framework.Mod
             return UnityTagPattern.Replace(text, "＜$1＞");
         }
 
-        /// <summary>
-        /// 將 Markdown 的 raw HTML 當成不受信任文字處理。
-        /// ChatTest 在 Markdown 前會自行加入灰色思考標記，因此只允許這兩個
-        /// 內部產生的標籤；其餘角括號一律改成全形，避免 provider 回應注入 Unity rich text。
-        /// </summary>
-        private static string SanitizeRawHtml(string text)
-        {
-            if (string.IsNullOrEmpty(text) || text.IndexOf('<') < 0)
-            {
-                return text;
-            }
-
-            return RawHtmlTagPattern.Replace(text, match =>
-            {
-                string tag = match.Value;
-                if (IsTrustedColorTag(tag))
-                {
-                    return tag;
-                }
-
-                return "＜" + tag.Substring(1, tag.Length - 2) + "＞";
-            });
-        }
-
-        private static bool IsTrustedColorTag(string tag)
-        {
-            return string.Equals(tag, "<color=silver>", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(tag, "</color>", StringComparison.OrdinalIgnoreCase);
-        }
 
         private static string SanitizeUnityTags(string markdown, bool preserveTrustedColorWrapper)
         {
@@ -390,6 +361,31 @@ namespace RimLLM_Framework.Mod
                     if (i > 0) _sb.Append('\n');
                     _sb.Append(SanitizeRawHtml(html.Lines.Lines[i].Slice.ToString()));
                 }
+            }
+
+            private static string SanitizeRawHtml(string text)
+            {
+                if (string.IsNullOrEmpty(text) || text.IndexOf('<') < 0)
+                {
+                    return text;
+                }
+
+                return RawHtmlTagPattern.Replace(text, match =>
+                {
+                    string tag = match.Value;
+                    if (IsTrustedColorTag(tag))
+                    {
+                        return tag;
+                    }
+
+                    return "＜" + tag.Substring(1, tag.Length - 2) + "＞";
+                });
+            }
+
+            private static bool IsTrustedColorTag(string tag)
+            {
+                return string.Equals(tag, "<color=silver>", StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(tag, "</color>", StringComparison.OrdinalIgnoreCase);
             }
 
             private void RenderInlines(ContainerInline container)
