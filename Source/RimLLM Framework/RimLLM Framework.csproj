@@ -86,7 +86,14 @@
       安全恢復底層 JsonPatch 寫入行為。
     -->
     <PackageReference Include="OpenAI" Version="2.14.0" />
-    <PackageReference Include="System.ClientModel" Version="1.16.0" />
+    <!--
+      必須與 OpenAI 2.14.0 依賴的 1.15.0 完全一致。
+      RimWorld 共用 AppDomain 沒有 binding redirect：若出貨 1.16.0，
+      OpenAI.dll 內對 System.ClientModel 1.15.0.0 的 typeref（例如
+      AsyncStreamingClientResult`1）會解析失敗，觸發 ReflectionTypeLoadException，
+      連帶讓掃描全程式集的 Mod（如 MeleeAnim）在啟動時洗版報錯。
+    -->
+    <PackageReference Include="System.ClientModel" Version="1.15.0" />
 
     <!--
       升級 System.Threading.Tasks.Extensions 至 4.6.3，並以 alias 隔離其 ValueTask，

@@ -53,7 +53,8 @@
       <HintPath>$(NuGetPackageRoot)microsoft.extensions.ai.abstractions\10.10.1\lib\netstandard2.0\Microsoft.Extensions.AI.Abstractions.dll</HintPath>
     </Reference>
     <PackageReference Include="OpenAI" Version="2.14.0" />
-    <PackageReference Include="System.ClientModel" Version="1.16.0" />
+    <!-- 與主專案一致：必須是 OpenAI 2.14.0 依賴的 1.15.0，RimWorld 無 binding redirect，高版會導致 typeref 解析失敗。 -->
+    <PackageReference Include="System.ClientModel" Version="1.15.0" />
     <!-- 明確引用並以 alias 隔離 Microsoft.Bcl.AsyncInterfaces 的 IAsyncEnumerable<T>，
          避免與 .NET Framework 4.8 mscorlib 內建型別產生 CS0433 歧義。 -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.12" Aliases="bclasync" />
