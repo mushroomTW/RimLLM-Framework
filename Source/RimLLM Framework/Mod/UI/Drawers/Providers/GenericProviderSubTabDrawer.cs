@@ -106,7 +106,7 @@ namespace RimLLM_Framework.Mod
         }
 
         #pragma warning disable S3776 // reason: 單一線性敘事含多分支與遞迴，拆分反而增加重組成本
-        public static void DrawApiKeyList(Listing_Standard listing, string providerId)
+        private static void DrawApiKeyList(Listing_Standard listing, string providerId)
         {
             string rawApiKey = Settings.GetApiKey(providerId);
             var keys = new List<string>(rawApiKey.Split(RimLLMFrameworkSettings.ApiKeySeparators, StringSplitOptions.None));
@@ -163,7 +163,7 @@ namespace RimLLM_Framework.Mod
         }
         #pragma warning restore S3776
 
-        public static void DrawChinaEndpointToggle(Listing_Standard listing, string providerId)
+        private static void DrawChinaEndpointToggle(Listing_Standard listing, string providerId)
         {
             if (ProviderIds.HasChinaEndpoint(providerId))
             {
@@ -179,7 +179,7 @@ namespace RimLLM_Framework.Mod
             listing.Gap(8f);
         }
 
-        public static void DrawModelListSection(Listing_Standard listing, string providerId)
+        private static void DrawModelListSection(Listing_Standard listing, string providerId)
         {
             listing.Label("RimLLM_AvailableModelsTitle".Translate());
 
@@ -308,7 +308,7 @@ namespace RimLLM_Framework.Mod
             Widgets.EndScrollView();
         }
 
-        public static void DrawFetchModelsButton(Listing_Standard listing, string providerId)
+        private static void DrawFetchModelsButton(Listing_Standard listing, string providerId)
         {
             DrawBusyActionRow(
                 listing,
@@ -322,13 +322,16 @@ namespace RimLLM_Framework.Mod
         /// <summary>
         /// 「按鈕 + 右側狀態訊息」的共用列。忙碌時按鈕換成靜態標籤，避免重複觸發。
         /// 抓模型清單與連線測試的版面完全相同，共用同一份實作以免兩處的間距各自漂移。
+        /// Embedding 分頁共用此實作，僅按鈕寬度不同（以參數傳入）；訊息欄偏移恆為按鈕寬＋間距。
         /// </summary>
-        private static void DrawBusyActionRow(
-            Listing_Standard listing, bool busy, string busyLabel, string buttonLabel, string statusText, Action onClick)
+        internal static void DrawBusyActionRow(
+            Listing_Standard listing, bool busy, string busyLabel, string buttonLabel, string statusText, Action onClick,
+            float buttonWidth = 180f)
         {
             Rect rowRect = listing.GetRect(60f);
-            Rect btnRect = new Rect(rowRect.x, rowRect.y + 15f, 180f, 30f);
-            Rect msgRect = new Rect(rowRect.x + 190f, rowRect.y, rowRect.width - 190f, 60f);
+            Rect btnRect = new Rect(rowRect.x, rowRect.y + 15f, buttonWidth, 30f);
+            float statusOffset = buttonWidth + 10f;
+            Rect msgRect = new Rect(rowRect.x + statusOffset, rowRect.y, rowRect.width - statusOffset, 60f);
 
             if (busy)
             {
@@ -346,7 +349,7 @@ namespace RimLLM_Framework.Mod
             }
         }
 
-        public static void DrawProviderCallStats(Listing_Standard listing, string providerId)
+        private static void DrawProviderCallStats(Listing_Standard listing, string providerId)
         {
             listing.Label($"<b>{"RimLLM_ProviderCallStatsTitle".Translate()}</b>");
             int successCount = 0;
@@ -391,7 +394,7 @@ namespace RimLLM_Framework.Mod
             }
         }
 
-        public static void DrawConnectionTest(Listing_Standard listing, string providerId)
+        private static void DrawConnectionTest(Listing_Standard listing, string providerId)
         {
             listing.Label("RimLLM_ConnectionTestTitle".Translate());
             string status = TestStatus.TryGetValue(providerId, out string s) ? s : "RimLLM_TestStatusNotRun".Translate().ToString();
@@ -404,7 +407,7 @@ namespace RimLLM_Framework.Mod
                 () => StartTest(providerId));
         }
 
-        public static void StartFetchModels(string providerId)
+        private static void StartFetchModels(string providerId)
         {
             RunProviderOperation(
                 providerId,
@@ -431,7 +434,7 @@ namespace RimLLM_Framework.Mod
                 ex => "RimLLM_FetchFailed".Translate() + " (" + RimLLMLog.SanitizeForLog(ex.Message, 220) + ")");
         }
 
-        public static void StartTest(string providerId)
+        private static void StartTest(string providerId)
         {
             RunProviderOperation(
                 providerId,
@@ -500,10 +503,6 @@ namespace RimLLM_Framework.Mod
         /// </summary>
         private static bool IsDetectingLocal { get; set; } = false;
     private static string DetectStatusMsg { get; set; } = "";
-    private static readonly System.Net.Http.HttpClient DetectClient = new System.Net.Http.HttpClient
-    {
-        Timeout = TimeSpan.FromMilliseconds(600)
-    };
 
     private static void DrawLocalDetectionControls(Listing_Standard listing, string providerId)
     {
@@ -538,45 +537,29 @@ namespace RimLLM_Framework.Mod
         IsDetectingLocal = true;
         DetectStatusMsg = "RimLLM_DetectingLocal".Translate();
 
+        var targets = new LocalEndpointProbe.Target[]
+        {
+            new LocalEndpointProbe.Target { Name = "LM Studio", BaseUrl = "http://localhost:1234/v1", TestUrl = "http://localhost:1234/v1/models" },
+            new LocalEndpointProbe.Target { Name = "Ollama", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/v1/models" },
+            new LocalEndpointProbe.Target { Name = "Ollama (Raw)", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/api/tags" },
+            new LocalEndpointProbe.Target { Name = "LocalAI/vLLM (8080)", BaseUrl = "http://localhost:8080/v1", TestUrl = "http://localhost:8080/v1/models" },
+            new LocalEndpointProbe.Target { Name = "LocalAI/vLLM (8000)", BaseUrl = "http://localhost:8000/v1", TestUrl = "http://localhost:8000/v1/models" }
+        };
+
         Task.Run(async () =>
         {
-            var targets = new (string Name, string BaseUrl, string TestUrl)[]
+            LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(targets).ConfigureAwait(false);
+            if (hit != null)
             {
-                ("LM Studio", "http://localhost:1234/v1", "http://localhost:1234/v1/models"),
-                ("Ollama", "http://localhost:11434/v1", "http://localhost:11434/v1/models"),
-                ("Ollama (Raw)", "http://localhost:11434", "http://localhost:11434/api/tags"),
-                ("LocalAI/vLLM (8080)", "http://localhost:8080/v1", "http://localhost:8080/v1/models"),
-                ("LocalAI/vLLM (8000)", "http://localhost:8000/v1", "http://localhost:8000/v1/models")
-            };
-
-            foreach (var target in targets)
-            {
-                try
+                RimLLMDispatcher.EnqueueOnMainThread(() =>
                 {
-                    var response = await DetectClient.GetAsync(target.TestUrl).ConfigureAwait(false);
-                    if (response.IsSuccessStatusCode)
-                    {
-                        string finalUrl = target.BaseUrl;
-                        if (target.Name == "Ollama (Raw)")
-                        {
-                            finalUrl = "http://localhost:11434/v1";
-                        }
-
-                        RimLLMDispatcher.EnqueueOnMainThread(() =>
-                        {
-                            Settings.SetEndpoint(providerId, finalUrl);
-                            Settings.Write();
-                            IsDetectingLocal = false;
-                            DetectStatusMsg = "RimLLM_DetectSuccess".Translate(target.Name, finalUrl);
-                            Messages.Message("RimLLM_MsgDetectSuccess".Translate(target.Name), MessageTypeDefOf.PositiveEvent, false);
-                        });
-                        return;
-                    }
-                }
-                catch
-                {
-                    // 探測失敗屬正常情形（服務未啟動），繼續試下一個候選端點。
-                }
+                    Settings.SetEndpoint(providerId, hit.BaseUrl);
+                    Settings.Write();
+                    IsDetectingLocal = false;
+                    DetectStatusMsg = "RimLLM_DetectSuccess".Translate(hit.Name, hit.BaseUrl);
+                    Messages.Message("RimLLM_MsgDetectSuccess".Translate(hit.Name), MessageTypeDefOf.PositiveEvent, false);
+                });
+                return;
             }
 
             RimLLMDispatcher.EnqueueOnMainThread(() =>

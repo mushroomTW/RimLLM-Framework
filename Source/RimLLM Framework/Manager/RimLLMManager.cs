@@ -366,11 +366,6 @@ namespace RimLLM_Framework.Manager
             return (_settings as IContextWindowLookup)?.GetContextWindow(modelId.Substring(0, colonIndex), modelId.Substring(colonIndex + 1));
         }
 
-        internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
-        {
-            return _fallbackPipeline.ResolveFallbackEntry(entry, out providerId, out modelName);
-        }
-
         public void ClearLogs()
         {
             _usageTracker.ClearLogs();

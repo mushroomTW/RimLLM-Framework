@@ -9,8 +9,6 @@ namespace RimLLM_Framework.Manager
         public readonly int Prompt;
         public readonly int Completion;
 
-        public int Total => Prompt + Completion;
-
         public UsageTokens(int prompt, int completion)
         {
             Prompt = prompt;

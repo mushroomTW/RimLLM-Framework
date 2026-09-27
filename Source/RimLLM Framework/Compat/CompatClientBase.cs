@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.ExceptionServices;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Api;
@@ -40,24 +39,6 @@ namespace RimLLM_Framework.Compat
         protected static T RunSync<T>(Func<Task<T>> asyncFunc)
         {
             Task<T> task = Task.Run(asyncFunc);
-            try
-            {
-                return task.GetAwaiter().GetResult();
-            }
-            catch (AggregateException agg) when (agg.InnerExceptions.Count > 0)
-            {
-                ExceptionDispatchInfo.Capture(agg.Flatten().InnerExceptions[0]).Throw();
-                throw; // unreachable
-            }
-        }
-
-        /// <summary>
-        /// 同步執行 async 任務並回傳結果（含 CancellationToken），保留原始堆疊。
-        /// ModCompatChecker 用：支援取消與逾時。
-        /// </summary>
-        protected static T RunSync<T>(Func<CancellationToken, Task<T>> asyncFunc, CancellationToken ct)
-        {
-            Task<T> task = Task.Run(() => asyncFunc(ct), ct);
             try
             {
                 return task.GetAwaiter().GetResult();

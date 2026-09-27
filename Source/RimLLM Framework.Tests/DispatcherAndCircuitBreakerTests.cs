@@ -341,23 +341,29 @@ namespace RimLLM_Framework.Tests
         {
             var mockSettings = new MockSettings();
             mockSettings.SetModelList("OpenRouter", new List<string> { "model-1", "model-2" });
-            
-            var manager = new RimLLMManager(mockSettings);
+
+            // 直接測管線本體：Manager 的純轉發已移除，解析邏輯只住在這裡。
+            var pipeline = new RimLLMFallbackPipeline(
+                mockSettings,
+                new RimLLMHealthLedger(),
+                new RimLLMUsageTracker(mockSettings),
+                providerId => null,
+                providerId => true);
 
             // 1. 測試傳統 "Provider:Model" 格式
-            bool res1 = manager.ResolveFallbackEntry("OpenAI:gpt-4o", out string providerId1, out string modelName1);
+            bool res1 = pipeline.ResolveFallbackEntry("OpenAI:gpt-4o", out string providerId1, out string modelName1);
             ClassicAssert.IsTrue(res1);
             ClassicAssert.AreEqual("OpenAI", providerId1);
             ClassicAssert.AreEqual("gpt-4o", modelName1);
 
             // 2. 測試 OpenRouter 純供應商格式 (會自動解析為快取的第一個模型，此處為 model-1)
-            bool res2 = manager.ResolveFallbackEntry("OpenRouter", out string providerId2, out string modelName2);
+            bool res2 = pipeline.ResolveFallbackEntry("OpenRouter", out string providerId2, out string modelName2);
             ClassicAssert.IsTrue(res2);
             ClassicAssert.AreEqual("OpenRouter", providerId2);
             ClassicAssert.AreEqual("model-1", modelName2);
 
             // 3. 測試其他純供應商格式 (會自動回退至 defaultModel)
-            bool res3 = manager.ResolveFallbackEntry("OpenAI", out string providerId3, out string modelName3);
+            bool res3 = pipeline.ResolveFallbackEntry("OpenAI", out string providerId3, out string modelName3);
             ClassicAssert.IsTrue(res3);
             ClassicAssert.AreEqual("OpenAI", providerId3);
             ClassicAssert.AreEqual("default", modelName3);

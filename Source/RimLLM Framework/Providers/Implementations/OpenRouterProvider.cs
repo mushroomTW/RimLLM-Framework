@@ -42,21 +42,20 @@ namespace RimLLM_Framework.Providers
 
             // 基底類別已經設過 factory（思考參數與 max_tokens 改寫），
             // 直接覆寫會把那些 Patch 一併弄丟，因此串接而非取代。
-            Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
-            options.RawRepresentationFactory = client =>
-            {
-                var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(baseFactory, client);
-                chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.Model);
-                var modelsArray = new List<string>();
-                foreach (string m in model.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+            options.RawRepresentationFactory = OpenAIPatchExtensions.ChainPatch(
+                options.RawRepresentationFactory,
+                chatCompletionOptions =>
                 {
-                    // 只有全是空白的條目會在 Trim 後變空，那種條目不該進 models 陣列。
-                    string trimmed = m.Trim();
-                    if (trimmed.Length > 0) modelsArray.Add(trimmed);
-                }
-                chatCompletionOptions.Patch.Set(OpenAIPatchPaths.Models, JsonSerializer.SerializeToUtf8Bytes(modelsArray));
-                return chatCompletionOptions;
-            };
+                    chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.Model);
+                    var modelsArray = new List<string>();
+                    foreach (string m in model.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        // 只有全是空白的條目會在 Trim 後變空，那種條目不該進 models 陣列。
+                        string trimmed = m.Trim();
+                        if (trimmed.Length > 0) modelsArray.Add(trimmed);
+                    }
+                    chatCompletionOptions.Patch.Set(OpenAIPatchPaths.Models, JsonSerializer.SerializeToUtf8Bytes(modelsArray));
+                });
         }
 
         protected override string DefaultTestModel => "openrouter/free";

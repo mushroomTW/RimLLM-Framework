@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using Microsoft.Extensions.AI;
 using OpenAI.Chat;
 
 namespace RimLLM_Framework.Providers
@@ -54,10 +55,27 @@ namespace RimLLM_Framework.Providers
         /// 從基礎工廠或新建實例中取得已停用傳播器的 <see cref="ChatCompletionOptions"/>。
         /// </summary>
         public static ChatCompletionOptions GetOrCreateSanitizedOptions(
-            Func<Microsoft.Extensions.AI.IChatClient, object> baseFactory,
-            Microsoft.Extensions.AI.IChatClient client)
+            Func<IChatClient, object> baseFactory,
+            IChatClient client)
         {
             return (baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions()).DisablePatchPropagators();
+        }
+
+        /// <summary>
+        /// 在既有工廠外再包一層 Patch 修改：先沿用基底工廠（含思考參數與 max_tokens 改寫），
+        /// 再執行 <paramref name="mutate"/> 的增量修改。直接覆寫工廠會把基底的 Patch 一併丟掉，
+        /// 因此各供應商一律走這裡串接而非取代。
+        /// </summary>
+        public static Func<IChatClient, object> ChainPatch(
+            Func<IChatClient, object> baseFactory,
+            Action<ChatCompletionOptions> mutate)
+        {
+            return client =>
+            {
+                ChatCompletionOptions sanitized = GetOrCreateSanitizedOptions(baseFactory, client);
+                mutate?.Invoke(sanitized);
+                return sanitized;
+            };
         }
     }
 #pragma warning restore S3011

@@ -37,15 +37,14 @@ namespace RimLLM_Framework.Providers
             int maxTokens = requestOptions?.MaxOutputTokens ?? 1024;
 
             // 串接而非覆寫基底類別的 factory：直接覆寫會把思考參數的 Patch 一併丟掉。
-            System.Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
-            options.RawRepresentationFactory = client =>
-            {
-                var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(baseFactory, client);
-                chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.StreamOptions);
-                chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.MaxCompletionTokens);
-                chatCompletionOptions.Patch.Set(OpenAIPatchPaths.MaxTokens, maxTokens);
-                return chatCompletionOptions;
-            };
+            options.RawRepresentationFactory = OpenAIPatchExtensions.ChainPatch(
+                options.RawRepresentationFactory,
+                chatCompletionOptions =>
+                {
+                    chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.StreamOptions);
+                    chatCompletionOptions.Patch.Remove(OpenAIPatchPaths.MaxCompletionTokens);
+                    chatCompletionOptions.Patch.Set(OpenAIPatchPaths.MaxTokens, maxTokens);
+                });
         }
 
         /// <summary>
