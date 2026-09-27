@@ -51,7 +51,7 @@ The rule is the same for both options below: **reference, don't copy.**
 ```
 
 * [`Microsoft.Extensions.AI` 10.10.0](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.10.0) — this is all a consuming mod needs. It brings in `Microsoft.Extensions.AI.Abstractions`, where `IChatClient` lives.
-* [`Microsoft.Extensions.AI.OpenAI` 10.10.0](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.10.0) — additionally shipped by the framework. You only need to reference it if you construct OpenAI SDK clients yourself; a mod that just calls `RimLLMProvider.CreateChatClient` does not.
+* [`Microsoft.Extensions.AI.OpenAI` 10.10.1](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.10.1) — additionally shipped by the framework. You only need to reference it if you construct OpenAI SDK clients yourself; a mod that just calls `RimLLMProvider.CreateChatClient` does not.
 
 > [!IMPORTANT]
 > **Pin the version to exactly `10.10.0`.** Assembly identity must match what the framework loaded. Do not set `CopyLocalLockFileAssemblies` to `true` in a consuming mod — that is what causes the duplicate-DLL problem above.

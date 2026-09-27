@@ -38,7 +38,7 @@
 
 ### 6. Official SDKs and provider responsibilities
 
-* **One SDK for every provider.** All built-in providers go through the `OpenAI` SDK `2.13.0` and the `IChatClient` of Microsoft.Extensions.AI `10.10.0`; there is no raw HTTP chat path and no second SDK. Gemini uses Google's official OpenAI-compatible endpoint. The shared layer depends only on `IChatClient`, `LLMProviderCapabilities` and `ILLMProvider`.
+* **One SDK for every provider.** All built-in providers go through the `OpenAI` SDK `2.14.0` and the `IChatClient` of Microsoft.Extensions.AI `10.10.0`; there is no raw HTTP chat path and no second SDK. Gemini uses Google's official OpenAI-compatible endpoint. The shared layer depends only on `IChatClient`, `LLMProviderCapabilities` and `ILLMProvider`.
 * **Stays on `net472`.** The SDKs' dependency DLLs ship with the mod, and `ProviderSdkIntegrationTests` loads each one, so a missing transitive assembly fails the build rather than the game.
 * **`Microsoft.Extensions.AI.Abstractions` ships its `netstandard2.0` build.** The `net462` build NuGet would otherwise pick references `System.ComponentModel.DataAnnotations`, which RimWorld's Mono lacks, so `AIFunctionFactory.Create` threw `TypeLoadException` in-game. `ShippedAbstractionsHasNoDataAnnotationsDependency` guards this choice.
 * **Structured-output schemas** come from `System.Text.Json`'s `JsonSchemaExporter`, then `RimLLMSchemaBuilder` normalizes them into a subset every provider accepts: `$ref` pointers are inlined (cycles are cut at the CLR type), nesting is capped at 5 levels (OpenAI strict mode's limit; its 100-property total is not enforced yet), every member is listed in `required` with optionality expressed as a `["type","null"]` union, and `[Description]` is carried over.

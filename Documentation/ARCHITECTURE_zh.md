@@ -38,7 +38,7 @@
 
 ### 6. 官方 SDK 與供應商職責
 
-* **所有供應商共用一套 SDK。** 內建供應商全都走 `OpenAI` SDK `2.13.0` 與 Microsoft.Extensions.AI `10.10.0` 的 `IChatClient`，沒有直接打 HTTP 的對話路徑，也沒有第二套 SDK。Gemini 走 Google 官方的 OpenAI 相容端點。共用層只依賴 `IChatClient`、`LLMProviderCapabilities` 與 `ILLMProvider`。
+* **所有供應商共用一套 SDK。** 內建供應商全都走 `OpenAI` SDK `2.14.0` 與 Microsoft.Extensions.AI `10.10.0` 的 `IChatClient`，沒有直接打 HTTP 的對話路徑，也沒有第二套 SDK。Gemini 走 Google 官方的 OpenAI 相容端點。共用層只依賴 `IChatClient`、`LLMProviderCapabilities` 與 `ILLMProvider`。
 * **維持 `net472`。** SDK 的相依 DLL 隨 Mod 出貨，`ProviderSdkIntegrationTests` 會逐一載入，缺少間接相依的組件時在建置階段就失敗，而不是在遊戲裡。
 * **`Microsoft.Extensions.AI.Abstractions` 出貨的是 `netstandard2.0` 版本。** NuGet 原本會選的 `net462` 版本參考了 `System.ComponentModel.DataAnnotations`，RimWorld 的 Mono 沒有這個組件，導致遊戲內 `AIFunctionFactory.Create` 擲出 `TypeLoadException`。`ShippedAbstractionsHasNoDataAnnotationsDependency` 負責守住這個選擇。
 * **結構化輸出的 schema** 由 `System.Text.Json` 的 `JsonSchemaExporter` 產生，再由 `RimLLMSchemaBuilder` 正規化成每家供應商都接受的子集：`$ref` 展開成內嵌（循環在 CLR 型別層級截斷）、巢狀最多 5 層（OpenAI strict 模式的上限；總共 100 個屬性的上限尚未檢查）、所有成員都列入 `required`，選填性以 `["type","null"]` 聯集表達，並保留 `[Description]`。
