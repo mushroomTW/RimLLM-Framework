@@ -80,3 +80,26 @@ dotnet test "Source/RimLLM Framework.Tests/RimLLM Framework.Tests.csproj"
 > write code that compiles but fails inside RimWorld's Mono runtime. Known examples: `Stack<T>` throws
 > `TypeLoadException`, and the parameterless `String.TrimEnd()` overload does not exist.
 > Always verify with an actual `dotnet test` run rather than relying on a successful build.
+
+### In-game integration tests (RimTest Redux)
+
+`Source/RimLLM Framework.InGameTests` is a development-only companion mod (outside the `.slnx`, never shipped) that runs
+[RimTest Redux](https://github.com/ilyvion/rimtest-redux) suites inside the live game. It covers what the headless tests cannot see with Unity stubbed out:
+
+- **Startup wiring**: settings, manager and a live `RimLLMDispatcher` main-thread pump (headless tests always take the synchronous no-pump fallback).
+- **Assembly loading**: every shipped DLL resolves all of its types in RimWorld's shared AppDomain, which has no binding redirects.
+- **Compat hooks**: every hook listed in the `Expected` table of `CompatPatchTests` (update it whenever a `*CompatPatch.Apply` gains or drops a hook) carries a `GreenMushroom.RimLLMFramework` patch on the installed RimTalk / Auto Translation / Mod Compatibility Checker; a target that is not active is logged as `skipped`.
+- **Translation injection**: in every language the game has loaded, each key in `Languages/*/Keyed` is injected from this mod's own file, with no load error attributable to this mod; languages that are not loaded are logged as `skipped` (switch the game language to cover them).
+
+Dependencies: Harmony, ilyvion's Laboratory and RimTest Redux (Workshop 3762405308). The test project references the Release DLL in `Assemblies/`
+(internals are exposed through `InternalsVisibleTo`) and never rebuilds it, so build the framework in Release first:
+
+```bash
+dotnet build "Source/RimLLM Framework/RimLLM Framework.csproj" -c Release
+dotnet build "Source/RimLLM Framework.InGameTests/RimLLM Framework.InGameTests.csproj"
+```
+
+Then link `Source/RimLLM Framework.InGameTests/Mod` into `Mods/` (e.g. a directory junction) and launch the game with it enabled together with its dependencies and RimLLM Framework
+(add `cj.rimtalk`, `seohyeon.autotranslation` and `modcompatchecker.main` to cover the compat hooks). RimTest Redux's **Run at startup**
+(on by default) runs the suites once loading finishes; results go to `Player.log` between `TESTING START` and `TESTING END`,
+and `[RimLLM.InGameTests] skipped:` lines count the preconditions that were absent.

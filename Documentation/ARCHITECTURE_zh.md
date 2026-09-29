@@ -79,3 +79,26 @@ dotnet test "Source/RimLLM Framework.Tests/RimLLM Framework.Tests.csproj"
 > **注意**：`Krafs.Rimworld.Ref` 參考組件不會限制 BCL 表面，因此有可能寫出「編譯得過但在 RimWorld 的 Mono
 > 執行期失敗」的程式碼。已知案例：`Stack<T>` 會擲出 `TypeLoadException`，而無參數的 `String.TrimEnd()`
 > 多載並不存在。請務必以實際的 `dotnet test` 驗證，不要只依賴建置成功。
+
+### 遊戲內整合測試（RimTest Redux）
+
+`Source/RimLLM Framework.InGameTests` 是開發用的伴隨 Mod（不在 `.slnx` 內，也不隨 Mod 出貨），在實際遊戲中執行
+[RimTest Redux](https://github.com/ilyvion/rimtest-redux) 測試套件，補足 headless 測試在 Unity 被 stub 掉時看不到的部分：
+
+- **啟動接線**：設定、Manager 與實際運作中的 `RimLLMDispatcher` 主執行緒 pump（headless 測試永遠走「無 pump 同步執行」的退路）。
+- **組件載入**：每個出貨 DLL 在 RimWorld 共用 AppDomain（沒有 binding redirect）內都能完整解析型別。
+- **相容層攔截**：`CompatPatchTests` 的 `Expected` 表列出的每個攔截點（`*CompatPatch.Apply` 增減攔截時要同步更新此表），在已安裝的 RimTalk / Auto Translation / Mod 兼容性檢查器上都確實掛著 `GreenMushroom.RimLLMFramework` 的補丁；未啟用的目標記為 `skipped`。
+- **翻譯注入**：在遊戲已載入的每個語言中，`Languages/*/Keyed` 的每個 key 都來自本 Mod 自己的檔案，且沒有屬於本 Mod 的載入錯誤；未載入的語言記為 `skipped`（切換遊戲語言即可涵蓋）。
+
+相依：Harmony、ilyvion's Laboratory 與 RimTest Redux（工作坊 3762405308）。測試專案參考 `Assemblies/` 裡的 Release DLL
+（內部成員透過 `InternalsVisibleTo` 開放），不會重建它，因此要先以 Release 建置框架：
+
+```bash
+dotnet build "Source/RimLLM Framework/RimLLM Framework.csproj" -c Release
+dotnet build "Source/RimLLM Framework.InGameTests/RimLLM Framework.InGameTests.csproj"
+```
+
+接著把 `Source/RimLLM Framework.InGameTests/Mod` 連結到 `Mods/`（例如目錄 junction），在遊戲中同時啟用它、它的相依與 RimLLM Framework
+（要涵蓋相容層攔截，再加上 `cj.rimtalk`、`seohyeon.autotranslation`、`modcompatchecker.main`）。RimTest Redux 的 **Run at startup**
+（預設開啟）會在載入完成後執行一次；結果寫在 `Player.log` 的 `TESTING START` 與 `TESTING END` 之間，
+`[RimLLM.InGameTests] skipped:` 行則是前置條件缺席而跳過的數量。

@@ -261,6 +261,9 @@ namespace RimLLM_Framework.Core
 
         internal static int QueuedCount => Volatile.Read(ref _queuedCount);
 
+        /// <summary>主線程 pump 是否運作中（遊戲內整合測試用）。</summary>
+        internal static bool HasPump => _hasPump;
+
 #pragma warning disable S2325 // reason: Unity Message 必須為實例方法，無法 static
 #pragma warning disable S2696 // reason: Unity 單例在實例生命週期中設定靜態實例
         private void Awake()

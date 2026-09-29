@@ -60,3 +60,7 @@ coverage*.json
 Thumbs.db
 ehthumbs.db
 [Dd]esktop.ini
+# ------------------------------------------------------------------------------
+# 6. In-game test mod build output (Source/RimLLM Framework.InGameTests)
+# ------------------------------------------------------------------------------
+Source/RimLLM Framework.InGameTests/Mod/Assemblies/
