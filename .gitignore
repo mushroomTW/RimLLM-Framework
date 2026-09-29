@@ -21,6 +21,7 @@
 .gemini/
 .testagent/
 .opencode/
+.codegraph/
 .docs/
 docs/
 SteamDescriptions/
