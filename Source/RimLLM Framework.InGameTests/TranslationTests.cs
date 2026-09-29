@@ -34,8 +34,8 @@ namespace RimLLM_Framework.InGameTests
                     continue;
                 }
 
-                // 非目前語言的資料是延遲載入的；刻意不呼叫 LoadData 強制載入——那會把整個語言（含 Core 自己的
-                // 翻譯錯誤警告）留在記憶體與日誌裡。要涵蓋其他語言，請切換遊戲語言再跑一次。
+                // 非目前語言的資料是延遲載入的；刻意不呼叫 LoadData 強制載入——那會把整個語言（所有 Mod 的
+                // Keyed 與 DefInjected）留在記憶體直到遊戲結束。要涵蓋其他語言，請切換遊戲語言再跑一次。
                 if (language.keyedReplacements.Count == 0)
                 {
                     TestHelpers.LogSkipped(nameof(EveryKeyedFileIsInjectedIntoItsLanguage), $"{folder} is not loaded (switch the game language to cover it)");
