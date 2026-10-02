@@ -110,7 +110,7 @@ namespace RimLLM_Framework.Compat
         /// 只在原生結果為 null 時介入；Provider 設為 Local 是因為它是唯一不要求金鑰的類型，
         /// 而 BaseUrl 永遠不會被真的連線——請求在 <see cref="GetAIClientAsyncPrefix"/> 就被接走了。
         /// </summary>
-        public static void GetActiveConfigPostfix(ref ApiConfig __result)
+        public static void GetActiveConfigPostfix(ref object __result)
         {
             if (__result != null || !_gate.ShouldTakeOver()) return;
 
@@ -124,7 +124,7 @@ namespace RimLLM_Framework.Compat
         }
 
         /// <summary>回傳 false 代表攔下並以 RimLLM 轉接器取代；true 放行 RimTalk 原生路徑。</summary>
-        public static bool GetAIClientAsyncPrefix(ref Task<IAIClient> __result)
+        public static bool GetAIClientAsyncPrefix(ref object __result)
         {
             // TalkService 是用 GetActiveConfig()!=null（可能是 Postfix 補的合成設定）放行對話，
             // 走到這裡時若供應商剛好全部不可用而判定翻轉，原生路徑會因設定為 null 而回傳 null client，
@@ -140,32 +140,41 @@ namespace RimLLM_Framework.Compat
 
         /// <summary>非串流漏斗：哨兵實例改走 RimLLM，其他實例放行。</summary>
         public static bool GetChatCompletionAsyncPrefix(
-            OpenAIClient __instance,
-            List<(Role role, string message)> prefixMessages,
-            List<(Role role, string message)> messages,
+            object __instance,
+            object prefixMessages,
+            object messages,
             string imageBase64,
-            Action<Payload> onRequestPrepared,
-            ref Task<Payload> __result)
+            object onRequestPrepared,
+            ref object __result)
         {
             if (!ReferenceEquals(__instance, Sentinel)) return true;
 
-            __result = Client.GetChatCompletionAsync(prefixMessages, messages, imageBase64, onRequestPrepared);
+            __result = Client.GetChatCompletionAsync(
+                (List<(Role role, string message)>)prefixMessages,
+                (List<(Role role, string message)>)messages,
+                imageBase64,
+                (Action<Payload>)onRequestPrepared);
             return false;
         }
 
         /// <summary>串流漏斗：哨兵實例改走 RimLLM，文字塊交回 RimTalk 自己的 JSONL parser。</summary>
         public static bool StreamAsyncPrefix(
-            OpenAIClient __instance,
-            List<(Role role, string message)> prefixMessages,
-            List<(Role role, string message)> messages,
+            object __instance,
+            object prefixMessages,
+            object messages,
             string imageBase64,
             Action<string> onChunk,
-            Action<Payload> onRequestPrepared,
-            ref Task<Payload> __result)
+            object onRequestPrepared,
+            ref object __result)
         {
             if (!ReferenceEquals(__instance, Sentinel)) return true;
 
-            __result = Client.StreamAsync(prefixMessages, messages, imageBase64, onChunk, onRequestPrepared);
+            __result = Client.StreamAsync(
+                (List<(Role role, string message)>)prefixMessages,
+                (List<(Role role, string message)>)messages,
+                imageBase64,
+                onChunk,
+                (Action<Payload>)onRequestPrepared);
             return false;
         }
 

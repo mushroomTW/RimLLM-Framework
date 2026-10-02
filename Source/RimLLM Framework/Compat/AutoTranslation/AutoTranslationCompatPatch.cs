@@ -26,7 +26,7 @@ namespace RimLLM_Framework.Compat
     /// </para>
     /// <para>
     /// 型別載入防線：Auto Translation 型別不得出現在類別繼承、介面或欄位型別（欄位刻意使用 <see cref="object"/>），
-    /// 僅允許於方法簽章與本體中出現，保證在未安裝 Auto Translation 時框架 DLL 仍能安全載入。
+    /// 僅允許於方法本體與實例方法簽章中出現（靜態方法簽章也不行：Debug 動作選單會解析），保證在未安裝 Auto Translation 時框架 DLL 仍能安全載入。
     /// </para>
     /// </remarks>
     internal static class AutoTranslationCompatPatch
@@ -131,7 +131,7 @@ namespace RimLLM_Framework.Compat
         /// Client 拋出（瞬斷、限流）時則原樣上拋，交給哨兵 <c>TryTranslate</c> 自帶的重試／回原文機制。
         /// </remarks>
         public static bool GetResponseUnsafePrefix(
-            Translator_OpenAICompatible __instance,
+            object __instance,
             string text,
             string prompt,
             ref string __result)
@@ -256,7 +256,7 @@ namespace RimLLM_Framework.Compat
                 // 忽略設定讀取錯誤，後續嘗試使用快照還原
             }
             ITranslator snap = NativeTranslator as ITranslator;
-            ITranslator native = PickRestoreTranslator(live, snap);
+            ITranslator native = (ITranslator)PickRestoreTranslator(live, snap);
             if (native == null)
             {
                 Log.Warning("[RimLLM] 相容層：Auto Translation 還原原生翻譯器失敗（即時查詢與快照皆為 null），保留哨兵避免停擺。");
@@ -267,10 +267,10 @@ namespace RimLLM_Framework.Compat
         }
 
         /// <summary>還原用翻譯器挑選：就緒者優先，其次即時值，最後快照。</summary>
-        private static ITranslator PickRestoreTranslator(ITranslator live, ITranslator snap)
+        private static object PickRestoreTranslator(object live, object snap)
         {
-            if (live != null && live.Ready) return live;
-            if (snap != null && snap.Ready) return snap;
+            if (live is ITranslator l && l.Ready) return live;
+            if (snap is ITranslator s && s.Ready) return snap;
             return live ?? snap;
         }
 

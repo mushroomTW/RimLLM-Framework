@@ -7,7 +7,6 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
-using ModCompatChecker.AI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Api;
@@ -115,9 +114,7 @@ namespace RimLLM_Framework.Tests
 
                 string result = null;
                 bool cancel = false;
-                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix(
-                    "http://example.com", "key", "model", "診斷內容",
-                    ModelConfig.ApiProvider.OpenAI, 30, ref cancel, ref result);
+                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix("診斷內容", 30, ref cancel, ref result);
 
                 ClassicAssert.IsFalse(runOriginal, "接管開啟時應跳過原生");
                 ClassicAssert.IsNotNull(result);
@@ -142,9 +139,7 @@ namespace RimLLM_Framework.Tests
 
                 string result = null;
                 bool cancel = false;
-                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix(
-                    "http://example.com", "key", "model", "診斷內容",
-                    ModelConfig.ApiProvider.OpenAI, 30, ref cancel, ref result);
+                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix("診斷內容", 30, ref cancel, ref result);
 
                 ClassicAssert.IsTrue(runOriginal, "接管關閉時應放行原生");
                 ClassicAssert.IsNull(result);
@@ -173,9 +168,7 @@ namespace RimLLM_Framework.Tests
 
                 string result = null;
                 bool cancel = true;
-                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix(
-                    "http://example.com", "key", "model", "診斷內容",
-                    ModelConfig.ApiProvider.OpenAI, 30, ref cancel, ref result);
+                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix("診斷內容", 30, ref cancel, ref result);
 
                 ClassicAssert.IsFalse(runOriginal, "取消時不應再跑一次原生");
                 ClassicAssert.IsNotNull(result);
@@ -205,9 +198,7 @@ namespace RimLLM_Framework.Tests
 
                 string result = null;
                 bool cancel = false;
-                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix(
-                    "http://example.com", "key", "model", "診斷內容",
-                    ModelConfig.ApiProvider.OpenAI, 30, ref cancel, ref result);
+                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix("診斷內容", 30, ref cancel, ref result);
 
                 ClassicAssert.IsFalse(runOriginal, "逾時時不應再跑一次原生（等待翻倍）");
                 ClassicAssert.IsNotNull(result);
@@ -237,9 +228,7 @@ namespace RimLLM_Framework.Tests
 
                 string result = null;
                 bool cancel = false;
-                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix(
-                    "http://example.com", "key", "model", "診斷內容",
-                    ModelConfig.ApiProvider.OpenAI, 30, ref cancel, ref result);
+                bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix("診斷內容", 30, ref cancel, ref result);
 
                 ClassicAssert.IsTrue(runOriginal, "離線時應退回原生路徑");
                 ClassicAssert.IsNull(result);

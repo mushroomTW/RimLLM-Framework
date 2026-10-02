@@ -27,7 +27,7 @@ namespace RimLLM_Framework.Compat
     /// </para>
     /// <para>
     /// 型別載入防線：ModCompatChecker 型別不得出現在類別繼承、介面或欄位型別（欄位刻意使用 <see cref="object"/>），
-    /// 僅允許於方法簽章與本體中出現，保證在未安裝 ModCompatChecker 時框架 DLL 仍能安全載入。
+    /// 僅允許於方法本體與實例方法簽章中出現（靜態方法簽章也不行：Debug 動作選單會解析），保證在未安裝 ModCompatChecker 時框架 DLL 仍能安全載入。
     /// </para>
     /// </remarks>
     internal static class ModCompatCheckerCompatPatch
@@ -102,17 +102,11 @@ namespace RimLLM_Framework.Compat
         /// 例外分流：取消／逾時直接回提示文字並跳過原生——原生會再用同樣的
         /// <c>timeoutSeconds</c> 跑一次，總等待時間翻倍；離線等其他失敗才退回原生。
         /// </remarks>
-#pragma warning disable S107 // Harmony prefix method parameters are bound by name to the target method signature
         public static bool CallAPIWithTimeoutPrefix(
-            string endpoint,
-            string apiKey,
-            string modelId,
             string userMessage,
-            ModelConfig.ApiProvider provider,
             int timeoutSeconds,
             ref bool cancelFlag,
             ref string __result)
-#pragma warning restore S107
         {
             if (!_gate.ShouldTakeOver())
             {

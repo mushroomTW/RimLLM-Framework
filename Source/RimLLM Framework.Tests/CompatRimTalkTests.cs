@@ -29,9 +29,9 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void ToChatRole_MapsAllRimTalkRoles()
         {
-            ClassicAssert.AreEqual(ChatRole.System, RimTalkCompatClient.MessageConverter.ToChatRole(Role.System));
-            ClassicAssert.AreEqual(ChatRole.User, RimTalkCompatClient.MessageConverter.ToChatRole(Role.User));
-            ClassicAssert.AreEqual(ChatRole.Assistant, RimTalkCompatClient.MessageConverter.ToChatRole(Role.AI));
+            ClassicAssert.AreEqual(ChatRole.System, RimTalkCompatClient.MessageConverter.Instance.ToChatRole(Role.System));
+            ClassicAssert.AreEqual(ChatRole.User, RimTalkCompatClient.MessageConverter.Instance.ToChatRole(Role.User));
+            ClassicAssert.AreEqual(ChatRole.Assistant, RimTalkCompatClient.MessageConverter.Instance.ToChatRole(Role.AI));
         }
 
         [Test]
@@ -49,7 +49,7 @@ namespace RimLLM_Framework.Tests
                 (Role.AI, "{\"name\":\"A\",\"text\":\"hi\"}")
             };
 
-            List<ChatMessage> result = RimTalkCompatClient.MessageConverter.Build(prefix, messages, null);
+            List<ChatMessage> result = RimTalkCompatClient.MessageConverter.Instance.Build(prefix, messages, null);
 
             ClassicAssert.AreEqual(3, result.Count);
             ClassicAssert.AreEqual(ChatRole.System, result[0].Role);
@@ -62,7 +62,7 @@ namespace RimLLM_Framework.Tests
         [Test]
         public void Build_ToleratesNullLists()
         {
-            List<ChatMessage> result = RimTalkCompatClient.MessageConverter.Build(null, null, null);
+            List<ChatMessage> result = RimTalkCompatClient.MessageConverter.Instance.Build(null, null, null);
             ClassicAssert.IsEmpty(result);
         }
 
@@ -71,7 +71,7 @@ namespace RimLLM_Framework.Tests
         {
             var prefix = new List<(Role role, string message)> { (Role.System, "sys"), (Role.User, "look at this") };
 
-            List<ChatMessage> result = RimTalkCompatClient.MessageConverter.Build(prefix, null, SampleImageBase64);
+            List<ChatMessage> result = RimTalkCompatClient.MessageConverter.Instance.Build(prefix, null, SampleImageBase64);
 
             ClassicAssert.AreEqual(2, result.Count);
             ChatMessage last = result[1];
@@ -87,7 +87,7 @@ namespace RimLLM_Framework.Tests
         {
             var messages = new List<(Role role, string message)> { (Role.User, "q"), (Role.AI, "a") };
 
-            List<ChatMessage> result = RimTalkCompatClient.MessageConverter.Build(null, messages, SampleImageBase64);
+            List<ChatMessage> result = RimTalkCompatClient.MessageConverter.Instance.Build(null, messages, SampleImageBase64);
 
             ClassicAssert.AreEqual(3, result.Count);
             ClassicAssert.AreEqual(ChatRole.Assistant, result[1].Role);
@@ -100,7 +100,7 @@ namespace RimLLM_Framework.Tests
         public void DescribeRequest_OmitsBase64AndKeepsOpenAIShape()
         {
             var prefix = new List<(Role role, string message)> { (Role.System, "sys"), (Role.User, "hello") };
-            List<ChatMessage> built = RimTalkCompatClient.MessageConverter.Build(prefix, null, SampleImageBase64);
+            List<ChatMessage> built = RimTalkCompatClient.MessageConverter.Instance.Build(prefix, null, SampleImageBase64);
 
             string json = RimTalkCompatClient.MessageConverter.DescribeRequest(built, stream: true, "test-model");
 
@@ -256,18 +256,18 @@ namespace RimLLM_Framework.Tests
                 RimTalkCompatPatch.Sentinel = sentinel;
                 var messages = new List<(Role role, string message)> { (Role.User, "q") };
 
-                Task<Payload> completion = null;
+                object completion = null;
                 ClassicAssert.IsTrue(RimTalkCompatPatch.GetChatCompletionAsyncPrefix(native, null, messages, null, null, ref completion));
                 ClassicAssert.IsNull(completion);
                 ClassicAssert.IsFalse(RimTalkCompatPatch.GetChatCompletionAsyncPrefix(sentinel, null, messages, null, null, ref completion));
-                ClassicAssert.AreEqual("routed", (await completion).Response);
+                ClassicAssert.AreEqual("routed", (await (Task<Payload>)completion).Response);
 
-                Task<Payload> stream = null;
+                object stream = null;
                 var chunks = new List<string>();
                 ClassicAssert.IsTrue(RimTalkCompatPatch.StreamAsyncPrefix(native, null, messages, null, chunks.Add, null, ref stream));
                 ClassicAssert.IsNull(stream);
                 ClassicAssert.IsFalse(RimTalkCompatPatch.StreamAsyncPrefix(sentinel, null, messages, null, chunks.Add, null, ref stream));
-                ClassicAssert.AreEqual("chunk", (await stream).Response);
+                ClassicAssert.AreEqual("chunk", (await (Task<Payload>)stream).Response);
                 CollectionAssert.AreEqual(new[] { "chunk" }, chunks);
             }
             finally

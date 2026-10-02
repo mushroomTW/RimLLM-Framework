@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using LudeonTK;
 using RimTestRedux;
 
 namespace RimLLM_Framework.InGameTests
@@ -32,6 +34,37 @@ namespace RimLLM_Framework.InGameTests
                 }
             }
             TestHelpers.AssertNone(failures, "type load failures in shipped assemblies");
+        }
+
+        /// <summary>
+        /// 重現 Debug 動作選單（<c>DebugTabMenu_Actions.InitActions</c>）的掃描：對每個型別的靜態方法做 <c>IsDefined</c>，
+        /// Mono 會因此解析簽章。相容層目標 Mod（RimTalk／Auto Translation／ModCompatChecker）缺席時，
+        /// 靜態方法簽章若含它們的型別就會擲 TypeLoadException，玩家一開 Debug 選單就爆。
+        /// 要在不啟用這些目標 Mod 的組合下執行才有鑑別力。
+        /// </summary>
+        [Test]
+        public static void StaticMethodSignaturesResolveForDebugActionScan()
+        {
+            const BindingFlags flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+            var failures = new List<string>();
+            foreach (Assembly assembly in TestHelpers.FrameworkContent.assemblies.loadedAssemblies)
+            {
+                foreach (Type type in assembly.GetTypes())
+                {
+                    foreach (MethodInfo method in type.GetMethods(flags))
+                    {
+                        try
+                        {
+                            method.IsDefined(typeof(DebugActionAttribute), true);
+                        }
+                        catch (TypeLoadException ex)
+                        {
+                            failures.Add($"{type.FullName}.{method.Name}: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            TestHelpers.AssertNone(failures, "static method signatures that fail to resolve");
         }
     }
 }

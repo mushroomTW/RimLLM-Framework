@@ -316,6 +316,38 @@ namespace RimLLM_Framework.Tests
                 "這些型別在基底／介面／欄位層級參考了 AutoTranslation，Auto Translation 未安裝時框架會被 RimWorld 拒載或在 DevMode 啟動時報錯。");
         }
 
+        /// <summary>
+        /// 鎖住靜態方法簽章：Debug 動作選單（<c>DebugTabMenu_Actions.InitActions</c>）會對所有型別的
+        /// <c>Static | Public | NonPublic</c> 方法做 <c>IsDefined</c>（實例方法不在掃描範圍），Mono 因此會解析參數與回傳型別；簽章含任一相容目標 Mod 的型別時，該 Mod 缺席
+        /// 玩家一開 Debug 選單就會拋 TypeLoadException。目標 Mod 型別只能出現在方法本體。
+        /// 涵蓋全部相容目標（AutoTranslation、ModCompatChecker、RimTalk）。
+        /// </summary>
+        [Test]
+        public void FrameworkAssembly_HasNoCompatTargetTypesInMethodSignatures()
+        {
+            const BindingFlags all = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            var targetAssemblies = new HashSet<string> { "AutoTranslation", "ModCompatChecker", "RimTalk" };
+            var offenders = new List<string>();
+            foreach (Type type in typeof(AutoTranslationCompatPatch).Assembly.GetTypes())
+            {
+                foreach (MethodInfo method in type.GetMethods(all))
+                {
+                    var signature = method.GetParameters().Select(p => p.ParameterType).ToList();
+                    signature.Add(method.ReturnType);
+                    foreach (Type t in signature.SelectMany(Expand))
+                    {
+                        if (targetAssemblies.Contains(t.Assembly.GetName().Name))
+                        {
+                            offenders.Add(type.FullName + "." + method.Name + " -> " + t.FullName);
+                        }
+                    }
+                }
+            }
+
+            ClassicAssert.IsEmpty(offenders,
+                "這些方法簽章參考了相容目標 Mod 的型別，目標 Mod 未安裝時開啟 Debug 動作選單會拋 TypeLoadException。");
+        }
+
         private static IEnumerable<(string where, Type type)> TypeLoadDependencies(Type type)
         {
             const BindingFlags allFields = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;

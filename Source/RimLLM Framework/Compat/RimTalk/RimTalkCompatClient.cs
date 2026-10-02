@@ -18,7 +18,7 @@ namespace RimLLM_Framework.Compat
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 型別載入防線（RimTalk 缺席時框架仍要能載入）：RimTalk 型別<b>只能出現在方法簽章與方法本體</b>，
+    /// 型別載入防線（RimTalk 缺席時框架仍要能載入）：RimTalk 型別<b>只能出現在方法本體與實例方法簽章</b>（靜態方法簽章也不行：Debug 動作選單會對所有靜態方法做 <c>IsDefined</c> 而解析簽章），
     /// 那些要等到方法被 JIT 才解析，而 <see cref="RimTalkCompatPatch"/> 保證只在 RimTalk 存在時才會走到。
     /// 不得出現在：
     /// <list type="bullet">
@@ -88,7 +88,7 @@ namespace RimLLM_Framework.Compat
             string imageBase64,
             Action<Payload> onRequestPrepared)
         {
-            List<ChatMessage> chatMessages = MessageConverter.Build(prefixMessages, messages, imageBase64);
+            List<ChatMessage> chatMessages = MessageConverter.Instance.Build(prefixMessages, messages, imageBase64);
             string requestJson = MessageConverter.DescribeRequest(chatMessages, stream: false, PendingModel);
             onRequestPrepared?.Invoke(new Payload(Endpoint, PendingModel, requestJson, null, 0));
 
@@ -106,7 +106,7 @@ namespace RimLLM_Framework.Compat
             Action<string> onChunk,
             Action<Payload> onRequestPrepared)
         {
-            List<ChatMessage> chatMessages = MessageConverter.Build(prefixMessages, messages, imageBase64);
+            List<ChatMessage> chatMessages = MessageConverter.Instance.Build(prefixMessages, messages, imageBase64);
             string requestJson = MessageConverter.DescribeRequest(chatMessages, stream: true, PendingModel);
             onRequestPrepared?.Invoke(new Payload(Endpoint, PendingModel, requestJson, null, 0));
 
@@ -189,8 +189,9 @@ namespace RimLLM_Framework.Compat
         /// <see cref="Payload"/>，RimTalk 的重試與 API Log 才能照常運作；取消原樣往外丟。
         /// lambda 必須捕捉 <paramref name="requestJson"/>：不捕捉的 lambda 會被編譯器快取成
         /// <c>Func<Task<Completion>, Payload></c> 型別的靜態欄位，違反欄位不得含 RimTalk 型別的防線。
+        /// 本方法與 <see cref="Wrap"/> 刻意是實例方法：Debug 動作選單只掃靜態方法的簽章，靜態版會因簽章含 RimTalk 型別而讓選單炸開。
         /// </summary>
-        private static Task<Payload> ToPayload(Task<Completion> core, string requestJson)
+        private Task<Payload> ToPayload(Task<Completion> core, string requestJson)
         {
             return core.ContinueWith(task =>
             {
@@ -230,7 +231,7 @@ namespace RimLLM_Framework.Compat
             return new RimLLMChatOptions { DisableReasoning = true, MaxOutputTokens = MaxOutputTokens };
         }
 
-        private static AIRequestException Wrap(Exception ex, string requestJson)
+        private AIRequestException Wrap(Exception ex, string requestJson)
         {
             string message = ex is RimLLMException llmEx ? $"[RimLLM:{llmEx.Error}] {ex.Message}" : ex.Message;
             return new AIRequestException(message, new Payload(Endpoint, PendingModel, requestJson, null, 0, message));
@@ -240,12 +241,17 @@ namespace RimLLM_Framework.Compat
         /// RimTalk 訊息轉換器：把 <c>(Role, string)</c> 列表轉成 MEAI <see cref="ChatMessage"/>。
         /// 內部實作，供單元測試直接驗證。
         /// </summary>
-        internal static class MessageConverter
+        internal sealed class MessageConverter
         {
+            /// <summary>
+            /// 轉換方法含 RimTalk 型別（<see cref="Role"/>）故為實例方法，經此單例呼叫；理由同 <see cref="ToPayload"/>。
+            /// </summary>
+            internal static readonly MessageConverter Instance = new MessageConverter();
+
             /// <summary>RimTalk 截圖一律以 JPEG base64 傳遞（見其 ChatMessage.ToPayload 的 data:image/jpeg）。</summary>
             private const string ImageMediaType = "image/jpeg";
 
-            internal static ChatRole ToChatRole(Role role)
+            internal ChatRole ToChatRole(Role role)
             {
                 switch (role)
                 {
@@ -261,7 +267,7 @@ namespace RimLLM_Framework.Compat
             /// （部分供應商拒絕連續同角色訊息）；圖片掛在最後一則 user 訊息上，若最後一則不是 user
             /// 則另外補一則只含圖片的 user 訊息。
             /// </summary>
-            internal static List<ChatMessage> Build(
+            internal List<ChatMessage> Build(
                 List<(Role role, string message)> prefixMessages,
                 List<(Role role, string message)> messages,
                 string imageBase64)
@@ -292,7 +298,7 @@ namespace RimLLM_Framework.Compat
                 return result;
             }
 
-            private static void AppendMerged(List<(ChatRole role, string text)> target, List<(Role role, string message)> source)
+            private void AppendMerged(List<(ChatRole role, string text)> target, List<(Role role, string message)> source)
             {
                 if (source == null) return;
                 foreach ((Role role, string message) in source)
