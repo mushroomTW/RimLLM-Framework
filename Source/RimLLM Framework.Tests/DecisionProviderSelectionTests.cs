@@ -161,7 +161,7 @@ public class DecisionProviderSelectionTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, TestModId);
 
-        RimLLMException ex = ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.Liquid));
 
@@ -179,7 +179,7 @@ public class DecisionProviderSelectionTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, TestModId);
 
-        RimLLMException ex = ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), "NotAProvider"));
 
@@ -197,7 +197,7 @@ public class DecisionProviderSelectionTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, TestModId);
 
-        RimLLMException ex = ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.Disabled));
 
@@ -329,7 +329,7 @@ public class DecisionProviderSelectionTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, TestModId);
 
-        RimLLMException ex = ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.TypeSafe));
 
@@ -378,7 +378,7 @@ public class DecisionProviderSelectionTests
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
 
         var service = new RimLLMDecisionService(settings);
-        RimLLMException ex = ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
             await service.FetchModelsAsync(FakeEndpoint, "jev-latest", ""));
 
         ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
@@ -424,7 +424,7 @@ public class DecisionProviderSelectionTests
         };
 
         var service = new RimLLMDecisionService(settings);
-        RimLLMException ex = ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
             await service.EvaluateWithProviderDetailedAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.Liquid));
 

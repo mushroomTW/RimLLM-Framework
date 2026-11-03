@@ -46,7 +46,7 @@ public sealed class PipelineReviewRegressionTests
         await updateReceived.Task.WaitAsync(TimeSpan.FromSeconds(2));
         cancellation.Cancel();
 
-        Assert.CatchAsync<OperationCanceledException>(async () => await stream);
+        await Assert.CatchAsync<OperationCanceledException>(async () => await stream);
         ClassicAssert.AreEqual(1, usage.Count);
         ClassicAssert.AreEqual(101, usage[0].Prompt);
         ClassicAssert.AreEqual(3, usage[0].Completion);
@@ -68,7 +68,7 @@ public sealed class PipelineReviewRegressionTests
             CancellationToken.None,
             onUsage: value => usage.Add(value));
 
-        RimLLMException exception = Assert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
             await stream.WaitAsync(TimeSpan.FromSeconds(2)));
 
         ClassicAssert.AreEqual(LLMError.NetworkError, exception.Error);
@@ -91,7 +91,7 @@ public sealed class PipelineReviewRegressionTests
             CancellationToken.None,
             onUsage: value => usage.Add(value));
 
-        RimLLMException exception = Assert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
             await stream.WaitAsync(TimeSpan.FromSeconds(2)));
 
         ClassicAssert.AreEqual(LLMError.Timeout, exception.Error);
@@ -120,7 +120,7 @@ public sealed class PipelineReviewRegressionTests
         await client.StreamStarted.WaitAsync(TimeSpan.FromSeconds(2));
         cancellation.Cancel();
 
-        Assert.CatchAsync<OperationCanceledException>(async () =>
+        await Assert.CatchAsync<OperationCanceledException>(async () =>
             await stream.WaitAsync(TimeSpan.FromSeconds(2)));
         ClassicAssert.IsEmpty(usage);
     }
@@ -160,7 +160,7 @@ public sealed class PipelineReviewRegressionTests
 
         Task completed = await Task.WhenAny(request, Task.Delay(TimeSpan.FromSeconds(5)));
         ClassicAssert.AreSame(request, completed, "Cancelling a long Retry-After should release the wait promptly.");
-        Assert.CatchAsync<OperationCanceledException>(async () => await request);
+        await Assert.CatchAsync<OperationCanceledException>(async () => await request);
     }
 
     [TestCase(false)]
@@ -265,7 +265,7 @@ public sealed class PipelineReviewRegressionTests
 
             Task completed = await Task.WhenAny(request, Task.Delay(TimeSpan.FromSeconds(2)));
             ClassicAssert.AreSame(request, completed, "Cancellation should release the queued waiter without waiting for a Unity frame.");
-            Assert.CatchAsync<OperationCanceledException>(async () => await request);
+            await Assert.CatchAsync<OperationCanceledException>(async () => await request);
 
             RimLLMDispatcher.DrainWithBudget(int.MaxValue, long.MaxValue);
             ClassicAssert.AreEqual(0, sideEffects, "A tool cancelled before dispatch must not run when the queue drains.");

@@ -220,12 +220,12 @@ public class CompatScAutoTests
     }
 
     [Test]
-    public void CompleteAsync_CallerCancellation_Propagates()
+    public async Task CompleteAsync_CallerCancellation_Propagates()
     {
         var fake = new CapturingChatClient { ResponseException = new OperationCanceledException() };
         using var cts = new CancellationTokenSource();
         cts.Cancel();
-        Assert.ThrowsAsync<OperationCanceledException>(() => new ScAutoCompatClient(fake).CompleteAsync(
+        await Assert.ThrowsAsync<OperationCanceledException>(() => new ScAutoCompatClient(fake).CompleteAsync(
             "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", true, cts.Token));
     }
 

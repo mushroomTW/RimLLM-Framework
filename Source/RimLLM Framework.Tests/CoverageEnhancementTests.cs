@@ -121,7 +121,7 @@ public class CoverageEnhancementTests
 
 
     [Test]
-    public void TestEmbeddingServiceParameterValidation()
+    public async Task TestEmbeddingServiceParameterValidation()
     {
         var mockSettings = new MockSettings
         {
@@ -130,20 +130,20 @@ public class CoverageEnhancementTests
         var service = new RimLLMEmbeddingService(mockSettings);
 
         // Empty text validation
-        Assert.ThrowsAsync<ArgumentException>(async () => await service.ComputeEmbeddingAsync(""));
-        Assert.ThrowsAsync<ArgumentException>(async () => await service.ComputeEmbeddingAsync(null));
+        await Assert.ThrowsAsync<ArgumentException>(async () => await service.ComputeEmbeddingAsync(""));
+        await Assert.ThrowsAsync<ArgumentException>(async () => await service.ComputeEmbeddingAsync(null));
 
         // Disabled provider validation
-        Assert.ThrowsAsync<RimLLMException>(async () => await service.ComputeEmbeddingAsync("test text"));
-        Assert.ThrowsAsync<RimLLMException>(async () => await service.FetchAvailableModelsAsync());
+        await Assert.ThrowsAsync<RimLLMException>(async () => await service.ComputeEmbeddingAsync("test text"));
+        await Assert.ThrowsAsync<RimLLMException>(async () => await service.FetchAvailableModelsAsync());
 
         // Unknown provider validation
         mockSettings.EmbeddingProvider = "InvalidProviderName";
-        Assert.ThrowsAsync<RimLLMException>(async () => await service.ComputeEmbeddingAsync("test text"));
-        Assert.ThrowsAsync<RimLLMException>(async () => await service.FetchAvailableModelsAsync());
+        await Assert.ThrowsAsync<RimLLMException>(async () => await service.ComputeEmbeddingAsync("test text"));
+        await Assert.ThrowsAsync<RimLLMException>(async () => await service.FetchAvailableModelsAsync());
 
         // Batch embedding validation
-        Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ComputeEmbeddingsAsync(null));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ComputeEmbeddingsAsync(null));
         var emptyBatch = service.ComputeEmbeddingsAsync(new List<string>()).GetAwaiter().GetResult();
         ClassicAssert.AreEqual(0, emptyBatch.Count);
     }
@@ -166,14 +166,14 @@ public class CoverageEnhancementTests
     }
 
     [Test]
-    public void TestRequestQueueRejectsAlreadyCanceledToken()
+    public async Task TestRequestQueueRejectsAlreadyCanceledToken()
     {
         var settings = new MockSettings { MaxConcurrentRequests = 2 };
         var queue = new RimLLMRequestQueue(settings);
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
-        Assert.ThrowsAsync<TaskCanceledException>(async () =>
+        await Assert.ThrowsAsync<TaskCanceledException>(async () =>
         {
             await queue.AcquireSlotAsync(5, cts.Token);
         });
@@ -240,7 +240,7 @@ public class CoverageEnhancementTests
     }
 
     [Test]
-    public void TestChatClientAndEmbeddingClientFacades()
+    public async Task TestChatClientAndEmbeddingClientFacades()
     {
         var manager = new RimLLMManager(new MockSettings());
         IChatClient chatClient = manager.CreateChatClient("test.mod");
@@ -252,7 +252,7 @@ public class CoverageEnhancementTests
 
         var embeddingClient = new RimLLMEmbeddingClient(manager, "test.mod");
         ClassicAssert.IsNull(embeddingClient.GetService(typeof(string)));
-        Assert.ThrowsAsync<ArgumentNullException>(async () => await embeddingClient.GenerateAsync(null));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await embeddingClient.GenerateAsync(null));
         embeddingClient.Dispose();
     }
 
@@ -277,8 +277,8 @@ public class CoverageEnhancementTests
     [Test]
     public async Task TestLLMProviderExtensions()
     {
-        Assert.ThrowsAsync<ArgumentNullException>(async () => await LLMProviderExtensions.GenerateAsync(null, new List<ChatMessage>(), null, "m"));
-        Assert.ThrowsAsync<ArgumentNullException>(async () => await LLMProviderExtensions.StreamAsync(null, new List<ChatMessage>(), null, "m", _ => { }));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await LLMProviderExtensions.GenerateAsync(null, new List<ChatMessage>(), null, "m"));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await LLMProviderExtensions.StreamAsync(null, new List<ChatMessage>(), null, "m", _ => { }));
 
         var mock = new MockTestProvider
         {
@@ -529,7 +529,7 @@ public class CoverageEnhancementTests
         var hardBlockClient = new RimLLMGuardChatClient(
             new MockCustomChatClient(), settings, new RimLLMThrottleStore(settings),
             "hard-block-mod", new RimLLMUsageTracker(settings));
-        Assert.ThrowsAsync<RimLLMException>(
+        await Assert.ThrowsAsync<RimLLMException>(
             async () => await hardBlockClient.GetResponseAsync(mockMessages));
 
         // 8. 驗證空物件與結構化必填驗證

@@ -35,7 +35,7 @@
   <!-- RimWorld 1.7 API 參考組件改由 NuGet 套件 Krafs.Rimworld.Ref 提供（可攜式建置，不依賴本機遊戲）。
        Harmony 3.0 仍取自工作坊 DLL，Private=false 不隨 Mod 出貨。 -->
   <ItemGroup>
-    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.7.4982-unstable" />
+    <PackageReference Include="Krafs.Rimworld.Ref" Version="1.7.4995-unstable" />
     <Reference Include="0Harmony">
       <HintPath>$(HarmonyDll)</HintPath>
       <Private>false</Private>
@@ -43,13 +43,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
-    <PackageReference Include="Markdig" Version="1.4.0" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.10.0" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.14" />
+    <PackageReference Include="Markdig" Version="1.5.1" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.11.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.11.0" />
     <PackageReference Include="OpenAI" Version="2.14.0" />
     <PackageReference Include="System.ClientModel" Version="1.15.0" />
-    <PackageReference Include="Kkdev92.Jev" Version="0.1.1-alpha" />
+    <PackageReference Include="Kkdev92.Jev" Version="0.1.2-alpha" />
 
     <!--
       RimTalk 編譯期參考（Source/Libs/RimTalk/README.md）。Private=false 不出貨；

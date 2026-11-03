@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
@@ -189,43 +190,43 @@ public class DecisionServiceErrorTests
     }
 
     [Test]
-    public void DisabledProvider_ThrowsRimLLMExceptionNotInvalidOperationException()
+    public async Task DisabledProvider_ThrowsRimLLMExceptionNotInvalidOperationException()
     {
         var settings = new MockSettings();
 
         var service = new RimLLMDecisionService(settings);
-        var ex = ClassicAssert.ThrowsAsync<RimLLMException>(() =>
+        var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             service.EvaluateAsync("state", OneQuestionPlan()));
         ClassicAssert.AreEqual(LLMError.Unknown, ex!.Error);
         ClassicAssert.AreEqual("Disabled", settings.DecisionProvider);
     }
 
     [Test]
-    public void EnabledProviderWithoutKey_ThrowsInvalidKey()
+    public async Task EnabledProviderWithoutKey_ThrowsInvalidKey()
     {
         var settings = new MockSettings();
         settings.DecisionProvider = "TypeSafe";
 
         var service = new RimLLMDecisionService(settings);
-        var ex = ClassicAssert.ThrowsAsync<RimLLMException>(() =>
+        var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             service.EvaluateAsync("state", OneQuestionPlan()));
         ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
     }
 
     [Test]
-    public void TestConnectionWithoutKey_FailsBeforeAnyNetworkCall()
+    public async Task TestConnectionWithoutKey_FailsBeforeAnyNetworkCall()
     {
         var service = new RimLLMDecisionService(new MockSettings());
-        var ex = ClassicAssert.ThrowsAsync<RimLLMException>(() =>
+        var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             service.TestConnectionAsync("https://api.typesafe.ai", "jev-latest", ""));
         ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
     }
 
     [Test]
-    public void FetchModelsWithoutKey_FailsBeforeAnyNetworkCall()
+    public async Task FetchModelsWithoutKey_FailsBeforeAnyNetworkCall()
     {
         var service = new RimLLMDecisionService(new MockSettings());
-        var ex = ClassicAssert.ThrowsAsync<RimLLMException>(() =>
+        var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             service.FetchModelsAsync("https://api.typesafe.ai", "jev-latest", ""));
         ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
     }

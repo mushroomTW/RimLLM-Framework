@@ -66,7 +66,6 @@ To avoid misunderstanding, here is an honest description of what each security m
 
 ---
 
-
 Storage protection follows the host platform: Windows wraps the random 256-bit key with current-user DPAPI; macOS stores it as a generic-password item through Security.framework's SecItem APIs; Linux uses libsecret and the session Secret Service. On macOS/Linux, `RimLLM_EncryptionKey.dat` contains only a random `keyring:` item identifier, never the storage key. Moving the reference file within the same user's keyring retains access; copying settings to a different user or machine does not copy the secret.
 
 Linux needs `libsecret-1.so.0`, a session D-Bus, and an unlocked Secret Service provider such as GNOME Keyring or a compatible KWallet setup. A sandboxed game must be allowed to access that service. libsecret operations are canceled after ten seconds. macOS needs an available login keychain and permission for RimWorld to access its item. An unavailable or locked provider produces an explicit error; no plaintext-key-file fallback is used.

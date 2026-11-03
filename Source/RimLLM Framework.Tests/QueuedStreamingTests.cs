@@ -53,7 +53,7 @@ public sealed class QueuedStreamingTests
         var pending = enumerator.MoveNextAsync().AsTask();
         ClassicAssert.IsFalse(pending.IsCompleted);
         (cancelMethodToken ? methodCancellation : consumerCancellation).Cancel();
-        Assert.CatchAsync<OperationCanceledException>(async () =>
+        await Assert.CatchAsync<OperationCanceledException>(async () =>
             await pending.WaitAsync(TimeSpan.FromSeconds(3)));
         ClassicAssert.AreEqual(0, inner.Starts, "排隊取消不能啟動供應商。");
 
@@ -73,7 +73,7 @@ public sealed class QueuedStreamingTests
 
         ClassicAssert.IsTrue(await enumerator.MoveNextAsync());
         cancellation.Cancel();
-        Assert.CatchAsync<OperationCanceledException>(async () =>
+        await Assert.CatchAsync<OperationCanceledException>(async () =>
             await enumerator.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3)));
         await enumerator.DisposeAsync();
 

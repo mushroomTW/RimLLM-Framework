@@ -215,7 +215,7 @@ public class CompatRimTalkTests
     }
 
     [Test]
-    public void Errors_AreWrappedAsAIRequestExceptionWithPayload()
+    public async Task Errors_AreWrappedAsAIRequestExceptionWithPayload()
     {
         var fake = new CapturingChatClient
         {
@@ -224,7 +224,7 @@ public class CompatRimTalkTests
         };
         var client = new RimTalkCompatClient(fake);
 
-        var ex = Assert.ThrowsAsync<AIRequestException>(async () =>
+        var ex = await Assert.ThrowsAsync<AIRequestException>(async () =>
             await client.GetChatCompletionAsync(null, [(Role.User, "q")], null, null));
 
         StringAssert.Contains("RateLimit", ex.Message);

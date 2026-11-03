@@ -261,12 +261,12 @@ public class ToolCallingTests
         // 只有第 1 輪計入視窗：再送一個新請求（第 2 次）仍可過，第 3 次才被擋。
         var plain = manager.CreateChatClient("test.throttle.loop");
         await plain.GetResponseAsync(UserSays("again"));
-        var ex = Assert.ThrowsAsync<RimLLMException>(() => plain.GetResponseAsync(UserSays("third")));
+        var ex = await Assert.ThrowsAsync<RimLLMException>(() => plain.GetResponseAsync(UserSays("third")));
         ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error);
     }
 
     [Test]
-    public void ToolLoopContinuation_StillBlockedDuringCooldown()
+    public async Task ToolLoopContinuation_StillBlockedDuringCooldown()
     {
         var settings = new MockSettings
         {
@@ -279,7 +279,7 @@ public class ToolCallingTests
         var client = manager.CreateChatClient("test.throttle.cooldown");
 
         client.GetResponseAsync(UserSays("a")).GetAwaiter().GetResult();
-        Assert.ThrowsAsync<RimLLMException>(() => client.GetResponseAsync(UserSays("a"))); // 進入冷卻
+        await Assert.ThrowsAsync<RimLLMException>(() => client.GetResponseAsync(UserSays("a"))); // 進入冷卻
 
         var continuation = new List<ChatMessage>
         {
@@ -288,7 +288,7 @@ public class ToolCallingTests
             new(ChatRole.Tool, [new FunctionResultContent("c1", "pong")])
         };
         ClassicAssert.IsTrue(RimLLMGuardChatClient.IsToolLoopContinuation(continuation));
-        var ex = Assert.ThrowsAsync<RimLLMException>(() => client.GetResponseAsync(continuation));
+        var ex = await Assert.ThrowsAsync<RimLLMException>(() => client.GetResponseAsync(continuation));
         ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error, "冷卻中的續輪也要擋");
     }
 

@@ -82,7 +82,7 @@ public class OptimizationTests
     }
 
     [Test]
-    public void RetriesOfOneRequestRecordAtMostOneFailure()
+    public async Task RetriesOfOneRequestRecordAtMostOneFailure()
     {
         var settings = new MockSettings { MaxRetries = 3, RetryDelay = 0f, RoutingStrategy = 0 };
         var ledger = new RimLLMHealthLedger();
@@ -98,7 +98,7 @@ public class OptimizationTests
 
         var router = BuildRouter(settings, ledger, tracker, providers);
 
-        Assert.ThrowsAsync<RimLLMException>(async () => await router.GetResponseAsync(NewMessages()));
+        await Assert.ThrowsAsync<RimLLMException>(async () => await router.GetResponseAsync(NewMessages()));
 
         // 4 次嘗試（1 次 + 3 次重試）只能記成 1 次失敗，否則單一次網路抖動
         // 就會直接把目標推過熔斷門檻。
@@ -290,7 +290,7 @@ public class OptimizationTests
     }
 
     [Test]
-    public void AntiAbuseWindowIsSharedAcrossClientsOfTheSameMod()
+    public async Task AntiAbuseWindowIsSharedAcrossClientsOfTheSameMod()
     {
         // 節流狀態必須由所有 client 共用：若每個 client 各持一份，同一個 Mod
         // 只要多呼叫幾次 CreateChatClient 就能繞過節流，ClearCooldowns 也只會清掉其中一份。
@@ -312,7 +312,7 @@ public class OptimizationTests
         second.GetResponseAsync(NewMessages()).GetAwaiter().GetResult();
 
         // 第 3 次跨越視窗上限——不論它是由哪一個 client 發出的。
-        Assert.ThrowsAsync<RimLLMException>(async () => await second.GetResponseAsync(NewMessages()));
+        await Assert.ThrowsAsync<RimLLMException>(async () => await second.GetResponseAsync(NewMessages()));
     }
 
     // ---------- OpenAI Patch 傳播器停用與工廠輔助測試 ----------
@@ -340,7 +340,7 @@ public class OptimizationTests
     // ---------- TPS 優化：非拋版判定、日誌快徑、派遣器、分級快取 ----------
 
     [Test]
-    public void TryResolveCandidatesReturnsFalseInsteadOfThrowingOnEmptyChain()
+    public async Task TryResolveCandidatesReturnsFalseInsteadOfThrowingOnEmptyChain()
     {
         // 相容層每秒輪詢一次：空鏈時不得以例外控制流程，否則每秒配置例外與堆疊。
         var settings = new MockSettings { MaxRetries = 0, RetryDelay = 0f, RoutingStrategy = 0 };
@@ -356,7 +356,7 @@ public class OptimizationTests
         ClassicAssert.IsNull(candidates);
         ClassicAssert.IsNotEmpty(reason);
         // 拋版語意維持不變，仍擲出 ProviderOffline。
-        Assert.ThrowsAsync<RimLLMException>(async () => { policy.ResolveCandidates(null, null); await Task.CompletedTask; });
+        await Assert.ThrowsAsync<RimLLMException>(async () => { policy.ResolveCandidates(null, null); await Task.CompletedTask; });
     }
 
     [Test]

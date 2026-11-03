@@ -66,7 +66,6 @@
 
 ---
 
-
 儲存保護依平台選擇：Windows 以目前使用者的 DPAPI 包裝隨機 256-bit 金鑰；macOS 經 Security.framework 的 SecItem API 存入 generic-password 項目；Linux 經 libsecret 使用工作階段 Secret Service。macOS／Linux 的 `RimLLM_EncryptionKey.dat` 只保存隨機 `keyring:` 項目識別碼，不包含儲存金鑰。相同使用者的鑰匙圈內移動引用檔仍可讀取；只將設定複製給其他使用者或機器，不會一併取得秘密。
 
 Linux 需要 `libsecret-1.so.0`、工作階段 D-Bus 與已解鎖的 Secret Service 提供者，例如 GNOME Keyring 或相容的 KWallet 設定；若遊戲受沙箱限制，必須允許存取該服務。libsecret 操作超過十秒會取消。macOS 需要可用的登入鑰匙圈，並允許 RimWorld 存取對應項目。服務缺席、鎖定或拒絕存取時會明確失敗，不退回明文金鑰檔。

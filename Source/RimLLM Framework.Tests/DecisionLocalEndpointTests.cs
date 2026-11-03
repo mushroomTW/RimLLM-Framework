@@ -202,7 +202,7 @@ public class DecisionLocalEndpointTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, TestModId);
 
-        RimLLMException ex = ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.TypeSafe));
 

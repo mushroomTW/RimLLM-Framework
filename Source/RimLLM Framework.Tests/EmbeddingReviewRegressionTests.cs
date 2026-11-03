@@ -38,7 +38,7 @@ public class EmbeddingReviewRegressionTests
         await WithEmbeddingTransportAsync(handler, async () =>
         {
             var generator = manager.CreateEmbeddingGenerator("test.embed.budget.hardblock");
-            RimLLMException exception = Assert.ThrowsAsync<RimLLMException>(async () =>
+            RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
             {
                 await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
             });
@@ -100,7 +100,7 @@ public class EmbeddingReviewRegressionTests
 
         await WithEmbeddingTransportAsync(handler, async () =>
         {
-            OperationCanceledException exception = Assert.CatchAsync<OperationCanceledException>(async () =>
+            OperationCanceledException exception = await Assert.CatchAsync<OperationCanceledException>(async () =>
             {
                 await service.ComputeEmbeddingsAsync(new[] { "hello" }, cancellation.Token).ConfigureAwait(false);
             });
@@ -118,7 +118,7 @@ public class EmbeddingReviewRegressionTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
-        OperationCanceledException modelListException = Assert.CatchAsync<OperationCanceledException>(async () =>
+        OperationCanceledException modelListException = await Assert.CatchAsync<OperationCanceledException>(async () =>
         {
             await service.FetchAvailableModelsAsync(
                 "OpenAI", "http://127.0.0.1:1/v1", "test-key", cancellation.Token).ConfigureAwait(false);
@@ -128,7 +128,7 @@ public class EmbeddingReviewRegressionTests
         var handler = SuccessfulEmbeddingHandler();
         await WithEmbeddingTransportAsync(handler, async () =>
         {
-            OperationCanceledException testException = Assert.CatchAsync<OperationCanceledException>(async () =>
+            OperationCanceledException testException = await Assert.CatchAsync<OperationCanceledException>(async () =>
             {
                 await service.TestEmbeddingAsync(
                     "OpenAI", "text-embedding-3-small", "http://127.0.0.1:1/v1", "test-key",
@@ -152,7 +152,7 @@ public class EmbeddingReviewRegressionTests
 
         await WithEmbeddingTransportAsync(computeHandler, async () =>
         {
-            OperationCanceledException computeException = Assert.CatchAsync<OperationCanceledException>(async () =>
+            OperationCanceledException computeException = await Assert.CatchAsync<OperationCanceledException>(async () =>
             {
                 await service.ComputeEmbeddingsAsync(new[] { "hello" }, computeCancellation.Token).ConfigureAwait(false);
             });
@@ -165,7 +165,7 @@ public class EmbeddingReviewRegressionTests
             "{\"object\":\"list\",\"data\":[{\"id\":\"text-embedding-3-small\"}]}");
         using var modelListCancellation = new CancellationTokenSource();
         modelListCancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
-        OperationCanceledException modelListException = Assert.CatchAsync<OperationCanceledException>(async () =>
+        OperationCanceledException modelListException = await Assert.CatchAsync<OperationCanceledException>(async () =>
         {
             await service.FetchAvailableModelsAsync(
                 "OpenAI", modelListServer.Endpoint.ToString(), "test-key", modelListCancellation.Token).ConfigureAwait(false);
@@ -179,7 +179,7 @@ public class EmbeddingReviewRegressionTests
         testCancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
         await WithEmbeddingTransportAsync(testHandler, async () =>
         {
-            OperationCanceledException testException = Assert.CatchAsync<OperationCanceledException>(async () =>
+            OperationCanceledException testException = await Assert.CatchAsync<OperationCanceledException>(async () =>
             {
                 await service.TestEmbeddingAsync(
                     "OpenAI", "text-embedding-3-small", "http://127.0.0.1:1/v1", "test-key",
@@ -200,13 +200,13 @@ public class EmbeddingReviewRegressionTests
 
         await WithEmbeddingTransportAsync(handler, async () =>
         {
-            RimLLMException computeException = Assert.ThrowsAsync<RimLLMException>(async () =>
+            RimLLMException computeException = await Assert.ThrowsAsync<RimLLMException>(async () =>
             {
                 await service.ComputeEmbeddingsAsync(new[] { "hello" }).ConfigureAwait(false);
             });
             ClassicAssert.AreEqual(LLMError.Timeout, computeException.Error);
 
-            RimLLMException testException = Assert.ThrowsAsync<RimLLMException>(async () =>
+            RimLLMException testException = await Assert.ThrowsAsync<RimLLMException>(async () =>
             {
                 await service.TestEmbeddingAsync(
                     "OpenAI", "text-embedding-3-small", "http://127.0.0.1:1/v1", "test-key").ConfigureAwait(false);
@@ -222,7 +222,7 @@ public class EmbeddingReviewRegressionTests
             "{\"object\":\"list\",\"data\":[{\"id\":\"text-embedding-3-small\"}]}");
         var modelListService = new RimLLMEmbeddingService(modelListSettings);
 
-        RimLLMException modelListException = Assert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException modelListException = await Assert.ThrowsAsync<RimLLMException>(async () =>
         {
             await modelListService.FetchAvailableModelsAsync(
                 "OpenAI", server.Endpoint.ToString(), "test-key").ConfigureAwait(false);
@@ -264,7 +264,7 @@ public class EmbeddingReviewRegressionTests
         settings.Endpoints[ProviderIds.OpenAI] = server.Endpoint.ToString();
         var provider = new OpenAIProvider(settings);
 
-        RimLLMException exception = Assert.ThrowsAsync<RimLLMException>(async () =>
+        RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
         {
             await provider.FetchAvailableModelsAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         });
