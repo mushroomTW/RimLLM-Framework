@@ -99,10 +99,6 @@ dotnet build "Source/RimLLM Framework.InGameTests/RimLLM Framework.InGameTests.c
 
 只有 Release 會寫入玩家使用的 `Assemblies/`；Debug 與 NUnit 建置輸出至專案的 `bin/`。NUnit 會驗證出貨組件使用 .NET 10 資產，且不含舊 polyfill。System.Text.Json、非同步串流、ValueTask 與 Channels 等 BCL 由遊戲提供。SDK 套件改由 NuGet 正常選擇相容資產；未提供 `net10.0` 資產的套件可使用相容的較早 .NET 資產。
 
-### 原生鑰匙圈整合驗證
-
-有 Docker 的環境可執行 pwsh -File Tests/NativeKeyring/run-linux.ps1。啟動器將真正的安全性原始碼複製到已忽略的 TestResults，再以隔離的 .NET 10／libsecret／D-Bus／GNOME Keyring 容器執行；測試時沒有主機秘密掛載或外部網路。涵蓋 v3 加解密與重新載入、服務缺席、秘密遺失、僅保存引用及跨程序並行。在已解鎖登入鑰匙圈的 macOS 上，可執行 dotnet run --project Tests/NativeKeyring/Probe.csproj，驗證真正的 SecItem 後端並於結束後清除暫存項目。只有遊戲／日誌邊界以 stub 隔離，加解密與原生儲存都使用實作。
-
 ### C# 撰寫慣例
 
 原始碼採用 C# 14 支援的穩定寫法：檔案範圍 namespace、目標型別建構、精確型別匹配的集合運算式、using 宣告與模式比對，並由 .editorconfig 保存慣例，供後續開發沿用。既有公開 SDK 簽章與序列化資料形狀維持相容；可取消的 Dispatcher 以新增多載提供，保留原簽章。串流佇列中介層使用帶 EnumeratorCancellation 的 async iterator 與 await foreach，由編譯器管理取消 token 合併及列舉器釋放；並行名額橫跨整段列舉，包含兩次 update 間的等待。QueuedStreamingTests 驗證延遲啟動、yield 期間持有名額、提早停止後釋放資源，以及方法與列舉端 token 不同時任一端均可取消。這些修改用於改善維護性，未量測前不宣稱效能提升。

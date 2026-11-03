@@ -104,6 +104,9 @@ The framework itself requires [Harmony](https://steamcommunity.com/sharedfiles/f
 
 ## 💻 SDK Usage
 
+<details>
+<summary><b>Click to expand the SDK usage guide</b></summary>
+
 **If you already know [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.10.0), you already know this API.**
 
 RimLLM Framework's entire job is to hand you a standard MEAI `IChatClient`. Everything after that one line is plain Microsoft.Extensions.AI, so this page documents only what is specific to this framework — for the MEAI calls themselves, read [Microsoft's own docs](https://learn.microsoft.com/dotnet/ai/microsoft-extensions-ai).
@@ -347,6 +350,8 @@ This is the point of the framework. All of the following already happens behind 
 `ILLMProvider` lives in `RimLLM_Framework.Providers`; the other 13 are in `RimLLM_Framework` itself.
 
 Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseUpdate`, `IEmbeddingGenerator` — is `Microsoft.Extensions.AI`. The concrete client classes are `internal`, so there is deliberately no RimLLM client type to program against.
+
+</details>
 
 ---
 

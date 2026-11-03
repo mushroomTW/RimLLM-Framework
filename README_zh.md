@@ -102,6 +102,9 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 ## 💻 SDK 使用方式
 
+<details>
+<summary><b>點擊展開 SDK 使用方式</b></summary>
+
 **如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.10.0)，你就已經會用這套 API。**
 
 RimLLM Framework 的全部工作，就是交給你一個標準的 MEAI `IChatClient`。從那一行之後全是純 Microsoft.Extensions.AI，因此本文件只寫本框架專屬的部分；MEAI 本身的語法請看 [Microsoft 官方文件](https://learn.microsoft.com/zh-tw/dotnet/ai/microsoft-extensions-ai)。
@@ -345,6 +348,8 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 `ILLMProvider` 在 `RimLLM_Framework.Providers`，其餘 13 個在 `RimLLM_Framework` 本身。
 
 其餘的 `IChatClient`、`ChatMessage`、`ChatResponse`、`ChatResponseUpdate`、`IEmbeddingGenerator` 全都是 `Microsoft.Extensions.AI`。具體的 client 類別刻意設為 `internal`，所以沒有任何 RimLLM 的 client 型別需要你對接。
+
+</details>
 
 ---
 
