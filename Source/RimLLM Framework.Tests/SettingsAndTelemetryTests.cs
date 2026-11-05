@@ -169,7 +169,7 @@ public class SettingsAndTelemetryTests
     public void TestSettingsDefaultRoutingStrategy()
     {
         var settings = new RimLLMFrameworkSettings();
-        ClassicAssert.AreEqual(2, settings.RoutingStrategy);
+        ClassicAssert.AreEqual(0, settings.RoutingStrategy, "預設必須符合主模型加備援的說明");
     }
 
     [Test]

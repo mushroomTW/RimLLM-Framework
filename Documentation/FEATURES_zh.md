@@ -16,12 +16,16 @@
      * 「模型設置」分頁逐列列出備援鏈條目的分級、上下文上限與 **X** 刪除鈕。刪除前會先確認，並一併清除該條目的手動上下文上限（分級覆寫則在鏈上已無同名模型時才清）。
    * **OpenRouter 服務端 Fallback**：OpenRouter 的項目可以用逗號列出多個模型 —— 把 `ChatOptions.ModelId` 設為 `"OpenRouter:model-a, model-b, model-c"`（Fallback 鏈項目也接受同樣的格式）。此時供應商會改送 OpenRouter 的 `models` 陣列而非單一 `model` 欄位，把「要用哪一個」的決定交給 OpenRouter 服務端；只填一個模型名時仍送出一般的 `model`。由 `TestOpenRouterFallbackPayload` 驗證。注意設定介面是從快取模型清單一次挑一個模型來組出項目，因此這種多模型寫法來自呼叫端程式碼，而不是 Fallback 鏈編輯器。
    * `Retry-After` 在所有路徑上都支援 RFC 7231 允許的兩種格式 —— 延遲秒數與 HTTP 日期。
-   * **HTTP 402 不重試**：402 代表帳戶餘額已經用完，餘額不會在退避的幾十秒內變出來，因此直接換下一個候選，不先耗光重試額度。訊息只是提到「quota」的 429（Gemini 每分鐘限流）仍照常退避重試。
+   * **HTTP 402 與 `insufficient_quota` 不重試**：兩者都代表帳戶餘額已經用完，餘額不會在退避的幾十秒內變出來，因此直接換下一個候選，不先耗光重試額度。訊息只是提到「quota」的 429（Gemini 每分鐘限流）仍照常退避重試。
    * **退避期間不占併發名額**：全域 `MaxConcurrentRequests` 的名額以每一次嘗試為單位、只在真正打 API 時持有，等待指數退避（最長 60 秒）的請求不會讓其他 Mod 的請求排在後面。
-   * **重試間的指數退避**：等待時間每次翻倍（`RetryDelay × 2ⁿ`）並加上 ±20% 抖動，上限 60 秒。遇到限流還用固定間隔連打，只會再一次撞上同一面牆，把重試額度白白耗光；伺服器透過 `Retry-After` 要求更長的等待時仍以其為準。
+   * **重試間的指數退避**：等待時間每次翻倍（`RetryDelay × 2ⁿ`）並加上 ±20% 抖動，上限 60 秒。遇到限流還用固定間隔連打，只會再一次撞上同一面牆，把重試額度白白耗光；伺服器透過 `Retry-After` 要求更長的等待時仍以其為準，上限同為 60 秒。超過時直接換下一個候選，不讓呼叫端一直等；沒有候選可換時，呼叫端會收到帶 `RetryAfter` 的 `RateLimit`。
+   * **只有框架會重試。** OpenAI SDK 的內建重試已關閉：它會把每次嘗試放大成 4 個 HTTP 請求，還會占著併發名額等待 `Retry-After`。
+   * **候選用盡時保留錯誤碼。** 全部候選都失敗時，例外會帶著最後一個候選的 `Error`、`RetryAfter` 與 `HttpStatusCode`，呼叫端仍能分辨額度問題和金鑰錯誤。
+   * **失敗記在實際失敗的供應商名下。** 每個失敗的候選（包含串流中途斷線）都會在自己的供應商名下留一筆日誌，成功率進度條因此反映真實失敗。同一候選的重試合計一筆，呼叫端取消不計入。
+   * **只有推理內容的回應算失敗。** 思考用完輸出額度時答案是空的；非串流會改試下一個候選，串流則因內容已交付而以 `InvalidResponse` 結束。
    * **冷卻以「供應商 + 模型」為單位。**健康帳本以 `Provider:Model` 為鍵。備用鏈上常同時掛著同一個供應商的多個模型（例如三個 OpenRouter 模型），只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐。
    * **一次請求只記一次失敗。**同一次請求的所有重試合計只計一次失敗。逐次記錄的話，單一次網路抖動（預設設定下共 4 次嘗試）就能把健康的目標推過熔斷門檻，冤枉凍結數分鐘。
-   * **路由策略**：`PriorityFailover`（依鏈順序）、`MinLatency`、`RoundRobin` 與 `LowestCost`。`RoundRobin` 在請求間依序輪替優先嘗試的可用候選，不再隨機洗牌；能力查詢不會推進輪替。`LowestCost` 直接沿用框架已經依 API 費率自動判定的模型分級排序，不需要另外維護一份價格表。分級排序是穩定的，同級的候選會保留鏈本身的順序。透過 `ChatOptions.ModelId` 指定的模型不參與輪替或排序，固定排在第一位。
+   * **路由策略**：`PriorityFailover`（依鏈順序，預設值）、`MinLatency`、`RoundRobin` 與 `LowestCost`。`RoundRobin` 在請求間依序輪替優先嘗試的可用候選，不再隨機洗牌；能力查詢不會推進輪替。`LowestCost` 直接沿用框架已經依 API 費率自動判定的模型分級排序，不需要另外維護一份價格表。分級排序是穩定的，同級的候選會保留鏈本身的順序。透過 `ChatOptions.ModelId` 指定的模型不參與輪替或排序，固定排在第一位。
    * **上下文上限**：重新整理供應商的模型清單時，會一併記下 API 回報的上下文上限 —— OpenRouter 的 `context_length`、Groq 的 `context_window`、vLLM 的 `max_model_len`，以及 Gemini 原生 `/models` 端點的 `inputTokenLimit`（它的 OpenAI 相容端點不回報）。API 沒涵蓋的模型，會在同一次重新整理時下載 [models.dev](https://models.dev) 資料庫補齊（有輸入上限就用輸入上限，否則用整個視窗）；OpenRouter 的 API 已涵蓋全部模型所以略過，OpenAI 相容端點的模型名稱由使用者自訂也略過。會選 models.dev 而不是 LiteLLM 的 `model_prices_and_context_window.json`，是因為拿兩者對照官方文件後，互相矛盾的項目中 models.dev 較常正確。「模型設置」分頁的每一列都會顯示上限，玩家也能手動填寫（標記 `*`），手動值優先。Mod 以 `RimLLMProvider.GetContextWindow` 讀取。
 3. **AES-256 設定加密**
    * API 金鑰以 AES-256 對稱加密儲存，金鑰由目前 OS 使用者的保護機制包裝。僅接受 `v3:` 密文。無版本前綴、`v1:` 與 `v2:` 資料直接拒絕，不存取或建立儲存金鑰；不再保留裝置衍生金鑰、固定種子或舊格式遷移路徑。
@@ -46,13 +50,13 @@
 8. **推理模型**
    * 思維鏈以 MEAI 的 `TextReasoningContent` 放在 `ChatResponse.Messages`／`ChatResponseUpdate.Contents` 裡交付，刻意**不**併入 `ChatResponse.Text`，因此結構化輸出與 JSON 解析不會讀到它。要保留或丟棄，依內容型別過濾即可。
    * **思考強度**：自動（沿用供應商預設）、關閉，或低／中／高。各供應商會轉成自己的格式（`reasoning_effort`、OpenRouter 的 `reasoning`、`thinking`、`enable_thinking`），只接受部分等級或無法關閉推理的供應商也有對應處理。
-   * **不支援的參數靠學習，不靠猜。** 只要模型不在一小份已知非推理模型的名單上，就會送出思考強度。模型若以 400 拒絕它（或 `temperature`），框架會拿掉該參數重試一次，並在本次遊戲中不再對該模型送出。
+   * **不支援的參數靠學習，不靠猜。** 只要模型不在一小份已知非推理模型的名單上，就會送出思考強度。模型若以 400 拒絕它（或 `temperature`），框架會拿掉該參數重試一次，並在本次遊戲中不再對該模型送出。`max_tokens` 被拒時也一樣，該模型會改用 `max_completion_tokens`。
 9. **上下文快取與 Prompt 快取**
    * 在 `RimLLMChatOptions` 設定 `CachedContext`，框架會把它併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會對重複前綴自動打折，大幅降低高頻重複請求的輸入 Token 成本與延遲。
    * **量化節省**：用量統計會解析 API 回傳的快取命中 Token（OpenAI `cached_tokens` 及其等價欄位），並依費率表中該模型的快取輸入估計費率計算。供應商定價可能變動，因此金額仍是估算值。
    * 串流因取消、逾時或錯誤結束，仍會將已收到的用量結算一次。優先採用供應商回報值；已有部分輸出但未回報用量時，沿用一般 token 估算。停止串流不會抹除其每日預算消耗。直接使用內建 OpenAI 相容 adapter 的串流也會記錄供應商回報用量一次；由 executor 管理的串流仍只由 executor 記帳，避免重複。
    * **成本估算來自內建費率表**（OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai、Player2 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。Player2 記為已知的 $0（本地免費，雲端以 joules 而非美元計費，joules 不列入費用估算）。查無費率代表**費用未知**，不是已知免費：其 token 照計入每日預算，但費用不列入顯示總額。Debug 分頁會顯示本次執行中查無費率的請求數。HardBlock 會替進行中的邏輯請求保留輸入與輸出 token 估算，並在各次嘗試回報時結算實際用量；每日預算仍是估算門檻，不是精準的消費上限。
-   * **預算超限應對策略只有兩種**：**直接阻斷並警告**（預設，請求被擋下並回報 `LLMError.QuotaExceeded`，每天彈一次遊戲內提示說明是 RimLLM 預算擋下的）與**只警告並照常送出**（每天彈一次遊戲內提示後繼續呼叫，超支要不要繼續由使用者自己決定）。HardBlock 會以原子方式保留並行請求的估算額度，避免多個請求同時認領同一份餘額。設定檔若還留著已移除的策略（包含數值與「只警告」撞號的舊 SilentMocking），載入時會重設為「直接阻斷並警告」並提示一次，不會靜默變成放行。舊版以美元計的每日上限無法換算成 token，載入時會移除並提示一次，請玩家重新設定 token 預算。其他 Mod 自行實作、不記錄 token 的設定則退回舊版美元門檻。兩者都不改寫回應內容 —— 框架不會代你偽造一句看似正常的回答，那會讓呼叫端與玩家都誤以為模型真的回應了。
+   * **預算超限應對策略只有兩種**：**直接阻斷並警告**（預設，請求被擋下並回報 `LLMError.QuotaExceeded`，每天彈一次遊戲內提示說明是 RimLLM 預算擋下的）與**只警告並照常送出**（每天彈一次遊戲內提示後繼續呼叫，超支要不要繼續由使用者自己決定）。HardBlock 會以原子方式保留並行請求的估算額度，避免多個請求同時認領同一份餘額。只因餘額被在途請求預留而被擋下的請求會收到可重試的 `RateLimit`，也不會跳預算提示，因為預算其實還沒超限。設定檔若還留著已移除的策略（包含數值與「只警告」撞號的舊 SilentMocking），載入時會重設為「直接阻斷並警告」並提示一次，不會靜默變成放行。舊版以美元計的每日上限無法換算成 token，載入時會移除並提示一次，請玩家重新設定 token 預算。其他 Mod 自行實作、不記錄 token 的設定則退回舊版美元門檻。兩者都不改寫回應內容 —— 框架不會代你偽造一句看似正常的回答，那會讓呼叫端與玩家都誤以為模型真的回應了。
 10. **Embedding SDK**
     * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。`EmbeddingGenerationOptions.ModelId` 可覆寫設定預設模型；`Dimensions` 會傳給供應商 SDK，端點支援時即可生效。
     * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini，OpenAI 走其原生端點；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。模型、端點與金鑰依 Embedding 供應商分別保存，切換啟用的供應商不會遺失其他供應商的設定；模型或端點留空代表使用該供應商預設值，金鑰留空則繼承對應對話供應商的金鑰。
@@ -62,7 +66,7 @@
     * 框架提供決策服務，透過 TypeSafe 的 System One 協議取得型別化答案（是／否、選項、分數）。其他 Mod 可透過 `RimLLMProvider.CreateDecisionService(modId)` 取得受防護的 client；計畫以 `JevDecisionPlanBuilder` 建一次後重複使用。服務不內建安全閘門、路由或提示工程：計畫與機率解讀都由呼叫端負責。
     * 設定頁列出 TypeSafe（Jev）、Clef、Liquid d1、Solar Decide、Kev、Tev1、Laya、Span、Microsoft Decision-1 與 OpenAI Decisions。模型、端點與金鑰依供應商分開保存，切換啟用的供應商不會遺失其他設定。模型或端點留空代表使用供應商預設值；端點填 origin，client 會自動接上 `/v1/systemone`。
     * 所有金鑰採用與供應商金鑰相同的 AES 加密。設定頁可抓取閘道的模型清單（閘道沒有 `/v1/models` 時仍顯示預設模型），連線測試會送出真正的一題決策，因此「模型清單可用但決策回應格式不相容」的閘道會在呼叫端依賴前就被抓出來。
-    * 決策屬計費 API：每次呼叫都經過與對話、embedding 相同的呼叫者記錄、防濫用節流與每日 token 預算，並把供應商回報的輸入／輸出 token 記入並保存於用量帳本。HardBlock 會替進行中呼叫保留估算輸入 token，避免多個並行請求認領同一份餘額。所有失敗一律以 `RimLLMException`（附 `LLMError` 代碼）呈現——HTTP 狀態碼走共用的 `LLMErrorMapper` 對照（401 → `InvalidKey`、429 → `RateLimit` 且保留伺服器的 `Retry-After`、5xx → `ProviderOffline`），SDK 逾時對應 `Timeout`、斷網對應 `NetworkError`、協議違規對應 `InvalidResponse`；未啟用的供應商——以及 `https://` 端點缺金鑰——都會在送出前就被拒絕。呼叫端取消保留 `OperationCanceledException`。
+    * 決策屬計費 API：每次呼叫都經過與對話、embedding 相同的呼叫者記錄、防濫用節流與每日 token 預算，並把供應商回報的輸入／輸出 token 記入並保存於用量帳本。HardBlock 會替進行中呼叫保留估算輸入 token，避免多個並行請求認領同一份餘額。所有失敗一律以 `RimLLMException`（附 `LLMError` 代碼）呈現——HTTP 狀態碼走共用的 `LLMErrorMapper` 對照（401 → `InvalidKey`、429 → `RateLimit` 且保留伺服器的 `Retry-After`、5xx → `ProviderOffline`），SDK 逾時對應 `Timeout`、斷網對應 `NetworkError`、協議違規對應 `InvalidResponse`；未啟用的供應商——以及 `https://` 端點缺金鑰——都會在送出前就被拒絕。玩家全域停用決策服務時，指定供應商的呼叫同樣會被拒絕，第三方 Mod 無法花用留存的金鑰。呼叫端取消保留 `OperationCanceledException`。
     * **Mod 可以選用自己的決策供應商。** 三個公開入口讓第三方 Mod 不必動到玩家設定就能這麼做：
         * `RimLLMProvider.GetDecisionAvailability()` 回傳 `DecisionAvailability` 快照——有沒有啟用決策供應商、是哪一家、解析後的模型、解析後的端點（origin）與有沒有保存金鑰。這是純查詢：不發網路請求，也絕不外洩金鑰本身。沒有啟用任何決策供應商時回報 `Enabled = false` 而不擲例外——「玩家還沒設定」是答案，不是錯誤。
         * `RimLLMDecisionClient.EvaluateWithProviderAsync(state, plan, providerId, model, ct)` 的端點、金鑰與模型都取自該供應商自己的設定，因此完全不會動到玩家的設定；缺金鑰、供應商 id 不存在或是 `Disabled` 標記，都會在送出任何請求之前就以 `RimLLMException`（`InvalidKey` 或 `Unknown`）拒絕。用量記到實際服務該次請求的供應商帳上，而不是啟用中的那一家，且歸屬資訊在請求開始時就快照下來。
@@ -85,7 +89,7 @@
     * **Mod 兼容性檢查器**：攔截 `AIService.CallAPIWithTimeout`，將 Harmony/XML 衝突分析、依賴問題與報錯診斷等請求全面導流至 RimLLM。接管開啟時自動將 `IsAIConfigured` 覆寫為 `true`，玩家無需在檢查器內重複設定金鑰即可直接使用 AI 診斷，並自動短路餘額查詢以杜絕 401 報錯。
     * **簡中自動化：One**：它的 AI 批量翻譯、品質評審與健康探測都經過同一個私有傳輸方法，因此一個 Harmony 前綴就同時涵蓋 Chat Completions 與 Responses 兩種協議。請求 JSON 交給 RimLLM，再把同協議格式的合成回應餵回該 Mod 自己的解析器，它原有的重試、格式降級與結構化輸出處理照常運作。接管開啟期間它也把端點視為本機，玩家不必填假金鑰；設定頁的「測試連線」與思考參數探測則直接短路為成功。錯誤會對應到它自己的暫時性／永久性錯誤類型，讓它的重試邏輯正確運作；與其他目標不同，這裡不會退回原生路徑（沒有金鑰退回去也只會失敗）。它的 OpenAI Batch API 通道不在涵蓋範圍。它的類別皆為 `internal`，轉接器因此完全以名稱經反射綁定，不需要參考用 DLL。
     * 純 Harmony、全部 fail-soft，框架不實作任何第三方介面，也絕不在類別繼承、介面或欄位層級引用第三方型別，第三方 Mod 未安裝時框架組件仍可安全載入。其 API 若漂移導致掛載失敗，設定頁會直接顯示原因。請求當下 RimLLM 沒有可用供應商（備援鏈為空、缺金鑰）時，自動退回原生路徑並記一筆節流過的警告。
-    * 新增其他 Mod 只需一筆登錄＋一個 `RimLLMCompatTarget` 子類；轉接器對著簽入版本庫的參考用 DLL（`Source/Libs/`）編譯，該 DLL 不隨包出貨。
+    * 新增其他 Mod 只需一筆登錄＋一個 `RimLLMCompatTarget` 子類；轉接器對著第三方參考用 DLL 編譯，這些 DLL 不隨包出貨，也不納入版本控制；取得方式見各 `Source/Libs/<mod>/README.md`。
 14. **使用中的模組**
     * 設定頁「使用中的模組」分頁把兩個來源合併成每個 Mod 一列：已啟用且在 `About.xml` 的 `modDependencies` 宣告依賴 RimLLM Framework 的 Mod，以及本次遊戲曾透過 RimLLM 送出 chat、embedding 或 decision 請求的 `modId`（`RimLLMUsageTracker.CallerModIds`）。呼叫端在請求進入守衛時才記錄，而不是建立 client 時——許多 Mod 一啟動就先取 client 卻從未送出請求；modId 可由呼叫端任意輪換，因此最多只收錄 64 個。因此在第三方整合分頁被接管的 Mod 雖未宣告依賴，送出第一個請求後也會出現。
     * 已呼叫過的列排在前面並標示「已呼叫」；宣告依賴但尚未呼叫的標示「尚未呼叫」。滑鼠懸停可看到是否宣告依賴，以及所有對應到該 Mod 的 `modId`。

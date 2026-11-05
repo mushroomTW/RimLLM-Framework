@@ -137,7 +137,7 @@ public class CompatAutoTranslationTests
     }
 
     [Test]
-    public void Prefix_WhenOffline_ReturnsEchoInsteadOfHittingNativeNetwork()
+    public void Prefix_WhenOffline_ThrowsInsteadOfReportingEchoAsSuccess()
     {
         var fake = new CapturingChatClient
         {
@@ -154,14 +154,13 @@ public class CompatAutoTranslationTests
             var sentinel = new Translator_OpenAICompatible();
             AutoTranslationCompatPatch.Sentinel = sentinel;
 
-            // 模擬離線：判定為 false 時當下這筆應回原文 echo，而非放行哨兵原生網路
+            // 模擬離線：當下這筆要走失敗路徑。回原文當成功的話，Auto Translation 會把它永久寫入翻譯快取
             AutoTranslationCompatPatch.SetTakeOverCacheForTests(false);
 
             string result = null;
-            bool handled = AutoTranslationCompatPatch.GetResponseUnsafePrefix(sentinel, "原文內容", "prompt", ref result);
-            ClassicAssert.IsFalse(handled);
-            ClassicAssert.IsNotNull(result);
-            StringAssert.Contains("原文內容", result);
+            Assert.Throws<RimLLMException>(() =>
+                AutoTranslationCompatPatch.GetResponseUnsafePrefix(sentinel, "原文內容", "prompt", ref result));
+            ClassicAssert.IsNull(result);
             ClassicAssert.IsEmpty(fake.ReceivedMessages);
         }
         finally
@@ -318,8 +317,8 @@ public class CompatAutoTranslationTests
 
     /// <summary>
     /// 鎖住靜態方法簽章：Debug 動作選單（<c>DebugTabMenu_Actions.InitActions</c>）會對所有型別的
-    /// <c>Static | Public | NonPublic</c> 方法做 <c>IsDefined</c>（實例方法不在掃描範圍），Mono 因此會解析參數與回傳型別；簽章含任一相容目標 Mod 的型別時，該 Mod 缺席
-    /// 玩家一開 Debug 選單就會拋 TypeLoadException。目標 Mod 型別只能出現在方法本體。
+    /// <c>Static | Public | NonPublic</c> 方法做 <c>IsDefined</c>（實例方法不在掃描範圍）；簽章含任一相容目標 Mod 的型別時，該 Mod 缺席
+    /// 玩家一開 Debug 選單就可能拋 TypeLoadException。目標 Mod 型別只能出現在方法本體。
     /// 涵蓋全部相容目標（AutoTranslation、ModCompatChecker、RimTalk、RimTranslation）。
     /// </summary>
     [Test]

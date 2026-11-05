@@ -19,6 +19,8 @@ internal sealed class RimLLMThrottleStore
     // 共享上限防止呼叫端輪換 modId 無限消耗共用的 API 金鑰，
     // 同時保留原本每個 Mod 的獨立視窗，避免改變正常模組間的公平性。
     private const int GlobalRequestLimitMultiplier = 10;
+    /// <summary>追蹤的 modId 達到這個數量時，先清掉已過期的項目。</summary>
+    internal const int MaxTrackedModIds = 1024;
     private readonly IRimLLMSettings _settings;
 
     private readonly ConcurrentDictionary<string, List<DateTime>> _requestTimestamps =
@@ -87,6 +89,11 @@ internal sealed class RimLLMThrottleStore
 
         if (!countTowardWindow) return;
 
+        if (_requestTimestamps.Count >= MaxTrackedModIds)
+        {
+            PruneExpired(now);
+        }
+
         var list = _requestTimestamps.GetOrAdd(modId, _ => []);
         lock (list)
         {
@@ -107,12 +114,43 @@ internal sealed class RimLLMThrottleStore
         }
     }
 
+    /// <summary>
+    /// 清掉視窗與冷卻都已過期的 modId。modId 可任意輪換，不清的話這兩張表會無限成長。
+    /// 競態下最壞只會少算某個 Mod 一次請求，對節流而言可以接受。
+    /// </summary>
+    private void PruneExpired(DateTime now)
+    {
+        DateTime limit = now.AddSeconds(-_settings.ThrottlingWindowSeconds);
+        foreach (KeyValuePair<string, List<DateTime>> entry in _requestTimestamps)
+        {
+            lock (entry.Value)
+            {
+                entry.Value.RemoveAll(t => t < limit);
+                if (entry.Value.Count == 0)
+                {
+                    _requestTimestamps.TryRemove(entry.Key, out _);
+                }
+            }
+        }
+
+        foreach (KeyValuePair<string, DateTime> entry in _coolDownUntil)
+        {
+            if (now >= entry.Value)
+            {
+                _coolDownUntil.TryRemove(entry.Key, out _);
+            }
+        }
+    }
+
     private int GetGlobalMaxRequests()
     {
         long perModLimit = Math.Max(1, _settings.MaxRequestsPerWindow);
         long globalLimit = perModLimit * GlobalRequestLimitMultiplier;
         return globalLimit > int.MaxValue ? int.MaxValue : (int)globalLimit;
     }
+
+    /// <summary>測試用：目前追蹤的 modId 數量。</summary>
+    internal int TrackedModCount => _requestTimestamps.Count;
 
     public void ClearCooldowns()
     {

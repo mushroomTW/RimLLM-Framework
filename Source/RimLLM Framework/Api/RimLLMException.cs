@@ -45,6 +45,18 @@ public class RimLLMException : Exception
     /// </summary>
     public bool IsTemperatureRejection { get; set; }
 
+    /// <summary>
+    /// 標記此錯誤是否為「服務端不接受 max_tokens，要求改用 max_completion_tokens」。
+    /// 框架以模型名判斷該送哪個欄位，名單漏掉的新模型系列靠這個旗標自癒。
+    /// </summary>
+    public bool IsMaxTokensRejection { get; set; }
+
+    /// <summary>
+    /// 標記此 429 是否為帳戶額度用盡（<c>insufficient_quota</c>）。
+    /// 與同樣映成 QuotaExceeded 的每分鐘配額限流不同，等待不會恢復，因此不重試、直接換候選。
+    /// </summary>
+    public bool IsBalanceExhausted { get; set; }
+
     public RimLLMException(LLMError error, string message) : base(message)
     {
         Error = error;

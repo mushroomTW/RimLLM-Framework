@@ -29,7 +29,7 @@ public class RimLLMUsageTracker
     internal const int MaxRetainedLogs = 30;
 
     /// <summary>
-    /// 日誌佇列的近似計數。ConcurrentQueue.Count 在舊 Mono 上是加鎖列舉（O(n)），
+    /// 日誌佇列的近似計數。ConcurrentQueue.Count 可能需要走訪內部區段，
     /// 每請求呼叫一次會隨日誌量線性變貴；此計數器以 Interlocked 維護，Trim 只看它。
     /// 多執行緒下為近似值（最終一致），僅影響保留條數上下一兩條，不影響正確性。
     /// </summary>
@@ -269,6 +269,8 @@ public class RimLLMUsageTracker
         {
             foreach (var log in _settings.RequestLogs)
             {
+                // 遙測檔可能損毀或被手動編輯；壞條目不得讓 Mod 初始化失敗。
+                if (log == null) continue;
                 RequestLogs.Enqueue(log);
                 Interlocked.Increment(ref _logCount);
                 CountOutcome(log.Provider, log.Success);
@@ -308,7 +310,7 @@ public class RimLLMUsageTracker
     /// </summary>
     private void CountOutcome(string provider, bool success)
     {
-        var stats = ProviderStatistics.GetOrAdd(provider, _ => new ProviderStats());
+        var stats = ProviderStatistics.GetOrAdd(provider ?? "Unknown", _ => new ProviderStats());
         if (success)
         {
             System.Threading.Interlocked.Increment(ref stats.SuccessCount);
@@ -735,6 +737,35 @@ public class RimLLMUsageTracker
     /// </summary>
     internal bool TryReserveBudget(long estimatedTokens, out BudgetReservation reservation)
     {
+        return TryReserveBudget(estimatedTokens, out reservation, out _);
+    }
+
+    /// <summary>
+    /// 保留預算，擋下時依原因擲出對應的 <see cref="RimLLMException"/>：
+    /// 真的超限是 QuotaExceeded；只是剩餘額度暫時被在途請求預留時是可重試的 RateLimit。
+    /// </summary>
+    internal BudgetReservation ReserveBudgetOrThrow(long estimatedTokens)
+    {
+        if (TryReserveBudget(estimatedTokens, out BudgetReservation reservation, out bool contended))
+        {
+            return reservation;
+        }
+
+        throw contended
+            ? new RimLLMException(LLMError.RateLimit, "The remaining daily budget is reserved by in-flight requests; retry shortly.")
+            {
+                RetryAfter = TimeSpan.FromSeconds(5)
+            }
+            : new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
+    }
+
+    /// <param name="contended">
+    /// true 代表擋下的原因只是剩餘額度暫時被在途請求預留，並非真的超限。
+    /// 這種情況不發超限警告：預留釋放後請求就能通過，而超限警告每天只發一次，
+    /// 誤報會把當天真正超限時的警告吃掉。
+    /// </param>
+    internal bool TryReserveBudget(long estimatedTokens, out BudgetReservation reservation, out bool contended)
+    {
         CheckDailyReset();
 
         bool overBudget;
@@ -743,8 +774,9 @@ public class RimLLMUsageTracker
         lock (UsageLock)
         {
             overBudget = IsBudgetExceededLocked();
+            contended = !overBudget && IsBudgetContendedLocked();
             warnOnly = _settings.BudgetPolicy == BudgetPolicyWarnOnly;
-            if (!overBudget || warnOnly)
+            if ((!overBudget && !contended) || warnOnly)
             {
                 IDailyTokenBudget tokenLedger = _settings as IDailyTokenBudget;
                 bool hasTokenLedger = tokenLedger != null;
@@ -783,24 +815,33 @@ public class RimLLMUsageTracker
             }
         }
 
-        return !overBudget || warnOnly;
+        return (!overBudget && !contended) || warnOnly;
     }
 
+    /// <summary>已結算的用量是否真的達到上限。</summary>
     private bool IsBudgetExceededLocked()
     {
         if (_settings is IDailyTokenBudget tokenLedger)
         {
             long limit = tokenLedger.DailyTokenBudgetLimit;
-            if (limit <= 0) return false;
+            return limit > 0 && Math.Max(0, tokenLedger.DailyAccumulatedTokens) >= limit;
+        }
 
-            long accumulated = Math.Max(0, tokenLedger.DailyAccumulatedTokens);
-            return accumulated >= limit || _reservedBudgetTokens >= limit - accumulated;
+        return _settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit;
+    }
+
+    /// <summary>尚未超限，但剩餘額度已被在途請求全部預留。</summary>
+    private bool IsBudgetContendedLocked()
+    {
+        if (_settings is IDailyTokenBudget tokenLedger)
+        {
+            long limit = tokenLedger.DailyTokenBudgetLimit;
+            return limit > 0 && _reservedBudgetTokens >= limit - Math.Max(0, tokenLedger.DailyAccumulatedTokens);
         }
 
         // 舊版外部設定只有美元帳本，沒有可供估算的 token 上限；保守地一次放行一個
         // 在途請求，待其美元用量結算後再讓下一個請求檢查，維持既有門檻語意。
-        return _settings.DailyBudgetLimit > 0f &&
-               (_settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit || _reservedLegacyBudgetRequests > 0);
+        return _settings.DailyBudgetLimit > 0f && _reservedLegacyBudgetRequests > 0;
     }
 
     private static long SaturatingAdd(long left, long right)

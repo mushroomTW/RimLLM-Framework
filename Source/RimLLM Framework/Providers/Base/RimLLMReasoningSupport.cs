@@ -39,7 +39,7 @@ public enum ReasoningWireFormat
 public static class RimLLMReasoningSupport
 {
     private static readonly object Gate = new();
-    // 三種「不支援」記在同一集合，鍵以種類前綴區分（r=思考參數、t=temperature、d=關閉思考）。
+    // 各種「不支援」記在同一集合，鍵以種類前綴區分（r=思考參數、t=temperature、d=關閉思考、m=max_tokens）。
     private static readonly HashSet<string> Unsupported = [];
 
     private static string BuildKey(string kind, string providerId, string model)
@@ -75,6 +75,23 @@ public static class RimLLMReasoningSupport
         lock (Gate)
         {
             return Unsupported.Add(BuildKey("d", providerId, model));
+        }
+    }
+
+    /// <summary>記下此模型不接受 <c>max_tokens</c>，只吃 <c>max_completion_tokens</c>。回傳 true 代表這是新資訊。</summary>
+    public static bool MarkMaxTokensUnsupported(string providerId, string model)
+    {
+        lock (Gate)
+        {
+            return Unsupported.Add(BuildKey("m", providerId, model));
+        }
+    }
+
+    public static bool IsMaxTokensUnsupported(string providerId, string model)
+    {
+        lock (Gate)
+        {
+            return Unsupported.Contains(BuildKey("m", providerId, model));
         }
     }
 

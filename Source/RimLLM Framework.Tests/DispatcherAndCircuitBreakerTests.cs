@@ -92,8 +92,7 @@ public class DispatcherAndCircuitBreakerTests
             Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Low },
             Priority = 3,
             MinFallbackLevel = "High",
-            CachedContext = "stable context",
-            EnableContextCaching = true
+            CachedContext = "stable context"
         };
 
         ClassicAssert.AreEqual("stable context", options.CachedContext);
@@ -102,7 +101,6 @@ public class DispatcherAndCircuitBreakerTests
         ClassicAssert.AreEqual(ReasoningEffort.Low, options.Reasoning.Effort);
         ClassicAssert.AreEqual(3, options.Priority);
         ClassicAssert.AreEqual("High", options.MinFallbackLevel);
-        ClassicAssert.IsTrue(options.EnableContextCaching);
     }
 
     [Test]
@@ -634,7 +632,6 @@ public class DispatcherAndCircuitBreakerTests
             CachedContext = "stable colony state"
         };
 
-        ClassicAssert.IsTrue(options.EnableContextCaching);
         ClassicAssert.AreEqual("stable colony state", options.CachedContext);
     }
 

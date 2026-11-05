@@ -41,8 +41,8 @@ internal static class AutoTranslationCompatPatch
 
     private static readonly CompatTakeoverGate _gate = new(
         AutoTranslationCompatTarget.PackageId,
-        "Auto Translation 接管已開啟，但框架尚未就緒，本次退回 Auto Translation 原生路徑。原因：{0}",
-        "Auto Translation 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 Auto Translation 原生路徑。原因：{0}");
+        "Auto Translation takeover is on, but the framework is not ready; using the native path for now. Reason: {0}",
+        "Auto Translation takeover is on, but RimLLM has no usable provider; using the native path for now. Reason: {0}");
 
     internal static AutoTranslationCompatClient Client
     {
@@ -90,7 +90,7 @@ internal static class AutoTranslationCompatPatch
         }
         catch (Exception ex)
         {
-            Log.Warning($"[RimLLM] 相容層：Auto Translation 啟動同步略過（稍後第一次 Translate 會重試）。原因：{ex.Message}");
+            Log.Warning($"[RimLLM] Compat: skipped the initial Auto Translation sync; the first Translate call will retry. Reason: {ex.Message}");
         }
     }
 
@@ -118,9 +118,11 @@ internal static class AutoTranslationCompatPatch
     /// 離線退回注意：此時已在哨兵的 <c>TryTranslate</c> 內部（背景執行緒），無法把「當下這筆」
     /// 改派給原生翻譯器——原生可能是 DeepL／Google 等異構型別，其 <c>GetResponseUnsafe</c>
     /// 是受保護方法且回傳格式不同。因此退回策略是：後續入列經 <see cref="SyncCurrentTranslator"/>
-    /// 切回原生；當下這筆回傳原文 echo JSON，讓哨兵的佔位符還原直接通過、快速回原文，
+    /// 切回原生；當下這筆擲出例外，走 Auto Translation 的失敗路徑，
     /// 而非放行哨兵原生網路（預設打 localhost，超時可達數十秒）。
-    /// Client 拋出（瞬斷、限流）時則原樣上拋，交給哨兵 <c>TryTranslate</c> 自帶的重試／回原文機制。
+    /// 不能回傳原文當作成功：<c>TranslatorManager</c> 會把成功結果永久寫入翻譯快取，
+    /// 那些文字之後就再也不會被翻譯。
+    /// Client 拋出（瞬斷、限流）時同樣原樣上拋。
     /// </remarks>
     public static bool GetResponseUnsafePrefix(
         object __instance,
@@ -143,8 +145,7 @@ internal static class AutoTranslationCompatPatch
             {
                 // 忽略同步例外，避免中斷調用流程
             }
-            __result = BuildEchoResponse(text);
-            return false;
+            throw new RimLLMException(LLMError.ProviderOffline, "RimLLM has no usable provider for this Auto Translation request.");
         }
 
         try
@@ -184,20 +185,6 @@ internal static class AutoTranslationCompatPatch
         {
             // 忽略同步例外，避免中斷調用流程
         }
-    }
-
-    /// <summary>
-    /// 構造原文 echo 回應：content 取原文，讓哨兵的佔位符還原通過並回原文。
-    /// 單條與批次皆適用——批次時 text 即 batch XML，ParseBatchXml 會把它還原為原文清單。
-    /// </summary>
-    private static string BuildEchoResponse(string text)
-    {
-        return System.Text.Json.JsonSerializer.Serialize(new
-        {
-            content = text ?? string.Empty,
-            prompt_tokens = 0,
-            completion_tokens = 0
-        }, AutoTranslationCompatClient.SharedJsonOptions);
     }
 
     /// <summary>
@@ -251,7 +238,7 @@ internal static class AutoTranslationCompatPatch
         ITranslator native = (ITranslator)PickRestoreTranslator(live, snap);
         if (native == null)
         {
-            Log.Warning("[RimLLM] 相容層：Auto Translation 還原原生翻譯器失敗（即時查詢與快照皆為 null），保留哨兵避免停擺。");
+            Log.Warning("[RimLLM] Compat: could not restore the native Auto Translation translator (live lookup and snapshot are both null); keeping the sentinel so translation does not stall.");
             return;
         }
         TranslatorManager.CurrentTranslator = native;

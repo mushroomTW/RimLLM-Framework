@@ -59,8 +59,8 @@ internal static class RimTalkCompatPatch
     }
     private static readonly CompatTakeoverGate _gate = new(
         RimTalkCompatTarget.PackageId,
-        "框架尚未就緒，RimTalk 接管本次退回原生路徑。原因：{0}",
-        "RimLLM 目前沒有可用的供應商，RimTalk 接管本次退回原生路徑。原因：{0}");
+        "RimTalk takeover is on, but the framework is not ready; using the native path for now. Reason: {0}",
+        "RimTalk takeover is on, but RimLLM has no usable provider; using the native path for now. Reason: {0}");
 
     public static void Apply(Harmony harmony)
     {

@@ -36,8 +36,8 @@ internal static class ModCompatCheckerCompatPatch
 
     private static readonly CompatTakeoverGate _gate = new(
         ModCompatCheckerCompatTarget.PackageId,
-        "ModCompatChecker 接管已開啟，但框架尚未就緒，本次退回 ModCompatChecker 原生路徑。原因：{0}",
-        "ModCompatChecker 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回 ModCompatChecker 原生路徑。原因：{0}");
+        "ModCompatChecker takeover is on, but the framework is not ready; using the native path for now. Reason: {0}",
+        "ModCompatChecker takeover is on, but RimLLM has no usable provider; using the native path for now. Reason: {0}");
 
     internal static ModCompatCheckerCompatClient Client
     {
@@ -77,7 +77,7 @@ internal static class ModCompatCheckerCompatPatch
         }
         else
         {
-            Log.Warning("[RimLLM] 相容層：找不到 ModCompatSettings.IsAIConfigured（ModCompatChecker 版本可能已變動），AI 按鈕啟用覆寫未掛載；接管開啟時仍需填原生金鑰才能按鈕分析。");
+            Log.Warning("[RimLLM] Compat: ModCompatSettings.IsAIConfigured was not found (ModCompatChecker may have changed); the AI button override is not applied, so a native key is still needed even with takeover on.");
         }
 
         if (checkBalance != null)
@@ -87,7 +87,7 @@ internal static class ModCompatCheckerCompatPatch
         }
         else
         {
-            Log.Warning("[RimLLM] 相容層：找不到 ApiBalanceChecker.CheckBalance（ModCompatChecker 版本可能已變動），餘額檢查短路未掛載；接管開啟且無原生金鑰時可能出現 401 提示。");
+            Log.Warning("[RimLLM] Compat: ApiBalanceChecker.CheckBalance was not found (ModCompatChecker may have changed); the balance check is not skipped, so a 401 notice may appear with takeover on and no native key.");
         }
     }
 
@@ -114,7 +114,8 @@ internal static class ModCompatCheckerCompatPatch
             __result = Client.CallAPI(userMessage, timeoutSeconds, ref cancelFlag);
             return false; // 跳過原生
         }
-        catch (Exception ex) when (ex is OperationCanceledException || ex is TimeoutException)
+        catch (Exception ex) when (ex is OperationCanceledException || ex is TimeoutException ||
+                                   ex is RimLLMException { Error: LLMError.Timeout })
         {
             __result = cancelFlag
                 ? CancelledText
@@ -124,7 +125,7 @@ internal static class ModCompatCheckerCompatPatch
         catch (Exception ex)
         {
             // 呼叫失敗時退回原生路徑
-            _gate.WarnThrottled($"ModCompatChecker 接管請求失敗，退回原生路徑。原因：{ex.Message}");
+            _gate.WarnThrottled($"ModCompatChecker takeover request failed; falling back to the native path. Reason: {ex.Message}");
             return true;
         }
     }

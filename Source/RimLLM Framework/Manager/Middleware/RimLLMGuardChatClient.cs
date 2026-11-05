@@ -75,12 +75,7 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
 
     private RimLLMUsageTracker.BudgetReservation ReserveBudget(IEnumerable<ChatMessage> messages, ChatOptions options)
     {
-        long estimate = EstimateBudgetTokens(messages, options);
-        if (!_usageTracker.TryReserveBudget(estimate, out RimLLMUsageTracker.BudgetReservation reservation))
-        {
-            throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
-        }
-        return reservation;
+        return _usageTracker.ReserveBudgetOrThrow(EstimateBudgetTokens(messages, options));
     }
 
     private static long EstimateBudgetTokens(IEnumerable<ChatMessage> messages, ChatOptions options)

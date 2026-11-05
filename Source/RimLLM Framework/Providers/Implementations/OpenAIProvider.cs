@@ -1,5 +1,6 @@
 using System;
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Http;
@@ -100,12 +101,20 @@ public class OpenAIProvider : ILLMProvider
             // 無法讀取或解析 Retry-After 時，沿用一般重試延遲。
         }
 
+        // 顯示用訊息要淨化與截斷（會進連線測試結果與相容層日誌）；關鍵字偵測仍看完整內容。
         return LLMErrorMapper.CreateException(
             exception.Status,
-            exception.Message,
+            RimLLMLog.SanitizeForLog(exception.Message, 300),
             retryAfter,
-            exception);
+            exception,
+            detectionText: exception.Message);
     }
+
+    /// <summary>
+    /// SDK 的單次請求網路逾時。實際逾時由 ApiTimeout 掌控（設定上限 120 秒），
+    /// 這裡只是略高於該上限的安全網；SDK 預設的 100 秒會讓 100～120 秒的設定失效。
+    /// </summary>
+    private static readonly TimeSpan SdkNetworkTimeout = TimeSpan.FromSeconds(180);
 
     public static IChatClient CreateOpenAiChatClient(string apiKey, string model, string endpoint = null)
     {
@@ -114,7 +123,13 @@ public class OpenAIProvider : ILLMProvider
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("OpenAI model 不得為空。", nameof(model));
 
-        var options = new OpenAIClientOptions();
+        var options = new OpenAIClientOptions
+        {
+            // 重試由 RimLLMFailoverChatClient 統一負責。SDK 預設的 3 次內建重試會把每次嘗試
+            // 放大成 4 個請求，還會在占著併發名額時等待 Retry-After，拖慢備援切換。
+            RetryPolicy = new ClientRetryPolicy(0),
+            NetworkTimeout = SdkNetworkTimeout
+        };
         string normalizedEndpoint = NormalizeEndpoint(endpoint);
         if (!string.IsNullOrEmpty(normalizedEndpoint))
         {
@@ -158,7 +173,7 @@ public class OpenAIProvider : ILLMProvider
 
         // response_format 一律以 Patch 寫入原始 JSON，並確保 MEAI 這一側維持 null。
         // OpenAI SDK 的 ChatCompletionOptions.ResponseFormat 是 JsonPatch 支撐的屬性：
-        // 只要框架動過同一個模型的 Patch（max_tokens／reasoning／model），RimWorld 的 Mono
+        // 只要框架動過同一個模型的 Patch（max_tokens／reasoning／model），
         // 還原該屬性時會拿到基底 ChatResponseFormat，送出請求時序列化就會拋
         // "The WriteCore method should be invoked on an overriding type derived from ChatResponseFormat."
         options.ResponseFormat = null;
@@ -168,35 +183,24 @@ public class OpenAIProvider : ILLMProvider
     }
 
     /// <summary>
-    /// 組出 <c>response_format</c> 欄位的完整 JSON。schema 優先取框架以
-    /// AdditionalProperties 傳遞的字串，其次才回頭讀 MEAI 的 ChatResponseFormatJson。
-    /// 兩者都沒有、但呼叫端指定了 JSON 模式時退回 json_object；完全沒有 JSON 需求才回傳 null。
+    /// 組出 <c>response_format</c> 欄位的完整 JSON：有 schema 走 json_schema，
+    /// 只要求 JSON 模式時走 json_object；完全沒有 JSON 需求才回傳 null。
     /// </summary>
     private static string BuildResponseFormatJson(ChatOptions requestOptions, bool strict)
     {
-        string schemaJson = RimLLMChatOptions.ReadAdditional<string>(requestOptions, "rimllm_response_schema", null);
-
-        if (string.IsNullOrEmpty(schemaJson) &&
-            requestOptions?.ResponseFormat is ChatResponseFormatJson jsonFormat && jsonFormat.Schema.HasValue)
+        if (requestOptions?.ResponseFormat is not ChatResponseFormatJson jsonFormat)
         {
-            schemaJson = jsonFormat.Schema.Value.GetRawText();
+            return null;
         }
 
-        if (string.IsNullOrEmpty(schemaJson))
+        if (!jsonFormat.Schema.HasValue)
         {
             // 沒有 schema 但呼叫端仍要求 JSON 模式時要送出 json_object，
             // 否則這個選項會被靜默丟棄，模型照樣回散文而呼叫端無從察覺。
-            return requestOptions?.ResponseFormat is ChatResponseFormatJson
-                ? "{\"type\":\"json_object\"}"
-                : null;
+            return "{\"type\":\"json_object\"}";
         }
 
-        // schema 是直接拼進送出的 JSON 的，不合法就會毀掉整個 request body。
-        // 先在本地解析一次，讓錯誤停在組裝階段，而不是換成服務端一句沒有線索的 400。
-        using (JsonDocument.Parse(schemaJson))
-        { // 刻意空區塊：僅驗證 schemaJson 為合法 JSON
-        }
-
+        string schemaJson = jsonFormat.Schema.Value.GetRawText();
         return "{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"custom_type\"," +
                "\"description\":\"RimLLM structured response\"," +
                "\"strict\":" + (strict ? "true" : "false") + "," +
@@ -247,6 +251,7 @@ public class OpenAIProvider : ILLMProvider
         if (effort == ReasoningEffort.Low) return "low";
         if (effort == ReasoningEffort.Medium) return "medium";
         if (effort == ReasoningEffort.High) return "high";
+        if (effort == ReasoningEffort.ExtraHigh) return "xhigh";
         return null;
     }
 
@@ -278,7 +283,9 @@ public class OpenAIProvider : ILLMProvider
         // 對齊 raw 路徑：非 reasoning 模型走 max_tokens（OpenAI SDK 預設一律
         // 序列化為 max_completion_tokens），以 Patch 移除後改寫。
         int maxTokens = requestOptions?.MaxOutputTokens ?? 0;
-        bool rewriteMaxTokens = maxTokens > 0 && !IsOpenAiReasoningModel(model);
+        // 名單漏掉的新模型系列會以 400 拒絕 max_tokens，框架記下來後改回 SDK 預設欄位（見 MarkUnsupportedParameters）。
+        bool rewriteMaxTokens = maxTokens > 0 && !IsOpenAiReasoningModel(model) &&
+                                !RimLLMReasoningSupport.IsMaxTokensUnsupported(ProviderId, model);
 
         ReasoningWireFormat format = ReasoningFormat;
         Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
@@ -351,10 +358,13 @@ public class OpenAIProvider : ILLMProvider
     }
 
     /// <summary>
-    /// 解析呼叫端是否要求關閉思考。RimLLMChatOptions 直接帶屬性，框架管線則以 AdditionalProperties 轉遞。
+    /// 解析呼叫端是否要求關閉思考。RimLLMChatOptions 直接帶屬性，框架管線則以 AdditionalProperties 轉遞；
+    /// MEAI 標準的 <see cref="ReasoningEffort.None"/> 是同一個意思。
     /// </summary>
     private static bool ResolveDisableReasoning(ChatOptions requestOptions)
     {
+        if (requestOptions?.Reasoning?.Effort == ReasoningEffort.None) return true;
+
         return requestOptions is RimLLMChatOptions rimOptions
             ? rimOptions.DisableReasoning
             : RimLLMChatOptions.ReadAdditional(requestOptions, RimLLMChatOptions.DisableReasoningKey, false);
@@ -675,6 +685,13 @@ public class OpenAIProvider : ILLMProvider
             learned = true;
         }
 
+        if (exception.IsMaxTokensRejection &&
+            RimLLMReasoningSupport.MarkMaxTokensUnsupported(ProviderId, model))
+        {
+            RimLLMLog.Warning($"[RimLLM] Model {model} on {ProviderId} rejected max_tokens; max_completion_tokens will be used from now on.");
+            learned = true;
+        }
+
         return learned;
     }
 
@@ -754,7 +771,7 @@ public class OpenAIProvider : ILLMProvider
         {
             stopwatch.Stop();
             result.Success = false;
-            result.ErrorMessage = ex.Message;
+            result.ErrorMessage = RimLLMLog.SanitizeForLog(ex.Message, 300);
             result.ErrorCode = LLMError.Unknown;
             result.LatencyMs = stopwatch.ElapsedMilliseconds;
         }

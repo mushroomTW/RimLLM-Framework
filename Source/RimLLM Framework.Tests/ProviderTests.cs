@@ -616,7 +616,7 @@ public class ProviderTests
         var messages = new List<ChatMessage> { new(ChatRole.User, "hi") };
         var options = new ChatOptions { AdditionalProperties = [] };
         RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure));
-        options.AdditionalProperties["rimllm_response_schema"] = schema.Json;
+        options.ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(schema.Element, "custom_type", "RimLLM structured response");
         options.AdditionalProperties["strict"] = schema.StrictCompatible;
         provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
@@ -644,7 +644,7 @@ public class ProviderTests
         var messages = new List<ChatMessage> { new(ChatRole.User, "hi") };
         var options = new ChatOptions { AdditionalProperties = [] };
         RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(ComplexTestDataStructure));
-        options.AdditionalProperties["rimllm_response_schema"] = schema.Json;
+        options.ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(schema.Element, "custom_type", "RimLLM structured response");
         options.AdditionalProperties["strict"] = schema.StrictCompatible;
         provider.GenerateAsync(messages, options, "deepseek-chat").GetAwaiter().GetResult();
 
@@ -658,7 +658,7 @@ public class ProviderTests
     /// <summary>
     /// response_format 必須只由 Patch 的原始 JSON 供應，MEAI 的 ChatOptions.ResponseFormat 要保持 null。
     /// 交給 SDK 的 ChatCompletionOptions.ResponseFormat 屬性的話，該屬性是 JsonPatch 支撐的，
-    /// 在框架動過同一個模型的 Patch 之後，RimWorld 的 Mono 會把它還原成基底 ChatResponseFormat，
+    /// 在框架動過同一個模型的 Patch 之後，會被還原成基底 ChatResponseFormat，
     /// 送出請求時序列化直接拋 "The WriteCore method should be invoked on an overriding type..."。
     /// </summary>
     [Test]
@@ -676,7 +676,7 @@ public class ProviderTests
 
         RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(TestDataStructure));
         var requestOptions = new ChatOptions { AdditionalProperties = [] };
-        requestOptions.AdditionalProperties["rimllm_response_schema"] = schema.Json;
+        requestOptions.ResponseFormat = Microsoft.Extensions.AI.ChatResponseFormat.ForJsonSchema(schema.Element, "custom_type", "RimLLM structured response");
         requestOptions.AdditionalProperties["strict"] = schema.StrictCompatible;
 
         var messages = new List<ChatMessage> { new(ChatRole.User, "hi") };
@@ -920,9 +920,6 @@ public class CapturingHttpMessageHandler : System.Net.Http.HttpMessageHandler
     /// <summary>
     /// 依序套用的回應腳本（狀態碼與 body）。用完後回到預設的 200 + <see cref="ResponseBody"/>。
     /// 供「服務端先拒絕某個參數、框架去掉後才接受」這類降級行為的測試使用。
-    ///
-    /// 用 List 當佇列而非 Queue&lt;T&gt;：這個測試組件載入 Queue&lt;T&gt; 會因為
-    /// netstandard 轉送與 mscorlib 的衝突而丟 TypeLoadException（與專案既有的 Stack&lt;T&gt; 地雷同源）。
     /// </summary>
     public System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<System.Net.HttpStatusCode, string>> ScriptedResponses { get; } =
         [];

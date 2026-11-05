@@ -8,3 +8,5 @@
 與 `GetFields()` 會解析的層級，Auto Translation 缺席時整顆框架 DLL 會被 RimWorld 拒載（`FrameworkAssembly_HasNoAutoTranslationTypesInBaseInterfacesOrFields` 測試鎖住）。 另外**靜態方法**的簽章也不得含目標 Mod 型別：Debug 動作選單會對所有靜態方法做 `IsDefined`，執行期因此解析簽章，目標 Mod 缺席時選單會拋 `TypeLoadException`（改用 `object` 並於方法本體轉型，或改成實例方法；`FrameworkAssembly_HasNoCompatTargetTypesInMethodSignatures` 測試鎖住）。
 
 Auto Translation 更新且相關類別簽章變動時，換掉這顆 DLL 並修正轉接器。
+
+**`AutoTranslation.dll` 是第三方組件，不納入版本控制**（授權未明，repo 又是公開的）。clone 後請從已安裝的工作坊 Mod 複製到本目錄，才能建置主專案與單元測試。

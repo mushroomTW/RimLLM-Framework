@@ -74,7 +74,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
         CancellationToken cancellationToken)
     {
         Type responseType = RimLLMChatOptions.GetResponseType(options);
-        if (responseType != null && IsNativeStructuredProvider(_provider))
+        if ((responseType != null || HasCallerSchema(options)) && IsNativeStructuredProvider(_provider))
         {
             try
             {
@@ -117,8 +117,8 @@ internal sealed class RimLLMProviderChatClient : IChatClient
         using IChatClient client = _provider.CreateChatClient(_model);
         return await RimLLMChatClientExecutor.GenerateAsync(
             client,
-            ApplyJsonSchemaInstructions(messages, responseType),
-            options,
+            ApplyJsonSchemaInstructions(messages, responseType, options),
+            DowngradeCallerSchema(options),
             _model,
             useNativeSchema: false,
             _provider.ProviderId,
@@ -209,13 +209,18 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             ChatOptions effective = StripUnsupportedTools(_client._provider, _options, out bool toolsStripped);
             var messageList = new List<ChatMessage>(_messages ?? new List<ChatMessage>());
             Type responseType = RimLLMChatOptions.GetResponseType(effective);
-            bool useNativeSchema = responseType != null && _client.IsNativeStructuredProvider(_client._provider);
+            bool useNativeSchema = (responseType != null || HasCallerSchema(effective)) &&
+                                   _client.IsNativeStructuredProvider(_client._provider);
 
             // 串流沒有原生 schema 的降級重試（內容一旦開始吐出就無法重來），
             // 因此不走原生 schema 時就直接把 JSON 要求寫進提示詞。
             IList<ChatMessage> providerMessages = useNativeSchema
                 ? messageList
-                : ApplyJsonSchemaInstructions(messageList, responseType);
+                : ApplyJsonSchemaInstructions(messageList, responseType, effective);
+            if (!useNativeSchema)
+            {
+                effective = DowngradeCallerSchema(effective);
+            }
 
             string composedModelId = ComposeModelId(_client._provider.ProviderId, _client._model);
 
@@ -396,13 +401,25 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     /// 附加在既有系統訊息之後而不是取代它——先前這裡是直接覆寫，系統訊息若不在
     /// 索引 0，原本的內容就會連同被換掉。
     /// </remarks>
-    private static IList<ChatMessage> ApplyJsonSchemaInstructions(IList<ChatMessage> messages, Type responseType)
+    private static IList<ChatMessage> ApplyJsonSchemaInstructions(IList<ChatMessage> messages, Type responseType, ChatOptions options)
     {
-        if (responseType == null) return messages;
-
-        string schemaInstructions =
-            "\n\n[結構化輸出要求：只能回傳符合下列結構的原始 JSON，不要加入 Markdown code fence 或其他說明。範例：\n" +
-            RimLLMJsonHelper.GetSampleJson(responseType) + "]";
+        string schemaInstructions;
+        if (responseType != null)
+        {
+            schemaInstructions =
+                "\n\n[結構化輸出要求：只能回傳符合下列結構的原始 JSON，不要加入 Markdown code fence 或其他說明。範例：\n" +
+                RimLLMJsonHelper.GetSampleJson(responseType) + "]";
+        }
+        else if (HasCallerSchema(options))
+        {
+            schemaInstructions =
+                "\n\n[結構化輸出要求：只能回傳符合下列 JSON Schema 的原始 JSON，不要加入 Markdown code fence 或其他說明。JSON Schema：\n" +
+                ((ChatResponseFormatJson)options.ResponseFormat).Schema.Value.GetRawText() + "]";
+        }
+        else
+        {
+            return messages;
+        }
 
         var copy = new List<ChatMessage>(messages ?? []);
         int sysIdx = copy.FindIndex(m => m != null && m.Role == ChatRole.System);
@@ -415,6 +432,26 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             copy.Insert(0, new ChatMessage(ChatRole.System, schemaInstructions));
         }
         return copy;
+    }
+
+    /// <summary>呼叫端自行設定了帶 schema 的 ResponseFormat（例如 MEAI 的 GetResponseAsync&lt;T&gt;），而不是走框架的結構化輸出。</summary>
+    private static bool HasCallerSchema(ChatOptions options)
+    {
+        return RimLLMChatOptions.GetResponseType(options) == null &&
+               options?.ResponseFormat is ChatResponseFormatJson { Schema: not null };
+    }
+
+    /// <summary>
+    /// 不走原生 schema 時，呼叫端的 schema 已改由提示詞傳達，這裡把回應格式降成單純的 JSON 模式，
+    /// 避免把供應商不接受（或剛剛拒絕）的 json_schema 再送一次。
+    /// </summary>
+    private static ChatOptions DowngradeCallerSchema(ChatOptions options)
+    {
+        if (!HasCallerSchema(options)) return options;
+
+        ChatOptions clone = options.Clone();
+        clone.ResponseFormat = ChatResponseFormat.Json;
+        return clone;
     }
 
     private bool IsNativeStructuredProvider(ILLMProvider provider)

@@ -99,7 +99,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     /// </summary>
     public const int MaxRoutingStrategy = 3; // 0=PriorityFailover, 1=MinLatency, 2=RoundRobin, 3=LowestCost
 
-    public int RoutingStrategy { get; set; } = 2;
+    public int RoutingStrategy { get; set; } = 0;
     public bool EnableNativeSchema { get; set; } = true;
     public bool EnableJsonRepair { get; set; } = true;
 
@@ -332,7 +332,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         public int MaxRequestsPerWindow;
         public int ThrottlingWindowSeconds;
         public int CoolDownDurationSeconds;
-        public int RoutingStrategy = 2;
+        public int RoutingStrategy = 0;
         public bool EnableNativeSchema = true;
         public bool EnableJsonRepair = true;
         public string EncryptedEmbeddingApiKey;
@@ -547,6 +547,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                                         // 解不開（通常是換了裝置）：保留原始密文，不要放進 _apiKeys，
                                         // 以免下次存檔把它覆寫成空字串而永久遺失。
                                         _undecryptableApiKeys[kvp.Key] = kvp.Value;
+                                        RimLLMStartupNotices.Post("RimLLM_MsgApiKeyDecryptFailed", kvp.Key);
                                     }
                                     else
                                     {
@@ -615,7 +616,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                             {
                                 RimLLMLog.Warning(
                                     $"[RimLLM] The daily budget is now counted in tokens; the old USD limit ({dto.DailyBudgetLimit.Value:F2}) cannot be converted and was removed. Set a token budget under Budget & Safety.");
-                                NotifyBudgetSettingReset("RimLLM_MsgLegacyBudgetLimitDropped");
+                                RimLLMStartupNotices.Post("RimLLM_MsgLegacyBudgetLimitDropped");
                             }
 
                             int storedPolicy = dto.BudgetPolicy;
@@ -627,7 +628,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                                 // 否則他只會看到 AI 突然回報 QuotaExceeded 而找不到緣由。
                                 RimLLMLog.Warning(
                                     $"[RimLLM] Unsupported budget policy {storedPolicy} in settings; reset to HardBlock (0).");
-                                NotifyBudgetSettingReset("RimLLM_MsgBudgetPolicyReset");
+                                RimLLMStartupNotices.Post("RimLLM_MsgBudgetPolicyReset");
                             }
                             this.BudgetPolicy = legacySilentMocking ? 0 : SanitizeBudgetPolicy(storedPolicy);
                             this.EnableAntiAbuse = dto.EnableAntiAbuse;
@@ -698,6 +699,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                                     {
                                         // 解密失敗時保留密文，下次存檔才不會把玩家的金鑰清空。
                                         _undecryptableDecisionApiKeys[kvp.Key] = kvp.Value;
+                                        RimLLMStartupNotices.Post("RimLLM_MsgApiKeyDecryptFailed", kvp.Key);
                                     }
                                 }
                             }
@@ -743,6 +745,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                                     if (plain == null)
                                     {
                                         _undecryptableEmbeddingApiKeys[kvp.Key] = kvp.Value;
+                                        RimLLMStartupNotices.Post("RimLLM_MsgApiKeyDecryptFailed", kvp.Key);
                                     }
                                     else
                                     {
@@ -804,25 +807,6 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
             return RimLLMDecisionProviderCatalog.Disabled;
         }
         return stored;
-    }
-
-    /// <summary>
-    /// 設定值被重設時的一次性提示。翻譯與訊息佇列都依賴 Defs 與語言資料，
-    /// 而 ExposeData 在載入階段就會執行，因此延後到主執行緒的第一幀再送出。
-    /// </summary>
-    private static void NotifyBudgetSettingReset(string translationKey)
-    {
-        RimLLMDispatcher.EnqueueOnMainThread(() =>
-        {
-            try
-            {
-                Messages.Message(translationKey.Translate(), MessageTypeDefOf.CautionInput, false);
-            }
-            catch (Exception ex)
-            {
-                RimLLMLog.Warning($"[RimLLM] Budget setting reset notice unavailable: {ex.Message}");
-            }
-        });
     }
 
     /// <summary>

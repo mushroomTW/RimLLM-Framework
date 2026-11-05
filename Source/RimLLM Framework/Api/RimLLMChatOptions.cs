@@ -19,7 +19,6 @@ public class RimLLMChatOptions : ChatOptions
     internal const string PriorityKey = "rimllm_priority";
     internal const string MinFallbackLevelKey = "rimllm_min_fallback_level";
     internal const string CachedContextKey = "rimllm_cached_context";
-    internal const string EnableContextCachingKey = "rimllm_enable_context_caching";
 
     /// <summary>
     /// 結構化輸出的目標型別。由 RimLLMClientExtensions 標註，路由層據此依供應商方言
@@ -42,18 +41,11 @@ public class RimLLMChatOptions : ChatOptions
         set => WriteAdditional(MinFallbackLevelKey, value);
     }
 
-    /// <summary>可重複使用的大型穩定上下文（如世界觀規則、輸出 Schema）。啟用 Context Caching 時 provider 優先快取此內容。</summary>
+    /// <summary>可重複使用的大型穩定上下文（如世界觀規則、輸出 Schema）。會併入系統訊息，讓具備服務端 prompt caching 的供應商能重複利用相同前綴。</summary>
     public string CachedContext
     {
         get => GetCachedContext(this);
         set => WriteAdditional(CachedContextKey, value);
-    }
-
-    /// <summary>是否啟用長上下文快取（Context Caching）。當 CachedContext 不為空時預設為 true。</summary>
-    public bool EnableContextCaching
-    {
-        get => GetEnableContextCaching(this);
-        set => WriteAdditional(EnableContextCachingKey, value);
     }
 
     /// <summary>關閉思考（對應舊 LLMReasoningEffort.None；Auto 以不設定 Reasoning 表達）。</summary>
@@ -120,18 +112,4 @@ public class RimLLMChatOptions : ChatOptions
     internal static System.Type GetResponseType(ChatOptions options) =>
         ReadAdditional<System.Type>(options, ResponseTypeKey, null);
 
-    /// <summary>
-    /// 三態語意：鍵不存在時回退成「CachedContext 非空即啟用」，
-    /// 因此不能用 ReadAdditional 的單一預設值表達。
-    /// </summary>
-    internal static bool GetEnableContextCaching(ChatOptions options)
-    {
-        if (options?.AdditionalProperties != null &&
-            options.AdditionalProperties.TryGetValue(EnableContextCachingKey, out object value) &&
-            value is bool explicitValue)
-        {
-            return explicitValue;
-        }
-        return !string.IsNullOrEmpty(GetCachedContext(options));
-    }
 }

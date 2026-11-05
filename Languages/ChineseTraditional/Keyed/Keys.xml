@@ -27,7 +27,6 @@
   <RimLLM_Fetching>獲取中...</RimLLM_Fetching>
   <RimLLM_FetchModelsBtn>獲取可用模型清單</RimLLM_FetchModelsBtn>
   <RimLLM_FetchStatusNotRun>未執行獲取</RimLLM_FetchStatusNotRun>
-  <RimLLM_FetchSuccess>&lt;color=green&gt;獲取成功&lt;/color&gt;</RimLLM_FetchSuccess>
   <RimLLM_FetchSuccessCount>&lt;color=green&gt;獲取成功&lt;/color&gt; (共獲取到 {0} 個模型)</RimLLM_FetchSuccessCount>
   <RimLLM_FetchSuccessEmpty>&lt;color=yellow&gt;獲取成功，但回傳清單為空&lt;/color&gt;</RimLLM_FetchSuccessEmpty>
   <RimLLM_FetchFailed>&lt;color=red&gt;獲取失敗&lt;/color&gt;</RimLLM_FetchFailed>
@@ -49,11 +48,8 @@
   <RimLLM_ConfirmRemoveModel>要將 {0} 從備援鏈移除嗎？它的分級與上下文上限設定也會一併清除。</RimLLM_ConfirmRemoveModel>
   <RimLLM_SelectProviderBtn>供應商: {0}</RimLLM_SelectProviderBtn>
   <RimLLM_SelectModelBtn>模型: {0}</RimLLM_SelectModelBtn>
-  <RimLLM_SelectModelPlaceholder>請選擇模型</RimLLM_SelectModelPlaceholder>
   <RimLLM_AddBtn>新增</RimLLM_AddBtn>
   
-  <RimLLM_MsgNoCachedModels>該供應商 {0} 尚無快取的模型清單，請先至該供應商設定頁面點選「獲取可用模型清單」。</RimLLM_MsgNoCachedModels>
-  <RimLLM_MsgSelectModelFirst>請先選擇要新增的模型名稱！</RimLLM_MsgSelectModelFirst>
   <RimLLM_MsgModelExists>該模型組合已存在於 Fallback 鏈中！</RimLLM_MsgModelExists>
   <RimLLM_MsgModelAdded>已新增 {0} 至 Fallback 鏈！</RimLLM_MsgModelAdded>
   
@@ -71,7 +67,6 @@
   <RimLLM_TabDebug>Debug</RimLLM_TabDebug>
   <RimLLM_TitleDebug>Debug 設置</RimLLM_TitleDebug>
   <RimLLM_TitleDebugExplanation>模組偵錯與診斷工具</RimLLM_TitleDebugExplanation>
-  <RimLLM_PureProviderFallback>(純供應商 / 內建 Fallback)</RimLLM_PureProviderFallback>
   <RimLLM_ExportDiag>匯出診斷資訊 (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
   <RimLLM_RecentRequests>最近請求歷史紀錄 (最近 {0} 筆)</RimLLM_RecentRequests>
   <RimLLM_NoRequests>&lt;color=gray&gt;目前無請求紀錄。&lt;/color&gt;</RimLLM_NoRequests>
@@ -102,9 +97,6 @@
   <RimLLM_ReasoningEffort_Medium>中</RimLLM_ReasoningEffort_Medium>
   <RimLLM_ReasoningEffort_High>高</RimLLM_ReasoningEffort_High>
   <RimLLM_ReasoningEffort_None>關閉</RimLLM_ReasoningEffort_None>
-  <RimLLM_ReasoningEffortSelectBtn>思考強度: {0}</RimLLM_ReasoningEffortSelectBtn>
-  <RimLLM_SettingsIntro>在此配置 API 供應商、模型備用鏈、全域並行限制，以及測試模型對話。</RimLLM_SettingsIntro>
-  <RimLLM_OpenSettingsBtn>開啟進階設定視窗</RimLLM_OpenSettingsBtn>
   <RimLLM_NoEnabledProviders>無已啟用的供應商 (請先至設定頁面啟用！)</RimLLM_NoEnabledProviders>
   <RimLLM_ClearRequestsBtn>清除歷史記錄</RimLLM_ClearRequestsBtn>
   <RimLLM_MsgLogsCleared>最近請求歷史記錄已清除。</RimLLM_MsgLogsCleared>
@@ -123,8 +115,6 @@
   <RimLLM_UsageInfo>輸入: {0} | 輸出: {1} | 估計花費: ${2} USD</RimLLM_UsageInfo>
   <RimLLM_UnpricedUsageNotice>本次執行有 {0} 筆請求查無費率；其費用未計入估算，但 token 照計入每日預算。</RimLLM_UnpricedUsageNotice>
   <RimLLM_MsgUsageReset>Token 與費用累計統計已重置。</RimLLM_MsgUsageReset>
-  <RimLLM_ModelLevelOverrideTitle>模型分級覆寫</RimLLM_ModelLevelOverrideTitle>
-  <RimLLM_ModelLevelOverrideExplanation>手動指定模型分級 (Lv.1=低, Lv.2=中, Lv.3=高)，供 MinFallbackLevel 過濾使用；預設依模型 API 輸出費率客觀自動分級。</RimLLM_ModelLevelOverrideExplanation>
   
   <RimLLM_TabBudget>預算與防護</RimLLM_TabBudget>
   <RimLLM_TitleBudget>預算與防護安全設定</RimLLM_TitleBudget>
@@ -178,7 +168,6 @@
   <RimLLM_EmbeddingEndpointLabel>自訂服務端點 URL: </RimLLM_EmbeddingEndpointLabel>
   <RimLLM_EmbeddingKeyHintDefault>自訂 API 金鑰 (選填，為空時自動繼承主 API 金鑰): </RimLLM_EmbeddingKeyHintDefault>
   <RimLLM_EmbeddingKeyHintLocal>自訂 API 金鑰 (選填，若伺服器不需驗證可留空): </RimLLM_EmbeddingKeyHintLocal>
-  <RimLLM_EmbeddingSelectModelBtn>從清單挑選 ({0})</RimLLM_EmbeddingSelectModelBtn>
   <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;尚未抓取模型清單。可按下方按鈕抓取，或直接於上方輸入模型名稱。&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
   <RimLLM_EmbeddingPresetModelsHint>（展示官方常見推薦模型；亦可點擊下方按鈕從伺服器抓取完整清單）</RimLLM_EmbeddingPresetModelsHint>
   <RimLLM_EmbeddingFetchedModelsHint>✓ 已從伺服器成功同步最新模型清單</RimLLM_EmbeddingFetchedModelsHint>
@@ -192,7 +181,6 @@
   <RimLLM_EmbeddingTesting>測試中...</RimLLM_EmbeddingTesting>
   <RimLLM_EmbeddingTestSuccess>成功 (維度: {0} 維, 耗時: {1}ms)</RimLLM_EmbeddingTestSuccess>
   <RimLLM_EmbeddingTestFailed>失敗 (錯誤: {0})</RimLLM_EmbeddingTestFailed>
-  <RimLLM_EmbeddingStatusActive>● 使用中</RimLLM_EmbeddingStatusActive>
   <RimLLM_EmbeddingStatusActiveDetail>● 使用中 | {0}</RimLLM_EmbeddingStatusActiveDetail>
   <RimLLM_EmbeddingStatusInactive>○ 未啟用</RimLLM_EmbeddingStatusInactive>
   <RimLLM_EmbeddingInheritedKeyHint>&lt;color=grey&gt;✓ 已自動繼承主 API 金鑰&lt;/color&gt;</RimLLM_EmbeddingInheritedKeyHint>

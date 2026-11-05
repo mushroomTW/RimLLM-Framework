@@ -139,30 +139,6 @@ public sealed class PipelineReviewRegressionTests
         ClassicAssert.AreEqual(60f, RimLLMFallbackPipeline.ResolveRetryDelay(100f, 0, null));
     }
 
-    [Test]
-    public async Task LongRetryAfter_CanBeCancelledWithoutExceedingPlatformDelayLimit()
-    {
-        var settings = new MockSettings { RoutingStrategy = 0, MaxRetries = 1, RetryDelay = 0f };
-        var provider = new RoutingProvider("P1")
-        {
-            Failure = LLMErrorMapper.CreateException(429, "limited", TimeSpan.FromDays(60))
-        };
-        var manager = BuildManager(settings, provider);
-        using var cancellation = new CancellationTokenSource();
-
-        Task<ChatResponse> request = manager.CreateChatClient("test.long-retry-after")
-            .GetResponseAsync([new ChatMessage(ChatRole.User, "retry later")], cancellationToken: cancellation.Token);
-        await provider.RequestStarted.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(100);
-
-        ClassicAssert.IsFalse(request.IsCompleted, "The provider-requested wait should remain active until cancelled.");
-        cancellation.Cancel();
-
-        Task completed = await Task.WhenAny(request, Task.Delay(TimeSpan.FromSeconds(5)));
-        ClassicAssert.AreSame(request, completed, "Cancelling a long Retry-After should release the wait promptly.");
-        await Assert.CatchAsync<OperationCanceledException>(async () => await request);
-    }
-
     [TestCase(false)]
     [TestCase(true)]
     public async Task Guard_MaterializesSingleUseMessagesOnce(bool streaming)

@@ -20,9 +20,9 @@ namespace RimLLM_Framework.Compat;
 /// <b>但這只保護方法本體與實例方法簽章。</b>目標 Mod 的型別不得出現在：(1) 基底類別或介面——RimWorld 載入
 /// DLL 時的 <c>Assembly.GetTypes()</c> 會解析，目標 Mod 缺席時整顆框架 DLL 被拒載、主功能一起失效；
 /// (2) 任何欄位——DevMode 啟動時 <c>StaticConstructorOnStartupUtility.ReportProbablyMissingAttributes</c>
-/// 對每個型別 <c>GetFields()</c>，Mono 會解析全部欄位型別；(3) async 方法的參數／區域變數與 lambda 捕捉的變數
+/// 對每個型別 <c>GetFields()</c>，執行環境會解析全部欄位型別；(3) async 方法的參數／區域變數與 lambda 捕捉的變數
 /// ——它們會被提升成狀態機／closure 的欄位，等同 (2)；(4) 靜態方法的簽章（參數與回傳型別）——Debug 動作選單
-/// （<c>DebugTabMenu_Actions.InitActions</c>）對所有靜態方法做 <c>IsDefined</c>，Mono 會解析簽章，目標 Mod 缺席時開選單即拋
+/// （<c>DebugTabMenu_Actions.InitActions</c>）對所有靜態方法做 <c>IsDefined</c>，執行環境會解析簽章，目標 Mod 缺席時開選單即拋
 /// TypeLoadException；Harmony patch 方法請以 <c>object</c>（含 <c>ref object __result</c>）接參數並在本體轉型，
 /// 轉換用的輔助方法則做成實例方法。需要「一個目標 Mod 介面的實作」時，改為攔截目標 Mod
 /// 自己的實作類別（見 RimTalkCompatPatch 的哨兵做法）；需要 async 時用非 async 薄殼先換成中性型別
@@ -71,7 +71,7 @@ internal abstract class RimLLMCompatTarget
         {
             IsPatched = false;
             PatchError = ex.Message;
-            Log.Warning($"[RimLLM] 相容層：掛載 {DisplayName} ({ModId}) 攔截失敗，該 Mod 將維持原生路徑。原因：{ex.Message}");
+            Log.Warning($"[RimLLM] Compat: failed to patch {DisplayName} ({ModId}); that mod stays on its native path. Reason: {ex.Message}");
         }
     }
     /// <summary>玩家在設定頁切換接管開關時觸發，供需要即時同步狀態的目標覆寫。</summary>

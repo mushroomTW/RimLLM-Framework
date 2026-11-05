@@ -56,6 +56,8 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         public int AttemptOnCurrent;
         public bool SawRetryableFailureOnCurrent;
         public Exception LastException;
+        /// <summary>最後一次失敗嘗試的耗時（已扣除排隊等待），供候選失敗日誌使用。</summary>
+        public long LastAttemptMs;
         public DateTime StartTime = DateTime.Now;
         public Stopwatch Total = Stopwatch.StartNew();
         /// <summary>
@@ -187,15 +189,48 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
     }
 
     /// <summary>
+    /// 把候選的失敗記到該供應商名下，與結算健康度同一個粒度：一個候選的所有重試合計一筆。
+    /// 只記總結性的 FallbackChain 條目的話，供應商的成功率永遠是 100%。
+    /// </summary>
+    private void RecordCandidateFailure(RequestState state, RimLLMFallbackPipeline.ResolvedCandidate candidate)
+    {
+        try
+        {
+            _usageTracker.RecordLog(new RimLLMManager.RequestLogEntry
+            {
+                Timestamp = state.StartTime,
+                ModId = _modId,
+                Provider = candidate.ProviderId,
+                Model = candidate.ModelName,
+                Success = false,
+                ErrorMessage = state.LastException?.Message,
+                LatencyMs = state.LastAttemptMs,
+                // 串流中途失敗時，已結算的用量仍是真實花費。
+                PromptTokens = state.LastUsage.Prompt,
+                CompletionTokens = state.LastUsage.Completion
+            });
+        }
+        catch (Exception ex)
+        {
+            // 日誌失敗不得取代請求本身的結果或打斷備援。
+            if (RimLLMLog.Enabled)
+            {
+                RimLLMLog.Warning($"[RimLLM] Failed to record candidate failure: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+            }
+        }
+    }
+
+    /// <summary>
     /// 決定重試或換手，並在重試前套用退避延遲。
     /// </summary>
     private async Task AdvanceAsync(RequestState state, CancellationToken cancellationToken)
     {
         var candidate = state.Current;
         bool retryable = RimLLMFallbackPipeline.IsRetryableException(state.LastException);
+        bool waitTooLong = RimLLMFallbackPipeline.ExceedsRetryAfterLimit(state.LastException);
         int maxRetries = _settings.MaxRetries;
 
-        if (retryable && state.AttemptOnCurrent < maxRetries)
+        if (retryable && !waitTooLong && state.AttemptOnCurrent < maxRetries)
         {
             float delay = RimLLMFallbackPipeline.ResolveRetryDelay(
                 _settings.RetryDelay, state.AttemptOnCurrent, state.LastException);
@@ -206,7 +241,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             }
             if (delay > 0f)
             {
-                await DelayWithCancellationAsync(delay, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(delay), cancellationToken).ConfigureAwait(false);
             }
 
             state.AttemptOnCurrent++;
@@ -227,33 +262,24 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         {
             if (RimLLMLog.Enabled)
             {
-                RimLLMLog.Warning($"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
+                RimLLMLog.Warning(waitTooLong
+                    ? $"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) asked to wait longer than the retry limit. Fallbacking to the next entry."
+                    : $"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
             }
         }
 
-        // 換手之前結算這個候選的健康度。
+        // 換手之前結算這個候選的健康度與日誌。
         SettleCandidate(state, RimLLMFallbackPipeline.HealthKey(candidate));
+        RecordCandidateFailure(state, candidate);
 
         state.Index++;
         state.AttemptOnCurrent = 0;
     }
 
-    private static async Task DelayWithCancellationAsync(float delaySeconds, CancellationToken cancellationToken)
-    {
-        // Mono 的 Task.Delay 上限可能只有 int.MaxValue 毫秒；固定分段也避免先轉換超長 TimeSpan。
-        const double maxSliceSeconds = 20d * 24d * 60d * 60d;
-        double remainingSeconds = delaySeconds;
-        while (remainingSeconds > 0d)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            double sliceSeconds = Math.Min(remainingSeconds, maxSliceSeconds);
-            await Task.Delay(TimeSpan.FromSeconds(sliceSeconds), cancellationToken).ConfigureAwait(false);
-            remainingSeconds -= sliceSeconds;
-        }
-    }
-
     /// <summary>
     /// 候選用盡。選擇失敗不會觸發 OnRoutingUpdateAsync，因此收尾日誌必須在這裡寫。
+    /// 擲出的例外沿用最後一個候選的錯誤碼與 Retry-After：呼叫端靠它們分辨額度用盡、
+    /// 限流或金鑰錯誤，一律蓋成同一個錯誤碼的話 SDK 的錯誤契約就形同虛設。
     /// </summary>
     private void Exhausted(RequestState state, ChatOptions options)
     {
@@ -270,14 +296,23 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             LatencyMs = state.Total.ElapsedMilliseconds
         });
 
-        // 串流沿用舊管線的 ProviderOffline：下游是以 LLMError 分支顯示離線提示的。
         bool streaming = RimLLMChatOptions.ReadAdditional(options, StreamingKey, false);
-        throw new RimLLMException(
-            streaming ? LLMError.ProviderOffline : LLMError.Unknown,
-            streaming
-                ? $"All fallback attempts failed, unable to establish stream connection. Last error: {state.LastException?.Message}"
-                : $"All fallback attempts failed. Last error: {state.LastException?.Message}",
-            state.LastException);
+        string lastError = RimLLMLog.SanitizeForLog(state.LastException?.Message, 300);
+        string message = streaming
+            ? $"All fallback attempts failed, unable to establish stream connection. Last error: {lastError}"
+            : $"All fallback attempts failed. Last error: {lastError}";
+
+        if (state.LastException is RimLLMException last)
+        {
+            throw new RimLLMException(last.Error, message, last)
+            {
+                RetryAfter = last.RetryAfter,
+                HttpStatusCode = last.HttpStatusCode
+            };
+        }
+
+        // 最後的失敗不是框架已分類的錯誤：串流沿用 ProviderOffline，下游以它顯示離線提示。
+        throw new RimLLMException(streaming ? LLMError.ProviderOffline : LLMError.Unknown, message, state.LastException);
     }
 
     protected override ValueTask OnRoutingUpdateAsync(
@@ -330,6 +365,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             else
             {
                 state.LastException = attempt.Exception;
+                state.LastAttemptMs = elapsedMs;
                 state.SawRetryableFailureOnCurrent |=
                     RimLLMFallbackPipeline.IsRetryableException(attempt.Exception);
 
@@ -338,6 +374,11 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
                 if (isTerminal)
                 {
                     SettleCandidate(state, healthKey);
+                    // 呼叫端取消不是供應商的失敗，不計入成功率。
+                    if (attempt.Exception is not OperationCanceledException)
+                    {
+                        RecordCandidateFailure(state, candidate);
+                    }
                 }
             }
         }

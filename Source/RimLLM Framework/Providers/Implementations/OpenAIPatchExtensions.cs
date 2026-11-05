@@ -2,11 +2,12 @@ using System;
 using System.Reflection;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
+using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Providers;
 
 /// <summary>
-/// OpenAI SDK 2.13.0 (搭配 System.ClientModel 1.15.0) 的 <see cref="ChatCompletionOptions.Patch"/>
+/// OpenAI SDK 的 <see cref="ChatCompletionOptions.Patch"/>
 /// 內部註冊了未對 null 做防護的 PropagateSet/PropagateGet 委派。
 /// 當對根屬性（如 $.response_format、$.stream_options）操作 Patch 時，SDK 會直接對為 null 的子屬性調用
 /// 其 .Patch 屬性而擲出 <see cref="NullReferenceException"/>。
@@ -26,11 +27,17 @@ internal static class OpenAIPatchExtensions
 
     /// <summary>
     /// 停用 <see cref="ChatCompletionOptions"/> 內部 <see cref="System.ClientModel.Primitives.JsonPatch"/> 的屬性傳播器，
-    /// 避免 OpenAI SDK 2.13.0 在子屬性為 null 時拋出 NullReferenceException。
+    /// 避免 OpenAI SDK 在子屬性為 null 時拋出 NullReferenceException。
     /// </summary>
     public static ChatCompletionOptions DisablePatchPropagators(this ChatCompletionOptions options)
     {
-        if (options == null || PatchField == null || PropagatorSetterField == null) return options;
+        if (options == null) return options;
+
+        if (!CanDisablePropagators)
+        {
+            WarnOnce("private JsonPatch fields were not found");
+            return options;
+        }
 
         try
         {
@@ -42,12 +49,26 @@ internal static class OpenAIPatchExtensions
                 PatchField.SetValue(options, patchObj);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // 防禦性捕獲，避免不同版本 runtime 例外
+            // 反射失敗不擋請求：SDK 可能已修掉這個問題，但要留下線索，否則之後的 NRE 無從追查。
+            WarnOnce(ex.Message);
         }
 
         return options;
+    }
+
+    /// <summary>目前的 SDK 版本是否還有這段反射依賴的私有欄位。升級 SDK 時由測試把關。</summary>
+    internal static bool CanDisablePropagators => PatchField != null && PropagatorSetterField != null;
+
+    private static int _warned;
+
+    private static void WarnOnce(string reason)
+    {
+        if (System.Threading.Interlocked.Exchange(ref _warned, 1) == 0)
+        {
+            RimLLMLog.Warning($"[RimLLM] Could not disable OpenAI SDK patch propagators ({reason}); requests may fail if the SDK still has the null-propagation bug.");
+        }
     }
 
     /// <summary>

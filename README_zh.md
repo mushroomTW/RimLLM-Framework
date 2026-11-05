@@ -139,7 +139,7 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 
 ### 串流
 
-串流是標準 MEAI 的 `GetStreamingResponseAsync` / `await foreach`，語法見 MEAI 文件。框架額外保證一件事：整條 Fallback 鏈失敗時，原始的 `RimLLMException` 會從 `await foreach` 重新擲出，串流不會無聲結束。
+串流是標準 MEAI 的 `GetStreamingResponseAsync` / `await foreach`，語法見 MEAI 文件。框架額外保證一件事：整條 Fallback 鏈失敗時，會從 `await foreach` 擲出帶有最後一個候選 `Error`、`RetryAfter` 與 `HttpStatusCode` 的 `RimLLMException`（原始例外在 `InnerException`），串流不會無聲結束。非串流呼叫遵守同一份契約。
 
 框架**不會**把 update 派送到 Unity 主執行緒。迴圈在哪個執行緒續行，取決於你自己的 `await`：在主執行緒上開始 `await foreach`，Unity 的 `SynchronizationContext` 會讓每一輪都回到主執行緒；若從 `Task.Run` 或 `ConfigureAwait(false)` 之後開始，迴圈本體就跑在執行緒池上，此時只能透過 `RimLLMDispatcher.EnqueueOnMainThread` 碰遊戲或 UI 狀態。
 
@@ -294,7 +294,7 @@ catch (RimLLMException ex)
 
 `LLMError` 的值：`Timeout`、`RateLimit`、`InvalidKey`、`ProviderOffline`、`InvalidResponse`、`NetworkError`、`ModelNotFound`、`ContentFilter`、`QuotaExceeded`、`Cancelled`、`Unknown`、`ContextWindowExceeded`。
 
-`ContentFilter` 與 `ContextWindowExceeded` 從籠統的 4xx 拒絕中拆出來，是因為三者的處置方式完全不同：縮短提示詞、換一家供應商，還是修請求。OpenAI 協定家族對這兩種情況一律回 `400`，因此由錯誤對照表依訊息內容判定；`413` 則依定義直接對應 `ContextWindowExceeded`。Schema、reasoning 與 temperature 遭拒仍維持回報 `InvalidResponse`，不影響現有的「去掉該參數重打一次」流程。新的列舉成員一律追加在 `LLMError` 末尾，已編譯的下游 Mod 數值不變。
+`ContentFilter` 與 `ContextWindowExceeded` 從籠統的 4xx 拒絕中拆出來，是因為三者的處置方式完全不同：縮短提示詞、換一家供應商，還是修請求。OpenAI 協定家族對這兩種情況一律回 `400`，因此由錯誤對照表依訊息內容判定；`413` 則依定義直接對應 `ContextWindowExceeded`。Schema、reasoning、temperature 與 `max_tokens` 遭拒仍維持回報 `InvalidResponse`，不影響現有的「去掉該參數重打一次」流程。新的列舉成員一律追加在 `LLMError` 末尾，已編譯的下游 Mod 數值不變。
 
 ### 唯一多出來的型別：`RimLLMChatOptions`
 
@@ -313,7 +313,7 @@ var options = new RimLLMChatOptions
 ChatResponse response = await client.GetResponseAsync(messages, options);
 ```
 
-`CachedContext` 不為空時，`EnableContextCaching` 會自動開啟。可重用的前綴會併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會自動對重複前綴打折。
+可重用的前綴會併入系統訊息，具備服務端 prompt caching 的供應商（OpenAI，以及經 OpenAI 相容端點存取的 Gemini）會自動對重複前綴打折。
 
 ### 你不必自己寫的部分
 
@@ -323,7 +323,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | --- | --- |
 | API 金鑰的儲存與 UI | 使用 OS 每使用者保護金鑰的 AES-256 加密設定，所有 Mod 共用同一份 |
 | 挑選供應商或模型 | 玩家設定的 Fallback 鏈，項目為 `Provider:Model` 形式 |
-| 重試與 `Retry-After` | 逾時／429／連線錯誤自動重試，兩種標頭格式都支援 |
+| 重試與 `Retry-After` | 逾時／429／連線錯誤自動重試，兩種標頭格式都支援；要求等待超過 60 秒時改換下一個候選 |
 | 供應商之間的容錯切換 | 回應開始輸出之前，自動沿 Fallback 鏈降級 |
 | 處理掛掉的供應商 | 熔斷器，連續失敗後以指數退避冷卻 |
 | 跨 Mod 的流量控制 | 全域優先佇列與並行上限，避免多個 Mod 同時打 API 造成掉幀 |
@@ -331,7 +331,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 | 用量與費用回報 | Debug 分頁的各供應商 Token 與成本看板 |
 | 推理模型的差異 | `reasoning_content` 統一正規化為 MEAI 的 `TextReasoningContent` |
 | 格式錯誤的 JSON | 修復 Markdown 圍籬、未閉合括號與尾隨逗號，再抽出 JSON 區塊做第二次解析 |
-| 主執行緒切換 | 記憶體內的請求日誌更新派送回 Unity 主執行緒；公開 `RimLLMDispatcher` 供你派送自己的回呼 |
+| 主執行緒切換 | 公開 `RimLLMDispatcher` 供你派送自己的回呼；請求日誌本身是執行緒安全的，不需要回主執行緒 |
 | 原生 Tool Calling 與主執行緒排程 | 所有供應商經 OpenAI 協定送出工具定義；工具委派自動排入 Unity 主執行緒 |
 
 ### API 表面速查

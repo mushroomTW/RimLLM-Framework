@@ -27,7 +27,6 @@
   <RimLLM_Fetching>Fetching...</RimLLM_Fetching>
   <RimLLM_FetchModelsBtn>Fetch Available Models</RimLLM_FetchModelsBtn>
   <RimLLM_FetchStatusNotRun>Not Fetched</RimLLM_FetchStatusNotRun>
-  <RimLLM_FetchSuccess>&lt;color=green&gt;Fetch Successful&lt;/color&gt;</RimLLM_FetchSuccess>
   <RimLLM_FetchSuccessCount>&lt;color=green&gt;Fetch Successful&lt;/color&gt; ({0} models fetched)</RimLLM_FetchSuccessCount>
   <RimLLM_FetchSuccessEmpty>&lt;color=yellow&gt;Fetch Successful, but list is empty&lt;/color&gt;</RimLLM_FetchSuccessEmpty>
   <RimLLM_FetchFailed>&lt;color=red&gt;Fetch Failed&lt;/color&gt;</RimLLM_FetchFailed>
@@ -49,11 +48,8 @@
   <RimLLM_ConfirmRemoveModel>Remove {0} from the fallback chain? Its tier and context-window settings will be cleared too.</RimLLM_ConfirmRemoveModel>
   <RimLLM_SelectProviderBtn>Provider: {0}</RimLLM_SelectProviderBtn>
   <RimLLM_SelectModelBtn>Model: {0}</RimLLM_SelectModelBtn>
-  <RimLLM_SelectModelPlaceholder>Select Model</RimLLM_SelectModelPlaceholder>
   <RimLLM_AddBtn>Add</RimLLM_AddBtn>
   
-  <RimLLM_MsgNoCachedModels>Provider {0} has no cached models. Please fetch available models first in the settings page.</RimLLM_MsgNoCachedModels>
-  <RimLLM_MsgSelectModelFirst>Please select a model name to add first!</RimLLM_MsgSelectModelFirst>
   <RimLLM_MsgModelExists>This model combination already exists in the Fallback chain!</RimLLM_MsgModelExists>
   <RimLLM_MsgModelAdded>Added {0} to Fallback chain!</RimLLM_MsgModelAdded>
   
@@ -71,7 +67,6 @@
   <RimLLM_TabDebug>Debug</RimLLM_TabDebug>
   <RimLLM_TitleDebug>Debug Settings</RimLLM_TitleDebug>
   <RimLLM_TitleDebugExplanation>Mod Debugging and Diagnostics</RimLLM_TitleDebugExplanation>
-  <RimLLM_PureProviderFallback>(Pure Provider / Built-in Fallback)</RimLLM_PureProviderFallback>
   <RimLLM_ExportDiag>Export Diagnostics (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
   <RimLLM_RecentRequests>Recent Request History (Last {0})</RimLLM_RecentRequests>
   <RimLLM_NoRequests>&lt;color=gray&gt;No request history currently.&lt;/color&gt;</RimLLM_NoRequests>
@@ -102,9 +97,6 @@
   <RimLLM_ReasoningEffort_Medium>Medium</RimLLM_ReasoningEffort_Medium>
   <RimLLM_ReasoningEffort_High>High</RimLLM_ReasoningEffort_High>
   <RimLLM_ReasoningEffort_None>Disabled</RimLLM_ReasoningEffort_None>
-  <RimLLM_ReasoningEffortSelectBtn>Reasoning: {0}</RimLLM_ReasoningEffortSelectBtn>
-  <RimLLM_SettingsIntro>Configure API providers, model fallback chains, global concurrency limits, and test model chat here.</RimLLM_SettingsIntro>
-  <RimLLM_OpenSettingsBtn>Open Advanced Settings Window</RimLLM_OpenSettingsBtn>
   <RimLLM_NoEnabledProviders>No enabled providers (Please enable one in settings first!)</RimLLM_NoEnabledProviders>
   <RimLLM_ClearRequestsBtn>Clear History</RimLLM_ClearRequestsBtn>
   <RimLLM_MsgLogsCleared>Recent request history cleared.</RimLLM_MsgLogsCleared>
@@ -123,8 +115,6 @@
   <RimLLM_UsageInfo>Prompt: {0} | Completion: {1} | Est. Cost: ${2} USD</RimLLM_UsageInfo>
   <RimLLM_UnpricedUsageNotice>{0} request(s) this session have unknown rates. Their cost is excluded from the estimate, but their tokens still count toward the daily budget.</RimLLM_UnpricedUsageNotice>
   <RimLLM_MsgUsageReset>Usage statistics have been reset.</RimLLM_MsgUsageReset>
-  <RimLLM_ModelLevelOverrideTitle>Model Tier Overrides</RimLLM_ModelLevelOverrideTitle>
-  <RimLLM_ModelLevelOverrideExplanation>Manually assign model tiers (Lv.1=Low, Lv.2=Medium, Lv.3=High) used by MinFallbackLevel filtering. Defaults to objective auto-tiering based on model API output cost rates.</RimLLM_ModelLevelOverrideExplanation>
   
   <RimLLM_TabBudget>Budget &amp; Safety</RimLLM_TabBudget>
   <RimLLM_TitleBudget>Budget &amp; Safety Configuration</RimLLM_TitleBudget>
@@ -178,7 +168,6 @@
   <RimLLM_EmbeddingEndpointLabel>Custom Endpoint URL: </RimLLM_EmbeddingEndpointLabel>
   <RimLLM_EmbeddingKeyHintDefault>Custom API Key (optional, defaults to main API key if empty): </RimLLM_EmbeddingKeyHintDefault>
   <RimLLM_EmbeddingKeyHintLocal>Custom API Key (optional, leave blank if no authentication required): </RimLLM_EmbeddingKeyHintLocal>
-  <RimLLM_EmbeddingSelectModelBtn>Pick from list ({0})</RimLLM_EmbeddingSelectModelBtn>
   <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;No model list fetched yet. Fetch one below, or type the model name above.&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
   <RimLLM_EmbeddingPresetModelsHint>(Showing verified preset models; you can also fetch the full list from your server below)</RimLLM_EmbeddingPresetModelsHint>
   <RimLLM_EmbeddingFetchedModelsHint>✓ Model list synchronized from server</RimLLM_EmbeddingFetchedModelsHint>
@@ -192,7 +181,6 @@
   <RimLLM_EmbeddingTesting>Testing...</RimLLM_EmbeddingTesting>
   <RimLLM_EmbeddingTestSuccess>Success ({0} dims, {1}ms)</RimLLM_EmbeddingTestSuccess>
   <RimLLM_EmbeddingTestFailed>Failed (Error: {0})</RimLLM_EmbeddingTestFailed>
-  <RimLLM_EmbeddingStatusActive>● Active</RimLLM_EmbeddingStatusActive>
   <RimLLM_EmbeddingStatusActiveDetail>● Active | {0}</RimLLM_EmbeddingStatusActiveDetail>
   <RimLLM_EmbeddingStatusInactive>○ Inactive</RimLLM_EmbeddingStatusInactive>
   <RimLLM_EmbeddingInheritedKeyHint>&lt;color=grey&gt;✓ Inherited main API key&lt;/color&gt;</RimLLM_EmbeddingInheritedKeyHint>

@@ -1,5 +1,6 @@
 using System;
 using RimLLM_Framework.Api;
+using RimLLM_Framework.Core;
 using RimLLM_Framework.Mod;
 using Verse;
 
@@ -98,7 +99,7 @@ internal sealed class CompatTakeoverGate
             _lastOfflineWarning = now;
             try
             {
-                Log.Warning($"[RimLLM] 相容層：{reason}");
+                Log.Warning($"[RimLLM] Compat: {RimLLMLog.SanitizeForLog(reason, 500)}");
             }
             catch (Exception)
             {

@@ -52,7 +52,7 @@ internal static class RimLLMCompatBootstrap
         catch (Exception ex)
         {
             // Harmony 本身缺席（brrainz.harmony 未啟用）或其他啟動期意外：相容層整體停用，主功能不受影響。
-            Log.Warning($"[RimLLM] 相容層初始化失敗，第三方接管功能停用：{ex.Message}");
+            Log.Warning($"[RimLLM] Compat layer failed to initialize; third-party takeover is disabled: {ex.Message}");
         }
     }
 

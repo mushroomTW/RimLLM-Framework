@@ -186,7 +186,7 @@ public class RimLLMDispatcher : MonoBehaviour
             TryEnqueueBounded(new QueuedAction(action, () =>
             {
                 tcs.TrySetException(
-                    new InvalidOperationException($"[RimLLM] 主線程佇列已滿（上限 {MaxQueuedActions}），待執行的主線程工作被丟棄。"));
+                    new InvalidOperationException($"[RimLLM] The main-thread queue is full (limit {MaxQueuedActions}); the pending main-thread work was dropped."));
                 onDropped?.Invoke();
             }));
             return;

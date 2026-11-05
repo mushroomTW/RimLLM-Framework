@@ -63,3 +63,8 @@ ehthumbs.db
 # ------------------------------------------------------------------------------
 Source/RimLLM Framework.InGameTests/Mod/Assemblies/
 Source/RimLLM Framework.InGameTests/Mod/Configs/
+
+# 第三方參考組件（授權未明，不進公開 repo；取得方式見各目錄 README）
+Source/Libs/RimTalk/*.dll
+Source/Libs/AutoTranslation/*.dll
+Source/Libs/ModCompatChecker/*.dll

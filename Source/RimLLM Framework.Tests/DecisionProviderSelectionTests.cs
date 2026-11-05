@@ -206,6 +206,24 @@ public class DecisionProviderSelectionTests
     }
 
     [Test]
+    public async Task EvaluateWithProviderAsync_WhenPlayerDisabledDecisions_DoesNotSpendStoredKey()
+    {
+        MockSettings settings = DecisionTestDoubles.NewSettings();
+        settings.DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
+        settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
+
+        RimLLMManager manager = new(settings);
+        RimLLMDecisionClient client = new(manager, TestModId);
+
+        RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+            await client.EvaluateWithProviderAsync(
+                "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.TypeSafe));
+
+        ClassicAssert.AreEqual(LLMError.Unknown, ex!.Error);
+        ClassicAssert.IsEmpty(_handler.RequestUris, "玩家全域停用時，指定供應商也不得送出請求");
+    }
+
+    [Test]
     public async Task EvaluateWithProviderAsync_LeavesPlayerSettingsUntouched()
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();

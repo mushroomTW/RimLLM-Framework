@@ -141,7 +141,7 @@ The `ChatResponse` you get back is the provider's own, handed over unchanged apa
 
 ### Chat streaming
 
-Streaming is MEAI's standard `GetStreamingResponseAsync` / `await foreach`. The framework adds one guarantee on top: if the whole fallback chain fails, the original `RimLLMException` is rethrown from `await foreach`, so a failing stream never ends silently.
+Streaming is MEAI's standard `GetStreamingResponseAsync` / `await foreach`. The framework adds one guarantee on top: if the whole fallback chain fails, a `RimLLMException` carrying the last candidate's `Error`, `RetryAfter` and `HttpStatusCode` (the original exception is its `InnerException`) is thrown from `await foreach`, so a failing stream never ends silently. Non-streaming calls follow the same contract.
 
 Updates are **not** marshalled onto the Unity main thread by the framework. The loop resumes wherever your own `await` resumes: start the `await foreach` on the main thread and Unity's `SynchronizationContext` brings every iteration back there; start it from `Task.Run` or after a `ConfigureAwait(false)` and the loop body runs on a thread-pool thread, so touch game or UI state only through `RimLLMDispatcher.EnqueueOnMainThread`.
 
@@ -296,7 +296,7 @@ catch (RimLLMException ex)
 
 `LLMError` values: `Timeout`, `RateLimit`, `InvalidKey`, `ProviderOffline`, `InvalidResponse`, `NetworkError`, `ModelNotFound`, `ContentFilter`, `QuotaExceeded`, `Cancelled`, `Unknown`, `ContextWindowExceeded`.
 
-`ContentFilter` and `ContextWindowExceeded` are split out of the generic 4xx rejection because the three cases call for different responses: shorten the prompt, try a different provider, or fix the request. Providers on the OpenAI protocol report both as plain `400`s, so the mapper identifies them from the message text; `413` maps to `ContextWindowExceeded` by definition. Schema, reasoning and temperature rejections keep reporting `InvalidResponse`, leaving the existing "retry without that parameter" path untouched. New enum members are appended at the end of `LLMError`, so already-compiled mods keep their values.
+`ContentFilter` and `ContextWindowExceeded` are split out of the generic 4xx rejection because the three cases call for different responses: shorten the prompt, try a different provider, or fix the request. Providers on the OpenAI protocol report both as plain `400`s, so the mapper identifies them from the message text; `413` maps to `ContextWindowExceeded` by definition. Schema, reasoning, temperature and `max_tokens` rejections keep reporting `InvalidResponse`, leaving the existing "retry without that parameter" path untouched. New enum members are appended at the end of `LLMError`, so already-compiled mods keep their values.
 
 ### The one optional type: `RimLLMChatOptions`
 
@@ -315,7 +315,7 @@ var options = new RimLLMChatOptions
 ChatResponse response = await client.GetResponseAsync(messages, options);
 ```
 
-`EnableContextCaching` turns on automatically when `CachedContext` is non-empty. The reusable prefix is merged into the system message, so providers with server-side prompt caching (OpenAI, and Gemini through its OpenAI-compatible endpoint) discount repeated prefixes automatically.
+The reusable prefix is merged into the system message, so providers with server-side prompt caching (OpenAI, and Gemini through its OpenAI-compatible endpoint) discount repeated prefixes automatically.
 
 ### What you don't have to write
 
@@ -325,7 +325,7 @@ This is the point of the framework. All of the following already happens behind 
 | --- | --- |
 | API key storage and UI | AES-256 encrypted settings with an OS-protected per-user key, shared across every mod |
 | Picking a provider or model | Player-configured fallback chain, `Provider:Model` entries |
-| Retry and `Retry-After` | Retries on timeout / 429 / connection error, honouring both header formats |
+| Retry and `Retry-After` | Retries on timeout / 429 / connection error, honouring both header formats; a wait over 60 s moves to the next candidate instead |
 | Failover between providers | Automatic descent through the fallback chain before the reply starts |
 | Dead-provider handling | Circuit breaker with exponential cooldown after repeated failures |
 | Rate limiting across mods | Global priority queue and concurrency cap, so mods don't stutter the game |
@@ -333,7 +333,7 @@ This is the point of the framework. All of the following already happens behind 
 | Usage and cost reporting | Per-provider token and cost dashboard in the Debug tab |
 | Reasoning-model quirks | `reasoning_content` normalized into MEAI `TextReasoningContent` |
 | Malformed JSON | Markdown fences, unclosed brackets and trailing commas repaired, then the JSON block re-extracted before a second parse |
-| Main-thread marshalling | In-memory request-log updates dispatched back to Unity's main thread; `RimLLMDispatcher` exposed for your own callbacks |
+| Main-thread marshalling | `RimLLMDispatcher` exposed for your own callbacks; request logging itself is thread-safe and does not need the main thread |
 | Native Tool Calling & Dispatching | Tools sent in the OpenAI protocol shape on every provider; automatic dispatch onto Unity main thread |
 
 ### API surface at a glance

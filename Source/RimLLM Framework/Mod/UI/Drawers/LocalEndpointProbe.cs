@@ -43,9 +43,9 @@ internal static class LocalEndpointProbe
         {
             try
             {
-                var response = await SharedClient.GetAsync(target.TestUrl).ConfigureAwait(false);
+                using HttpResponseMessage response = await SharedClient.GetAsync(target.TestUrl).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode ||
-                    (acceptUnauthorized && response.StatusCode == HttpStatusCode.Unauthorized))
+                    (acceptUnauthorized && response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden))
                 {
                     return target;
                 }

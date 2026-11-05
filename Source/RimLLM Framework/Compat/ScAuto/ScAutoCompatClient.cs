@@ -21,7 +21,7 @@ namespace RimLLM_Framework.Compat;
 /// （其類別多為 <c>internal</c>）。失敗同樣合成為該協議的錯誤 JSON，使其原有的重試與降級邏輯照常運作。
 /// </para>
 /// <para>
-/// 提示工程與結構化輸出約束完全沿用該 Mod 的請求：訊息原樣轉送，不另外設定回應格式。
+/// 提示工程與結構化輸出約束完全沿用該 Mod 的請求：訊息原樣轉送，回應格式也照請求轉成 MEAI 的 ResponseFormat。
 /// </para>
 /// </remarks>
 internal sealed class ScAutoCompatClient : CompatClientBase
@@ -63,6 +63,8 @@ internal sealed class ScAutoCompatClient : CompatClientBase
             if (spec.MaxOutputTokens.HasValue) options.MaxOutputTokens = spec.MaxOutputTokens;
             if (spec.Temperature.HasValue) options.Temperature = spec.Temperature;
             if (spec.TopP.HasValue) options.TopP = spec.TopP;
+            if (spec.ResponseFormat != null) options.ResponseFormat = spec.ResponseFormat;
+            if (spec.StrictSchema) (options.AdditionalProperties ??= [])["strict"] = true;
 
             ChatResponse response = await Chat.GetResponseAsync(spec.Messages, options, cancellationToken).ConfigureAwait(false);
             return BuildSuccessJson(response.Text ?? string.Empty, chatProtocol);
@@ -178,6 +180,8 @@ internal sealed class ScAutoCompatClient : CompatClientBase
         public int? MaxOutputTokens;
         public float? Temperature;
         public float? TopP;
+        public ChatResponseFormat ResponseFormat;
+        public bool StrictSchema;
     }
 
     /// <summary>
@@ -223,8 +227,58 @@ internal sealed class ScAutoCompatClient : CompatClientBase
             spec.MaxOutputTokens = ReadInt(root, "max_output_tokens") ?? ReadInt(root, "max_completion_tokens") ?? ReadInt(root, "max_tokens");
             spec.Temperature = ReadSingle(root, "temperature");
             spec.TopP = ReadSingle(root, "top_p");
+            ReadResponseFormat(root, chatProtocol, spec);
         }
         return spec;
+    }
+
+    /// <summary>
+    /// 讀取回應格式。Chat：<c>response_format</c>，schema 包在 <c>json_schema</c> 內；
+    /// Responses：<c>text.format</c>，schema 欄位直接在同一層。
+    /// </summary>
+    private static void ReadResponseFormat(JsonElement root, bool chatProtocol, RequestSpec spec)
+    {
+        JsonElement format;
+        if (chatProtocol)
+        {
+            if (!root.TryGetProperty("response_format", out format)) return;
+        }
+        else if (!root.TryGetProperty("text", out JsonElement text) ||
+                 text.ValueKind != JsonValueKind.Object ||
+                 !text.TryGetProperty("format", out format))
+        {
+            return;
+        }
+
+        if (format.ValueKind != JsonValueKind.Object ||
+            !format.TryGetProperty("type", out JsonElement type) ||
+            type.ValueKind != JsonValueKind.String)
+        {
+            return;
+        }
+
+        switch (type.GetString())
+        {
+            case "json_object":
+                spec.ResponseFormat = ChatResponseFormat.Json;
+                break;
+
+            case "json_schema":
+                JsonElement holder = chatProtocol && format.TryGetProperty("json_schema", out JsonElement inner) ? inner : format;
+                if (holder.ValueKind != JsonValueKind.Object ||
+                    !holder.TryGetProperty("schema", out JsonElement schema))
+                {
+                    spec.ResponseFormat = ChatResponseFormat.Json;
+                    break;
+                }
+                // JsonDocument 離開 using 就釋放，schema 要跟著 spec 活下去，必須 Clone。
+                spec.ResponseFormat = ChatResponseFormat.ForJsonSchema(
+                    schema.Clone(),
+                    holder.TryGetProperty("name", out JsonElement name) && name.ValueKind == JsonValueKind.String ? name.GetString() : null,
+                    holder.TryGetProperty("description", out JsonElement description) && description.ValueKind == JsonValueKind.String ? description.GetString() : null);
+                spec.StrictSchema = holder.TryGetProperty("strict", out JsonElement strict) && strict.ValueKind == JsonValueKind.True;
+                break;
+        }
     }
 
     private static void AppendItems(List<ChatMessage> target, JsonElement root, string property)

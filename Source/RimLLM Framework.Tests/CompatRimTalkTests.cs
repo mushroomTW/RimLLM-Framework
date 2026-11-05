@@ -282,7 +282,7 @@ public class CompatRimTalkTests
     /// 委派）都不得以 RimTalk 型別當基底類別、介面或欄位型別。
     /// 前兩者由 RimWorld 載入 DLL 時的 Assembly.GetTypes() 解析，RimTalk 缺席時整顆框架被拒載；
     /// 欄位由 DevMode 啟動時 StaticConstructorOnStartupUtility.ReportProbablyMissingAttributes 的 GetFields()
-    /// 解析（Mono 會解析全部欄位型別），RimTalk 缺席時每次啟動一條紅字。
+    /// 掃描，RimTalk 缺席時可能每次啟動一條紅字。
     /// 方法簽章與本體延遲到 JIT 才解析，允許出現。
     /// </summary>
     [Test]
@@ -323,7 +323,7 @@ public class CompatRimTalkTests
         }
     }
 
-    /// <summary>一個型別及其陣列元素／泛型引數（遞迴）——Mono 解析欄位型別時會一路解析到底。</summary>
+    /// <summary>一個型別及其陣列元素／泛型引數（遞迴）。</summary>
     private static IEnumerable<Type> Expand(Type type)
     {
         yield return type;

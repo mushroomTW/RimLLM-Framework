@@ -28,9 +28,9 @@ $runLock = [IO.File]::Open((Join-Path $resultRoot 'run.lock'), 'OpenOrCreate', '
 $process = $null
 try {
     if (!$SkipBuild) {
-        & dotnet build (Join-Path $repoRoot 'Source/RimLLM Framework/RimLLM Framework.csproj') -c Release "-p:RimWorldDir=$RimWorldDir"
+        & dotnet build (Join-Path $repoRoot 'Source/RimLLM Framework/RimLLM Framework.csproj') -c Release "-p:RimWorldDir=$RimWorldDir/"
         if ($LASTEXITCODE) { throw 'Release 建置失敗。' }
-        & dotnet build (Join-Path $PSScriptRoot 'RimLLM Framework.InGameTests.csproj') "-p:RimWorldDir=$RimWorldDir"
+        & dotnet build (Join-Path $PSScriptRoot 'RimLLM Framework.InGameTests.csproj') "-p:RimWorldDir=$RimWorldDir/"
         if ($LASTEXITCODE) { throw 'DevTools 測試組建失敗。' }
     }
     foreach ($dll in 'DevTools.dll', 'RimLLM Framework.InGameTests.dll') {

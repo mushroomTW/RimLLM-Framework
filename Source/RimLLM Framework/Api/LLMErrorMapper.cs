@@ -102,14 +102,21 @@ public static class LLMErrorMapper
                 rejected.IsSchemaRejection = LooksLikeSchemaRejection(probe);
                 rejected.IsReasoningRejection = LooksLikeReasoningRejection(probe);
                 rejected.IsTemperatureRejection = LooksLikeTemperatureRejection(probe);
+                rejected.IsMaxTokensRejection = LooksLikeMaxTokensRejection(probe);
                 return rejected;
 
             case 429:
-                return ContainsIgnoreCase(probe, "quota") || ContainsIgnoreCase(probe, "insufficient")
-                    ? Create(LLMError.QuotaExceeded,
-                        "API insufficient quota (insufficient_quota), please check your account balance.", retryAfter, innerException)
-                    : Create(LLMError.RateLimit,
-                        $"Rate limit triggered: {friendlyMessage}", retryAfter, innerException);
+                if (ContainsIgnoreCase(probe, "quota") || ContainsIgnoreCase(probe, "insufficient"))
+                {
+                    RimLLMException quota = Create(LLMError.QuotaExceeded,
+                        "API insufficient quota (insufficient_quota), please check your account balance.", retryAfter, innerException);
+                    // 訊息只提到 "quota" 的多半是每分鐘配額（Gemini 免費層），等一下就恢復；
+                    // 明確寫 insufficient 的才是額度用完。
+                    quota.IsBalanceExhausted = ContainsIgnoreCase(probe, "insufficient");
+                    return quota;
+                }
+                return Create(LLMError.RateLimit,
+                    $"Rate limit triggered: {friendlyMessage}", retryAfter, innerException);
         }
 
         if (statusCode.HasValue && statusCode.Value >= 500)
@@ -155,6 +162,17 @@ public static class LLMErrorMapper
     }
 
     /// <summary>
+    /// 判斷 4xx 錯誤訊息是否指向「服務端不接受 max_tokens 這個欄位」。
+    /// 只提到 max_tokens 不夠：「max_tokens 數值太大」也會提到它，那種換欄位也沒用。
+    /// </summary>
+    public static bool LooksLikeMaxTokensRejection(string message)
+    {
+        return ContainsIgnoreCase(message, "max_tokens") &&
+               (ContainsIgnoreCase(message, "max_completion_tokens") ||
+                ContainsIgnoreCase(message, "unsupported parameter"));
+    }
+
+    /// <summary>
     /// 判斷 4xx 錯誤訊息是否指向「提示詞超出模型的上下文視窗」。
     /// 各家用詞不同，但都會提到上下文長度或 token 數量的上限。
     /// 只列具體到不會誤傷的字串；例如單獨的 "too long" 太寬鬆，不納入。
@@ -189,7 +207,7 @@ public static class LLMErrorMapper
 
     /// <summary>
     /// 400／413／422 的細分。
-    /// Schema、reasoning 與 temperature 遭拒各自有旗標與「去掉參數重打一次」的流程，
+    /// Schema、reasoning、temperature 與 max_tokens 遭拒各自有旗標與「去掉參數重打一次」的流程，
     /// 錯誤碼維持 <see cref="LLMError.InvalidResponse"/> 以免影響既有的降級路徑；
     /// 其餘才依 413 的定義與訊息關鍵字判定為上下文超長或內容過濾。
     /// </summary>
@@ -197,7 +215,8 @@ public static class LLMErrorMapper
     {
         if (LooksLikeSchemaRejection(probe) ||
             LooksLikeReasoningRejection(probe) ||
-            LooksLikeTemperatureRejection(probe))
+            LooksLikeTemperatureRejection(probe) ||
+            LooksLikeMaxTokensRejection(probe))
         {
             return LLMError.InvalidResponse;
         }

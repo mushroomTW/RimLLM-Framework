@@ -25,7 +25,8 @@ public class KimiProvider : OpenAIProvider
     {
         if (effort == Microsoft.Extensions.AI.ReasoningEffort.Low) return "low";
         if (effort == Microsoft.Extensions.AI.ReasoningEffort.Medium) return "high";
-        if (effort == Microsoft.Extensions.AI.ReasoningEffort.High) return "max";
+        if (effort == Microsoft.Extensions.AI.ReasoningEffort.High ||
+            effort == Microsoft.Extensions.AI.ReasoningEffort.ExtraHigh) return "max";
         return null;
     }
 

@@ -183,16 +183,29 @@ public class RimLLMFallbackPipeline
             : candidate.ProviderId + ":" + candidate.ModelName;
     }
 
+    /// <summary>單次重試願意等待的上限（秒）。</summary>
+    private const float MaxRetryWaitSeconds = 60f;
+
+    /// <summary>
+    /// 伺服器要求的等待是否超過願意等待的上限。超過時原地等待只會讓呼叫端一直卡住，
+    /// 應該直接換下一個候選；沒有候選可換時，呼叫端會從例外的 RetryAfter 得知要等多久。
+    /// </summary>
+    internal static bool ExceedsRetryAfterLimit(Exception ex)
+    {
+        return ex is RimLLMException { RetryAfter: { } retryAfter } &&
+               retryAfter.TotalSeconds > MaxRetryWaitSeconds;
+    }
+
     /// <summary>
     /// 計算下一次重試前的等待秒數。
     /// 以設定的重試間隔為基準做指數退避（第 n 次重試等待 delay × 2ⁿ）並加上 ±20% 抖動：
     /// 限流後以固定間隔連打只會再次一起撞牆，把重試額度白白耗光。
     /// 伺服器若透過 Retry-After 指定了更長的等待時間則以其為準；
-    /// 本地指數退避上限為 60 秒；伺服器要求更長時間時仍遵從 Retry-After。
+    /// 本地指數退避上限為 60 秒。Retry-After 超過同一上限時不會走到這裡的等待，
+    /// 路由層會依 <see cref="ExceedsRetryAfterLimit"/> 直接換下一個候選。
     /// </summary>
     internal static float ResolveRetryDelay(float baseDelay, int attempt, Exception ex)
     {
-        const float maxDelaySeconds = 60f;
         const int maxBackoffSteps = 6;
 
         float delay = baseDelay * (float)Math.Pow(2, Math.Min(attempt, maxBackoffSteps));
@@ -201,7 +214,7 @@ public class RimLLMFallbackPipeline
             delay *= 1f + ((float)NextRandomDouble() * 0.4f - 0.2f);
         }
 
-        delay = Math.Min(delay, maxDelaySeconds);
+        delay = Math.Min(delay, MaxRetryWaitSeconds);
 
         if (ex is RimLLMException rimEx && rimEx.RetryAfter.HasValue)
         {
@@ -256,11 +269,19 @@ public class RimLLMFallbackPipeline
             prefProvider = null;
         }
 
-        if (prefProvider == null || _providerResolver(prefProvider) is not ILLMProvider prefProviderInstance
-            || !IsProviderUsable(prefProvider, prefProviderInstance, apiKeyCache))
+        if (prefProvider == null || _providerResolver(prefProvider) is not ILLMProvider prefProviderInstance)
         {
             return false;
         }
+
+        // 供應商解析不分大小寫，但設定字典分大小寫。統一成供應商自己的 id，
+        // 否則 "openai:x" 這類釘選會因為查不到啟用狀態而被靜默忽略。
+        prefProvider = prefProviderInstance.ProviderId ?? prefProvider;
+        if (!IsProviderUsable(prefProvider, prefProviderInstance, apiKeyCache))
+        {
+            return false;
+        }
+        preferredEntry = prefProvider + ":" + prefModel;
 
         int existingIndex = effectiveChain.FindIndex(e => string.Equals(e, preferredEntry, StringComparison.OrdinalIgnoreCase));
         if (existingIndex >= 0)
@@ -366,7 +387,7 @@ public class RimLLMFallbackPipeline
 
     private static int ParseMinFallbackLevel(string levelStr)
     {
-        return (levelStr ?? string.Empty).ToLower() switch
+        return (levelStr ?? string.Empty).ToLowerInvariant() switch
         {
             "high" or "3" => 3,
             "medium" or "2" => 2,
@@ -387,9 +408,10 @@ public class RimLLMFallbackPipeline
             return rimEx.Error switch
             {
                 LLMError.Timeout or LLMError.RateLimit or LLMError.ProviderOffline or LLMError.NetworkError or LLMError.Unknown => true,
-                LLMError.QuotaExceeded => rimEx.HttpStatusCode != 402,// 402 是真的餘額用完：不會在退避的幾十秒內變出來，重試只是白等，直接換手。
-                                                                      // 但 429 訊息含 "quota" 的每分鐘限流（Gemini 免費層）也會映成 QuotaExceeded，
-                                                                      // 那種等一下就能成功，仍要重試。
+                LLMError.QuotaExceeded => rimEx.HttpStatusCode != 402 && !rimEx.IsBalanceExhausted,
+                // 402 與 insufficient_quota 是真的餘額用完：不會在退避的幾十秒內變出來，重試只是白等，直接換手。
+                // 但 429 訊息含 "quota" 的每分鐘限流（Gemini 免費層）也會映成 QuotaExceeded，
+                // 那種等一下就能成功，仍要重試。
                 _ => false,
             };
         }

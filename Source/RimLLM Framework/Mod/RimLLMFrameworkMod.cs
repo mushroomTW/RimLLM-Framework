@@ -37,7 +37,7 @@ public class RimLLMFrameworkMod : Verse.Mod
         //    RimWorld 沒有保證的關閉回呼，因此兩個掛勾互補註冊。
         RegisterShutdownFlush();
 
-        Log.Message("[RimLLM] RimLLM Framework 載入成功。");
+        Log.Message("[RimLLM] RimLLM Framework loaded.");
     }
 
     private static void RegisterShutdownFlush()
@@ -55,7 +55,7 @@ public class RimLLMFrameworkMod : Verse.Mod
         catch (Exception ex)
         {
             // 關閉期間 GenFilePaths 等 Verse 服務可能已不可用，不得讓例外中斷關機流程。
-            try { Log.Warning($"[RimLLM] 關閉時寫入遙測失敗: {ex.Message}"); } catch { }
+            try { Log.Warning($"[RimLLM] Failed to write telemetry on shutdown: {ex.Message}"); } catch { }
         }
     }
 

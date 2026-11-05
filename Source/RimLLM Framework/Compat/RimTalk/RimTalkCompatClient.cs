@@ -26,7 +26,7 @@ namespace RimLLM_Framework.Compat;
 /// <item>基底類別或介面——RimWorld 載入 DLL 時的 <c>Assembly.GetTypes()</c> 會解析，整顆框架 DLL 被拒載
 /// （所以本類別刻意不實作 <see cref="IAIClient"/>）；</item>
 /// <item>任何欄位——DevMode 啟動時 <c>StaticConstructorOnStartupUtility.ReportProbablyMissingAttributes</c>
-/// 對每個型別跑 <c>GetFields()</c>，Mono 會解析全部欄位型別；</item>
+/// 對每個型別跑 <c>GetFields()</c>，執行環境會解析全部欄位型別；</item>
 /// <item>async 方法的參數與區域變數、lambda 捕捉的變數——它們會被編譯器提升成狀態機／closure 的欄位，
 /// 等同上一條。所以面向 RimTalk 的 <see cref="GetChatCompletionAsync"/> 與 <see cref="StreamAsync"/>
 /// 是<b>非 async 的薄殼</b>：同步把 RimTalk 型別換成 MEAI 型別後，交給零 RimTalk 型別的 async 核心，

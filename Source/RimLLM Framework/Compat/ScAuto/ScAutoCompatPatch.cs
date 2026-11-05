@@ -28,8 +28,7 @@ namespace RimLLM_Framework.Compat;
 /// 接管開啟時視為本機，玩家不必填假金鑰。（可選，缺席時只記警告。）</item>
 /// <item><c>ApiConnectionProbe.FetchModelsAsync</c> 與 <c>ThinkingParameterProbeService.RunAsync</c>：設定頁的「測試連線」與
 /// 思考參數探測原本直連端點，接管開啟時短路為成功。（可選。）攔的是它們的 <c>Task.Run</c> 薄殼而不是裡面的
-/// <c>ProbeCore</c>：後者含 <c>catch ... when</c> 例外過濾器，Harmony 在 Mono 上無法為它產生程式碼
-/// （實機報 <c>Incorrect code generation for exception block</c>）。</item>
+/// <c>ProbeCore</c>：在薄殼短路就不會排入背景工作。</item>
 /// </list>
 /// 不處理的：OpenAI Batch API 通道（<c>BatchClient</c>，非同步批次檔案上傳，無法對應 RimLLM 的請求模型）。
 /// </para>
@@ -45,8 +44,8 @@ internal static class ScAutoCompatPatch
 
     private static readonly CompatTakeoverGate _gate = new(
         ScAutoCompatTarget.PackageId,
-        "簡中自動化 One 接管已開啟，但框架尚未就緒，本次退回其原生路徑。原因：{0}",
-        "簡中自動化 One 接管已開啟，但 RimLLM 目前沒有可用的供應商，本次退回其原生路徑。原因：{0}");
+        "Simplified Chinese Automation: One takeover is on, but the framework is not ready; using the native path for now. Reason: {0}",
+        "Simplified Chinese Automation: One takeover is on, but RimLLM has no usable provider; using the native path for now. Reason: {0}");
 
     /// <summary>以該 Mod 的 <c>ResponsesResult</c> 型別封閉過的 <see cref="ParseAsync{T}"/>；Apply 時建好。</summary>
     private static MethodInfo _parseAsync;
@@ -69,9 +68,9 @@ internal static class ScAutoCompatPatch
     internal static void Apply(Harmony harmony, Func<string, Type> resolveType)
     {
         Type responsesClient = resolveType(Namespace + "ResponsesClient");
-        MethodInfo postOnce = (responsesClient == null ? null : AccessTools.Method(responsesClient, "PostOnceCoreAsync")) ?? throw new MissingMethodException("RimTranslation.Api.ResponsesClient.PostOnceCoreAsync 不存在（簡中自動化 One 版本可能已變動）。");
+        MethodInfo postOnce = (responsesClient == null ? null : AccessTools.Method(responsesClient, "PostOnceCoreAsync")) ?? throw new MissingMethodException("RimTranslation.Api.ResponsesClient.PostOnceCoreAsync was not found (Simplified Chinese Automation: One may have changed).");
 
-        Type resultType = (postOnce.ReturnType.IsGenericType ? postOnce.ReturnType.GetGenericArguments()[0] : null) ?? throw new MissingMethodException("ResponsesClient.PostOnceCoreAsync 的回傳型別不是 Task<ResponsesResult>（簡中自動化 One 版本可能已變動）。");
+        Type resultType = (postOnce.ReturnType.IsGenericType ? postOnce.ReturnType.GetGenericArguments()[0] : null) ?? throw new MissingMethodException("ResponsesClient.PostOnceCoreAsync does not return Task<ResponsesResult> (Simplified Chinese Automation: One may have changed).");
         Type store = resolveType(Namespace + "ApiConfigurationStore");
         MethodInfo isLocal = store == null ? null : AccessTools.Method(store, "IsLocalBaseUrl", [typeof(string)]);
 
@@ -88,11 +87,11 @@ internal static class ScAutoCompatPatch
         harmony.Patch(postOnce, prefix: new HarmonyMethod(typeof(ScAutoCompatPatch), nameof(PostOnceCoreAsyncPrefix)));
 
         PatchOptional(harmony, isLocal, "ApiConfigurationStore.IsLocalBaseUrl", nameof(IsLocalBaseUrlPostfix), postfix: true,
-            "接管開啟時仍需填原生金鑰才能啟動翻譯隊列。");
+            "A native key is still needed to start the translation queue with takeover on.");
         PatchOptional(harmony, probeConnection, "ApiConnectionProbe.FetchModelsAsync", nameof(ConnectionProbePrefix), postfix: false,
-            "設定頁的「測試連線」會直連原生端點。");
+            "The settings page connection test will call the native endpoint directly.");
         PatchOptional(harmony, probeThinking, "ThinkingParameterProbeService.RunAsync", nameof(ThinkingProbePrefix), postfix: false,
-            "思考參數探測會直連原生端點。");
+            "The thinking parameter probe will call the native endpoint directly.");
     }
 
     /// <summary>方法回傳 <c>Task&lt;T&gt;</c> 時取出 T；否則回傳 null（該攔截視為不適用）。</summary>
@@ -105,7 +104,7 @@ internal static class ScAutoCompatPatch
     {
         if (target == null)
         {
-            Log.Warning($"[RimLLM] 相容層：找不到 {label}（簡中自動化 One 版本可能已變動），該攔截未掛載；{consequence}");
+            Log.Warning($"[RimLLM] Compat: {label} was not found (Simplified Chinese Automation: One may have changed), so this patch is not applied. {consequence}");
             return;
         }
 
@@ -117,7 +116,7 @@ internal static class ScAutoCompatPatch
         catch (Exception ex)
         {
             // 可選攔截失敗不能中止 Apply：此時必要的傳輸補丁已生效，中止只會留下「已接管卻顯示未掛載」的半掛載狀態。
-            Log.Warning($"[RimLLM] 相容層：{label} 攔截掛載失敗，已略過；{consequence} 原因：{ex.Message}");
+            Log.Warning($"[RimLLM] Compat: failed to patch {label}; skipped. {consequence} Reason: {ex.Message}");
         }
     }
 

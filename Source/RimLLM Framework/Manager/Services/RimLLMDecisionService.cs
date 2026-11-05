@@ -125,8 +125,11 @@ public class RimLLMDecisionService
             ? _settings.DecisionProvider
             : providerId.Trim();
 
+        // 全域停用是玩家的明確選擇：第三方 Mod 即使指定了供應商，也不得花用玩家留在設定裡的金鑰。
         if (string.IsNullOrEmpty(resolvedProviderId) ||
-            string.Equals(resolvedProviderId, RimLLMDecisionProviderCatalog.Disabled, StringComparison.Ordinal))
+            string.Equals(resolvedProviderId, RimLLMDecisionProviderCatalog.Disabled, StringComparison.Ordinal) ||
+            string.IsNullOrEmpty(_settings.DecisionProvider) ||
+            string.Equals(_settings.DecisionProvider, RimLLMDecisionProviderCatalog.Disabled, StringComparison.Ordinal))
         {
             throw new RimLLMException(
                 LLMError.Unknown,

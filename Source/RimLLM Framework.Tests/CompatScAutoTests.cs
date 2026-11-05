@@ -265,7 +265,7 @@ public class CompatScAutoTests
         public IReadOnlyList<string> Models { get; set; }
     }
 
-    /// <summary>對應 ApiConnectionProbe；攔的是 <c>Task.Run</c> 薄殼 FetchModelsAsync，而非含例外過濾器的 ProbeCore。</summary>
+    /// <summary>對應 ApiConnectionProbe；攔的是 <c>Task.Run</c> 薄殼 FetchModelsAsync，而非內部的 ProbeCore。</summary>
     internal static class FakeConnectionProbe
     {
         public static Task<FakeConnectionResult> FetchModelsAsync(CancellationToken token)

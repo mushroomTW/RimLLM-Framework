@@ -69,9 +69,18 @@ internal static class RimLLMChatClientExecutor
         bool hasToolCalls = contents != null && System.Linq.Enumerable.Any(contents, c => c is FunctionCallContent);
         bool hasReasoning = contents != null && System.Linq.Enumerable.Any(contents, c => c is TextReasoningContent);
 
-        if (string.IsNullOrWhiteSpace(response?.Text) && !hasToolCalls && !hasReasoning)
+        // 只有推理內容不算成功：輸出額度被思考用完時，呼叫端拿到的是空字串，
+        // 記成成功就不會備援，呼叫端也無從察覺。
+        if (string.IsNullOrWhiteSpace(response?.Text) && !hasToolCalls)
         {
-            throw new RimLLMException(LLMError.InvalidResponse, $"{providerId} returned an empty response.");
+            // 服務端已經計費，用量要照記；沒有回報時不估算，因為沒有產出可估。
+            if (response?.Usage != null)
+            {
+                RecordUsage(providerId, model, builtMessages, response.Usage, 0, onUsage);
+            }
+            throw new RimLLMException(LLMError.InvalidResponse, hasReasoning
+                ? ReasoningOnlyMessage(providerId)
+                : $"{providerId} returned an empty response.");
         }
 
         // 要不要用估算值只由 RecordUsage 決定；逐字元估算相較網路往返可忽略。
@@ -79,9 +88,15 @@ internal static class RimLLMChatClientExecutor
         return response;
     }
 
+    private static string ReasoningOnlyMessage(string providerId)
+    {
+        return $"{providerId} returned reasoning but no answer; the output limit may have been used up by reasoning. Raise MaxOutputTokens or disable reasoning.";
+    }
+
     /// <summary>
     /// 串流請求：採「閒置逾時」語意 —— 每收到一個 chunk 就重設計時器。
-    /// 對長回應而言整體逾時並不合理，因此 ApiTimeout 在此代表「多久沒有新內容就視為斷線」。
+    /// 對長回應而言整體逾時並不合理，因此 ApiTimeout 在此代表「供應商多久沒有新內容就視為斷線」。
+    /// 等待消費端（<paramref name="onUpdateReceived"/>）的時間不計入：消費端卡住不是供應商斷線。
     /// </summary>
     public static async Task StreamAsync(
         IChatClient client,
@@ -104,6 +119,7 @@ internal static class RimLLMChatClientExecutor
         // 不保留文字本身：先前為此累積最多 4MB 的 StringBuilder，而多數 provider 都會回報用量。
         double completionEstimate = 0;
         bool anyOutput = false;
+        bool anyAnswer = false;
         UsageDetails lastUsage = null;
 
         using (var timeoutCts = new CancellationTokenSource(idleTimeout))
@@ -117,12 +133,14 @@ internal static class RimLLMChatClientExecutor
                     linkedCts.Token))
                 {
                     // 收到任何更新即重設閒置計時器，避免長回應被整體逾時誤殺。
-                    timeoutCts.CancelAfter(idleTimeout);
-
                     if (update?.Contents == null)
                     {
+                        timeoutCts.CancelAfter(idleTimeout);
                         continue;
                     }
+
+                    // 處理這個 update 的期間（含等待消費端）暫停計時，處理完再重新起算。
+                    timeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
 
                     // 只做記帳，不改寫內容：判斷這次串流是否真的產出過東西，
                     // 並收集用量。推理內容維持 MEAI 原生的 TextReasoningContent，
@@ -132,6 +150,7 @@ internal static class RimLLMChatClientExecutor
                         if (part is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                         {
                             anyOutput = true;
+                            anyAnswer = true;
                             completionEstimate += EstimateTokensRaw(textContent.Text);
                         }
                         else if (part is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
@@ -142,6 +161,7 @@ internal static class RimLLMChatClientExecutor
                         {
                             // 工具呼叫沒有可顯示的文字，但仍然算是產出。
                             anyOutput = true;
+                            anyAnswer = true;
                         }
                         else if (part is UsageContent usageContent && usageContent.Details != null)
                         {
@@ -156,6 +176,8 @@ internal static class RimLLMChatClientExecutor
                     {
                         await onUpdateReceived(update).ConfigureAwait(false);
                     }
+
+                    timeoutCts.CancelAfter(idleTimeout);
                 }
             }
             catch (ClientResultException ex)
@@ -187,6 +209,11 @@ internal static class RimLLMChatClientExecutor
             throw new RimLLMException(LLMError.NetworkError, $"{providerId} returned an empty stream.");
         }
 
+        if (!anyAnswer)
+        {
+            // 推理內容已交給呼叫端，備援不會再接手，但至少要讓呼叫端知道沒有答案。
+            throw new RimLLMException(LLMError.InvalidResponse, ReasoningOnlyMessage(providerId));
+        }
     }
 
     /// <summary>彙整 <see cref="ChatResponse"/> 內所有訊息的 content，與 <c>ChatResponse.Text</c> 的涵蓋範圍一致。</summary>
@@ -269,12 +296,11 @@ internal static class RimLLMChatClientExecutor
         options.Temperature = source?.Temperature ?? 0.7f;
         options.MaxOutputTokens = source?.MaxOutputTokens ?? 1024;
 
-        // ResponseFormat 由框架獨佔，不可沿用呼叫端的複本：
-        // 原生 schema 被拒時會以 useNativeSchema:false 重試，若呼叫端設定的 response_format
+        // 框架結構化輸出（標註了回應型別）的 ResponseFormat 由框架獨佔：
+        // 原生 schema 被拒時會以 useNativeSchema:false 重試，若 response_format
         // 在此存活，重試就會重送剛剛被拒的那一份而永久失敗。
-        // 代價是純 MEAI 呼叫端自行設定的 ResponseFormat 目前仍不會生效——
-        // 這留待結構化輸出改用 MEAI 原生 GetResponseAsync<T> 的階段一併處理。
-        if (!useNativeSchema)
+        // 呼叫端自行設定的 ResponseFormat 不受影響，降級由 RimLLMProviderChatClient 處理。
+        if (!useNativeSchema && RimLLMChatOptions.GetResponseType(source) != null)
         {
             options.ResponseFormat = null;
         }

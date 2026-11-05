@@ -210,6 +210,35 @@ public class CompatModCompatCheckerTests
     }
 
     [Test]
+    public void Prefix_CallAPIWithTimeout_FrameworkTimeoutSkipsNativePath()
+    {
+        var fake = new CapturingChatClient
+        {
+            ResponseException = new RimLLMException(LLMError.Timeout, "timed out")
+        };
+
+        ModCompatCheckerCompatClient previousClient = ModCompatCheckerCompatPatch.Client;
+
+        try
+        {
+            ModCompatCheckerCompatPatch.Client = new ModCompatCheckerCompatClient(fake);
+            ModCompatCheckerCompatPatch.SetTakeOverCacheForTests(true);
+
+            string result = null;
+            bool cancel = false;
+            bool runOriginal = ModCompatCheckerCompatPatch.CallAPIWithTimeoutPrefix("診斷內容", 30, ref cancel, ref result);
+
+            ClassicAssert.IsFalse(runOriginal, "逾時不得再走原生路徑，否則等待時間翻倍");
+            StringAssert.Contains("30", result);
+        }
+        finally
+        {
+            ModCompatCheckerCompatPatch.Client = previousClient;
+            ModCompatCheckerCompatPatch.ResetCacheForTests();
+        }
+    }
+
+    [Test]
     public void Prefix_CallAPIWithTimeout_FallsBackToNativeOnOffline()
     {
         var fake = new CapturingChatClient

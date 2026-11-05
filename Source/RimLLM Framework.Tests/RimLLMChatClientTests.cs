@@ -163,11 +163,6 @@ public class RimLLMChatClientTests
         ClassicAssert.AreEqual("Medium", RimLLMChatOptions.GetMinFallbackLevel(cloned));
         ClassicAssert.AreEqual("world rules", RimLLMChatOptions.GetCachedContext(cloned));
         ClassicAssert.IsTrue(RimLLMChatOptions.GetDisableReasoning(cloned));
-        ClassicAssert.IsTrue(RimLLMChatOptions.GetEnableContextCaching(cloned), "CachedContext 不為空時應沿用計算預設值");
-
-        // 明確設定 false 時不可被 CachedContext 的計算預設值蓋掉。
-        original.EnableContextCaching = false;
-        ClassicAssert.IsFalse(RimLLMChatOptions.GetEnableContextCaching(original.Clone()));
     }
 
     [Test]

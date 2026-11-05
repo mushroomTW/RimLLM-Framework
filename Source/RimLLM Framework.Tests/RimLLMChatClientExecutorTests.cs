@@ -103,8 +103,26 @@ public class RimLLMChatClientExecutorTests
         ClassicAssert.AreEqual("gpt-test", built.ModelId);
         ClassicAssert.IsNull(built.Tools);
 
-        // ResponseFormat 反而必須被清掉：原生 schema 被拒後的降級重試也走 useNativeSchema:false，
-        // 呼叫端的 response_format 若在此存活，重試會重送剛被拒的那一份而永久失敗。
+        // 呼叫端自行設定的 ResponseFormat 要保留，否則 JSON 模式與 MEAI 的 GetResponseAsync<T> 都會靜默失效。
+        ClassicAssert.IsNotNull(built.ResponseFormat);
+    }
+
+    /// <summary>
+    /// 框架結構化輸出的降級重試也走 useNativeSchema:false，
+    /// response_format 若在此存活，重試會重送剛被拒的那一份而永久失敗。
+    /// </summary>
+    [Test]
+    public void TestBuildOptions_ClearsResponseFormatForFrameworkStructuredOutputFallback()
+    {
+        var sourceOptions = new ChatOptions
+        {
+            ResponseFormat = ChatResponseFormat.Json,
+            AdditionalProperties = new AdditionalPropertiesDictionary { [RimLLMChatOptions.ResponseTypeKey] = typeof(string) }
+        };
+
+        ChatOptions built = RimLLMChatClientExecutor.BuildOptions(
+            sourceOptions, "gpt-test", useNativeSchema: false, null);
+
         ClassicAssert.IsNull(built.ResponseFormat);
     }
 

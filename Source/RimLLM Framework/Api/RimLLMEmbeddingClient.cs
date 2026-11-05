@@ -42,12 +42,7 @@ internal class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedding<flo
                 : estimatedTokens + valueEstimate;
         }
 
-        if (!_manager.UsageTracker.TryReserveBudget(estimatedTokens, out RimLLMUsageTracker.BudgetReservation reservation))
-        {
-            throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
-        }
-
-        using (reservation)
+        using (RimLLMUsageTracker.BudgetReservation reservation = _manager.UsageTracker.ReserveBudgetOrThrow(estimatedTokens))
         {
             IReadOnlyList<RimLLMEmbeddingResult> results = await _manager.EmbeddingService
                 .ComputeEmbeddingsAsync(inputValues, options, batchResults =>

@@ -52,7 +52,7 @@ public sealed class RimLLMDecisionClient
     /// </summary>
     /// <remarks>
     /// 這是單次呼叫的覆寫，不會改動玩家的設定；用量則記到實際使用的供應商帳上。
-    /// 缺金鑰、供應商不存在或供應商未啟用時，會在送出任何網路請求之前就擲出
+    /// 缺金鑰、供應商不存在，或玩家已在 Decision 分頁全域停用決策服務時，會在送出任何網路請求之前就擲出
     /// <see cref="RimLLMException"/>（<see cref="LLMError.InvalidKey"/> 或 <see cref="LLMError.Unknown"/>）。
     /// </remarks>
     public async Task<JevResult> EvaluateWithProviderAsync(
@@ -103,12 +103,7 @@ public sealed class RimLLMDecisionClient
             estimate = estimate > long.MaxValue - planEstimate ? long.MaxValue : estimate + planEstimate;
         }
 
-        if (!_manager.UsageTracker.TryReserveBudget(estimate, out RimLLMUsageTracker.BudgetReservation reservation))
-        {
-            throw new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
-        }
-
-        return reservation;
+        return _manager.UsageTracker.ReserveBudgetOrThrow(estimate);
     }
 
     private JevResult RecordUsage(DecisionEvaluation evaluation, RimLLMUsageTracker.BudgetReservation reservation)

@@ -374,8 +374,7 @@ public static class RimLLMSchemaBuilder
     ///
     /// System.Text.Json 的 exporter 沒有 description 的概念 —— 這是 MEAI 包裝層多做的事，
     /// 而框架不經過那層（見 <see cref="ExportRaw"/>）。
-    /// 只讀 <c>System.ComponentModel.DescriptionAttribute</c>，它在 mscorlib 旁的 System.dll 內，
-    /// 任何 .NET 執行環境都有。
+    /// 只讀 <c>System.ComponentModel.DescriptionAttribute</c>。
     /// </summary>
     private static void ApplyMemberDescription(JsonObject memberSchema, JsonPropertyInfo memberInfo)
     {
