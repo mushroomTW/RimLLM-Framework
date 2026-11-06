@@ -51,6 +51,18 @@ public static class RimLLMMarkdown
             @"|(?:^|(?<=\n))(?:[ ]{4}|\t)[^\n]*",
             System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
 
+    /// <summary>
+    /// 表格欄位的行內語法。星號開頭不得緊接文字或數字，<c>射擊 12**；智識 9**</c> 這類語意標記才不會被配成一組。
+    /// 行內碼排在最前，其內容不再解析。
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex CellInlinePattern =
+        new(
+            @"`(?<code>[^`\n]+)`" +
+            @"|\[(?<link>[^\]\n]+)\]\([^)\s]+\)" +
+            @"|(?<![\p{L}\p{N}*\\])\*\*(?=[^\s*])(?<bold>[^*\n]+?)(?<=[^\s*\\])\*\*(?!\*)" +
+            @"|(?<![\p{L}\p{N}*\\])\*(?=[^\s*])(?<italic>[^*\n]+?)(?<=[^\s*\\])\*(?!\*)",
+            System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
+
     private static readonly System.Text.RegularExpressions.Regex UnityTagPattern =
         new(@"<(/?(?:b|i|size|color|material|quad)(?:=[^>]*)?)>", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
 
@@ -97,7 +109,7 @@ public static class RimLLMMarkdown
     /// <summary>
     /// 找出所有表格在原始文字中的位置。
     /// 表格欄位裡的 <c>**</c> 常是語意標記（熱情等級、版本號），不是粗體，
-    /// 因此整張表都不做粗體預轉換，欄位文字直接取原始切片保留。
+    /// 因此整張表都不做粗體預轉換，欄位文字改由 <see cref="CellText"/> 取原始切片處理。
     /// </summary>
     private static List<(int Start, int End)> CollectTableSpans(string markdown)
     {
@@ -201,15 +213,34 @@ public static class RimLLMMarkdown
 
     /// <summary>
     /// 欄位文字取自原始 markdown 切片，而非解析後的 inline 樹。
-    /// 表格是資料：欄位裡的 <c>*</c> / <c>**</c> 是語意標記而非強調，
-    /// 讓 Markdig 解析只會把相鄰的星號配成一組並套上粗體。
+    /// 欄位裡的 <c>*</c> / <c>**</c> 可能是語意標記（<c>射擊 12**</c>），
+    /// 讓 Markdig 解析會把相鄰的星號配成一組並套上粗體，因此改由 <see cref="RenderCellInlines"/> 保守轉換。
     /// </summary>
     private static string CellText(TableCell cell, string source)
     {
         string raw = source.Substring(cell.Span.Start, cell.Span.Length).Trim();
         // 取的是原始切片，因此 \| 要自己還原；跳脫直線若不還原會變成多餘的反斜線。
         raw = raw.Replace("\\|", "|");
-        return raw.Replace("<", "＜").Replace(">", "＞");
+        // 先跳脫角括號再轉換，否則轉換插入的標籤會被一併跳脫。
+        return RenderCellInlines(raw.Replace("<", "＜").Replace(">", "＞"));
+    }
+
+    private static string RenderCellInlines(string text)
+    {
+        return CellInlinePattern.Replace(text, static match =>
+        {
+            if (match.Groups["code"].Success)
+            {
+                return ColorTagOpen + CodeColor + ">" + match.Groups["code"].Value + ColorTagClose;
+            }
+            if (match.Groups["link"].Success)
+            {
+                return ColorTagOpen + LinkColor + ">" + RenderCellInlines(match.Groups["link"].Value) + ColorTagClose;
+            }
+            return match.Groups["bold"].Success
+                ? "<b>" + RenderCellInlines(match.Groups["bold"].Value) + "</b>"
+                : "<i>" + RenderCellInlines(match.Groups["italic"].Value) + "</i>";
+        });
     }
 
     private sealed class UnityRichTextRenderer

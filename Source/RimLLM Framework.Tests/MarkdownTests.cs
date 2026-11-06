@@ -322,6 +322,42 @@ public class MarkdownTests
     }
 
     [Test]
+    public void InlineMarkdownInsideTableCellsIsRendered()
+    {
+        // 迴歸：模型常把技能名寫成 | **colony-progression** | 用途 |，星號曾原樣顯示給玩家。
+        const string input = "| **技能** | 用途 |\n|---|---|\n" +
+                             "| **colony-progression** | 下一步 |\n" +
+                             "| `code` | *斜體* |\n" +
+                             "| [連結](https://example.com) | **`粗碼`** |";
+        string result = RimLLMMarkdown.ToRichText(input);
+
+        StringAssert.Contains("<color=#9aa0a6><b>技能</b>｜用途</color>", result);
+        StringAssert.Contains("• <b>colony-progression</b>｜下一步", result);
+        StringAssert.Contains("• <color=#4ec9b0>code</color>｜<i>斜體</i>", result);
+        StringAssert.Contains("• <color=#6cb6ff>連結</color>｜<b><color=#4ec9b0>粗碼</color></b>", result);
+    }
+
+    [TestCase("射擊 12**")]
+    [TestCase("智識 9*；射擊 8*")]
+    [TestCase("2 * 3 * 4")]
+    [TestCase("a**b**c")]
+    [TestCase(@"\*字面\*")]
+    public void StarsThatAreNotEmphasisStayLiteralInTableCells(string cell)
+    {
+        string result = RimLLMMarkdown.ToRichText("| a |\n|---|\n| " + cell + " |");
+
+        StringAssert.Contains("• " + cell, result);
+    }
+
+    [Test]
+    public void StarsInsideInlineCodeInTableCellStayCode()
+    {
+        string result = RimLLMMarkdown.ToRichText("| a |\n|---|\n| `**kwargs**` |");
+
+        StringAssert.Contains("• <color=#4ec9b0>**kwargs**</color>", result);
+    }
+
+    [Test]
     public void BoldOutsideTableStillWorks()
     {
         const string input = "**標題**\n\n| a | b |\n|----|----|\n| 1 | 2 |";
