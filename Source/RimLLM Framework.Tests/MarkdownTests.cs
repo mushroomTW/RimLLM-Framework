@@ -358,6 +358,73 @@ public class MarkdownTests
     }
 
     [Test]
+    public void OrderedListKeepsItsStartNumber()
+    {
+        StringAssert.Contains("3. 丙\n  4. 丁", RimLLMMarkdown.ToRichText("3. 丙\n4. 丁"));
+    }
+
+    [Test]
+    public void OrderedListSplitByParagraphsKeepsCounting()
+    {
+        // 迴歸：模型常在編號項目之間夾說明段落，每段都是新清單，曾全部顯示成 1.。
+        string result = RimLLMMarkdown.ToRichText("1. 甲\n\n說明\n\n2. 乙\n\n說明\n\n3. 丙");
+
+        StringAssert.Contains("1. 甲", result);
+        StringAssert.Contains("2. 乙", result);
+        StringAssert.Contains("3. 丙", result);
+    }
+
+    [Test]
+    public void HtmlEntitiesAreDecodedInsteadOfDropped()
+    {
+        ClassicAssert.AreEqual("A & B © 'x'", RimLLMMarkdown.ToRichText("A &amp; B &copy; &#39;x&#39;"));
+    }
+
+    [Test]
+    public void EncodedUnityTagsDoNotBecomeRealTags()
+    {
+        // 解碼後若直接輸出，&lt;b&gt; 會變成真正的 Unity 標籤。
+        ClassicAssert.AreEqual("＜b＞粗＜/b＞", RimLLMMarkdown.ToRichText("&lt;b&gt;粗&lt;/b&gt;"));
+    }
+
+    [Test]
+    public void AutolinkIsShownAsLink()
+    {
+        ClassicAssert.AreEqual(
+            "看 <color=#6cb6ff>https://a.b/c</color> 後",
+            RimLLMMarkdown.ToRichText("看 <https://a.b/c> 後"));
+    }
+
+    [TestCase("陣列 a[0 開始")]
+    [TestCase("圖 ![ 未閉合")]
+    public void UnclosedBracketIsKept(string input)
+    {
+        ClassicAssert.AreEqual(input, RimLLMMarkdown.ToRichText(input));
+    }
+
+    [Test]
+    public void StrikethroughHidesMarkersAndIsMuted()
+    {
+        ClassicAssert.AreEqual("<color=#9aa0a6>刪</color> 後", RimLLMMarkdown.ToRichText("~~刪~~ 後"));
+    }
+
+    [Test]
+    public void StrikethroughInsideTableCellIsMuted()
+    {
+        string result = RimLLMMarkdown.ToRichText("| a |\n|---|\n| ~~刪~~ |");
+
+        StringAssert.Contains("• <color=#9aa0a6>刪</color>", result);
+    }
+
+    [TestCase("10~~20")]
+    [TestCase("約 ~ 5")]
+    public void TildesThatAreNotStrikethroughStayLiteral(string text)
+    {
+        ClassicAssert.AreEqual(text, RimLLMMarkdown.ToRichText(text));
+        StringAssert.Contains("• " + text, RimLLMMarkdown.ToRichText("| a |\n|---|\n| " + text + " |"));
+    }
+
+    [Test]
     public void BoldOutsideTableStillWorks()
     {
         const string input = "**標題**\n\n| a | b |\n|----|----|\n| 1 | 2 |";

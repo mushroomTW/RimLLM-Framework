@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Markdig;
+using Markdig.Extensions.EmphasisExtras;
 using Markdig.Extensions.Tables;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
@@ -35,6 +36,7 @@ public static class RimLLMMarkdown
     // 自己用正則掃 |---| 會把程式碼區塊裡的表格誤判成表格，還會破壞 <color> 配對。
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UsePipeTables()
+        .UseEmphasisExtras(EmphasisExtraOptions.Strikethrough)
         .Build();
 
     private static readonly System.Text.RegularExpressions.Regex BoldPattern =
@@ -60,7 +62,8 @@ public static class RimLLMMarkdown
             @"`(?<code>[^`\n]+)`" +
             @"|\[(?<link>[^\]\n]+)\]\([^)\s]+\)" +
             @"|(?<![\p{L}\p{N}*\\])\*\*(?=[^\s*])(?<bold>[^*\n]+?)(?<=[^\s*\\])\*\*(?!\*)" +
-            @"|(?<![\p{L}\p{N}*\\])\*(?=[^\s*])(?<italic>[^*\n]+?)(?<=[^\s*\\])\*(?!\*)",
+            @"|(?<![\p{L}\p{N}*\\])\*(?=[^\s*])(?<italic>[^*\n]+?)(?<=[^\s*\\])\*(?!\*)" +
+            @"|(?<![\p{L}\p{N}~\\])~~(?=[^\s~])(?<strike>[^~\n]+?)(?<=[^\s~\\])~~(?!~)",
             System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
 
     private static readonly System.Text.RegularExpressions.Regex UnityTagPattern =
@@ -237,6 +240,10 @@ public static class RimLLMMarkdown
             {
                 return ColorTagOpen + LinkColor + ">" + RenderCellInlines(match.Groups["link"].Value) + ColorTagClose;
             }
+            if (match.Groups["strike"].Success)
+            {
+                return ColorTagOpen + MutedColor + ">" + RenderCellInlines(match.Groups["strike"].Value) + ColorTagClose;
+            }
             return match.Groups["bold"].Success
                 ? "<b>" + RenderCellInlines(match.Groups["bold"].Value) + "</b>"
                 : "<i>" + RenderCellInlines(match.Groups["italic"].Value) + "</i>";
@@ -380,7 +387,8 @@ public static class RimLLMMarkdown
         {
             _listDepth++;
             bool isOrdered = list.IsOrdered;
-            int itemIndex = 1;
+            // 模型常在編號項目之間夾段落，每段都是新清單，要沿用原文的起始編號才不會全變成 1。
+            int itemIndex = int.TryParse(list.OrderedStart, out int start) ? start : 1;
 
             for (int i = 0; i < list.Count; i++)
             {
@@ -593,6 +601,20 @@ public static class RimLLMMarkdown
                 case HtmlInline html:
                     _sb.Append(SanitizeRawHtml(html.Tag));
                     break;
+                case HtmlEntityInline entity:
+                    // 解碼後的 < > 不可直接輸出：&lt;b&gt; 會變成真正的 Unity 標籤。
+                    _sb.Append(entity.Transcoded.ToString().Replace("<", "＜").Replace(">", "＞"));
+                    break;
+                case AutolinkInline autolink:
+                    _sb.Append(ColorTagOpen).Append(LinkColor).Append(">")
+                       .Append(EscapeCode(autolink.Url))
+                       .Append(ColorTagClose);
+                    break;
+                case DelimiterInline delimiter:
+                    // 未配對的分隔符（例如沒閉合的 [）仍是原文的一部分。
+                    _sb.Append(delimiter.ToLiteral());
+                    RenderInlines(delimiter);
+                    break;
                 default:
                     if (inline is ContainerInline subContainer)
                     {
@@ -611,6 +633,15 @@ public static class RimLLMMarkdown
                 {
                     RenderInline(child);
                 }
+                return;
+            }
+
+            if (emphasis.DelimiterChar == '~')
+            {
+                // Unity rich text 沒有刪除線標籤，以灰字表示。
+                _sb.Append(ColorTagOpen).Append(MutedColor).Append(">");
+                RenderInlines(emphasis);
+                _sb.Append(ColorTagClose);
                 return;
             }
 
