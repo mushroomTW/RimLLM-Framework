@@ -8,7 +8,7 @@
 
 1. **多供應商支援**
    * 原生支援 Google **Gemini**、**OpenAI**、**DeepSeek**、**Groq**、**Grok (xAI)**、**Z.ai**、**OpenRouter**、**Kimi**、**MiniMax**、**Qwen**、**NVIDIA** 與 **Player2**。
-   * **Player2**（<https://player2.game/）預設連向本機> Player2 App（`http://127.0.0.1:4315/v1`）：開著 App 就能用，本機模式不需 API 金鑰，實際模型由 App 內的 AI Selection 決定。它沒有 `/models` 端點，快取清單固定只有一個 `player2`。改用雲端 API 時，把端點改為 `https://api.player2.game/v1` 並填入 p2Key —— 雲端模式必須填金鑰，未填時設定頁會警告。它的美元費率記為已知的 $0（本地免費；雲端以 joules 計費，joules 不列入費用估算）。
+   * **Player2**（<https://player2.game/>）預設連向本機 Player2 App（`http://127.0.0.1:4315/v1`）：開著 App 就能用，本機模式不需 API 金鑰，實際模型由 App 內的 AI Selection 決定。它沒有 `/models` 端點，快取清單固定只有一個 `player2`。改用雲端 API 時，把端點改為 `https://api.player2.game/v1` 並填入 p2Key —— 雲端模式必須填金鑰，未填時設定頁會警告。它的美元費率記為已知的 $0（本地免費；雲端以 joules 計費，joules 不列入費用估算）。
    * 支援 **OpenAI 相容 API**，可設定任何本地或第三方相容端點（LM Studio、Ollama、LocalAI、vLLM 等）。預設端點為 `http://localhost:1234/v1`，並支援 API 金鑰。
    * **Kimi**、**MiniMax**、**Qwen** 提供一鍵切換「使用中國專用端點」（預設關閉），以改善連線品質。
 2. **容錯與模型 Fallback**
@@ -23,8 +23,8 @@
    * **候選用盡時保留錯誤碼。** 全部候選都失敗時，例外會帶著最後一個候選的 `Error`、`RetryAfter` 與 `HttpStatusCode`，呼叫端仍能分辨額度問題和金鑰錯誤。
    * **失敗記在實際失敗的供應商名下。** 每個失敗的候選（包含串流中途斷線）都會在自己的供應商名下留一筆日誌，成功率進度條因此反映真實失敗。同一候選的重試合計一筆，呼叫端取消不計入。
    * **只有推理內容的回應算失敗。** 思考用完輸出額度時答案是空的；非串流會改試下一個候選，串流則因內容已交付而以 `InvalidResponse` 結束。
-   * **冷卻以「供應商 + 模型」為單位。**健康帳本以 `Provider:Model` 為鍵。備用鏈上常同時掛著同一個供應商的多個模型（例如三個 OpenRouter 模型），只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐。
-   * **一次請求只記一次失敗。**同一次請求的所有重試合計只計一次失敗。逐次記錄的話，單一次網路抖動（預設設定下共 4 次嘗試）就能把健康的目標推過熔斷門檻，冤枉凍結數分鐘。
+   * **冷卻以「供應商 + 模型」為單位。** 健康帳本以 `Provider:Model` 為鍵。備用鏈上常同時掛著同一個供應商的多個模型（例如三個 OpenRouter 模型），只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐。
+   * **一次請求只記一次失敗。** 同一次請求的所有重試合計只計一次失敗。逐次記錄的話，單一次網路抖動（預設設定下共 4 次嘗試）就能把健康的目標推過熔斷門檻，冤枉凍結數分鐘。
    * **路由策略**：`PriorityFailover`（依鏈順序，預設值）、`MinLatency`、`RoundRobin` 與 `LowestCost`。`RoundRobin` 在請求間依序輪替優先嘗試的可用候選，不再隨機洗牌；能力查詢不會推進輪替。`LowestCost` 直接沿用框架已經依 API 費率自動判定的模型分級排序，不需要另外維護一份價格表。分級排序是穩定的，同級的候選會保留鏈本身的順序。透過 `ChatOptions.ModelId` 指定的模型不參與輪替或排序，固定排在第一位。
    * **上下文上限**：重新整理供應商的模型清單時，會一併記下 API 回報的上下文上限 —— OpenRouter 的 `context_length`、Groq 的 `context_window`、vLLM 的 `max_model_len`，以及 Gemini 原生 `/models` 端點的 `inputTokenLimit`（它的 OpenAI 相容端點不回報）。API 沒涵蓋的模型，會在同一次重新整理時下載 [models.dev](https://models.dev) 資料庫補齊（有輸入上限就用輸入上限，否則用整個視窗）；OpenRouter 的 API 已涵蓋全部模型所以略過，OpenAI 相容端點的模型名稱由使用者自訂也略過。會選 models.dev 而不是 LiteLLM 的 `model_prices_and_context_window.json`，是因為拿兩者對照官方文件後，互相矛盾的項目中 models.dev 較常正確。「模型設置」分頁的每一列都會顯示上限，玩家也能手動填寫（標記 `*`），手動值優先。Mod 以 `RimLLMProvider.GetContextWindow` 讀取。
 3. **AES-256 設定加密**
@@ -82,11 +82,11 @@
     * 提供 `RimWorldFunctionInvoker.AsMainThreadFunctionInvokingClient()`，自動將工具叫用委派排入 Unity 主執行緒執行，杜絕 RimWorld 跨執行緒崩潰風險。
     * 工具還在佇列等待時取消，會結束等待且不啟動該工具；已開始的工具須自行配合取消 token，取消不會撤銷已完成的副作用。
 13. **第三方整合（強制其他 Mod 改走 RimLLM）**
-    * 設定頁新增「第三方整合」分頁，列出 RimLLM 可以接管 LLM 流量的 Mod——目前包含 **RimTalk**（`cj.rimtalk`）、**Auto Translation**（`seohyeon.autotranslation`）**Mod 兼容性檢查器**（`modcompatchecker.main`）與 **簡中自動化：One**（`ow1r.scauto`）。開關開啟後，目標 Mod 的所有請求一律導入 RimLLM 的備援鏈、預算、節流與用量統計。開啟期間目標 Mod 自己的 API 金鑰／模型／端點設定會被忽略；開關即時生效不需重啟，預設**關閉**。
+    * 設定頁新增「第三方整合」分頁，列出 RimLLM 可以接管 LLM 流量的 Mod——目前包含 **RimTalk**（`cj.rimtalk`）、**Auto Translation**（`seohyeon.autotranslation`）、**Mod 相容性檢查器**（`modcompatchecker.main`）與 **簡中自動化：One**（`ow1r.scauto`）。開關開啟後，目標 Mod 的所有請求一律導入 RimLLM 的備援鏈、預算、節流與用量統計。開啟期間目標 Mod 自己的 API 金鑰／模型／端點設定會被忽略；開關即時生效不需重啟，預設**關閉**。
     * 每一列會顯示四種狀態之一：**未安裝**（本機沒有該 Mod）、**未啟用**（已安裝但未在 Mod 清單中啟用，請到清單啟用）、**掛載失敗**，或**已安裝／接管中**。已安裝未啟用的排在未安裝之前。
     * **RimTalk**：提示工程完全不動，訊息（含「Output JSONL」指示）原樣轉送，串流文字逐塊餵進 RimTalk 自己的 `JsonStreamParser`，氣泡仍然像原生一樣一行一行冒出來。推理內容不會混進 JSONL 串流，這類請求關閉思考以對齊 RimTalk 自身的預設，取消也會傳到進行中的請求與串流。
     * **Auto Translation**：完整支援單條與 XML 批次翻譯。以原生具備批次能力與佔位符防護的 `Translator_OpenAICompatible` 作為哨兵轉接，佔位符（`__PH0__` 等）防護、XML 批次打包與解析均沿用 Auto Translation 自身邏輯。開關開啟時自動同步當前翻譯器為哨兵，關閉或 RimLLM 缺金鑰/離線時自動退回原生翻譯引擎並節流警告。
-    * **Mod 兼容性檢查器**：攔截 `AIService.CallAPIWithTimeout`，將 Harmony/XML 衝突分析、依賴問題與報錯診斷等請求全面導流至 RimLLM。接管開啟時自動將 `IsAIConfigured` 覆寫為 `true`，玩家無需在檢查器內重複設定金鑰即可直接使用 AI 診斷，並自動短路餘額查詢以杜絕 401 報錯。
+    * **Mod 相容性檢查器**：攔截 `AIService.CallAPIWithTimeout`，將 Harmony/XML 衝突分析、依賴問題與報錯診斷等請求全面導流至 RimLLM。接管開啟時自動將 `IsAIConfigured` 覆寫為 `true`，玩家無需在檢查器內重複設定金鑰即可直接使用 AI 診斷，並自動短路餘額查詢以杜絕 401 報錯。
     * **簡中自動化：One**：它的 AI 批量翻譯、品質評審與健康探測都經過同一個私有傳輸方法，因此一個 Harmony 前綴就同時涵蓋 Chat Completions 與 Responses 兩種協議。請求 JSON 交給 RimLLM，再把同協議格式的合成回應餵回該 Mod 自己的解析器，它原有的重試、格式降級與結構化輸出處理照常運作。接管開啟期間它也把端點視為本機，玩家不必填假金鑰；設定頁的「測試連線」與思考參數探測則直接短路為成功。錯誤會對應到它自己的暫時性／永久性錯誤類型，讓它的重試邏輯正確運作；與其他目標不同，這裡不會退回原生路徑（沒有金鑰退回去也只會失敗）。它的 OpenAI Batch API 通道不在涵蓋範圍。它的類別皆為 `internal`，轉接器因此完全以名稱經反射綁定，不需要參考用 DLL。
     * 純 Harmony、全部 fail-soft，框架不實作任何第三方介面，也絕不在類別繼承、介面或欄位層級引用第三方型別，第三方 Mod 未安裝時框架組件仍可安全載入。其 API 若漂移導致掛載失敗，設定頁會直接顯示原因。請求當下 RimLLM 沒有可用供應商（備援鏈為空、缺金鑰）時，自動退回原生路徑並記一筆節流過的警告。
     * 新增其他 Mod 只需一筆登錄＋一個 `RimLLMCompatTarget` 子類；轉接器對著第三方參考用 DLL 編譯，這些 DLL 不隨包出貨，也不納入版本控制；取得方式見各 `Source/Libs/<mod>/README.md`。

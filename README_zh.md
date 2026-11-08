@@ -5,9 +5,9 @@
 
 [English](README.md)
 
-`RimLLM Framework` 是一個為 RimWorld Mod 提供大型語言模型（LLM）呼叫介面與核心基礎建設的底層框架，讓其他 RimWorld AI Mod 有一個穩健、方便、高效且開箱即用的 SDK，不必重造輪子。
+`RimLLM Framework` 是一個專為 RimWorld 模組提供大型語言模型（LLM）呼叫介面與核心基礎建設的底層框架，讓其他 RimWorld AI 模組享有穩健、便捷、高效且開箱即用的 SDK，免去重造輪子的繁瑣負擔。
 
-框架回傳的一切都是**標準的 Microsoft.Extensions.AI 型別** —— `IChatClient`、`ChatMessage`、`ChatResponse`、`IEmbeddingGenerator`，沒有另一套自訂 client 介面要學。
+框架回傳的一切都是**標準的 Microsoft.Extensions.AI 型別** —— `IChatClient`、`ChatMessage`、`ChatResponse`、`IEmbeddingGenerator`，無需學習任何自訂用戶端介面。
 
 ```csharp
 // 呼叫端 API 的全貌。供應商、模型、API 金鑰與 Fallback 鏈
@@ -365,7 +365,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 8. **推理模型** —— 思維鏈以 MEAI 的 `TextReasoningContent` 交付；每個供應商都能控制思考強度。
 9. **Prompt 快取** —— 以 `CachedContext` 使用服務端快取，用量統計會算出快取省下的費用。
 10. **Embedding SDK** —— 標準 `IEmbeddingGenerator`，後端可選 Gemini、OpenAI、Ollama 或 OpenAI 相容端點，與對話共用每日預算守衛。
-11. **決策模型** —— TypeSafe Jev 與另外九個 System One 相容供應商，模型、端點與金鑰依供應商分開設定，金鑰加密，支援模型清單與真正的決策測試。第三方 Mod 可以查詢玩家有沒有設定決策模型，並用自己選的供應商與模型做決策，沿用框架已保存的金鑰。本機架設也支援：Ollama 0.35 以上、Unsloth 或任何自架的 System One 相容端點，可自動偵測且不需要 API 金鑰。
+11. **決策模型** —— 支援 TypeSafe Jev 與另外九個 System One 供應商（含雲端及本機 Ollama／Unsloth），具備獨立加密設定、模型探測，並允許子模組自選後端。
 12. **原生 Tool Calling** —— 所有供應商都支援 MEAI 的 `AIFunction`，工具在主執行緒執行，可取消尚未派送的工具。
 13. **第三方整合** —— 讓 RimTalk、Auto Translation、Mod Compatibility Checker、簡中自動化：One 改走 RimLLM。
 14. **使用中的模組** —— 設定分頁列出宣告依賴或本次遊戲呼叫過 RimLLM 的模組。
