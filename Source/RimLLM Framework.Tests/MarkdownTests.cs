@@ -542,4 +542,13 @@ public class MarkdownTests
         StringAssert.Contains("a | b", result);
         ClassicAssert.IsFalse(result.Contains("a \\| b"), "跳脫反斜線不應殘留。");
     }
+
+    [Test]
+    public void CellToRichText_KeepsPassionMarkersAndRendersInlines()
+    {
+        ClassicAssert.AreEqual("醫療 10**；射擊 12**；智識 9*", RimLLMMarkdown.CellToRichText(" 醫療 10**；射擊 12**；智識 9* "));
+        ClassicAssert.AreEqual("<b>Cole</b>", RimLLMMarkdown.CellToRichText("**Cole**"));
+        ClassicAssert.AreEqual("a | b ＜i＞", RimLLMMarkdown.CellToRichText("a \\| b <i>"));
+        ClassicAssert.AreEqual(string.Empty, RimLLMMarkdown.CellToRichText(null));
+    }
 }

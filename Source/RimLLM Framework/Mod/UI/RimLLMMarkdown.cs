@@ -215,6 +215,18 @@ public static class RimLLMMarkdown
     }
 
     /// <summary>
+    /// 把一格表格的原始 Markdown 轉成 rich text，供自行逐格繪製表格的 UI 使用。
+    /// 規則與 <see cref="ToRichText"/> 攤平表格時相同：行內碼、連結、粗斜體、刪除線照常轉換，
+    /// 緊接在字母或數字後的星號（<c>射擊 12**</c>）保留原樣；<c>\|</c> 還原成直線，角括號轉全形。
+    /// </summary>
+    public static string CellToRichText(string cellMarkdown)
+    {
+        if (string.IsNullOrEmpty(cellMarkdown)) return cellMarkdown ?? string.Empty;
+        string raw = cellMarkdown.Trim().Replace("\\|", "|");
+        return RenderCellInlines(raw.Replace("<", "＜").Replace(">", "＞"));
+    }
+
+    /// <summary>
     /// 欄位文字取自原始 markdown 切片，而非解析後的 inline 樹。
     /// 欄位裡的 <c>*</c> / <c>**</c> 可能是語意標記（<c>射擊 12**</c>），
     /// 讓 Markdig 解析會把相鄰的星號配成一組並套上粗體，因此改由 <see cref="RenderCellInlines"/> 保守轉換。
