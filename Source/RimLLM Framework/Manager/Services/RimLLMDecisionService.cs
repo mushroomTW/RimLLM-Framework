@@ -72,6 +72,8 @@ public class RimLLMDecisionService
                 InnerHandler = handler
             };
         }
+        // 本機服務的 /v1/models 多為 OpenAI 格式，轉成 SDK 能解析的形狀。
+        handler = new OpenAiModelListAdapterHandler { InnerHandler = handler };
         return new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
     }
 

@@ -174,6 +174,44 @@ public class DecisionLocalEndpointTests
     }
 
     [Test]
+    public async Task FetchModelsAsync_OpenAiShapedList_IsRequeriedForDecisionModelsAndConverted()
+    {
+        // Unsloth 的 /v1/models 是 OpenAI 格式，且要帶 output_modalities=decisions 才列出決策模型。
+        _handler.ModelsResponseBody =
+            "{\"object\":\"list\",\"data\":[{\"id\":\"default\",\"object\":\"model\",\"owned_by\":\"unsloth\"}," +
+            "{\"id\":\"laya\",\"object\":\"model\",\"owned_by\":\"unsloth\"}]}";
+
+        MockSettings settings = DecisionTestDoubles.NewSettings();
+        settings.DecisionProvider = RimLLMDecisionProviderCatalog.Unsloth;
+        settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Unsloth] = "sk-unsloth-key";
+        settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Unsloth] = "http://localhost:8888";
+
+        RimLLMManager manager = new(settings);
+        RimLLMDecisionClient client = new(manager, TestModId);
+
+        IReadOnlyList<string> models = await client.FetchModelsAsync(RimLLMDecisionProviderCatalog.Unsloth);
+
+        CollectionAssert.AreEquivalent(new[] { "default", "laya" }, models);
+        ClassicAssert.AreEqual(2, _handler.RequestUris.Count);
+        ClassicAssert.AreEqual(
+            "http://localhost:8888/v1/models?output_modalities=decisions",
+            _handler.RequestUris[1].ToString());
+        // 重查時要帶同一把金鑰。
+        ClassicAssert.AreEqual("Bearer sk-unsloth-key", _handler.AuthorizationHeaders[1]);
+    }
+
+    [Test]
+    public void OpenAiModelIds_AreOnlyReadFromOpenAiShapedBodies()
+    {
+        CollectionAssert.AreEqual(
+            new[] { "a" },
+            OpenAiModelListAdapterHandler.TryReadOpenAiModelIds("{\"data\":[{\"id\":\"a\"},{\"id\":\"\"},{}]}"));
+        ClassicAssert.IsNull(OpenAiModelListAdapterHandler.TryReadOpenAiModelIds(
+            "{\"models\":[{\"name\":\"jev\",\"description\":\"\",\"release_date\":\"\"}]}"));
+        ClassicAssert.IsNull(OpenAiModelListAdapterHandler.TryReadOpenAiModelIds("not json"));
+    }
+
+    [Test]
     public async Task PlaintextEndpoint_WithoutKey_DoesNotThrowInvalidKey()
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();

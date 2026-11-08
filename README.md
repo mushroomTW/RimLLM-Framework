@@ -266,7 +266,7 @@ IReadOnlyList<string> models = await decisions.FetchModelsAsync("TypeSafe", canc
 
 The decision service is not limited to hosted providers. Anything that speaks the System One wire format on your own machine works: **Ollama 0.35 and newer** exposes a Jev-style decision endpoint at `/v1/systemone`, and **Unsloth** serves a TypeSafe-compatible Jev API for local Laya and Clef models.
 
-The settings page lists three local entries — *Ollama* (`http://localhost:11434`, model `tev1:4b`), *Unsloth* (`http://localhost:8888`, model `laya`) and *Other local server* (`http://localhost:8000`) — each with its own endpoint, model and model list, stored per provider like every other one. A **Detect Local Decision Server** button probes the known local ports and fills the endpoint in for you, so you rarely have to type it.
+The settings page lists three local entries — *Ollama* (`http://localhost:11434`, model `tev1:4b`), *Unsloth* (`http://localhost:8888`, model `laya`) and *Other local server* (`http://localhost:8000`) — each with its own endpoint, model and model list, stored per provider like every other one.
 
 Two things are worth knowing about local endpoints:
 

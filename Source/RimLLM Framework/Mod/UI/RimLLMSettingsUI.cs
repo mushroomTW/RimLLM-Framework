@@ -179,6 +179,9 @@ public static class RimLLMSettingsUI
         Rect viewRect = new Rect(0f, 0f, viewWidth, ResolveDetailViewHeight(viewWidth, detailRect.height));
         Widgets.BeginScrollView(detailRect, ref _detailScrollPosition, viewRect);
         Listing_Standard listing = new Listing_Standard();
+        // 內容超出 viewRect 時，Listing 預設會換到右側新欄（被裁掉看不到），
+        // 且 CurHeight 會從新欄重新計算，量測高度永遠長不上去；限制單欄才能正確捲動。
+        listing.maxOneColumn = true;
         listing.Begin(viewRect);
 
         page?.Draw(listing);

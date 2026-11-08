@@ -336,6 +336,12 @@ public static class GenericProviderSubTabDrawer
             onClick();
         }
 
+        // 忙碌時按鈕位置已顯示 busyLabel，呼叫端的狀態文字通常也是同一句，不再重複顯示。
+        if (busy)
+        {
+            return;
+        }
+
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
             Widgets.Label(msgRect, statusText);

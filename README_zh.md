@@ -264,7 +264,7 @@ IReadOnlyList<string> models = await decisions.FetchModelsAsync("TypeSafe", canc
 
 決策服務不限於雲端供應商。只要在自架的機器上說 System One 的 wire format 就能用：**Ollama 0.35 以上**在 `/v1/systemone` 提供 Jev 風格的決策端點，**Unsloth** 則以 TypeSafe 相容的 Jev API 提供本機的 Laya 與 Clef 模型。
 
-設定頁列出三個本機項目——*Ollama*（`http://localhost:11434`，模型 `tev1:4b`）、*Unsloth*（`http://localhost:8888`，模型 `laya`）與*其他本機服務*（`http://localhost:8000`）——各自的端點、模型與模型清單都和其他供應商一樣分開保存。**「偵測本機決策服務」**按鈕會探測已知的本機連接埠並自動填入端點，通常不必手動輸入。
+設定頁列出三個本機項目——*Ollama*（`http://localhost:11434`，模型 `tev1:4b`）、*Unsloth*（`http://localhost:8888`，模型 `laya`）與*其他本機服務*（`http://localhost:8000`）——各自的端點、模型與模型清單都和其他供應商一樣分開保存。
 
 本機端點有兩點要注意：
 

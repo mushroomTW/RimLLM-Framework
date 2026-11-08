@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -31,12 +30,7 @@ internal static class LocalEndpointProbe
 
     /// <summary>回傳第一個可連通的候選（原樣回傳，不改寫任何欄位），全部失敗則回傳 null。</summary>
     /// <param name="targets">候選端點。</param>
-    /// <param name="acceptUnauthorized">
-    /// 是否把 401／403 也算成「服務在線」。決策服務常要求金鑰（Unsloth 預設要），
-    /// 探測請求不帶金鑰，因此 401 反而證明服務活著；對話／embedding 頁維持原本只看 2xx 的行為。
-    /// </param>
-    internal static async Task<Target> FindReachableAsync(
-        IEnumerable<Target> targets, bool acceptUnauthorized = false)
+    internal static async Task<Target> FindReachableAsync(IEnumerable<Target> targets)
     {
         if (targets == null) return null;
         foreach (Target target in targets)
@@ -44,8 +38,7 @@ internal static class LocalEndpointProbe
             try
             {
                 using HttpResponseMessage response = await SharedClient.GetAsync(target.TestUrl).ConfigureAwait(false);
-                if (response.IsSuccessStatusCode ||
-                    (acceptUnauthorized && response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden))
+                if (response.IsSuccessStatusCode)
                 {
                     return target;
                 }

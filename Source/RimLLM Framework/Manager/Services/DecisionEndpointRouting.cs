@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -95,5 +98,127 @@ internal sealed class PlaintextEndpointRewriteHandler : DelegatingHandler
         }
 
         return base.SendAsync(request, cancellationToken);
+    }
+}
+
+/// <summary>
+/// 把 OpenAI 格式的模型清單轉成 Jev SDK 能解析的格式。
+///
+/// Jev SDK 只接受 <c>{"models":[{"name","description","release_date"}]}</c>，
+/// 但 Unsloth、Ollama 等本機服務的 <c>/v1/models</c> 回的是 OpenAI 的 <c>{"data":[{"id"}]}</c>，
+/// SDK 會判定為「不是合法 JSON」。另外 Unsloth 只有帶上 <c>output_modalities=decisions</c>
+/// 才會列出決策模型，所以遇到 OpenAI 格式時先帶參數重查一次，再轉換格式。
+/// Jev 原生格式的回應原樣放行。
+/// </summary>
+internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
+{
+    private const string ModelsPath = "/v1/models";
+    private const string DecisionModalityQuery = "output_modalities=decisions";
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (request.Method != HttpMethod.Get ||
+            request.RequestUri == null ||
+            !request.RequestUri.AbsolutePath.EndsWith(ModelsPath, StringComparison.OrdinalIgnoreCase) ||
+            !response.IsSuccessStatusCode ||
+            response.Content == null)
+        {
+            return response;
+        }
+
+        string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        List<string> ids = TryReadOpenAiModelIds(body);
+        if (ids == null)
+        {
+            // 不是 OpenAI 格式（多半是 Jev 原生格式）：把讀掉的內容放回去，交給 SDK 自己解析。
+            response.Content = CreateJsonContent(body);
+            return response;
+        }
+
+        if (string.IsNullOrEmpty(request.RequestUri.Query))
+        {
+            using HttpRequestMessage decisionRequest = CloneWithQuery(request, DecisionModalityQuery);
+            using HttpResponseMessage decisionResponse =
+                await base.SendAsync(decisionRequest, cancellationToken).ConfigureAwait(false);
+            if (decisionResponse.IsSuccessStatusCode && decisionResponse.Content != null)
+            {
+                List<string> decisionIds = TryReadOpenAiModelIds(
+                    await decisionResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+                if (decisionIds != null)
+                {
+                    ids = decisionIds;
+                }
+            }
+        }
+
+        response.Content = CreateJsonContent(ToJevModelList(ids));
+        return response;
+    }
+
+    /// <summary>讀出 OpenAI 格式的 <c>data[].id</c>；不是這個格式時回傳 null。</summary>
+    internal static List<string> TryReadOpenAiModelIds(string body)
+    {
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(body);
+            JsonElement root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                root.TryGetProperty("models", out _) ||
+                !root.TryGetProperty("data", out JsonElement data) ||
+                data.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var ids = new List<string>();
+            foreach (JsonElement entry in data.EnumerateArray())
+            {
+                if (entry.ValueKind == JsonValueKind.Object &&
+                    entry.TryGetProperty("id", out JsonElement id) &&
+                    id.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(id.GetString()))
+                {
+                    ids.Add(id.GetString());
+                }
+            }
+            return ids;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string ToJevModelList(List<string> ids)
+    {
+        var models = new List<Dictionary<string, string>>(ids.Count);
+        foreach (string id in ids)
+        {
+            models.Add(new Dictionary<string, string>
+            {
+                ["name"] = id,
+                ["description"] = "",
+                ["release_date"] = ""
+            });
+        }
+        return JsonSerializer.Serialize(new Dictionary<string, object> { ["models"] = models });
+    }
+
+    private static HttpRequestMessage CloneWithQuery(HttpRequestMessage request, string query)
+    {
+        var uri = new UriBuilder(request.RequestUri) { Query = query }.Uri;
+        var clone = new HttpRequestMessage(request.Method, uri) { Version = request.Version };
+        foreach (KeyValuePair<string, IEnumerable<string>> header in request.Headers)
+        {
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+        return clone;
+    }
+
+    private static StringContent CreateJsonContent(string body)
+    {
+        return new StringContent(body, Encoding.UTF8, "application/json");
     }
 }

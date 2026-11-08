@@ -249,7 +249,6 @@
   <RimLLM_DecisionKeyHint>API 密钥（所选提供商必填）：</RimLLM_DecisionKeyHint>
   <RimLLM_DecisionLocalKeyHint>API 密钥（本机服务可不填；服务器不验证密钥时留空即可）：</RimLLM_DecisionLocalKeyHint>
   <RimLLM_DecisionLocalEndpointHint>&lt;color=grey&gt;此端点使用明文 HTTP。请求会以未加密方式送往该地址，请只填写你自己架设的服务。&lt;/color&gt;</RimLLM_DecisionLocalEndpointHint>
-  <RimLLM_DecisionDetectLocalBtn>检测本机决策服务</RimLLM_DecisionDetectLocalBtn>
   <RimLLM_DecisionNoKeyWarning>&lt;color=#facc15&gt;此提供商尚未设置 API 密钥。&lt;/color&gt;</RimLLM_DecisionNoKeyWarning>
   <RimLLM_DecisionEndpointLabel>自定义端点 URL（仅限 origin）：</RimLLM_DecisionEndpointLabel>
   <RimLLM_DecisionModelLabel>决策模型名称：</RimLLM_DecisionModelLabel>
@@ -263,17 +262,17 @@
   <RimLLM_DecisionTestFailed>失败（错误：{0}）</RimLLM_DecisionTestFailed>
   <RimLLM_DecisionStatusActiveDetail>使用中 | {0}</RimLLM_DecisionStatusActiveDetail>
   <RimLLM_DecisionStatusInactive>未启用</RimLLM_DecisionStatusInactive>
-  <RimLLM_DecisionProvider_TypeSafe>TypeSafe（Jev）</RimLLM_DecisionProvider_TypeSafe>
-  <RimLLM_DecisionProvider_Clef>Cloudflare（Clef）</RimLLM_DecisionProvider_Clef>
-  <RimLLM_DecisionProvider_Liquid>Liquid（d1）</RimLLM_DecisionProvider_Liquid>
-  <RimLLM_DecisionProvider_Solar>Upstage（Solar Decide）</RimLLM_DecisionProvider_Solar>
-  <RimLLM_DecisionProvider_Kev>Jared Palmer（Kev 4B）</RimLLM_DecisionProvider_Kev>
-  <RimLLM_DecisionProvider_Tev>Together（Tev1 4B）</RimLLM_DecisionProvider_Tev>
+  <RimLLM_DecisionProvider_TypeSafe>TypeSafe</RimLLM_DecisionProvider_TypeSafe>
+  <RimLLM_DecisionProvider_Clef>Cloudflare</RimLLM_DecisionProvider_Clef>
+  <RimLLM_DecisionProvider_Liquid>Liquid</RimLLM_DecisionProvider_Liquid>
+  <RimLLM_DecisionProvider_Solar>Upstage</RimLLM_DecisionProvider_Solar>
+  <RimLLM_DecisionProvider_Kev>Jared Palmer</RimLLM_DecisionProvider_Kev>
+  <RimLLM_DecisionProvider_Tev>Together</RimLLM_DecisionProvider_Tev>
   <RimLLM_DecisionProvider_Laya>Laya</RimLLM_DecisionProvider_Laya>
-  <RimLLM_DecisionProvider_Span>Respan（Span-01）</RimLLM_DecisionProvider_Span>
-  <RimLLM_DecisionProvider_Microsoft>Microsoft（Decision-1）</RimLLM_DecisionProvider_Microsoft>
-  <RimLLM_DecisionProvider_OpenAI>OpenAI Decisions</RimLLM_DecisionProvider_OpenAI>
-  <RimLLM_DecisionProvider_Ollama>Ollama（本机）</RimLLM_DecisionProvider_Ollama>
-  <RimLLM_DecisionProvider_Unsloth>Unsloth（本机 Laya／Clef）</RimLLM_DecisionProvider_Unsloth>
+  <RimLLM_DecisionProvider_Span>Respan</RimLLM_DecisionProvider_Span>
+  <RimLLM_DecisionProvider_Microsoft>Microsoft</RimLLM_DecisionProvider_Microsoft>
+  <RimLLM_DecisionProvider_OpenAI>OpenAI</RimLLM_DecisionProvider_OpenAI>
+  <RimLLM_DecisionProvider_Ollama>Ollama</RimLLM_DecisionProvider_Ollama>
+  <RimLLM_DecisionProvider_Unsloth>Unsloth</RimLLM_DecisionProvider_Unsloth>
   <RimLLM_DecisionProvider_Local>其他本机服务</RimLLM_DecisionProvider_Local>
 </LanguageData>
