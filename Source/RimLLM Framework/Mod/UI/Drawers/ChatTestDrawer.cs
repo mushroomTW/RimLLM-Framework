@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -297,8 +298,22 @@ public static class ChatTestDrawer
                 }
 
                 // 內文
-                Rect bodyRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.TextHeight + 2f);
-                GUI.Label(bodyRect, layout.Body, richLabelStyle);
+                if (layout.Parts == null)
+                {
+                    Rect bodyRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.TextHeight + 2f);
+                    GUI.Label(bodyRect, layout.Body, richLabelStyle);
+                }
+                else
+                {
+                    float partY = bubbleRect.y + 24f;
+                    foreach (BubblePart part in layout.Parts)
+                    {
+                        Rect partRect = new Rect(bubbleRect.x + 8f, partY, bubbleInnerWidth, part.Height + 2f);
+                        if (part.Table != null) part.Table.Draw(partRect);
+                        else GUI.Label(partRect, part.Rich, richLabelStyle);
+                        partY += part.Height + PartGap;
+                    }
+                }
 
                 // AI 訊息底部工具列（微型標籤與一鍵複製）
                 if (!layout.IsUser)
@@ -583,7 +598,7 @@ public static class ChatTestDrawer
                             lock (replyLock)
                             {
                                 if (streamCompleted) return;
-                                string localReply = RenderReply(accumulatedReply.ToString());
+                                string localReply = MarkdownBodyMarker + accumulatedReply;
                                 var liveMeta = new ChatEntryMeta
                                 {
                                     ModelId = actualModelId,
@@ -597,7 +612,7 @@ public static class ChatTestDrawer
                             }
                         }
 
-                        string formattedFinal = RenderReply(fullReply);
+                        string formattedFinal = MarkdownBodyMarker + fullReply;
                         UpdateAiHistoryEntry(requestGeneration, aiHistoryIndex, formattedFinal, meta: finalMeta, persist: true);
                     }
                     catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
@@ -671,12 +686,60 @@ public static class ChatTestDrawer
     private static string ThinkingLabel => "RimLLM_ThinkingLabel".Translate();
 
     /// <summary>
-    /// 把模型回覆整理成可顯示的 rich text：先抽出思考過程並標灰，再把剩下的 Markdown 轉成標籤。
-    /// 順序不能顛倒 —— ```thought 圍籬必須先被思考處理吃掉，否則會被當成一般程式碼區塊。
+    /// 新紀錄的 AI 內文存原始 Markdown 並以此標記開頭，繪製時才轉換，表格才能逐格畫。
+    /// 沒有標記的舊紀錄已是轉好的 rich text，照原樣顯示。
     /// </summary>
-    private static string RenderReply(string text)
+    internal const string MarkdownBodyMarker = "<!--rimllm-md-->";
+    private const float PartGap = 6f;
+
+    /// <summary>一段內文：<see cref="Table"/> 不為 null 時是逐格繪製的表格，否則是 <see cref="Rich"/> 文字。</summary>
+    private sealed class BubblePart
     {
-        return RimLLMMarkdown.ToRichText(FormatThinkProcess(text));
+        public string Rich;
+        public RimLLMMarkdownTable Table;
+        public float Height;
+    }
+
+    /// <summary>
+    /// 先抽出思考過程並標灰，再轉 Markdown —— ```thought 圍籬必須先被思考處理吃掉，否則會被當成程式碼區塊。
+    /// 思考區塊整段當文字，表格只從最後一個已閉合思考區塊之後切，否則灰色 wrapper 會被拆開；
+    /// 仍在思考（未閉合）時整段都是文字。
+    /// </summary>
+    private static List<BubblePart> RenderMarkdownBody(string markdown, GUIStyle richLabelStyle, float width)
+    {
+        string formatted = FormatThinkProcess(markdown) ?? string.Empty;
+        int answerStart = 0;
+        if (formatted.Contains("<color=silver>" + ThinkingLabel))
+        {
+            answerStart = formatted.Length;
+        }
+        else
+        {
+            string thinkEnd = ThinkEndLabel + "</color>";
+            int end = formatted.LastIndexOf(thinkEnd, StringComparison.Ordinal);
+            if (end >= 0) answerStart = end + thinkEnd.Length;
+        }
+
+        var parts = new List<BubblePart>();
+        void AddText(string text)
+        {
+            string rich = RimLLMMarkdown.ToRichText(text);
+            if (string.IsNullOrWhiteSpace(rich)) return;
+            parts.Add(new BubblePart { Rich = rich, Height = richLabelStyle.CalcHeight(new GUIContent(rich), width) });
+        }
+
+        AddText(formatted.Substring(0, answerStart));
+        foreach (RimLLMMarkdownSegment segment in RimLLMMarkdownTable.Split(formatted.Substring(answerStart)))
+        {
+            if (!segment.IsTable)
+            {
+                AddText(segment.Markdown);
+                continue;
+            }
+            RimLLMMarkdownTable table = RimLLMMarkdownTable.Layout(segment.Rows, width);
+            parts.Add(new BubblePart { Table = table, Height = table.Height });
+        }
+        return parts;
     }
 
     private static string FormatThinkProcess(string text)
@@ -959,6 +1022,8 @@ public static class ChatTestDrawer
         public string Entry;
         public bool IsUser;
         public string Body;
+        /// <summary>原始 Markdown 內文切成的段落；舊紀錄為 null，直接畫 <see cref="Body"/>。</summary>
+        public List<BubblePart> Parts;
         public ChatEntryMeta Meta;
         public float Height;
         public float TextHeight;
@@ -1034,13 +1099,26 @@ public static class ChatTestDrawer
     private static BubbleLayout BuildBubbleLayout(string entry, GUIStyle richLabelStyle, float bubbleInnerWidth)
     {
         bool isUser = ParseMessage(entry, out string label, out string body, out ChatEntryMeta meta);
-        float textHeight = richLabelStyle.CalcHeight(new GUIContent(body), bubbleInnerWidth);
+        List<BubblePart> parts = null;
+        float textHeight;
+        if (body.StartsWith(MarkdownBodyMarker, StringComparison.Ordinal))
+        {
+            parts = RenderMarkdownBody(body.Substring(MarkdownBodyMarker.Length), richLabelStyle, bubbleInnerWidth);
+            // 複製用：文字段保留 rich text（複製時再剝標籤），表格換成 tab 分欄的純文字。
+            body = string.Join("\n\n", parts.Select(part => part.Table?.PlainText ?? part.Rich));
+            textHeight = parts.Sum(part => part.Height) + PartGap * Math.Max(0, parts.Count - 1);
+        }
+        else
+        {
+            textHeight = richLabelStyle.CalcHeight(new GUIContent(body), bubbleInnerWidth);
+        }
 
         var layout = new BubbleLayout
         {
             Entry = entry,
             IsUser = isUser,
             Body = body,
+            Parts = parts,
             Meta = meta,
             TextHeight = textHeight,
             Height = 24f + textHeight + (isUser ? 10f : 34f),
