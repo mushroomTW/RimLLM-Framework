@@ -551,4 +551,12 @@ public class MarkdownTests
         ClassicAssert.AreEqual("a | b ＜i＞", RimLLMMarkdown.CellToRichText("a \\| b <i>"));
         ClassicAssert.AreEqual(string.Empty, RimLLMMarkdown.CellToRichText(null));
     }
+
+    [Test]
+    public void CellToRichText_TurnsBrIntoLineBreakOutsideCode()
+    {
+        ClassicAssert.AreEqual("<b>王室</b>\nRoyalty", RimLLMMarkdown.CellToRichText("**王室**<br>Royalty"));
+        ClassicAssert.AreEqual("a\nb\nc", RimLLMMarkdown.CellToRichText("a<br/>b<BR />c"));
+        StringAssert.Contains("＜br＞", RimLLMMarkdown.CellToRichText("`<br>`"));
+    }
 }

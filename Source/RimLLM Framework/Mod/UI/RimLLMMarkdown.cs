@@ -218,13 +218,19 @@ public static class RimLLMMarkdown
     /// 把一格表格的原始 Markdown 轉成 rich text，供自行逐格繪製表格的 UI 使用。
     /// 規則與 <see cref="ToRichText"/> 攤平表格時相同：行內碼、連結、粗斜體、刪除線照常轉換，
     /// 緊接在字母或數字後的星號（<c>射擊 12**</c>）保留原樣；<c>\|</c> 還原成直線，角括號轉全形。
+    /// 模型常在格子裡用 <c>&lt;br&gt;</c> 換行（GFM 表格格子不能有真正的換行），行內碼以外的一律換成換行。
     /// </summary>
     public static string CellToRichText(string cellMarkdown)
     {
         if (string.IsNullOrEmpty(cellMarkdown)) return cellMarkdown ?? string.Empty;
         string raw = cellMarkdown.Trim().Replace("\\|", "|");
-        return RenderCellInlines(raw.Replace("<", "＜").Replace(">", "＞"));
+        string escaped = CellLineBreak.Replace(raw.Replace("<", "＜").Replace(">", "＞"), m => m.Value[0] == '`' ? m.Value : "\n");
+        return RenderCellInlines(escaped);
     }
+
+    /// <summary>格子裡的 &lt;br&gt;（已轉全形）；行內碼排在前面先吃掉，其內容不換行。</summary>
+    private static readonly System.Text.RegularExpressions.Regex CellLineBreak =
+        new(@"`+[^`]*`+|＜br\s*/?＞", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase, RegexTimeout);
 
     /// <summary>
     /// 欄位文字取自原始 markdown 切片，而非解析後的 inline 樹。
