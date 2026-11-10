@@ -305,6 +305,24 @@ public static class RimLLMUIStyle
     /// <summary>狀態列色點：可用但未生效／尚未呼叫。</summary>
     public static readonly Color StatusBlue = new Color32(0x60, 0xa5, 0xfa, 0xff);
 
+    /// <summary>「還不能用」等錯誤狀態的紅色。</summary>
+    public static readonly Color Danger = new Color32(0xe0, 0x60, 0x60, 0xff);
+
+    /// <summary>
+    /// 控制項下方的一行灰色小字說明：「這是做什麼的、什麼時候才要改」。
+    /// </summary>
+    public static void DrawHint(Listing_Standard listing, string text)
+    {
+        using (With(font: GameFont.Tiny))
+        {
+            Color old = GUI.color;
+            GUI.color = Muted;
+            listing.Label(text);
+            GUI.color = old;
+        }
+        listing.Gap(4f);
+    }
+
     /// <summary>
     /// 緊湊狀態列：底色、色點、標題與右側狀態標籤，兩個分頁共用同一套版面以免各自漂移。
     /// <paramref name="tint"/> 套用在色點、標題與標籤上（例如未安裝時淡化），底色不受影響；結束時 GUI.color 還原為白色。

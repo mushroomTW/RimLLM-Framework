@@ -18,7 +18,7 @@ public static class GlobalConfigDrawer
     /// </summary>
     public static float GetHeight(float width)
     {
-        return 375f;
+        return 560f;
     }
 
     /// <summary>
@@ -26,6 +26,19 @@ public static class GlobalConfigDrawer
     /// </summary>
     public static void DrawGlobalConfigSettings(Listing_Standard listing)
     {
+        // 0. 「不懂就不要改」提示與恢復預設
+        Rect resetRow = listing.GetRect(30f);
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            Widgets.Label(new Rect(resetRow.x, resetRow.y, resetRow.width - 190f, resetRow.height), "RimLLM_AdvancedDontTouch".Translate());
+        }
+        if (Widgets.ButtonText(new Rect(resetRow.xMax - 180f, resetRow.y, 180f, resetRow.height), "RimLLM_ResetToDefaultsBtn".Translate()))
+        {
+            Settings.ResetRequestSettingsToDefaults();
+            Settings.Write();
+        }
+        listing.GapLine(10f);
+
         float prevTimeout = Settings.ApiTimeout;
         int prevRetries = Settings.MaxRetries;
         float prevDelay = Settings.RetryDelay;
@@ -36,30 +49,36 @@ public static class GlobalConfigDrawer
         // 1. API 逾時時間
         listing.Label("RimLLM_ApiTimeoutLabel".Translate(Mathf.RoundToInt(Settings.ApiTimeout)));
         Settings.ApiTimeout = listing.Slider(Settings.ApiTimeout, 5f, 120f);
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_ApiTimeoutHint".Translate());
 
         // 2. 單模型最多重試次數
         listing.Label("RimLLM_MaxRetriesLabel".Translate(Settings.MaxRetries));
         float retriesVal = listing.Slider((float)Settings.MaxRetries, 0f, 10f);
         Settings.MaxRetries = Mathf.RoundToInt(retriesVal);
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_MaxRetriesHint".Translate());
 
         // 3. 重試間隔
         listing.Label("RimLLM_RetryDelayLabel".Translate(Mathf.RoundToInt(Settings.RetryDelay)));
         Settings.RetryDelay = listing.Slider(Settings.RetryDelay, 0f, 10f);
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_RetryDelayHint".Translate());
 
         // 4. 最大並行數
         listing.Label("RimLLM_MaxConcurrentRequestsLabel".Translate(Settings.MaxConcurrentRequests));
         float maxConcurrentVal = listing.Slider((float)Settings.MaxConcurrentRequests, 1f, 10f);
         Settings.MaxConcurrentRequests = Mathf.RoundToInt(maxConcurrentVal);
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_MaxConcurrentRequestsHint".Translate());
         listing.Gap(6f);
 
         // 4.5. 原生 Schema & JSON 修復開關
         bool enableNativeSchema = Settings.EnableNativeSchema;
         listing.CheckboxLabeled("RimLLM_EnableNativeSchemaLabel".Translate(), ref enableNativeSchema);
         Settings.EnableNativeSchema = enableNativeSchema;
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_EnableNativeSchemaHint".Translate());
 
         bool enableJsonRepair = Settings.EnableJsonRepair;
         listing.CheckboxLabeled("RimLLM_EnableJsonRepairLabel".Translate(), ref enableJsonRepair);
         Settings.EnableJsonRepair = enableJsonRepair;
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_EnableJsonRepairHint".Translate());
         listing.Gap(6f);
 
         bool changed = Math.Abs(prevTimeout - Settings.ApiTimeout) > 0.001f ||
@@ -95,5 +114,6 @@ public static class GlobalConfigDrawer
             ];
             Find.WindowStack.Add(new FloatMenu(options));
         }
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_ReasoningEffortHint".Translate());
     }
 }

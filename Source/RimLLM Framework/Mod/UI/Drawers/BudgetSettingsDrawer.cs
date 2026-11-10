@@ -16,7 +16,7 @@ public static class BudgetSettingsDrawer
 
     public static float GetHeight(float width)
     {
-        float height = 220f; // 基礎預算設定 + 遙測顯示
+        float height = 280f; // 基礎預算設定 + 遙測顯示 + 說明小字
         if (Settings.EnableAntiAbuse)
         {
             height += 150f; // 展開的防爆細部滑桿
@@ -43,6 +43,7 @@ public static class BudgetSettingsDrawer
         // 1. 今日 token 預算上限（輸入＋輸出合計），0 代表無限制
         listing.Label("RimLLM_DailyBudgetLimitLabel".Translate(Settings.DailyTokenBudgetLimit.ToString("N0")));
         Settings.DailyTokenBudgetLimit = (long)Math.Round(listing.Slider((float)Settings.DailyTokenBudgetLimit, 0f, MaxDailyTokenBudget));
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_DailyBudgetLimitHint".Translate());
 
         // 2. 預算超限應對策略 (Budget Policy)
         Rect policyRect = listing.GetRect(30f);
@@ -67,12 +68,14 @@ public static class BudgetSettingsDrawer
             }
             Find.WindowStack.Add(new FloatMenu(options));
         }
-        listing.Gap(12f);
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_BudgetPolicyHint".Translate());
+        listing.Gap(8f);
 
         // 3. 頻率防護 (Anti-Abuse Throttling)
         bool enableAntiAbuse = Settings.EnableAntiAbuse;
         listing.CheckboxLabeled("RimLLM_EnableAntiAbuseLabel".Translate(), ref enableAntiAbuse);
         Settings.EnableAntiAbuse = enableAntiAbuse;
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_EnableAntiAbuseHint".Translate());
         listing.Gap(6f);
 
         if (Settings.EnableAntiAbuse)

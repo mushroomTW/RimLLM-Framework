@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <LanguageData>
   <RimLLM_MainMenu><b>主菜单</b></RimLLM_MainMenu>
-  <RimLLM_TabProviders>供应商设置</RimLLM_TabProviders>
-  <RimLLM_TabFallback>备援链</RimLLM_TabFallback>
-  <RimLLM_TabModels>模型设置</RimLLM_TabModels>
-  <RimLLM_TabGlobalConfig>全局请求配置</RimLLM_TabGlobalConfig>
+  <RimLLM_TabProviders>AI 公司</RimLLM_TabProviders>
+  <RimLLM_TabFallback>模型顺序</RimLLM_TabFallback>
+  <RimLLM_TabModels>模型细节</RimLLM_TabModels>
+  <RimLLM_TabGlobalConfig>等待与重试</RimLLM_TabGlobalConfig>
   
   <RimLLM_ApiProviders><b>API 供应商</b></RimLLM_ApiProviders>
   <RimLLM_StatusEnabled>● 已启用</RimLLM_StatusEnabled>
@@ -44,7 +44,7 @@
   <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;目前 Fallback 链为空，请到「模型设置」分页新增！&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
   <RimLLM_AddToFallbackTitle><b>新增模型至 Fallback 链</b></RimLLM_AddToFallbackTitle>
   <RimLLM_ModelsExplanation>微调备援链上每个模型：分级（影响 LowestCost 路由与 MinFallbackLevel 过滤）与上下文上限（标 * 的手动值优先于 API 回报值）。</RimLLM_ModelsExplanation>
-  <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;备援链目前没有模型，请先到「模型设置」分页新增！&lt;/color&gt;</RimLLM_ModelsEmptyWarning>
+  <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;备援链目前没有模型，请在下方添加；或到「连接 AI」一键自动设置。&lt;/color&gt;</RimLLM_ModelsEmptyWarning>
   <RimLLM_ConfirmRemoveModel>要将 {0} 从备援链移除吗？它的分级与上下文上限设置也会一并清除。</RimLLM_ConfirmRemoveModel>
   <RimLLM_SelectProviderBtn>供应商: {0}</RimLLM_SelectProviderBtn>
   <RimLLM_SelectModelBtn>模型: {0}</RimLLM_SelectModelBtn>
@@ -63,8 +63,8 @@
   <RimLLM_EnterApiKey>&lt;color=red&gt;请先输入 API 密钥 (Key)&lt;/color&gt;</RimLLM_EnterApiKey>
   <RimLLM_DetailedLogging>详细日志</RimLLM_DetailedLogging>
   <RimLLM_DetailedLoggingExplanation>开启模组详细日志，包含 API 调用记录、重试与流式事件。</RimLLM_DetailedLoggingExplanation>
-  <RimLLM_TabChatTest>模型对话</RimLLM_TabChatTest>
-  <RimLLM_TabDebug>Debug</RimLLM_TabDebug>
+  <RimLLM_TabChatTest>跟 AI 聊聊</RimLLM_TabChatTest>
+  <RimLLM_TabDebug>问题排查</RimLLM_TabDebug>
   <RimLLM_TitleDebug>Debug 设置</RimLLM_TitleDebug>
   <RimLLM_TitleDebugExplanation>模组侦错与诊断工具</RimLLM_TitleDebugExplanation>
   <RimLLM_ExportDiag>导出诊断信息 (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
@@ -116,7 +116,7 @@
   <RimLLM_UnpricedUsageNotice>本次运行有 {0} 笔请求查无费率；其费用未计入估算，但 token 照计入每日预算。</RimLLM_UnpricedUsageNotice>
   <RimLLM_MsgUsageReset>Token 与费用累计统计已重置。</RimLLM_MsgUsageReset>
   
-  <RimLLM_TabBudget>预算与防护</RimLLM_TabBudget>
+  <RimLLM_TabBudget>花费上限</RimLLM_TabBudget>
   <RimLLM_TitleBudget>预算与防护安全设置</RimLLM_TitleBudget>
   <RimLLM_DailyBudgetLimitLabel>今日 Token 预算上限: {0} (0 为无限制)</RimLLM_DailyBudgetLimitLabel>
   <RimLLM_BudgetPolicyLabel>预算超限应对策略: </RimLLM_BudgetPolicyLabel>
@@ -211,7 +211,7 @@
   <RimLLM_ChatStatBadgeTooltip>耗时：{0}ms ({1}秒)&#10;Token 用量：{2} (提示: {3}, 产出: {4})</RimLLM_ChatStatBadgeTooltip>
   <RimLLM_ChatStatBadgeTooltipEst>耗时：{0}ms ({1}秒)&#10;Token 用量：约 {2} (估算)</RimLLM_ChatStatBadgeTooltipEst>
   <!-- 第三方整合 (Compat) -->
-  <RimLLM_TabCompat>第三方整合</RimLLM_TabCompat>
+  <RimLLM_TabCompat>模组兼容</RimLLM_TabCompat>
   <RimLLM_TitleCompat>第三方整合</RimLLM_TitleCompat>
   <RimLLM_CompatIntro>把其他 Mod 的 LLM 流量导向 RimLLM 的备援链、预算、节流与用量统计——不需要该 Mod 自己支持 RimLLM。开关即时生效，不需重启游戏。</RimLLM_CompatIntro>
   <RimLLM_CompatTakeoverLabel>强制 {0} 改用 RimLLM</RimLLM_CompatTakeoverLabel>
@@ -229,7 +229,7 @@
   <RimLLM_CompatBadgeActive>接管中</RimLLM_CompatBadgeActive>
   <RimLLM_CompatBadgePatchFailed>挂载失败</RimLLM_CompatBadgePatchFailed>
   <!-- 使用中的模组 -->
-  <RimLLM_TabConsumers>使用中的模组</RimLLM_TabConsumers>
+  <RimLLM_TabConsumers>谁在用 RimLLM</RimLLM_TabConsumers>
   <RimLLM_TitleConsumers>使用 RimLLM 的模组</RimLLM_TitleConsumers>
   <RimLLM_ConsumersIntro>列出已启用且声明依赖 RimLLM Framework 的模组，以及本次游戏曾通过 RimLLM 发送请求的模组（含在第三方整合分页被接管的模组）。</RimLLM_ConsumersIntro>
   <RimLLM_ConsumersEmpty>目前没有模组使用 RimLLM Framework。</RimLLM_ConsumersEmpty>
@@ -275,4 +275,89 @@
   <RimLLM_DecisionProvider_Ollama>Ollama</RimLLM_DecisionProvider_Ollama>
   <RimLLM_DecisionProvider_Unsloth>Unsloth</RimLLM_DecisionProvider_Unsloth>
   <RimLLM_DecisionProvider_Local>其他本机服务</RimLLM_DecisionProvider_Local>
+  <!-- 首頁、連接 AI 精靈與進階頁說明 -->
+  <RimLLM_TabHome>首页</RimLLM_TabHome>
+  <RimLLM_TitleHome>首页</RimLLM_TitleHome>
+  <RimLLM_TabSetup>连接 AI</RimLLM_TabSetup>
+  <RimLLM_TitleSetup>连接 AI（三步骤）</RimLLM_TitleSetup>
+  <RimLLM_MenuAdvancedGroup>高级设置（不用动）</RimLLM_MenuAdvancedGroup>
+  <RimLLM_MenuHomeReady>可以用了</RimLLM_MenuHomeReady>
+  <RimLLM_MenuHomeNotReady>还不能用</RimLLM_MenuHomeNotReady>
+  <RimLLM_HomeReadyTitle>AI 可以用了！</RimLLM_HomeReadyTitle>
+  <RimLLM_HomeReadyReason>直接关掉这个窗口回去玩就好。</RimLLM_HomeReadyReason>
+  <RimLLM_HomeChatBtn>跟 AI 聊聊看</RimLLM_HomeChatBtn>
+  <RimLLM_HomeNotReadyTitle>AI 还不能用</RimLLM_HomeNotReadyTitle>
+  <RimLLM_HomeNotConnectedReason>原因：还没连接任何 AI。</RimLLM_HomeNotConnectedReason>
+  <RimLLM_HomeBrokenReason>原因：设置好的 AI 都被关掉了，或是少了密钥。</RimLLM_HomeBrokenReason>
+  <RimLLM_HomeStartBtn>开始设置（约 2 分钟）</RimLLM_HomeStartBtn>
+  <RimLLM_HomeFixBtn>重新设置</RimLLM_HomeFixBtn>
+  <RimLLM_HomeTodoTitle>要做的事：</RimLLM_HomeTodoTitle>
+  <RimLLM_HomeTodo1>① 选一家 AI 公司</RimLLM_HomeTodo1>
+  <RimLLM_HomeTodo2>② 粘贴密钥（像密码一样的一串字）</RimLLM_HomeTodo2>
+  <RimLLM_HomeTodo3>③ 按「开始测试」</RimLLM_HomeTodo3>
+  <RimLLM_HomeTodoDone>✓ 做好了</RimLLM_HomeTodoDone>
+  <RimLLM_HomeTodoPending>✗ 还没做</RimLLM_HomeTodoPending>
+  <RimLLM_HomeTip>不知道选哪家？选 Google Gemini：有免费额度，不用绑信用卡。</RimLLM_HomeTip>
+  <RimLLM_HomeDefaultModel>默认模型</RimLLM_HomeDefaultModel>
+  <RimLLM_HomeCurrentlyUsing>目前使用：{0}　{1}</RimLLM_HomeCurrentlyUsing>
+  <RimLLM_HomeTodayUsage>今天用了：{0} tokens</RimLLM_HomeTodayUsage>
+  <RimLLM_HomeAddAnotherBtn>换一家或再加一家 AI</RimLLM_HomeAddAnotherBtn>
+  <RimLLM_HomeBackupTip>多加一家当备用：第一家坏掉或额度用完时，会自动改用下一家。</RimLLM_HomeBackupTip>
+  <RimLLM_SetupStep1>① 选 AI 公司</RimLLM_SetupStep1>
+  <RimLLM_SetupStep2>② 粘贴密钥</RimLLM_SetupStep2>
+  <RimLLM_SetupStep3>③ 测试</RimLLM_SetupStep3>
+  <RimLLM_SetupPickTitle>第 1 步：你想用哪一家 AI？</RimLLM_SetupPickTitle>
+  <RimLLM_SetupDesc_Gemini>有免费额度，不用绑信用卡</RimLLM_SetupDesc_Gemini>
+  <RimLLM_SetupDesc_DeepSeek>很便宜，中文很好</RimLLM_SetupDesc_DeepSeek>
+  <RimLLM_SetupDesc_OpenRouter>一把密钥用很多种模型</RimLLM_SetupDesc_OpenRouter>
+  <RimLLM_SetupDesc_OpenAI>ChatGPT 的公司，要付费</RimLLM_SetupDesc_OpenAI>
+  <RimLLM_SetupDesc_Player2>装好 Player2 App 就能用</RimLLM_SetupDesc_Player2>
+  <RimLLM_SetupDesc_Local>Ollama、LM Studio 等</RimLLM_SetupDesc_Local>
+  <RimLLM_SetupTag_Recommended>推荐</RimLLM_SetupTag_Recommended>
+  <RimLLM_SetupTag_Cheap>便宜</RimLLM_SetupTag_Cheap>
+  <RimLLM_SetupTag_FreeModels>有免费模型</RimLLM_SetupTag_FreeModels>
+  <RimLLM_SetupTag_NoKey>不用密钥</RimLLM_SetupTag_NoKey>
+  <RimLLM_SetupLocalName>我电脑上的 AI</RimLLM_SetupLocalName>
+  <RimLLM_SetupMoreBtn>更多 AI 公司…</RimLLM_SetupMoreBtn>
+  <RimLLM_SetupPicked>已选择：{0}</RimLLM_SetupPicked>
+  <RimLLM_SetupNextBtn>下一步 ▶</RimLLM_SetupNextBtn>
+  <RimLLM_SetupBackBtn>◀ 上一步</RimLLM_SetupBackBtn>
+  <RimLLM_SetupKeyTitle>第 2 步：粘贴密钥</RimLLM_SetupKeyTitle>
+  <RimLLM_SetupKeyHelp>密钥就像 AI 公司给你的密码。获取方法：\n1. 点下面的按钮，会用浏览器打开 {0} 的网站\n2. 登录后，点「创建密钥」（Create API key）\n3. 点「复制」，回来粘贴到下面的框里（Ctrl+V）</RimLLM_SetupKeyHelp>
+  <RimLLM_SetupOpenSiteBtn>打开 {0} 网站</RimLLM_SetupOpenSiteBtn>
+  <RimLLM_SetupKeyFieldLabel>把密钥粘贴在这里：</RimLLM_SetupKeyFieldLabel>
+  <RimLLM_SetupKeysAlreadySet>已经设置了 {0} 把密钥，直接点「下一步」就好。（要修改请到高级设置的「AI 公司」页）</RimLLM_SetupKeysAlreadySet>
+  <RimLLM_SetupChinaHint>中国大陆的账号：请到高级设置的「AI 公司」页，勾选「使用中国专用连接端点」。</RimLLM_SetupChinaHint>
+  <RimLLM_SetupNoKeyTitle>第 2 步：先把 AI 打开</RimLLM_SetupNoKeyTitle>
+  <RimLLM_SetupPlayer2Help>请先打开 Player2 App 并登录。这个不用密钥，点「下一步」就好。</RimLLM_SetupPlayer2Help>
+  <RimLLM_SetupLocalHelp>请先打开 Ollama 或 LM Studio，并加载一个模型。我们会自动找到它，不用填任何东西。</RimLLM_SetupLocalHelp>
+  <RimLLM_SetupTestTitle>第 3 步：测试看看</RimLLM_SetupTestTitle>
+  <RimLLM_SetupTestHelp>点下按钮，我们会自动帮你：连接 → 找可以用的模型 → 挑一个 → 设置好。</RimLLM_SetupTestHelp>
+  <RimLLM_SetupTestBtn>▶ 开始测试</RimLLM_SetupTestBtn>
+  <RimLLM_SetupTestingBtn>测试中…</RimLLM_SetupTestingBtn>
+  <RimLLM_SetupProgressDetect>正在找你电脑上的 AI…</RimLLM_SetupProgressDetect>
+  <RimLLM_SetupProgressFetch>正在获取模型列表…</RimLLM_SetupProgressFetch>
+  <RimLLM_SetupProgressTest>正在测试连接…</RimLLM_SetupProgressTest>
+  <RimLLM_SetupSuccessTitle>成功！AI 可以用了</RimLLM_SetupSuccessTitle>
+  <RimLLM_SetupSuccessBody>已自动设置好：{0}</RimLLM_SetupSuccessBody>
+  <RimLLM_SetupDoneBtn>完成</RimLLM_SetupDoneBtn>
+  <RimLLM_SetupFailTitle>没有成功</RimLLM_SetupFailTitle>
+  <RimLLM_SetupFail_Key>密钥好像不对。请回上一步，重新「复制」一次密钥再粘贴。</RimLLM_SetupFail_Key>
+  <RimLLM_SetupFail_Quota>AI 公司说用太多次了，或是额度用完了。等几分钟再试，或换一家。</RimLLM_SetupFail_Quota>
+  <RimLLM_SetupFail_Offline>连不上 AI 公司。请检查网络，等一下再试。</RimLLM_SetupFail_Offline>
+  <RimLLM_SetupFail_LocalNotFound>找不到你电脑上的 AI。请先打开 Ollama 或 LM Studio，再试一次。</RimLLM_SetupFail_LocalNotFound>
+  <RimLLM_SetupFail_Other>出了点问题。可以再试一次，或换一家 AI。</RimLLM_SetupFail_Other>
+  <RimLLM_SetupFailDetail>详细原因（反馈问题时可以附上）：{0}</RimLLM_SetupFailDetail>
+  <RimLLM_AdvancedDontTouch>不懂就不要改，默认值就很好。</RimLLM_AdvancedDontTouch>
+  <RimLLM_ResetToDefaultsBtn>全部恢复默认</RimLLM_ResetToDefaultsBtn>
+  <RimLLM_ApiTimeoutHint>AI 太久没回答就放弃。网络很慢或用本地 AI 时才调高。</RimLLM_ApiTimeoutHint>
+  <RimLLM_MaxRetriesHint>同一个模型失败时再试几次，之后才换下一个模型。</RimLLM_MaxRetriesHint>
+  <RimLLM_RetryDelayHint>每次重试前先等一下，避免被 AI 公司拦下来。</RimLLM_RetryDelayHint>
+  <RimLLM_MaxConcurrentRequestsHint>同时最多发出几个问题。越大越快，但越容易超过免费额度。</RimLLM_MaxConcurrentRequestsHint>
+  <RimLLM_EnableNativeSchemaHint>让 AI 按指定格式回答，比较不会出错。只有某些本地模型出问题时才关掉。</RimLLM_EnableNativeSchemaHint>
+  <RimLLM_EnableJsonRepairHint>AI 回答的格式有小错时自动修好。建议保持开启。</RimLLM_EnableJsonRepairHint>
+  <RimLLM_ReasoningEffortHint>AI 回答前要「想」多久。想越久越聪明，但越慢也越贵。</RimLLM_ReasoningEffortHint>
+  <RimLLM_DailyBudgetLimitHint>每天最多用多少 tokens，0 代表不限制。怕花太多钱时才设置。</RimLLM_DailyBudgetLimitHint>
+  <RimLLM_BudgetPolicyHint>超过上限之后要怎么做：直接拦下，或只提醒你。</RimLLM_BudgetPolicyHint>
+  <RimLLM_EnableAntiAbuseHint>某个模组出错、疯狂一直问 AI 时自动刹车，避免账单爆掉。建议保持开启。</RimLLM_EnableAntiAbuseHint>
 </LanguageData>

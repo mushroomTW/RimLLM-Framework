@@ -39,13 +39,19 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     }
 
     // 可調節項 (全域配置)
-    public float ApiTimeout { get; set; } = 30f;       // API 逾時時間 (秒)
-    public int MaxRetries { get; set; } = 3;           // 單模型最多重試次數
-    public float RetryDelay { get; set; } = 3f;        // 重試間隔 (秒)
+    // 全域請求配置的預設值；屬性初始值與「恢復預設」按鈕共用，避免兩處各寫一份而漂移。
+    internal const float DefaultApiTimeout = 30f;
+    internal const int DefaultMaxRetries = 3;
+    internal const float DefaultRetryDelay = 3f;
+    internal const int DefaultMaxConcurrentRequests = 2;
+
+    public float ApiTimeout { get; set; } = DefaultApiTimeout;       // API 逾時時間 (秒)
+    public int MaxRetries { get; set; } = DefaultMaxRetries;           // 單模型最多重試次數
+    public float RetryDelay { get; set; } = DefaultRetryDelay;        // 重試間隔 (秒)
     // 是否啟用詳細日誌。預設關閉：每次請求都會寫日誌，而 Verse 的日誌有全域 10000 筆上限，
     // 被高頻 Mod 使用時長時間遊玩會把上限用完，之後所有 Mod 的錯誤都不再被記錄。
     public bool DetailedLogging { get; set; } = false;
-    public int MaxConcurrentRequests { get; set; } = 2; // 最大並行限制
+    public int MaxConcurrentRequests { get; set; } = DefaultMaxConcurrentRequests; // 最大並行限制
     public ReasoningEffort? DefaultReasoningEffort { get; set; } = null;
 
     // 遙測資料（對話歷史、請求日誌、用量統計）獨立存放於 JSON 檔案，不寫入設定 XML
@@ -979,6 +985,21 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         {
             _enabledProviders[providerId] = enabled;
         }
+    }
+
+    /// <summary>
+    /// 「等待與重試」分頁的「全部恢復預設」：只重設該頁的欄位，不動供應商、金鑰與備援鏈。
+    /// 呼叫端負責 <see cref="ModSettings.Write"/>。
+    /// </summary>
+    public void ResetRequestSettingsToDefaults()
+    {
+        ApiTimeout = DefaultApiTimeout;
+        MaxRetries = DefaultMaxRetries;
+        RetryDelay = DefaultRetryDelay;
+        MaxConcurrentRequests = DefaultMaxConcurrentRequests;
+        EnableNativeSchema = true;
+        EnableJsonRepair = true;
+        DefaultReasoningEffort = null;
     }
 
     public List<string> GetModelList(string providerId)

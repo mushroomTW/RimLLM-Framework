@@ -500,6 +500,16 @@ public static class GenericProviderSubTabDrawer
     /// 本地模型自動偵測（Ollama / LM Studio 等）的繪製與啟動邏輯。
     /// 原為 LocalProviderSubTabDrawer，併入以消除單一呼叫者檔案。
     /// </summary>
+    /// <summary>OpenAI 相容本機服務的探測候選。供應商分頁與「連接 AI」精靈共用。</summary>
+    internal static readonly LocalEndpointProbe.Target[] LocalTargets =
+    [
+        new() { Name = "LM Studio", BaseUrl = "http://localhost:1234/v1", TestUrl = "http://localhost:1234/v1/models" },
+        new() { Name = "Ollama", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/v1/models" },
+        new() { Name = "Ollama (Raw)", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/api/tags" },
+        new() { Name = "LocalAI/vLLM (8080)", BaseUrl = "http://localhost:8080/v1", TestUrl = "http://localhost:8080/v1/models" },
+        new() { Name = "LocalAI/vLLM (8000)", BaseUrl = "http://localhost:8000/v1", TestUrl = "http://localhost:8000/v1/models" }
+    ];
+
     private static bool IsDetectingLocal { get; set; } = false;
     private static string DetectStatusMsg { get; set; } = "";
 
@@ -536,18 +546,9 @@ public static class GenericProviderSubTabDrawer
         IsDetectingLocal = true;
         DetectStatusMsg = "RimLLM_DetectingLocal".Translate();
 
-        var targets = new LocalEndpointProbe.Target[]
-        {
-        new() { Name = "LM Studio", BaseUrl = "http://localhost:1234/v1", TestUrl = "http://localhost:1234/v1/models" },
-        new() { Name = "Ollama", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/v1/models" },
-        new() { Name = "Ollama (Raw)", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/api/tags" },
-        new() { Name = "LocalAI/vLLM (8080)", BaseUrl = "http://localhost:8080/v1", TestUrl = "http://localhost:8080/v1/models" },
-        new() { Name = "LocalAI/vLLM (8000)", BaseUrl = "http://localhost:8000/v1", TestUrl = "http://localhost:8000/v1/models" }
-        };
-
         Task.Run(async () =>
         {
-            LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(targets).ConfigureAwait(false);
+            LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(LocalTargets).ConfigureAwait(false);
             if (hit != null)
             {
                 RimLLMDispatcher.EnqueueOnMainThread(() =>

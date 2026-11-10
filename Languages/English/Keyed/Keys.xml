@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <LanguageData>
   <RimLLM_MainMenu><b>Main Menu</b></RimLLM_MainMenu>
-  <RimLLM_TabProviders>Provider Settings</RimLLM_TabProviders>
-  <RimLLM_TabFallback>Fallback Chain</RimLLM_TabFallback>
-  <RimLLM_TabModels>Model Settings</RimLLM_TabModels>
-  <RimLLM_TabGlobalConfig>Global Config</RimLLM_TabGlobalConfig>
+  <RimLLM_TabProviders>AI Providers</RimLLM_TabProviders>
+  <RimLLM_TabFallback>Model Order</RimLLM_TabFallback>
+  <RimLLM_TabModels>Model Details</RimLLM_TabModels>
+  <RimLLM_TabGlobalConfig>Timeouts</RimLLM_TabGlobalConfig>
   
   <RimLLM_ApiProviders><b>API Providers</b></RimLLM_ApiProviders>
   <RimLLM_StatusEnabled>● Enabled</RimLLM_StatusEnabled>
@@ -44,7 +44,7 @@
   <RimLLM_FallbackEmptyWarning>&lt;color=yellow&gt;Fallback chain is currently empty, please add models on the Model Settings tab!&lt;/color&gt;</RimLLM_FallbackEmptyWarning>
   <RimLLM_AddToFallbackTitle><b>Add Model to Fallback Chain</b></RimLLM_AddToFallbackTitle>
   <RimLLM_ModelsExplanation>Fine-tune each model in the fallback chain: its level (for LowestCost routing and MinFallbackLevel filtering) and its context window (manual values marked * take priority over API-reported ones).</RimLLM_ModelsExplanation>
-  <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;No models in the fallback chain yet. Add some on the Model Settings tab first!&lt;/color&gt;</RimLLM_ModelsEmptyWarning>
+  <RimLLM_ModelsEmptyWarning>&lt;color=yellow&gt;No models in the fallback chain yet. Add one below, or use "Connect AI" to set one up automatically.&lt;/color&gt;</RimLLM_ModelsEmptyWarning>
   <RimLLM_ConfirmRemoveModel>Remove {0} from the fallback chain? Its tier and context-window settings will be cleared too.</RimLLM_ConfirmRemoveModel>
   <RimLLM_SelectProviderBtn>Provider: {0}</RimLLM_SelectProviderBtn>
   <RimLLM_SelectModelBtn>Model: {0}</RimLLM_SelectModelBtn>
@@ -63,8 +63,8 @@
   <RimLLM_EnterApiKey>&lt;color=red&gt;Please enter API Key (Key) first&lt;/color&gt;</RimLLM_EnterApiKey>
   <RimLLM_DetailedLogging>Detailed Logging</RimLLM_DetailedLogging>
   <RimLLM_DetailedLoggingExplanation>Enable detailed logging for call history, retries and stream events.</RimLLM_DetailedLoggingExplanation>
-  <RimLLM_TabChatTest>Chat Test</RimLLM_TabChatTest>
-  <RimLLM_TabDebug>Debug</RimLLM_TabDebug>
+  <RimLLM_TabChatTest>Chat With AI</RimLLM_TabChatTest>
+  <RimLLM_TabDebug>Troubleshoot</RimLLM_TabDebug>
   <RimLLM_TitleDebug>Debug Settings</RimLLM_TitleDebug>
   <RimLLM_TitleDebugExplanation>Mod Debugging and Diagnostics</RimLLM_TitleDebugExplanation>
   <RimLLM_ExportDiag>Export Diagnostics (RimLLM_Diagnostic.txt)</RimLLM_ExportDiag>
@@ -116,7 +116,7 @@
   <RimLLM_UnpricedUsageNotice>{0} request(s) this session have unknown rates. Their cost is excluded from the estimate, but their tokens still count toward the daily budget.</RimLLM_UnpricedUsageNotice>
   <RimLLM_MsgUsageReset>Usage statistics have been reset.</RimLLM_MsgUsageReset>
   
-  <RimLLM_TabBudget>Budget &amp; Safety</RimLLM_TabBudget>
+  <RimLLM_TabBudget>Spending Limit</RimLLM_TabBudget>
   <RimLLM_TitleBudget>Budget &amp; Safety Configuration</RimLLM_TitleBudget>
   <RimLLM_DailyBudgetLimitLabel>Daily Token Budget: {0} tokens (0 for unlimited)</RimLLM_DailyBudgetLimitLabel>
   <RimLLM_BudgetPolicyLabel>Budget Exceeded Policy: </RimLLM_BudgetPolicyLabel>
@@ -211,7 +211,7 @@
   <RimLLM_ChatStatBadgeTooltip>Latency: {0}ms ({1}s)&#10;Tokens: {2} (Prompt: {3}, Completion: {4})</RimLLM_ChatStatBadgeTooltip>
   <RimLLM_ChatStatBadgeTooltipEst>Latency: {0}ms ({1}s)&#10;Tokens: ~{2} (Estimated)</RimLLM_ChatStatBadgeTooltipEst>
   <!-- Third-Party Integration (Compat) -->
-  <RimLLM_TabCompat>Integrations</RimLLM_TabCompat>
+  <RimLLM_TabCompat>Mod Compat</RimLLM_TabCompat>
   <RimLLM_TitleCompat>Third-Party Integration</RimLLM_TitleCompat>
   <RimLLM_CompatIntro>Route another mod's LLM traffic through RimLLM's fallback chain, budget, throttling and usage statistics — without that mod having to support RimLLM itself. Toggles take effect immediately; no restart needed.</RimLLM_CompatIntro>
   <RimLLM_CompatTakeoverLabel>Force {0} to use RimLLM</RimLLM_CompatTakeoverLabel>
@@ -229,7 +229,7 @@
   <RimLLM_CompatBadgeActive>Active</RimLLM_CompatBadgeActive>
   <RimLLM_CompatBadgePatchFailed>Hook failed</RimLLM_CompatBadgePatchFailed>
   <!-- Mods Using RimLLM -->
-  <RimLLM_TabConsumers>Mods Using RimLLM</RimLLM_TabConsumers>
+  <RimLLM_TabConsumers>Mods Using It</RimLLM_TabConsumers>
   <RimLLM_TitleConsumers>Mods Using RimLLM</RimLLM_TitleConsumers>
   <RimLLM_ConsumersIntro>Active mods that declare RimLLM Framework as a dependency, plus every mod that has sent a request through RimLLM this session (including mods taken over in the Integrations tab).</RimLLM_ConsumersIntro>
   <RimLLM_ConsumersEmpty>No mod is using RimLLM Framework right now.</RimLLM_ConsumersEmpty>
@@ -275,4 +275,89 @@
   <RimLLM_DecisionProvider_Ollama>Ollama</RimLLM_DecisionProvider_Ollama>
   <RimLLM_DecisionProvider_Unsloth>Unsloth</RimLLM_DecisionProvider_Unsloth>
   <RimLLM_DecisionProvider_Local>Other local server</RimLLM_DecisionProvider_Local>
+  <!-- 首頁、連接 AI 精靈與進階頁說明 -->
+  <RimLLM_TabHome>Home</RimLLM_TabHome>
+  <RimLLM_TitleHome>Home</RimLLM_TitleHome>
+  <RimLLM_TabSetup>Connect AI</RimLLM_TabSetup>
+  <RimLLM_TitleSetup>Connect AI (3 steps)</RimLLM_TitleSetup>
+  <RimLLM_MenuAdvancedGroup>Advanced (optional)</RimLLM_MenuAdvancedGroup>
+  <RimLLM_MenuHomeReady>Ready</RimLLM_MenuHomeReady>
+  <RimLLM_MenuHomeNotReady>Not ready</RimLLM_MenuHomeNotReady>
+  <RimLLM_HomeReadyTitle>AI is ready!</RimLLM_HomeReadyTitle>
+  <RimLLM_HomeReadyReason>You can close this window and go back to playing.</RimLLM_HomeReadyReason>
+  <RimLLM_HomeChatBtn>Chat with the AI</RimLLM_HomeChatBtn>
+  <RimLLM_HomeNotReadyTitle>AI is not ready yet</RimLLM_HomeNotReadyTitle>
+  <RimLLM_HomeNotConnectedReason>Reason: no AI is connected yet.</RimLLM_HomeNotConnectedReason>
+  <RimLLM_HomeBrokenReason>Reason: the AIs you set up are turned off or missing a key.</RimLLM_HomeBrokenReason>
+  <RimLLM_HomeStartBtn>Start setup (about 2 min)</RimLLM_HomeStartBtn>
+  <RimLLM_HomeFixBtn>Set up again</RimLLM_HomeFixBtn>
+  <RimLLM_HomeTodoTitle>What to do:</RimLLM_HomeTodoTitle>
+  <RimLLM_HomeTodo1>1. Pick an AI company</RimLLM_HomeTodo1>
+  <RimLLM_HomeTodo2>2. Paste your key (a password-like code)</RimLLM_HomeTodo2>
+  <RimLLM_HomeTodo3>3. Press "Start test"</RimLLM_HomeTodo3>
+  <RimLLM_HomeTodoDone>✓ Done</RimLLM_HomeTodoDone>
+  <RimLLM_HomeTodoPending>✗ Not yet</RimLLM_HomeTodoPending>
+  <RimLLM_HomeTip>Not sure which one? Pick Google Gemini: it has a free tier and needs no credit card.</RimLLM_HomeTip>
+  <RimLLM_HomeDefaultModel>default model</RimLLM_HomeDefaultModel>
+  <RimLLM_HomeCurrentlyUsing>Using: {0}  {1}</RimLLM_HomeCurrentlyUsing>
+  <RimLLM_HomeTodayUsage>Used today: {0} tokens</RimLLM_HomeTodayUsage>
+  <RimLLM_HomeAddAnotherBtn>Switch or add another AI</RimLLM_HomeAddAnotherBtn>
+  <RimLLM_HomeBackupTip>Add a backup AI: if the first one breaks or runs out of quota, the next one is used automatically.</RimLLM_HomeBackupTip>
+  <RimLLM_SetupStep1>1. Pick AI</RimLLM_SetupStep1>
+  <RimLLM_SetupStep2>2. Paste key</RimLLM_SetupStep2>
+  <RimLLM_SetupStep3>3. Test</RimLLM_SetupStep3>
+  <RimLLM_SetupPickTitle>Step 1: Which AI do you want to use?</RimLLM_SetupPickTitle>
+  <RimLLM_SetupDesc_Gemini>Free tier, no credit card</RimLLM_SetupDesc_Gemini>
+  <RimLLM_SetupDesc_DeepSeek>Very cheap</RimLLM_SetupDesc_DeepSeek>
+  <RimLLM_SetupDesc_OpenRouter>One key, many models</RimLLM_SetupDesc_OpenRouter>
+  <RimLLM_SetupDesc_OpenAI>Makers of ChatGPT, paid</RimLLM_SetupDesc_OpenAI>
+  <RimLLM_SetupDesc_Player2>Works once the Player2 app is installed</RimLLM_SetupDesc_Player2>
+  <RimLLM_SetupDesc_Local>Ollama, LM Studio, etc.</RimLLM_SetupDesc_Local>
+  <RimLLM_SetupTag_Recommended>Recommended</RimLLM_SetupTag_Recommended>
+  <RimLLM_SetupTag_Cheap>Cheap</RimLLM_SetupTag_Cheap>
+  <RimLLM_SetupTag_FreeModels>Free models</RimLLM_SetupTag_FreeModels>
+  <RimLLM_SetupTag_NoKey>No key</RimLLM_SetupTag_NoKey>
+  <RimLLM_SetupLocalName>AI on my computer</RimLLM_SetupLocalName>
+  <RimLLM_SetupMoreBtn>More AI companies...</RimLLM_SetupMoreBtn>
+  <RimLLM_SetupPicked>Selected: {0}</RimLLM_SetupPicked>
+  <RimLLM_SetupNextBtn>Next ▶</RimLLM_SetupNextBtn>
+  <RimLLM_SetupBackBtn>◀ Back</RimLLM_SetupBackBtn>
+  <RimLLM_SetupKeyTitle>Step 2: Paste your key</RimLLM_SetupKeyTitle>
+  <RimLLM_SetupKeyHelp>A key is like a password the AI company gives you. To get one:\n1. Press the button below to open the {0} website in your browser\n2. Log in and press "Create API key"\n3. Press "Copy", come back and paste it in the box below (Ctrl+V)</RimLLM_SetupKeyHelp>
+  <RimLLM_SetupOpenSiteBtn>Open the {0} website</RimLLM_SetupOpenSiteBtn>
+  <RimLLM_SetupKeyFieldLabel>Paste your key here:</RimLLM_SetupKeyFieldLabel>
+  <RimLLM_SetupKeysAlreadySet>You already have {0} keys set. Just press "Next". (To change them, use the "AI Providers" page under Advanced.)</RimLLM_SetupKeysAlreadySet>
+  <RimLLM_SetupChinaHint>Mainland China account: open the "AI Providers" page under Advanced and tick "Use China-specific endpoint".</RimLLM_SetupChinaHint>
+  <RimLLM_SetupNoKeyTitle>Step 2: Turn the AI on first</RimLLM_SetupNoKeyTitle>
+  <RimLLM_SetupPlayer2Help>Open the Player2 app and log in first. No key needed, just press "Next".</RimLLM_SetupPlayer2Help>
+  <RimLLM_SetupLocalHelp>Open Ollama or LM Studio first and load a model. We will find it automatically, nothing to fill in.</RimLLM_SetupLocalHelp>
+  <RimLLM_SetupTestTitle>Step 3: Test it</RimLLM_SetupTestTitle>
+  <RimLLM_SetupTestHelp>Press the button and we will: connect, find usable models, pick one and set it up for you.</RimLLM_SetupTestHelp>
+  <RimLLM_SetupTestBtn>▶ Start test</RimLLM_SetupTestBtn>
+  <RimLLM_SetupTestingBtn>Testing...</RimLLM_SetupTestingBtn>
+  <RimLLM_SetupProgressDetect>Looking for the AI on your computer...</RimLLM_SetupProgressDetect>
+  <RimLLM_SetupProgressFetch>Getting the model list...</RimLLM_SetupProgressFetch>
+  <RimLLM_SetupProgressTest>Testing the connection...</RimLLM_SetupProgressTest>
+  <RimLLM_SetupSuccessTitle>Success! The AI is ready</RimLLM_SetupSuccessTitle>
+  <RimLLM_SetupSuccessBody>Set up automatically: {0}</RimLLM_SetupSuccessBody>
+  <RimLLM_SetupDoneBtn>Done</RimLLM_SetupDoneBtn>
+  <RimLLM_SetupFailTitle>That did not work</RimLLM_SetupFailTitle>
+  <RimLLM_SetupFail_Key>The key looks wrong. Go back, copy the key again and paste it.</RimLLM_SetupFail_Key>
+  <RimLLM_SetupFail_Quota>The AI company says too many requests, or your quota is used up. Wait a few minutes or try another one.</RimLLM_SetupFail_Quota>
+  <RimLLM_SetupFail_Offline>Could not reach the AI company. Check your internet and try again later.</RimLLM_SetupFail_Offline>
+  <RimLLM_SetupFail_LocalNotFound>Could not find an AI on your computer. Open Ollama or LM Studio first, then try again.</RimLLM_SetupFail_LocalNotFound>
+  <RimLLM_SetupFail_Other>Something went wrong. Try again, or pick another AI.</RimLLM_SetupFail_Other>
+  <RimLLM_SetupFailDetail>Details (include these when reporting a problem): {0}</RimLLM_SetupFailDetail>
+  <RimLLM_AdvancedDontTouch>If you are not sure, leave these alone. The defaults are fine.</RimLLM_AdvancedDontTouch>
+  <RimLLM_ResetToDefaultsBtn>Reset to defaults</RimLLM_ResetToDefaultsBtn>
+  <RimLLM_ApiTimeoutHint>Give up if the AI takes too long. Raise it only for slow internet or local AI.</RimLLM_ApiTimeoutHint>
+  <RimLLM_MaxRetriesHint>How many times to retry the same model before moving to the next one.</RimLLM_MaxRetriesHint>
+  <RimLLM_RetryDelayHint>Wait a bit before each retry so the AI company does not block you.</RimLLM_RetryDelayHint>
+  <RimLLM_MaxConcurrentRequestsHint>How many questions can be sent at once. Higher is faster but uses free quota faster.</RimLLM_MaxConcurrentRequestsHint>
+  <RimLLM_EnableNativeSchemaHint>Makes the AI answer in the exact format requested, so fewer errors. Turn off only if a local model has trouble.</RimLLM_EnableNativeSchemaHint>
+  <RimLLM_EnableJsonRepairHint>Fixes small format mistakes in AI answers. Best left on.</RimLLM_EnableJsonRepairHint>
+  <RimLLM_ReasoningEffortHint>How long the AI "thinks" before answering. Longer is smarter but slower and pricier.</RimLLM_ReasoningEffortHint>
+  <RimLLM_DailyBudgetLimitHint>Max tokens per day, 0 means no limit. Set it only if you worry about cost.</RimLLM_DailyBudgetLimitHint>
+  <RimLLM_BudgetPolicyHint>What happens after the limit: block requests, or only warn you.</RimLLM_BudgetPolicyHint>
+  <RimLLM_EnableAntiAbuseHint>Brakes automatically when a buggy mod keeps asking the AI nonstop, so your bill does not explode. Best left on.</RimLLM_EnableAntiAbuseHint>
 </LanguageData>

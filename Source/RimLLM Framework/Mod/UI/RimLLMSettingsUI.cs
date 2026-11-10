@@ -14,9 +14,20 @@ namespace RimLLM_Framework.Mod;
 public static class RimLLMSettingsUI
 {
     private const string ProvidersCategoryId = "Providers";
+    internal const string HomePageId = "Home";
+    internal const string SetupPageId = "Setup";
+    internal const string ChatTestPageId = "ChatTest";
 
-    // 全域選單狀態
-    private static string activeMainCategory = ProvidersCategoryId;
+    // 全域選單狀態：新玩家一打開就看到首頁的「能不能用」狀態卡
+    private static string activeMainCategory = HomePageId;
+
+    /// <summary>「進階設定」群組是否展開。預設折疊，讓新玩家只看到三個常用項目。</summary>
+    private static bool _advancedExpanded;
+
+    private const float CategoryButtonHeight = 32f;
+    private const float HomeButtonHeight = 46f;
+    private const float CategoryButtonGap = 4f;
+    private const float GroupHeaderHeight = 30f;
     private static Vector2 _detailScrollPosition = Vector2.zero;
     private static Vector2 _leftScrollPosition = Vector2.zero;
 
@@ -67,7 +78,7 @@ public static class RimLLMSettingsUI
 
     private static void DrawSettingsWindowBody(Rect inRect)
     {
-        float leftWidth = 135f;
+        float leftWidth = 160f;
         float midWidth = 190f;
         float gap = 8f;
         float height = inRect.height - 10f;
@@ -129,37 +140,107 @@ public static class RimLLMSettingsUI
             titleRect.yMax + 6f,
             contentRect.width,
             contentRect.height - 26f);
-        float viewHeight = Pages.Length * (32f + 4f);
+        // 正在看的分頁屬於進階群組時強制展開，否則選中的項目會被折疊藏起來。
+        DetailPage activePage = FindPage(activeMainCategory);
+        bool expanded = _advancedExpanded || (activePage != null && activePage.Advanced);
+
+        float viewHeight = GroupHeaderHeight + CategoryButtonGap;
+        foreach (DetailPage page in Pages)
+        {
+            if (page.Advanced && !expanded) continue;
+            viewHeight += (page.Id == HomePageId ? HomeButtonHeight : CategoryButtonHeight) + CategoryButtonGap;
+        }
         Rect viewRect = new Rect(0f, 0f, listRect.width - ScrollBarWidth, viewHeight);
 
         Widgets.BeginScrollView(listRect, ref _leftScrollPosition, viewRect);
         Listing_Standard listing = new Listing_Standard();
         listing.Begin(viewRect);
-        for (int i = 0; i < Pages.Length; i++)
+        foreach (DetailPage page in Pages)
         {
-            if (i > 0) listing.Gap(4f);
-            DrawCategoryButton(listing, Pages[i].MenuLabelKey.Translate(), Pages[i].Id);
+            if (!page.Advanced) DrawCategoryButton(listing, page);
+        }
+
+        DrawAdvancedGroupHeader(listing, expanded, activePage);
+        if (expanded)
+        {
+            foreach (DetailPage page in Pages)
+            {
+                if (page.Advanced) DrawCategoryButton(listing, page);
+            }
         }
         listing.End();
         Widgets.EndScrollView();
     }
 
-    private static void DrawCategoryButton(Listing_Standard listing, string label, string categoryId)
+    private static void DrawAdvancedGroupHeader(Listing_Standard listing, bool expanded, DetailPage activePage)
     {
-        Rect btnRect = listing.GetRect(32f);
-        RimLLMUIStyle.DrawSelectableFrame(btnRect, activeMainCategory == categoryId);
+        listing.Gap(CategoryButtonGap);
+        Rect rect = listing.GetRect(GroupHeaderHeight - CategoryButtonGap);
+        Widgets.DrawLineHorizontal(rect.x, rect.y, rect.width);
+        if (Mouse.IsOver(rect)) Widgets.DrawHighlight(rect);
+        if (Widgets.ButtonInvisible(rect))
+        {
+            _advancedExpanded = !expanded;
+            // 收起群組時若正停在進階分頁，回到首頁，免得選中的項目消失在折疊裡。
+            if (!_advancedExpanded && activePage != null && activePage.Advanced)
+            {
+                OpenPage(HomePageId);
+            }
+        }
+
+        string arrow = expanded ? "▼" : "▶";
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
+        {
+            GUI.color = RimLLMUIStyle.Muted;
+            Widgets.Label(new Rect(rect.x + 4f, rect.y, rect.width - 4f, rect.height), $"{arrow} {"RimLLM_MenuAdvancedGroup".Translate()}");
+            GUI.color = Color.white;
+        }
+    }
+
+    private static void DrawCategoryButton(Listing_Standard listing, DetailPage page)
+    {
+        bool isHome = page.Id == HomePageId;
+        Rect btnRect = listing.GetRect(isHome ? HomeButtonHeight : CategoryButtonHeight);
+        listing.Gap(CategoryButtonGap);
+        bool selected = activeMainCategory == page.Id;
+        RimLLMUIStyle.DrawSelectableFrame(btnRect, selected);
 
         if (Widgets.ButtonInvisible(btnRect))
         {
-            activeMainCategory = categoryId;
-            _detailScrollPosition = Vector2.zero;
+            OpenPage(page.Id);
         }
 
-        string text = activeMainCategory == categoryId ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
+        string label = page.MenuLabelKey.Translate();
+        string text = selected ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
+        if (!isHome)
+        {
+            using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+            {
+                Widgets.Label(btnRect, text);
+            }
+            return;
+        }
+
+        // 首頁按鈕多一行紅／綠狀態，在任何分頁都看得到「能不能用」。
+        bool ready = SetupStatus.Current(out _) == SetupState.Ready;
+        Color statusColor = ready ? RimLLMUIStyle.StatusGreen : RimLLMUIStyle.Danger;
+        string status = (ready ? "RimLLM_MenuHomeReady" : "RimLLM_MenuHomeNotReady").Translate();
         using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
         {
-            Widgets.Label(btnRect, text);
+            Widgets.Label(new Rect(btnRect.x, btnRect.y + 2f, btnRect.width, 24f), text);
         }
+        using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny))
+        {
+            Widgets.Label(new Rect(btnRect.x, btnRect.y + 24f, btnRect.width, 18f),
+                $"<color=#{ColorUtility.ToHtmlStringRGB(statusColor)}>● {status}</color>");
+        }
+    }
+
+    /// <summary>切換到指定分頁並捲回頂端。首頁與精靈的按鈕用它跳頁。</summary>
+    internal static void OpenPage(string pageId)
+    {
+        activeMainCategory = pageId;
+        _detailScrollPosition = Vector2.zero;
     }
 
     private static void DrawRightDetailContent(Rect rect)
@@ -244,11 +325,38 @@ public static class RimLLMSettingsUI
         public Func<string> Title;
         public Action<Listing_Standard> Draw;
         public Func<float, float> EstimateHeight;
+        /// <summary>屬於「進階設定」群組：預設折疊，新玩家不必看。</summary>
+        public bool Advanced;
     }
 
+    /// <summary>
+    /// 選單順序：先列常用的三頁（首頁、連接 AI、對話測試），其餘依原順序收進進階群組。
+    /// </summary>
     private static readonly DetailPage[] Pages =
     [
         new() {
+            Id = HomePageId,
+            MenuLabelKey = "RimLLM_TabHome",
+            Title = () => "RimLLM_TitleHome".Translate(),
+            Draw = HomeDrawer.DrawHome,
+            EstimateHeight = HomeDrawer.GetHeight
+        },
+        new() {
+            Id = SetupPageId,
+            MenuLabelKey = "RimLLM_TabSetup",
+            Title = () => "RimLLM_TitleSetup".Translate(),
+            Draw = SetupWizardDrawer.DrawSetupWizard,
+            EstimateHeight = SetupWizardDrawer.GetHeight
+        },
+        new() {
+            Id = ChatTestPageId,
+            MenuLabelKey = "RimLLM_TabChatTest",
+            Title = () => "RimLLM_ChatTitle".Translate(),
+            Draw = ChatTestDrawer.DrawChatTestSettings,
+            EstimateHeight = ChatTestDrawer.GetHeight
+        },
+        new() {
+            Advanced = true,
             Id = ProvidersCategoryId,
             MenuLabelKey = "RimLLM_TabProviders",
             Title = () =>
@@ -264,6 +372,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = ProviderSettingsDrawer.GetHeight
         },
         new() {
+            Advanced = true,
             Id = "Models",
             MenuLabelKey = "RimLLM_TabModels",
             Title = () => "RimLLM_TitleModels".Translate(),
@@ -271,6 +380,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = ModelSettingsDrawer.GetHeight
         },
         new() {
+            Advanced = true,
             Id = "Fallback",
             MenuLabelKey = "RimLLM_TabFallback",
             Title = () => "RimLLM_TitleFallback".Translate(),
@@ -278,6 +388,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = FallbackSettingsDrawer.GetHeight
         },
         new() {
+            Advanced = true,
             Id = "GlobalConfig",
             MenuLabelKey = "RimLLM_TabGlobalConfig",
             Title = () => "RimLLM_TitleGlobalConfig".Translate(),
@@ -285,6 +396,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = GlobalConfigDrawer.GetHeight
         },
         new() {
+            Advanced = true,
             Id = "Embedding",
             MenuLabelKey = "RimLLM_TabEmbedding",
             Title = () =>
@@ -296,6 +408,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = EmbeddingSettingsDrawer.GetHeight
         },
         new() {
+            Advanced = true,
             Id = "Decision",
             MenuLabelKey = "RimLLM_TabDecision",
             Title = () =>
@@ -308,6 +421,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = DecisionSettingsDrawer.GetHeight
         },
         new() {
+            Advanced = true,
             Id = "Budget",
             MenuLabelKey = "RimLLM_TabBudget",
             Title = () => "RimLLM_TitleBudget".Translate(),
@@ -315,6 +429,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = BudgetSettingsDrawer.GetHeight
         },
         new() {
+            Advanced = true,
             Id = "Compat",
             MenuLabelKey = "RimLLM_TabCompat",
             Title = () => "RimLLM_TitleCompat".Translate(),
@@ -322,6 +437,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = CompatSettingsDrawer.GetHeight
         },
         new() {
+            Advanced = true,
             Id = "Consumers",
             MenuLabelKey = "RimLLM_TabConsumers",
             Title = () => "RimLLM_TitleConsumers".Translate(),
@@ -329,13 +445,7 @@ public static class RimLLMSettingsUI
             EstimateHeight = ServiceConsumersDrawer.GetHeight
         },
         new() {
-            Id = "ChatTest",
-            MenuLabelKey = "RimLLM_TabChatTest",
-            Title = () => "RimLLM_ChatTitle".Translate(),
-            Draw = ChatTestDrawer.DrawChatTestSettings,
-            EstimateHeight = ChatTestDrawer.GetHeight
-        },
-        new() {
+            Advanced = true,
             Id = "Debug",
             MenuLabelKey = "RimLLM_TabDebug",
             Title = () => "RimLLM_TitleDebug".Translate(),
