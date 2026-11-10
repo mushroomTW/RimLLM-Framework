@@ -50,6 +50,21 @@ public class SetupStatusTests
         ClassicAssert.AreEqual("Player2", entry);
     }
 
+    [TestCase("Gemini", "Google")]
+    [TestCase("OpenAI", "OpenAI")]
+    [TestCase("OpenAICompatible", null)]
+    [TestCase("DeepSeek", null)]
+    public void OneClickEmbeddingOnlyForProvidersWhoseKeyIsInherited(string chatProvider, string expected)
+    {
+        string embedding = SetupStatus.OneClickEmbeddingProviderFor(chatProvider);
+        ClassicAssert.AreEqual(expected, embedding);
+        if (embedding != null)
+        {
+            // 一鍵開啟留空 Embedding 金鑰，靠服務沿用對話金鑰；兩邊對照必須一致。
+            ClassicAssert.AreEqual(chatProvider, RimLLM_Framework.Manager.RimLLMEmbeddingService.GetMainProviderIdForEmbedding(embedding));
+        }
+    }
+
     [TestCase(LLMError.InvalidKey, "RimLLM_SetupFail_Key")]
     [TestCase(LLMError.RateLimit, "RimLLM_SetupFail_Quota")]
     [TestCase(LLMError.QuotaExceeded, "RimLLM_SetupFail_Quota")]

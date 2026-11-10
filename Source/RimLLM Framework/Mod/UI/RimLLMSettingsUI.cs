@@ -17,6 +17,8 @@ public static class RimLLMSettingsUI
     internal const string HomePageId = "Home";
     internal const string SetupPageId = "Setup";
     internal const string ChatTestPageId = "ChatTest";
+    internal const string EmbeddingPageId = "Embedding";
+    internal const string DecisionPageId = "Decision";
 
     // 全域選單狀態：新玩家一打開就看到首頁的「能不能用」狀態卡
     private static string activeMainCategory = HomePageId;
@@ -99,7 +101,7 @@ public static class RimLLMSettingsUI
             Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
-        else if (activeMainCategory == "Embedding")
+        else if (activeMainCategory == EmbeddingPageId)
         {
             Rect midColRect = new Rect(leftColRect.xMax + gap, inRect.y, midWidth, height);
             Widgets.DrawMenuSection(midColRect);
@@ -109,7 +111,7 @@ public static class RimLLMSettingsUI
             Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
-        else if (activeMainCategory == "Decision")
+        else if (activeMainCategory == DecisionPageId)
         {
             Rect midColRect = new Rect(leftColRect.xMax + gap, inRect.y, midWidth, height);
             Widgets.DrawMenuSection(midColRect);
@@ -243,6 +245,27 @@ public static class RimLLMSettingsUI
         _detailScrollPosition = Vector2.zero;
     }
 
+    /// <summary>跳到 Embedding 頁；已啟用某家時直接選中那一家，免得玩家在中欄找。</summary>
+    internal static void OpenEmbeddingPage()
+    {
+        string active = RimLLMFrameworkMod.Settings.EmbeddingProvider;
+        if (active != RimLLMFrameworkSettings.DisabledProvider)
+        {
+            EmbeddingSettingsDrawer.ActiveEmbeddingSubTab = active;
+        }
+        OpenPage(EmbeddingPageId);
+    }
+
+    /// <summary>跳到決策模型頁；已啟用某家時直接選中那一家。</summary>
+    internal static void OpenDecisionPage()
+    {
+        if (RimLLMDecisionProviderCatalog.TryGet(RimLLMFrameworkMod.Settings.DecisionProvider, out RimLLMDecisionProvider provider))
+        {
+            DecisionSettingsDrawer.ActiveDecisionSubTab = provider.Id;
+        }
+        OpenPage(DecisionPageId);
+    }
+
     private static void DrawRightDetailContent(Rect rect)
     {
         Rect contentRect = rect.ContractedBy(8f);
@@ -299,10 +322,10 @@ public static class RimLLMSettingsUI
     {
         if (activeMainCategory == ProvidersCategoryId)
             return ProvidersCategoryId + "/" + ProviderSettingsDrawer.ActiveProviderSubTab;
-        if (activeMainCategory == "Embedding")
-            return "Embedding/" + EmbeddingSettingsDrawer.ActiveEmbeddingSubTab;
-        if (activeMainCategory == "Decision")
-            return "Decision/" + DecisionSettingsDrawer.ActiveDecisionSubTab;
+        if (activeMainCategory == EmbeddingPageId)
+            return EmbeddingPageId + "/" + EmbeddingSettingsDrawer.ActiveEmbeddingSubTab;
+        if (activeMainCategory == DecisionPageId)
+            return DecisionPageId + "/" + DecisionSettingsDrawer.ActiveDecisionSubTab;
         return activeMainCategory;
     }
 
@@ -397,7 +420,7 @@ public static class RimLLMSettingsUI
         },
         new() {
             Advanced = true,
-            Id = "Embedding",
+            Id = EmbeddingPageId,
             MenuLabelKey = "RimLLM_TabEmbedding",
             Title = () =>
             {
@@ -409,7 +432,7 @@ public static class RimLLMSettingsUI
         },
         new() {
             Advanced = true,
-            Id = "Decision",
+            Id = DecisionPageId,
             MenuLabelKey = "RimLLM_TabDecision",
             Title = () =>
             {

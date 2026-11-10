@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
+using RimLLM_Framework.Manager;
+using RimLLM_Framework.Manager.Services;
 using UnityEngine;
 using Verse;
 
@@ -66,6 +68,11 @@ public static class SetupWizardDrawer
     private static string _failKey;
     private static string _failDetail;
 
+    // 成功頁「選用」區的 Embedding 一鍵開啟狀態
+    private static bool _embeddingBusy;
+    private static Outcome _embeddingOutcome;
+    private static string _embeddingFailDetail;
+
     private const float CardHeight = 64f;
     private const float CardGap = 10f;
     private const float BigButtonHeight = 40f;
@@ -73,16 +80,17 @@ public static class SetupWizardDrawer
     /// <summary>回到第一步，清掉上一次的結果。從首頁進來時呼叫。</summary>
     public static void Restart()
     {
-        if (_busy) return;
+        if (_busy || _embeddingBusy) return;
         _step = 1;
         _pick = null;
         _revealKey = false;
         _outcome = Outcome.None;
+        _embeddingOutcome = Outcome.None;
     }
 
     public static float GetHeight(float width)
     {
-        return 460f;
+        return 600f;
     }
 
     public static void DrawSetupWizard(Listing_Standard listing)
@@ -322,6 +330,7 @@ public static class SetupWizardDrawer
                     Restart();
                     RimLLMSettingsUI.OpenPage(RimLLMSettingsUI.HomePageId);
                 });
+            DrawOptionalServices(listing);
         }
         else if (_outcome == Outcome.Failed)
         {
@@ -342,6 +351,125 @@ public static class SetupWizardDrawer
             listing.Gap(10f);
             DrawNavRow(listing, showBack: true, null, false, null);
         }
+    }
+
+    /// <summary>
+    /// 成功頁的「選用」區：只有部分模組會用到 Embedding 與決策模型，因此不列入必要步驟、
+    /// 也不影響首頁紅／綠。Embedding 能沿用對話金鑰時一鍵開啟；否則與決策模型一樣跳到進階頁。
+    /// </summary>
+    private static void DrawOptionalServices(Listing_Standard listing)
+    {
+        listing.Gap(14f);
+        listing.Label($"<b>{"RimLLM_SetupOptionalTitle".Translate()}</b>");
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupOptionalHint".Translate());
+
+        // Embedding
+        string oneClick = SetupStatus.OneClickEmbeddingProviderFor(_pick.Id);
+        bool embeddingOn = Settings.EmbeddingProvider != RimLLMFrameworkSettings.DisabledProvider;
+        string embeddingButton;
+        Action embeddingAction;
+        if (embeddingOn)
+        {
+            embeddingButton = "RimLLM_SetupOptionalOpenPage".Translate();
+            embeddingAction = RimLLMSettingsUI.OpenEmbeddingPage;
+        }
+        else if (oneClick != null)
+        {
+            embeddingButton = "RimLLM_SetupEmbeddingOneClick".Translate(_pick.DisplayName);
+            embeddingAction = () => StartEmbeddingOneClick(oneClick);
+        }
+        else
+        {
+            embeddingButton = "RimLLM_SetupOptionalOpenPage".Translate();
+            embeddingAction = RimLLMSettingsUI.OpenEmbeddingPage;
+        }
+
+        string embeddingStatus;
+        if (_embeddingBusy)
+            embeddingStatus = "RimLLM_SetupEmbeddingTesting".Translate();
+        else if (_embeddingOutcome == Outcome.Failed)
+            embeddingStatus = $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Danger)}>{"RimLLM_SetupEmbeddingFailed".Translate()}</color>";
+        else if (embeddingOn)
+            embeddingStatus = $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.StatusGreen)}>{"RimLLM_ServiceStatusOn".Translate(EmbeddingSettingsDrawer.GetProviderDisplayName(Settings.EmbeddingProvider))}</color>";
+        else
+            embeddingStatus = "RimLLM_ServiceStatusOff".Translate();
+
+        DrawOptionalRow(listing, "RimLLM_ServiceEmbedding".Translate(), embeddingStatus, embeddingButton, _embeddingBusy ? null : embeddingAction);
+        if (_embeddingOutcome == Outcome.Failed && !string.IsNullOrEmpty(_embeddingFailDetail))
+        {
+            RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_embeddingFailDetail));
+        }
+
+        // 決策模型：服務商與對話完全不同，要另外申請金鑰，只能到進階頁設定。
+        bool decisionOn = Settings.DecisionProvider != RimLLMDecisionProviderCatalog.Disabled;
+        string decisionStatus = decisionOn
+            ? $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.StatusGreen)}>{"RimLLM_ServiceStatusOn".Translate(DecisionSettingsDrawer.GetProviderDisplayName(Settings.DecisionProvider))}</color>"
+            : "RimLLM_ServiceStatusOff".Translate().ToString();
+        DrawOptionalRow(listing, "RimLLM_ServiceDecision".Translate(), decisionStatus, "RimLLM_SetupOptionalOpenPage".Translate(), RimLLMSettingsUI.OpenDecisionPage);
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupDecisionHint".Translate());
+    }
+
+    /// <summary>「名稱｜狀態｜按鈕」一列。首頁與成功頁共用，<paramref name="onClick"/> 為 null 時不畫按鈕。</summary>
+    internal static void DrawOptionalRow(Listing_Standard listing, string name, string status, string buttonLabel, Action onClick)
+    {
+        Rect row = listing.GetRect(32f);
+        Widgets.DrawLineHorizontal(row.x, row.yMax, row.width);
+        const float buttonWidth = 240f;
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            Widgets.Label(new Rect(row.x + 4f, row.y, 170f, row.height), name);
+            Widgets.Label(new Rect(row.x + 180f, row.y, row.width - 180f - buttonWidth - 8f, row.height), status);
+        }
+        if (onClick != null && Widgets.ButtonText(new Rect(row.xMax - buttonWidth, row.y + 2f, buttonWidth, row.height - 4f), buttonLabel))
+        {
+            onClick();
+        }
+    }
+
+    /// <summary>
+    /// 開啟 Embedding 並馬上用真的一次向量請求驗證；失敗就還原成原本的設定，
+    /// 免得留下一個「顯示使用中、實際不能用」的 Embedding。金鑰留空，交給服務沿用對話金鑰。
+    /// </summary>
+    private static void StartEmbeddingOneClick(string embeddingProviderId)
+    {
+        string previous = Settings.EmbeddingProvider;
+        Settings.EmbeddingProvider = embeddingProviderId;
+        Settings.Write();
+
+        _embeddingBusy = true;
+        _embeddingOutcome = Outcome.None;
+
+        string model = Settings.GetEmbeddingModel(embeddingProviderId);
+        string endpoint = Settings.GetEmbeddingEndpoint(embeddingProviderId);
+        string apiKey = Settings.GetEmbeddingApiKey(embeddingProviderId);
+
+        Task.Run(async () =>
+        {
+            string error = null;
+            try
+            {
+                var service = new RimLLMEmbeddingService(Settings);
+                await service.TestEmbeddingAsync(embeddingProviderId, model, endpoint, apiKey).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                error = RimLLMLog.SanitizeForLog(ex.Message, 220);
+            }
+
+            RimLLMDispatcher.EnqueueOnMainThread(() =>
+            {
+                _embeddingBusy = false;
+                if (error == null)
+                {
+                    _embeddingOutcome = Outcome.Success;
+                    return;
+                }
+                Settings.EmbeddingProvider = previous;
+                Settings.Write();
+                _embeddingOutcome = Outcome.Failed;
+                _embeddingFailDetail = error;
+            });
+        });
     }
 
     private static void DrawResultBox(Listing_Standard listing, Color tint, string title, string body, string buttonLabel, Action onClick)

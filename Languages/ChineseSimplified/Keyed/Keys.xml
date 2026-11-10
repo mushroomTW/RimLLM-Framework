@@ -360,4 +360,15 @@
   <RimLLM_DailyBudgetLimitHint>每天最多用多少 tokens，0 代表不限制。怕花太多钱时才设置。</RimLLM_DailyBudgetLimitHint>
   <RimLLM_BudgetPolicyHint>超过上限之后要怎么做：直接拦下，或只提醒你。</RimLLM_BudgetPolicyHint>
   <RimLLM_EnableAntiAbuseHint>某个模组出错、疯狂一直问 AI 时自动刹车，避免账单爆掉。建议保持开启。</RimLLM_EnableAntiAbuseHint>
+  <RimLLM_SetupOptionalTitle>选用（大部分模组用不到）</RimLLM_SetupOptionalTitle>
+  <RimLLM_SetupOptionalHint>只有模组说明写到需要时才设置。没设置也不影响上面的「可以用了」。</RimLLM_SetupOptionalHint>
+  <RimLLM_ServiceEmbedding>记忆搜索（Embedding）</RimLLM_ServiceEmbedding>
+  <RimLLM_ServiceDecision>决策模型</RimLLM_ServiceDecision>
+  <RimLLM_ServiceStatusOn>● 使用中：{0}</RimLLM_ServiceStatusOn>
+  <RimLLM_ServiceStatusOff>○ 没有开</RimLLM_ServiceStatusOff>
+  <RimLLM_SetupOptionalOpenPage>到设置页</RimLLM_SetupOptionalOpenPage>
+  <RimLLM_SetupEmbeddingOneClick>一键开启（沿用 {0} 密钥）</RimLLM_SetupEmbeddingOneClick>
+  <RimLLM_SetupEmbeddingTesting>测试中…</RimLLM_SetupEmbeddingTesting>
+  <RimLLM_SetupEmbeddingFailed>✗ 开启失败，已还原</RimLLM_SetupEmbeddingFailed>
+  <RimLLM_SetupDecisionHint>决策模型是另一批服务（例如 TypeSafe），要另外申请密钥，请到设置页设置。</RimLLM_SetupDecisionHint>
 </LanguageData>

@@ -16,7 +16,7 @@ public static class HomeDrawer
 
     public static float GetHeight(float width)
     {
-        return 360f;
+        return 480f;
     }
 
     public static void DrawHome(Listing_Standard listing)
@@ -34,6 +34,39 @@ public static class HomeDrawer
         {
             DrawTodoList(listing, state);
         }
+
+        DrawOptionalServices(listing);
+    }
+
+    /// <summary>
+    /// 選用服務的狀態：只有部分模組會用到，所以只顯示狀態與「去設定」，不影響上方紅／綠。
+    /// </summary>
+    private static void DrawOptionalServices(Listing_Standard listing)
+    {
+        listing.Gap(16f);
+        listing.Label($"<b>{"RimLLM_SetupOptionalTitle".Translate()}</b>");
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupOptionalHint".Translate());
+
+        string embedding = Settings.EmbeddingProvider;
+        SetupWizardDrawer.DrawOptionalRow(listing,
+            "RimLLM_ServiceEmbedding".Translate(),
+            ServiceStatus(embedding != RimLLMFrameworkSettings.DisabledProvider, () => EmbeddingSettingsDrawer.GetProviderDisplayName(embedding)),
+            "RimLLM_SetupOptionalOpenPage".Translate(),
+            RimLLMSettingsUI.OpenEmbeddingPage);
+
+        string decision = Settings.DecisionProvider;
+        SetupWizardDrawer.DrawOptionalRow(listing,
+            "RimLLM_ServiceDecision".Translate(),
+            ServiceStatus(decision != Manager.Services.RimLLMDecisionProviderCatalog.Disabled, () => DecisionSettingsDrawer.GetProviderDisplayName(decision)),
+            "RimLLM_SetupOptionalOpenPage".Translate(),
+            RimLLMSettingsUI.OpenDecisionPage);
+    }
+
+    private static string ServiceStatus(bool on, System.Func<string> name)
+    {
+        return on
+            ? $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.StatusGreen)}>{"RimLLM_ServiceStatusOn".Translate(name())}</color>"
+            : "RimLLM_ServiceStatusOff".Translate().ToString();
     }
 
     private static void DrawStatusCard(Listing_Standard listing, SetupState state)

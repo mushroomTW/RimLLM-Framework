@@ -74,6 +74,17 @@ internal static class SetupStatus
     }
 
     /// <summary>
+    /// 對話供應商對應的雲端 Embedding 供應商；這兩家的 Embedding 金鑰留空時會沿用對話金鑰，
+    /// 因此精靈可以一鍵開啟。其他供應商（含本機服務，需另外載入向量模型）回傳 null，改請玩家到進階頁設定。
+    /// </summary>
+    internal static string OneClickEmbeddingProviderFor(string chatProviderId)
+    {
+        if (chatProviderId == ProviderIds.Gemini) return "Google";
+        if (chatProviderId == ProviderIds.OpenAI) return "OpenAI";
+        return null;
+    }
+
+    /// <summary>
     /// 把連線測試的錯誤碼轉成給玩家看的白話說明翻譯鍵。
     /// </summary>
     internal static string DescribeFailureKey(LLMError error)

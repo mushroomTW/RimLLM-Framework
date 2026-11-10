@@ -360,4 +360,15 @@
   <RimLLM_DailyBudgetLimitHint>Max tokens per day, 0 means no limit. Set it only if you worry about cost.</RimLLM_DailyBudgetLimitHint>
   <RimLLM_BudgetPolicyHint>What happens after the limit: block requests, or only warn you.</RimLLM_BudgetPolicyHint>
   <RimLLM_EnableAntiAbuseHint>Brakes automatically when a buggy mod keeps asking the AI nonstop, so your bill does not explode. Best left on.</RimLLM_EnableAntiAbuseHint>
+  <RimLLM_SetupOptionalTitle>Optional (most mods do not need these)</RimLLM_SetupOptionalTitle>
+  <RimLLM_SetupOptionalHint>Set these up only if a mod's description says it needs them. They do not affect "Ready" above.</RimLLM_SetupOptionalHint>
+  <RimLLM_ServiceEmbedding>Memory search (Embedding)</RimLLM_ServiceEmbedding>
+  <RimLLM_ServiceDecision>Decision model</RimLLM_ServiceDecision>
+  <RimLLM_ServiceStatusOn>● On: {0}</RimLLM_ServiceStatusOn>
+  <RimLLM_ServiceStatusOff>○ Off</RimLLM_ServiceStatusOff>
+  <RimLLM_SetupOptionalOpenPage>Open settings page</RimLLM_SetupOptionalOpenPage>
+  <RimLLM_SetupEmbeddingOneClick>Turn on (reuse {0} key)</RimLLM_SetupEmbeddingOneClick>
+  <RimLLM_SetupEmbeddingTesting>Testing...</RimLLM_SetupEmbeddingTesting>
+  <RimLLM_SetupEmbeddingFailed>✗ Could not turn on, reverted</RimLLM_SetupEmbeddingFailed>
+  <RimLLM_SetupDecisionHint>Decision models are separate services (e.g. TypeSafe) with their own key. Set them up on the settings page.</RimLLM_SetupDecisionHint>
 </LanguageData>
