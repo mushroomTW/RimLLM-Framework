@@ -28,11 +28,18 @@ public sealed class RimLLMDecisionProvider
 
     /// <summary>在抓取伺服器清單之前，先顯示的已知模型。</summary>
     public IReadOnlyList<string> PresetModels { get; }
+
+    /// <summary>
+    /// 決策金鑰留空時沿用哪個對話供應商的金鑰（同一家公司、同一把金鑰）；null 代表不沿用。
+    /// 服務的金鑰解析與設定精靈的一鍵開啟都讀這個欄位。
+    /// </summary>
+    public string ChatKeyProviderId { get; init; }
 }
 
 /// <summary>
 /// 決策模型供應商清單。這些服務都接受 System One 的 state/questions 結構；
-/// 其中 TypeSafe 是原生 Jev，其餘是提供相同 wire format 的託管服務或聚合閘道。
+/// 其中 TypeSafe 是原生 Jev，其餘是提供相同 wire format 的託管服務或聚合閘道；
+/// 唯一例外是 Gemini，由 <see cref="GeminiDecisionsAdapterHandler"/> 在傳輸層轉換格式。
 /// 端點與模型都可以在 UI 內修改，因此清單只是預設值，不是硬性限制。
 /// </summary>
 public static class RimLLMDecisionProviderCatalog
@@ -59,6 +66,8 @@ public static class RimLLMDecisionProviderCatalog
     public const string Microsoft = "Microsoft";
     /// <summary>OpenAI 決策服務。</summary>
     public const string OpenAI = "OpenAI";
+    /// <summary>Google Gemini Decision（Gemini Decisions API，經 <see cref="GeminiDecisionsAdapterHandler"/> 轉接）。</summary>
+    public const string Gemini = "Gemini";
 
     /// <summary>Ollama 0.35 以上內建的 Jev 風格決策介面（/v1/systemone）。</summary>
     public const string Ollama = "Ollama";
@@ -128,6 +137,15 @@ public static class RimLLMDecisionProviderCatalog
             AggregatorEndpoint,
             "openai/gpt-6-luna-decisions",
             "openai/gpt-6-luna-decisions"),
+        // Gemini 不走 System One wire format，由傳輸層的轉接處理器換成 /v1beta/decisions。
+        new RimLLMDecisionProvider(
+            Gemini,
+            "https://" + GeminiDecisionsAdapterHandler.GeminiHost,
+            "gemini-decision-1",
+            "gemini-decision-1")
+        {
+            ChatKeyProviderId = ProviderIds.Gemini
+        },
 
         // 本機架設：走明文 HTTP，Jev SDK 只接受 HTTPS origin，
         // 由 DecisionEndpointRouting 在傳輸層把兩者接起來。

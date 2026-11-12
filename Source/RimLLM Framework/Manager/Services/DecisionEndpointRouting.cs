@@ -133,7 +133,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
         if (ids == null)
         {
             // 不是 OpenAI 格式（多半是 Jev 原生格式）：把讀掉的內容放回去，交給 SDK 自己解析。
-            response.Content = CreateJsonContent(body);
+            response.Content = JevWireFormat.JsonContent(body);
             return response;
         }
 
@@ -153,7 +153,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
             }
         }
 
-        response.Content = CreateJsonContent(ToJevModelList(ids));
+        response.Content = JevWireFormat.JsonContent(ToJevModelList(ids));
         return response;
     }
 
@@ -193,17 +193,12 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
 
     private static string ToJevModelList(List<string> ids)
     {
-        var models = new List<Dictionary<string, string>>(ids.Count);
+        var models = new List<(string Name, string Description)>(ids.Count);
         foreach (string id in ids)
         {
-            models.Add(new Dictionary<string, string>
-            {
-                ["name"] = id,
-                ["description"] = "",
-                ["release_date"] = ""
-            });
+            models.Add((id, ""));
         }
-        return JsonSerializer.Serialize(new Dictionary<string, object> { ["models"] = models });
+        return JevWireFormat.ModelList(models);
     }
 
     private static HttpRequestMessage CloneWithQuery(HttpRequestMessage request, string query)
@@ -216,8 +211,31 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
         }
         return clone;
     }
+}
 
-    private static StringContent CreateJsonContent(string body)
+/// <summary>
+/// 決策轉接處理器共用的 Jev wire format 小工具。模型清單的形狀只在這裡定義一次，
+/// OpenAI 格式與 Gemini 格式的轉接都產生同一份 SDK 能解析的內容。
+/// </summary>
+internal static class JevWireFormat
+{
+    /// <summary>Jev SDK 的模型清單：<c>{"models":[{"name","description","release_date"}]}</c>。</summary>
+    public static string ModelList(IEnumerable<(string Name, string Description)> models)
+    {
+        var entries = new List<Dictionary<string, string>>();
+        foreach ((string name, string description) in models)
+        {
+            entries.Add(new Dictionary<string, string>
+            {
+                ["name"] = name,
+                ["description"] = description ?? "",
+                ["release_date"] = ""
+            });
+        }
+        return JsonSerializer.Serialize(new Dictionary<string, object> { ["models"] = entries });
+    }
+
+    public static StringContent JsonContent(string body)
     {
         return new StringContent(body, Encoding.UTF8, "application/json");
     }

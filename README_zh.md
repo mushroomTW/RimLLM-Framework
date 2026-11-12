@@ -237,7 +237,7 @@ JevResult result = await decisions.EvaluateAsync(speakerText, plan);
 double hostileProbability = result.Get(hostile).Probability;
 ```
 
-決策供應商預設為**停用**。設定頁列出 TypeSafe（Jev）、Clef、Liquid d1、Solar Decide、Kev、Tev1、Laya、Span、Microsoft Decision-1 與 OpenAI Decisions；模型、端點與金鑰都依供應商分開儲存，金鑰走和對話金鑰相同的 AES 加密，頁面可抓取供應商模型清單，連線測試會送出一個真正的一題決策。端點填 origin：客戶端會自動接上 `/v1/systemone`，因此任何相容 System One 的閘道都能用。決策呼叫和對話、embedding 共用呼叫者記錄、防濫用節流與每日 token 預算，錯誤契約也一致：一律以 `RimLLMException`（附 `LLMError` 代碼）呈現（401 對應 `InvalidKey`、429 對應 `RateLimit`、5xx 對應 `ProviderOffline`、SDK 逾時對應 `Timeout`、連不上對應 `NetworkError`），呼叫端取消維持 `OperationCanceledException`；未啟用供應商、或 `https://` 端點缺金鑰，都會在送出前就以 `RimLLMException` 拒絕。服務本身不內建政策或路由：計畫與「機率代表什麼」都由呼叫端決定。
+決策供應商預設為**停用**。設定頁列出 TypeSafe（Jev）、Clef、Liquid d1、Solar Decide、Kev、Tev1、Laya、Span、Microsoft Decision-1、OpenAI Decisions 與 Google Gemini Decision；模型、端點與金鑰都依供應商分開儲存，金鑰走和對話金鑰相同的 AES 加密，頁面可抓取供應商模型清單，連線測試會送出一個真正的一題決策。端點填 origin：客戶端會自動接上 `/v1/systemone`，因此任何相容 System One 的閘道都能用（Gemini 的 `/v1beta/decisions` 由框架轉接）。決策呼叫和對話、embedding 共用呼叫者記錄、防濫用節流與每日 token 預算，錯誤契約也一致：一律以 `RimLLMException`（附 `LLMError` 代碼）呈現（401 對應 `InvalidKey`、429 對應 `RateLimit`、5xx 對應 `ProviderOffline`、SDK 逾時對應 `Timeout`、連不上對應 `NetworkError`），呼叫端取消維持 `OperationCanceledException`；未啟用供應商、或 `https://` 端點缺金鑰，都會在送出前就以 `RimLLMException` 拒絕。服務本身不內建政策或路由：計畫與「機率代表什麼」都由呼叫端決定。
 
 #### 從自己的 Mod 選用決策供應商
 
@@ -358,14 +358,14 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 1. **多供應商支援** —— Gemini、OpenAI、DeepSeek、Groq、Grok、Z.ai、OpenRouter、Kimi、MiniMax、Qwen、NVIDIA、Player2，以及任何 OpenAI 相容端點（LM Studio、Ollama、vLLM 等）。
 2. **容錯與模型 Fallback** —— 玩家設定的備援鏈，搭配指數退避、以模型為單位的冷卻、四種路由策略與上下文上限查詢。
 3. **API 金鑰加密** —— AES-256，金鑰由目前 OS 使用者保護；設定介面預設遮蔽，也不會出現在請求 URL。
-4. **設定介面** —— 首頁用紅／綠狀態卡說明「能不能用」，「連接 AI」三步驟精靈會自動加入可用的模型；進階頁預設折疊並附白話說明，另有可過濾的模型選擇器與支援 Markdown 的對話測試頁。
+4. **設定介面** —— 首頁用紅／綠狀態卡說明「能不能用」，「連接 AI」三步驟精靈會自動加入可用的模型（一把 Gemini 金鑰同時設好 Embedding 與決策）；進階頁預設折疊並附白話說明，另有可過濾的模型選擇器與支援 Markdown 的對話測試頁。
 5. **除錯分頁** —— 逐請求日誌開關（預設關閉）。
 6. **一鍵連線測試** —— 檢查延遲、API 金鑰與模型。
 7. **執行緒安全** —— 設定加鎖、主執行緒派送、背景節流寫入遙測。
 8. **推理模型** —— 思維鏈以 MEAI 的 `TextReasoningContent` 交付；每個供應商都能控制思考強度。
 9. **Prompt 快取** —— 以 `CachedContext` 使用服務端快取，用量統計會算出快取省下的費用。
 10. **Embedding SDK** —— 標準 `IEmbeddingGenerator`，後端可選 Gemini、OpenAI、Ollama 或 OpenAI 相容端點，與對話共用每日預算守衛。
-11. **決策模型** —— 支援 TypeSafe Jev 與另外九個 System One 供應商（含雲端及本機 Ollama／Unsloth），具備獨立加密設定、模型探測，並允許子模組自選後端。
+11. **決策模型** —— 支援 TypeSafe Jev、另外九個 System One 供應商（含雲端及本機 Ollama／Unsloth）與 Google Gemini Decision，具備獨立加密設定、模型探測，並允許子模組自選後端。
 12. **原生 Tool Calling** —— 所有供應商都支援 MEAI 的 `AIFunction`，工具在主執行緒執行，可取消尚未派送的工具。
 13. **第三方整合** —— 讓 RimTalk、Auto Translation、Mod Compatibility Checker、簡中自動化：One 改走 RimLLM。
 14. **使用中的模組** —— 設定分頁列出宣告依賴或本次遊戲呼叫過 RimLLM 的模組。

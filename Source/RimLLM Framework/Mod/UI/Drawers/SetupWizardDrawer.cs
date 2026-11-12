@@ -73,6 +73,11 @@ public static class SetupWizardDrawer
     private static Outcome _embeddingOutcome;
     private static string _embeddingFailDetail;
 
+    // 成功頁「選用」區的決策模型一鍵開啟狀態
+    private static bool _decisionBusy;
+    private static Outcome _decisionOutcome;
+    private static string _decisionFailDetail;
+
     private const float CardHeight = 64f;
     private const float CardGap = 10f;
     private const float BigButtonHeight = 40f;
@@ -80,12 +85,15 @@ public static class SetupWizardDrawer
     /// <summary>回到第一步，清掉上一次的結果。從首頁進來時呼叫。</summary>
     public static void Restart()
     {
-        if (_busy || _embeddingBusy) return;
+        // 只有對話測試進行中才擋：它的回呼會改步驟與結果。Embedding／決策的背景測試
+        // 只更新自己那一列的狀態，玩家按「完成」時照常重設精靈。
+        if (_busy) return;
         _step = 1;
         _pick = null;
         _revealKey = false;
         _outcome = Outcome.None;
         _embeddingOutcome = Outcome.None;
+        _decisionOutcome = Outcome.None;
     }
 
     public static float GetHeight(float width)
@@ -361,10 +369,13 @@ public static class SetupWizardDrawer
     {
         listing.Gap(14f);
         listing.Label($"<b>{"RimLLM_SetupOptionalTitle".Translate()}</b>");
-        RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupOptionalHint".Translate());
-
         // Embedding
         string oneClick = SetupStatus.OneClickEmbeddingProviderFor(_pick.Id);
+        string decisionOneClick = SetupStatus.OneClickDecisionProviderFor(_pick.Id);
+        // 能沿用金鑰的服務已在測試成功後自動開啟，提示要說明這一點，而不是叫玩家「需要時才設定」。
+        RimLLMUIStyle.DrawHint(listing, (oneClick != null || decisionOneClick != null
+            ? "RimLLM_SetupOptionalAutoHint"
+            : "RimLLM_SetupOptionalHint").Translate());
         bool embeddingOn = Settings.EmbeddingProvider != RimLLMFrameworkSettings.DisabledProvider;
         string embeddingButton;
         Action embeddingAction;
@@ -400,13 +411,101 @@ public static class SetupWizardDrawer
             RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_embeddingFailDetail));
         }
 
-        // 決策模型：服務商與對話完全不同，要另外申請金鑰，只能到進階頁設定。
+        // 決策模型：Gemini 可沿用同一把金鑰一鍵開啟；其他對話供應商要另外申請決策服務的金鑰，只能到進階頁設定。
         bool decisionOn = Settings.DecisionProvider != RimLLMDecisionProviderCatalog.Disabled;
-        string decisionStatus = decisionOn
-            ? $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.StatusGreen)}>{"RimLLM_ServiceStatusOn".Translate(DecisionSettingsDrawer.GetProviderDisplayName(Settings.DecisionProvider))}</color>"
-            : "RimLLM_ServiceStatusOff".Translate().ToString();
-        DrawOptionalRow(listing, "RimLLM_ServiceDecision".Translate(), decisionStatus, "RimLLM_SetupOptionalOpenPage".Translate(), RimLLMSettingsUI.OpenDecisionPage);
-        RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupDecisionHint".Translate());
+        string decisionButton = !decisionOn && decisionOneClick != null
+            ? "RimLLM_SetupDecisionOneClick".Translate(_pick.DisplayName).ToString()
+            : "RimLLM_SetupOptionalOpenPage".Translate().ToString();
+        Action decisionAction = !decisionOn && decisionOneClick != null
+            ? () => StartDecisionOneClick(decisionOneClick)
+            : RimLLMSettingsUI.OpenDecisionPage;
+
+        string decisionStatus;
+        if (_decisionBusy)
+            decisionStatus = "RimLLM_SetupDecisionTesting".Translate();
+        else if (_decisionOutcome == Outcome.Failed)
+            decisionStatus = $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Danger)}>{"RimLLM_SetupDecisionFailed".Translate()}</color>";
+        else if (decisionOn)
+            decisionStatus = $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.StatusGreen)}>{"RimLLM_ServiceStatusOn".Translate(DecisionSettingsDrawer.GetProviderDisplayName(Settings.DecisionProvider))}</color>";
+        else
+            decisionStatus = "RimLLM_ServiceStatusOff".Translate();
+
+        DrawOptionalRow(listing, "RimLLM_ServiceDecision".Translate(), decisionStatus, decisionButton, _decisionBusy ? null : decisionAction);
+        if (_decisionOutcome == Outcome.Failed && !string.IsNullOrEmpty(_decisionFailDetail))
+        {
+            RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_decisionFailDetail));
+        }
+        if (decisionOneClick == null)
+        {
+            RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupDecisionHint".Translate());
+        }
+    }
+
+    /// <summary>
+    /// 對話測試成功後，自動開啟能沿用同一把金鑰的 Embedding 與決策模型（例如 Gemini 三項全包），
+    /// 玩家只要貼一次金鑰。玩家已經自己開啟的服務不覆蓋；每項都實際測試，失敗就還原。
+    /// </summary>
+    private static void AutoEnableOptionalServices(string chatProviderId)
+    {
+        string embedding = SetupStatus.OneClickEmbeddingProviderFor(chatProviderId);
+        if (embedding != null && Settings.EmbeddingProvider == RimLLMFrameworkSettings.DisabledProvider)
+        {
+            StartEmbeddingOneClick(embedding);
+        }
+
+        string decision = SetupStatus.OneClickDecisionProviderFor(chatProviderId);
+        if (decision != null && Settings.DecisionProvider == RimLLMDecisionProviderCatalog.Disabled)
+        {
+            StartDecisionOneClick(decision);
+        }
+    }
+
+    /// <summary>
+    /// 開啟決策模型並馬上送一題真的決策驗證；失敗就還原，免得留下「顯示使用中、實際不能用」的設定。
+    /// 決策金鑰留空，交給服務沿用對話金鑰。
+    /// </summary>
+    private static void StartDecisionOneClick(string decisionProviderId)
+    {
+        string previous = Settings.DecisionProvider;
+        Settings.DecisionProvider = decisionProviderId;
+        Settings.Write();
+
+        _decisionBusy = true;
+        _decisionOutcome = Outcome.None;
+
+        var service = new RimLLMDecisionService(Settings);
+        DecisionPreviewArguments args = service.GetPreviewArguments(decisionProviderId);
+
+        Task.Run(async () =>
+        {
+            string error = null;
+            try
+            {
+                await service.TestConnectionAsync(args.Endpoint, args.Model, args.ApiKey).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                error = RimLLMLog.SanitizeForLog(ex.Message, 220);
+            }
+
+            RimLLMDispatcher.EnqueueOnMainThread(() =>
+            {
+                _decisionBusy = false;
+                if (error == null)
+                {
+                    _decisionOutcome = Outcome.Success;
+                    return;
+                }
+                // 測試期間玩家可能已到決策頁改選別家；只有設定仍是這裡開的那一家才還原。
+                if (Settings.DecisionProvider == decisionProviderId)
+                {
+                    Settings.DecisionProvider = previous;
+                    Settings.Write();
+                }
+                _decisionOutcome = Outcome.Failed;
+                _decisionFailDetail = error;
+            });
+        });
     }
 
     /// <summary>「名稱｜狀態｜按鈕」一列。首頁與成功頁共用，<paramref name="onClick"/> 為 null 時不畫按鈕。</summary>
@@ -573,6 +672,7 @@ public static class SetupWizardDrawer
                     _addedEntry = entry;
                     _outcome = Outcome.Success;
                     _busy = false;
+                    AutoEnableOptionalServices(providerId);
                 }).ConfigureAwait(false);
             }
             catch (Exception ex)

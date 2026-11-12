@@ -3,7 +3,7 @@
   <name>RimLLM Framework</name>
   <author>綠菇</author>
   <packageId>GreenMushroom.RimLLMFramework</packageId>
-  <modVersion>2026.11.12.1</modVersion>
+  <modVersion>2026.11.12.4</modVersion>
   <supportedVersions>
     <li>1.7</li>
   </supportedVersions>
@@ -19,7 +19,7 @@ This mod provides a stable, high-performance, and flexible foundation for managi
 5. <b>Reasoning Models &amp; Adaptive Effort</b>: Native support for modern reasoning models (Gemini 3.7/3.1 Thinking, OpenAI GPT-5/o-series, DeepSeek-R1/V4, Grok, Qwen, etc.). Normalizes thinking processes into standard Microsoft.Extensions.AI reasoning content, with automatic wire-format translation and adaptive parameter fallback.
 6. <b>Native Tool Calling (Function Calling)</b>: Fully compliant with Microsoft.Extensions.AI standards (AIFunction, ChatOptions.Tools, FunctionCallContent). Features RimWorldFunctionInvoker (.AsMainThreadFunctionInvokingClient()) to safely dispatch tool execution onto the Unity main thread, preventing cross-thread crashes.
 7. <b>Embedding SDK</b>: First-class semantic search and vector embeddings powered by Gemini, OpenAI, Ollama, or OpenAI-compatible endpoints, sharing daily budget and rate controls with chat.
-8. <b>Decision Models</b>: Typed decision services for yes/no, choice, and probability scoring backed by TypeSafe System One (Jev) and nine other providers, including local Ollama and Unsloth endpoints with zero configuration required.
+8. <b>Decision Models</b>: Typed decision services for yes/no, choice, and probability scoring backed by TypeSafe System One (Jev), Google Gemini Decision and nine other providers, including local Ollama and Unsloth endpoints with zero configuration required.
 9. <b>Provider Analytics &amp; Caching</b>: Real-time request success metrics and server-side prompt cache hit tracking (reducing repetitive dialogue token costs by up to 80%).
 10. <b>Developer-First SDK</b>: Exposes standard Microsoft.Extensions.AI abstractions (IChatClient, IEmbeddingGenerator) without bespoke wrappers or mandatory registration. Includes robust JSON repair and strict schema normalization.
 11. <b>Third-Party Mod Integration</b>: Seamlessly redirect LLM traffic from RimTalk, Auto Translation, Mod Compatibility Checker, and Simplified Chinese Automation: One into RimLLM's resilient fallback, budget, and logging pipeline without modifying target mod keys.

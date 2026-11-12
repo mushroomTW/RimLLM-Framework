@@ -37,13 +37,54 @@ public class RimLLMDecisionService
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
     }
 
+    /// <summary>
+    /// 決策供應商實際要用的金鑰。Gemini 的決策金鑰留空時沿用對話的 Gemini 金鑰
+    /// （與 Embedding 沿用對話金鑰的規則相同），玩家只要貼一次 Gemini 金鑰。
+    /// 其他決策供應商與對話供應商是不同服務，不沿用。
+    /// </summary>
+    internal static string GetEffectiveApiKey(IRimLLMSettings settings, string providerId)
+    {
+        string key = settings.GetDecisionApiKey(providerId);
+        string chatProviderId = GetChatKeyProviderId(providerId);
+        if (string.IsNullOrWhiteSpace(key) && chatProviderId != null)
+        {
+            key = settings.GetActiveApiKey(chatProviderId);
+        }
+        return key ?? "";
+    }
+
+    /// <summary>該決策供應商在目錄中宣告可沿用的對話供應商；未知或不沿用時為 null。</summary>
+    private static string GetChatKeyProviderId(string providerId)
+    {
+        return RimLLMDecisionProviderCatalog.TryGet(providerId, out RimLLMDecisionProvider provider)
+            ? provider.ChatKeyProviderId
+            : null;
+    }
+
+    /// <summary>
+    /// 與 <see cref="GetEffectiveApiKey"/> 同一規則的「有沒有金鑰」查詢。
+    /// 不呼叫 GetActiveApiKey，免得純查詢也推進多金鑰的輪替位置。
+    /// </summary>
+    internal static bool HasEffectiveApiKey(IRimLLMSettings settings, string providerId)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.GetDecisionApiKey(providerId)))
+        {
+            return true;
+        }
+        string chatProviderId = GetChatKeyProviderId(providerId);
+        return chatProviderId != null && !string.IsNullOrWhiteSpace(settings.GetApiKey(chatProviderId));
+    }
+
     /// <summary>模型清單在設定檔中的快取鍵，與 Embedding 的清單分開存放。</summary>
     public static string GetModelListKey(string providerId)
     {
         return "decision:" + (providerId ?? "");
     }
 
-    /// <summary>把使用者貼上的完整 /v1/systemone 位址縮回 JevClient 需要的 origin。</summary>
+    /// <summary>
+    /// 把使用者貼上的完整 API 位址（/v1/systemone，或 Gemini 的 /v1beta/decisions、/v1beta）
+    /// 縮回 JevClient 需要的 origin。
+    /// </summary>
     internal static string NormalizeBaseEndpoint(string endpoint, string providerId)
     {
         if (string.IsNullOrWhiteSpace(endpoint))
@@ -52,10 +93,17 @@ public class RimLLMDecisionService
         }
 
         string normalized = endpoint.Trim().TrimEnd('/');
-        const string suffix = "/v1/systemone";
-        if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        // /v1beta 只對 Gemini 主機有意義；其他閘道可能就掛在 /v1beta 底下，不能拿掉。
+        string[] suffixes = GeminiDecisionsAdapterHandler.Targets(normalized)
+            ? new[] { "/v1/systemone", "/v1beta/decisions", "/v1beta" }
+            : new[] { "/v1/systemone" };
+        foreach (string suffix in suffixes)
         {
-            normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd('/');
+            if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd('/');
+                break;
+            }
         }
         return normalized;
     }
@@ -71,6 +119,11 @@ public class RimLLMDecisionService
             {
                 InnerHandler = handler
             };
+        }
+        if (GeminiDecisionsAdapterHandler.Targets(endpoint))
+        {
+            // Gemini Decisions API 的路徑、金鑰標頭與欄位名稱和 System One 不同，在傳輸層互轉。
+            handler = new GeminiDecisionsAdapterHandler { InnerHandler = handler };
         }
         // 本機服務的 /v1/models 多為 OpenAI 格式，轉成 SDK 能解析的形狀。
         handler = new OpenAiModelListAdapterHandler { InnerHandler = handler };
@@ -146,7 +199,7 @@ public class RimLLMDecisionService
         }
 
         string endpoint = NormalizeBaseEndpoint(_settings.GetDecisionEndpoint(resolvedProviderId), resolvedProviderId);
-        string apiKey = _settings.GetDecisionApiKey(resolvedProviderId);
+        string apiKey = GetEffectiveApiKey(_settings, resolvedProviderId);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             // 本機架設的服務多半不驗證金鑰；遠端供應商少了金鑰就是不能送。
@@ -195,7 +248,7 @@ public class RimLLMDecisionService
             ProviderId = providerId,
             Model = ResolveModel(providerId, null),
             // 只回報「有沒有金鑰」，金鑰本身絕不外洩。
-            HasKey = !string.IsNullOrWhiteSpace(_settings.GetDecisionApiKey(providerId)),
+            HasKey = HasEffectiveApiKey(_settings, providerId),
             // 明文本機端點是玩家自架的服務，可以不填金鑰。
             RequiresKey = !DecisionEndpointRouting.IsPlaintext(endpoint),
             Endpoint = endpoint
@@ -211,7 +264,7 @@ public class RimLLMDecisionService
         return new DecisionPreviewArguments(
             _settings.GetDecisionEndpoint(providerId),
             ResolveModel(providerId, null),
-            _settings.GetDecisionApiKey(providerId));
+            GetEffectiveApiKey(_settings, providerId));
     }
 
     /// <summary>

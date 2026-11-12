@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using RimLLM_Framework.Manager.Services;
 
 namespace RimLLM_Framework.Mod;
 
@@ -81,6 +82,22 @@ internal static class SetupStatus
     {
         if (chatProviderId == ProviderIds.Gemini) return "Google";
         if (chatProviderId == ProviderIds.OpenAI) return "OpenAI";
+        return null;
+    }
+
+    /// <summary>
+    /// 對話供應商對應、可沿用對話金鑰的決策供應商（依目錄的 <see cref="RimLLMDecisionProvider.ChatKeyProviderId"/>）。
+    /// 其他決策服務與對話供應商無關，回傳 null，改請玩家到進階頁設定。
+    /// </summary>
+    internal static string OneClickDecisionProviderFor(string chatProviderId)
+    {
+        foreach (RimLLMDecisionProvider provider in RimLLMDecisionProviderCatalog.All)
+        {
+            if (provider.ChatKeyProviderId != null && provider.ChatKeyProviderId == chatProviderId)
+            {
+                return provider.Id;
+            }
+        }
         return null;
     }
 

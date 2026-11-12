@@ -272,6 +272,7 @@
   <RimLLM_DecisionProvider_Span>Respan</RimLLM_DecisionProvider_Span>
   <RimLLM_DecisionProvider_Microsoft>Microsoft</RimLLM_DecisionProvider_Microsoft>
   <RimLLM_DecisionProvider_OpenAI>OpenAI</RimLLM_DecisionProvider_OpenAI>
+  <RimLLM_DecisionProvider_Gemini>Google Gemini</RimLLM_DecisionProvider_Gemini>
   <RimLLM_DecisionProvider_Ollama>Ollama</RimLLM_DecisionProvider_Ollama>
   <RimLLM_DecisionProvider_Unsloth>Unsloth</RimLLM_DecisionProvider_Unsloth>
   <RimLLM_DecisionProvider_Local>Other local server</RimLLM_DecisionProvider_Local>
@@ -371,4 +372,9 @@
   <RimLLM_SetupEmbeddingTesting>Testing...</RimLLM_SetupEmbeddingTesting>
   <RimLLM_SetupEmbeddingFailed>✗ Could not turn on, reverted</RimLLM_SetupEmbeddingFailed>
   <RimLLM_SetupDecisionHint>Decision models are separate services (e.g. TypeSafe) with their own key. Set them up on the settings page.</RimLLM_SetupDecisionHint>
+  <RimLLM_SetupOptionalAutoHint>Services that can reuse the same key were turned on automatically. Set up the rest only if a mod's description says it needs them. None of this affects "Ready" above.</RimLLM_SetupOptionalAutoHint>
+  <RimLLM_SetupDecisionOneClick>Turn on (reuse {0} key)</RimLLM_SetupDecisionOneClick>
+  <RimLLM_SetupDecisionTesting>Testing...</RimLLM_SetupDecisionTesting>
+  <RimLLM_SetupDecisionFailed>✗ Could not turn on, reverted</RimLLM_SetupDecisionFailed>
+  <RimLLM_DecisionInheritedKeyHint>&lt;color=grey&gt;✓ Inherited main API key&lt;/color&gt;</RimLLM_DecisionInheritedKeyHint>
 </LanguageData>

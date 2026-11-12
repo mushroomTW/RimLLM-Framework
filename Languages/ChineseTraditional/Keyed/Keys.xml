@@ -272,6 +272,7 @@
   <RimLLM_DecisionProvider_Span>Respan</RimLLM_DecisionProvider_Span>
   <RimLLM_DecisionProvider_Microsoft>Microsoft</RimLLM_DecisionProvider_Microsoft>
   <RimLLM_DecisionProvider_OpenAI>OpenAI</RimLLM_DecisionProvider_OpenAI>
+  <RimLLM_DecisionProvider_Gemini>Google Gemini</RimLLM_DecisionProvider_Gemini>
   <RimLLM_DecisionProvider_Ollama>Ollama</RimLLM_DecisionProvider_Ollama>
   <RimLLM_DecisionProvider_Unsloth>Unsloth</RimLLM_DecisionProvider_Unsloth>
   <RimLLM_DecisionProvider_Local>其他本機服務</RimLLM_DecisionProvider_Local>
@@ -371,4 +372,9 @@
   <RimLLM_SetupEmbeddingTesting>測試中…</RimLLM_SetupEmbeddingTesting>
   <RimLLM_SetupEmbeddingFailed>✗ 開啟失敗，已還原</RimLLM_SetupEmbeddingFailed>
   <RimLLM_SetupDecisionHint>決策模型是另一批服務（例如 TypeSafe），要另外申請金鑰，請到設定頁設定。</RimLLM_SetupDecisionHint>
+  <RimLLM_SetupOptionalAutoHint>能沿用同一把金鑰的服務已自動開啟；其餘只有模組說明寫到需要時才設定。這些都不影響上面的「可以用了」。</RimLLM_SetupOptionalAutoHint>
+  <RimLLM_SetupDecisionOneClick>一鍵開啟（沿用 {0} 金鑰）</RimLLM_SetupDecisionOneClick>
+  <RimLLM_SetupDecisionTesting>測試中…</RimLLM_SetupDecisionTesting>
+  <RimLLM_SetupDecisionFailed>✗ 開啟失敗，已還原</RimLLM_SetupDecisionFailed>
+  <RimLLM_DecisionInheritedKeyHint>&lt;color=grey&gt;✓ 已自動繼承主 API 金鑰&lt;/color&gt;</RimLLM_DecisionInheritedKeyHint>
 </LanguageData>

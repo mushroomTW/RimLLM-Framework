@@ -122,7 +122,7 @@ public static class DecisionSettingsDrawer
 
         if (isActive)
         {
-            if (string.IsNullOrEmpty(Settings.GetDecisionApiKey(providerId)) && !IsPlaintextEndpoint(providerId))
+            if (!RimLLMDecisionService.HasEffectiveApiKey(Settings, providerId) && !IsPlaintextEndpoint(providerId))
             {
                 statusText = "RimLLM_StatusNoApiKey".Translate();
                 statusColor = RimLLMUIStyle.Warning;
@@ -220,7 +220,10 @@ public static class DecisionSettingsDrawer
         {
             using (RimLLMUIStyle.With(font: GameFont.Tiny))
             {
-                listing.Label("RimLLM_DecisionNoKeyWarning".Translate());
+                // 可沿用對話金鑰的供應商（如 Gemini）留空時，提示已繼承主金鑰。
+                listing.Label(RimLLMDecisionService.HasEffectiveApiKey(Settings, providerId)
+                    ? "RimLLM_DecisionInheritedKeyHint".Translate()
+                    : "RimLLM_DecisionNoKeyWarning".Translate());
             }
         }
         listing.Gap(8f);

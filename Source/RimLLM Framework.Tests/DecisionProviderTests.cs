@@ -87,7 +87,7 @@ public class DecisionProviderTests
         string[] expected =
         [
             "TypeSafe", "Clef", "Liquid", "Solar", "Kev",
-            "Tev", "Laya", "Span", "Microsoft", "OpenAI"
+            "Tev", "Laya", "Span", "Microsoft", "OpenAI", "Gemini"
         ];
 
         foreach (string id in expected)
