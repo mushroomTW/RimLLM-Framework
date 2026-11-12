@@ -21,12 +21,12 @@ namespace RimLLM_Framework.Compat;
 /// <list type="number">
 /// <item><c>AIClientFactory.GetAIClientAsync</c>（唯一的 client 取得點）：接管生效時回傳一個由本類別持有的
 /// RimTalk 原生 <see cref="OpenAIClient"/> 哨兵實例。RimTalk 的串流對話（ChatStreaming）與結構化查詢
-/// （Query<T>）都經由 <c>AIService.ExecuteWithRetry</c> 取得 client，因此 OpenAI／Gemini／Custom／
+/// （Query&lt;T&gt;）都經由 <c>AIService.ExecuteWithRetry</c> 取得 client，因此 OpenAI／Gemini／Custom／
 /// Local／Player2 全部流量都會落到哨兵上。</item>
 /// <item><see cref="OpenAIClient"/> 的兩個非泛型漏斗 <c>GetChatCompletionAsync(prefix, messages, imageBase64, onRequestPrepared)</c>
 /// 與私有 <c>StreamAsync(…, onChunk, onRequestPrepared)</c>：<c>__instance</c> 是哨兵時改呼叫
 /// <see cref="RimTalkCompatClient"/>，不是哨兵（玩家自己的原生 client）則原樣放行。RimTalk 的泛型
-/// <c>GetStreamingChatCompletionAsync<T></c> 與三參數 <c>GetChatCompletionAsync</c> 都是這兩個方法的包裝，
+/// <c>GetStreamingChatCompletionAsync&lt;T&gt;</c> 與三參數 <c>GetChatCompletionAsync</c> 都是這兩個方法的包裝，
 /// 不必碰泛型方法的 Harmony 攔截。</item>
 /// </list>
 /// 為什麼不直接讓 <see cref="RimTalkCompatClient"/> 實作 <see cref="IAIClient"/>：那是型別定義層級的參考，

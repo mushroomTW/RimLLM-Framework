@@ -45,13 +45,25 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     internal const float DefaultRetryDelay = 3f;
     internal const int DefaultMaxConcurrentRequests = 2;
 
-    public float ApiTimeout { get; set; } = DefaultApiTimeout;       // API 逾時時間 (秒)
-    public int MaxRetries { get; set; } = DefaultMaxRetries;           // 單模型最多重試次數
-    public float RetryDelay { get; set; } = DefaultRetryDelay;        // 重試間隔 (秒)
-    // 是否啟用詳細日誌。預設關閉：每次請求都會寫日誌，而 Verse 的日誌有全域 10000 筆上限，
-    // 被高頻 Mod 使用時長時間遊玩會把上限用完，之後所有 Mod 的錯誤都不再被記錄。
+    /// <summary>API 逾時時間（秒）。</summary>
+    public float ApiTimeout { get; set; } = DefaultApiTimeout;
+
+    /// <summary>單模型最多重試次數。</summary>
+    public int MaxRetries { get; set; } = DefaultMaxRetries;
+
+    /// <summary>重試間隔時間（秒）。</summary>
+    public float RetryDelay { get; set; } = DefaultRetryDelay;
+
+    /// <summary>
+    /// 是否啟用詳細日誌。預設關閉：每次請求都會寫日誌，而 Verse 的日誌有全域 10000 筆上限，
+    /// 被高頻 Mod 使用時長時間遊玩會把上限用完，之後所有 Mod 的錯誤都不再被記錄。
+    /// </summary>
     public bool DetailedLogging { get; set; } = false;
-    public int MaxConcurrentRequests { get; set; } = DefaultMaxConcurrentRequests; // 最大並行限制
+
+    /// <summary>最大並行請求數限制。</summary>
+    public int MaxConcurrentRequests { get; set; } = DefaultMaxConcurrentRequests;
+
+    /// <summary>全域預設思考程度（Reasoning Effort）。</summary>
     public ReasoningEffort? DefaultReasoningEffort { get; set; } = null;
 
     // 遙測資料（對話歷史、請求日誌、用量統計）獨立存放於 JSON 檔案，不寫入設定 XML

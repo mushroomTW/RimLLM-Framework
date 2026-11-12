@@ -9,18 +9,31 @@ namespace RimLLM_Framework;
 /// </summary>
 public static class ProviderIds
 {
+    /// <summary>OpenAI 供應商識別碼。</summary>
     public const string OpenAI = "OpenAI";
+    /// <summary>Google Gemini 供應商識別碼。</summary>
     public const string Gemini = "Gemini";
+    /// <summary>OpenAI 相容端點（本機/自架/相容服務）供應商識別碼。</summary>
     public const string OpenAICompatible = "OpenAICompatible";
+    /// <summary>DeepSeek 供應商識別碼。</summary>
     public const string DeepSeek = "DeepSeek";
+    /// <summary>Groq 供應商識別碼。</summary>
     public const string Groq = "Groq";
+    /// <summary>xAI Grok 供應商識別碼。</summary>
     public const string Grok = "Grok";
+    /// <summary>OpenRouter 供應商識別碼。</summary>
     public const string OpenRouter = "OpenRouter";
+    /// <summary>Moonshot Kimi 供應商識別碼。</summary>
     public const string Kimi = "Kimi";
+    /// <summary>MiniMax 供應商識別碼。</summary>
     public const string MiniMax = "MiniMax";
+    /// <summary>Alibaba Qwen（通義千問）供應商識別碼。</summary>
     public const string Qwen = "Qwen";
+    /// <summary>NVIDIA NIM 供應商識別碼。</summary>
     public const string Nvidia = "Nvidia";
+    /// <summary>Z.ai 供應商識別碼。</summary>
     public const string Zai = "Z.ai";
+    /// <summary>Player2 供應商識別碼。</summary>
     public const string Player2 = "Player2";
 
     /// <summary>
@@ -36,7 +49,7 @@ public static class ProviderIds
     /// <summary>
     /// 該供應商是否必須填寫 API 金鑰才能使用。設定 UI 據此決定是否顯示「缺少金鑰」警告，
     /// 抓取模型與連線測試的金鑰前置檢查也看它；路由層則以各供應商實例的 <c>RequiresApiKey</c> 為準，
-    /// 兩者必須由同一個判斷推導（見 <see cref="Player2Provider"/>），以免靜態與實例語義分歧。
+    /// 兩者必須由同一個判斷推導（見 <see cref="Providers.Player2Provider"/>），以免靜態與實例語義分歧。
     /// 端點相關是因為 Player2 有雙模式：本機 App 免金鑰，雲端（api.player2.game）需 p2Key。
     /// </summary>
     public static bool RequiresApiKey(string providerId, string endpoint)

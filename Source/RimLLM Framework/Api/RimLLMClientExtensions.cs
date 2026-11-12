@@ -37,10 +37,16 @@ public static class RimLLMClientExtensions
     }
 
     /// <summary>
-    /// 結構化輸出：以目標型別 T 產生 JSON Schema 送出，並回傳反序列化結果。
-    /// client 為 RimLLMProvider.CreateChatClient 回傳的 facade 時走完整路徑
-    /// （含 JSON repair）；其他 IChatClient 走簡化路徑（schema + repair）。
+    /// 結構化輸出：以目標型別 <typeparamref name="T"/> 產生 JSON Schema 送出，並回傳反序列化結果。
+    /// client 為 <see cref="RimLLMProvider.CreateChatClient"/> 回傳的 facade 時走完整路徑
+    /// （含 JSON repair）；其他 <see cref="IChatClient"/> 走簡化路徑（schema + repair）。
     /// </summary>
+    /// <typeparam name="T">反序列化的目標資料型別。</typeparam>
+    /// <param name="client">底層對話客戶端。</param>
+    /// <param name="messages">對話訊息列表。</param>
+    /// <param name="options">RimLLM 專用或標準對話選項。</param>
+    /// <param name="cancellationToken">取消語彙基元。</param>
+    /// <returns>反序列化後的強型別物件執行個體。</returns>
     public static Task<T> GetResponseObjectAsync<T>(
         this IChatClient client,
         IEnumerable<ChatMessage> messages,

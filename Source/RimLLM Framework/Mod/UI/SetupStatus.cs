@@ -16,7 +16,7 @@ internal enum SetupState
 
 /// <summary>
 /// 判斷「AI 現在能不能用」。路由層只走備援鏈，鏈上沒有可用條目時任何請求都會失敗，
-/// 因此這裡的判斷必須與 <see cref="RimLLM_Framework.Manager.Services.RimLLMFallbackPipeline"/>
+/// 因此這裡的判斷必須與 <see cref="RimLLM_Framework.Manager.RimLLMFallbackPipeline"/>
 /// 的候選資格一致：供應商已啟用，且需要金鑰時已填金鑰。
 /// </summary>
 internal static class SetupStatus

@@ -153,6 +153,10 @@ public static class ChatTestDrawer
     /// <summary>
     /// 於主線程更新本輪 AI 佔位項目；已取消、歷史重置或索引失效時略過整個回呼。
     /// </summary>
+    /// <param name="requestGeneration">請求世代號，用於判斷回呼是否已過期。</param>
+    /// <param name="index">要更新的歷史紀錄索引。</param>
+    /// <param name="reply">模型回覆文字。</param>
+    /// <param name="meta">此則回覆的遙測元資料（用量、模型、延遲等）。</param>
     /// <param name="persist">是否一併寫回遙測並解除載入狀態（串流結束時使用）。</param>
     /// <param name="scrollToBottom">是否把對話框捲到底。</param>
     private static void UpdateAiHistoryEntry(long requestGeneration, int index, string reply, ChatEntryMeta meta = null, bool persist = false, bool scrollToBottom = true)

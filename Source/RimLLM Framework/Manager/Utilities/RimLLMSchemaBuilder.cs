@@ -200,6 +200,9 @@ public static class RimLLMSchemaBuilder
     /// </summary>
     /// <param name="node">exporter 原始輸出中的節點。</param>
     /// <param name="typeInfo">該節點對應的 CLR 型別資訊，可能為 null（此時退化成純 JSON 正規化）。</param>
+    /// <param name="context">包含遞迴追蹤與方言設定的正規化上下文。</param>
+    /// <param name="depth">目前的遞迴深度。</param>
+    /// <returns>正規化後的 JSON 物件；若節點無法表達則為 null。</returns>
     [SuppressMessage("csharpsquid", "S1168", Justification = "null 表示不可表達節點，與空集合語意不同，呼叫端需區分")]
     private static JsonObject Normalize(JsonObject node, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
     {

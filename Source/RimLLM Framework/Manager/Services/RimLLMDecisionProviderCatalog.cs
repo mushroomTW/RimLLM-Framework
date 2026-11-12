@@ -37,16 +37,27 @@ public sealed class RimLLMDecisionProvider
 /// </summary>
 public static class RimLLMDecisionProviderCatalog
 {
+    /// <summary>停用決策服務。</summary>
     public const string Disabled = "Disabled";
+    /// <summary>TypeSafe AI（原生 Jev 服務）。</summary>
     public const string TypeSafe = "TypeSafe";
+    /// <summary>Clef 決策服務。</summary>
     public const string Clef = "Clef";
+    /// <summary>Liquid 決策服務。</summary>
     public const string Liquid = "Liquid";
+    /// <summary>Solar 決策服務。</summary>
     public const string Solar = "Solar";
+    /// <summary>Kev 決策服務。</summary>
     public const string Kev = "Kev";
+    /// <summary>Tev 決策服務。</summary>
     public const string Tev = "Tev";
+    /// <summary>Laya 決策服務。</summary>
     public const string Laya = "Laya";
+    /// <summary>Span 決策服務。</summary>
     public const string Span = "Span";
+    /// <summary>Microsoft 決策服務。</summary>
     public const string Microsoft = "Microsoft";
+    /// <summary>OpenAI 決策服務。</summary>
     public const string OpenAI = "OpenAI";
 
     /// <summary>Ollama 0.35 以上內建的 Jev 風格決策介面（/v1/systemone）。</summary>
@@ -64,6 +75,7 @@ public static class RimLLMDecisionProviderCatalog
     /// </summary>
     private const string AggregatorEndpoint = "https://decisions-api.dev";
 
+    /// <summary>所有內建支援的決策供應商預設目錄。</summary>
     public static readonly IReadOnlyList<RimLLMDecisionProvider> All =
     [
         new RimLLMDecisionProvider(
@@ -139,6 +151,12 @@ public static class RimLLMDecisionProviderCatalog
     private static readonly Dictionary<string, RimLLMDecisionProvider> ById =
         All.ToDictionary(provider => provider.Id, StringComparer.Ordinal);
 
+    /// <summary>
+    /// 嘗試取得指定識別碼的決策供應商資訊。
+    /// </summary>
+    /// <param name="providerId">決策供應商識別碼。</param>
+    /// <param name="provider">找到時傳回供應商物件，否則為 null。</param>
+    /// <returns>若找到該供應商則為 true，否則為 false。</returns>
     public static bool TryGet(string providerId, out RimLLMDecisionProvider provider)
     {
         if (!string.IsNullOrEmpty(providerId) && ById.TryGetValue(providerId, out provider))
@@ -149,16 +167,31 @@ public static class RimLLMDecisionProviderCatalog
         return false;
     }
 
+    /// <summary>
+    /// 取得指定識別碼的決策供應商資訊；若未找到則退回預設的 TypeSafe 供應商。
+    /// </summary>
+    /// <param name="providerId">決策供應商識別碼。</param>
+    /// <returns>對應的決策供應商物件。</returns>
     public static RimLLMDecisionProvider Get(string providerId)
     {
         return TryGet(providerId, out RimLLMDecisionProvider provider) ? provider : ById[TypeSafe];
     }
 
+    /// <summary>
+    /// 取得指定決策供應商的預設模型名稱。
+    /// </summary>
+    /// <param name="providerId">決策供應商識別碼。</param>
+    /// <returns>預設模型名稱。</returns>
     public static string GetDefaultModel(string providerId)
     {
         return Get(providerId).DefaultModel;
     }
 
+    /// <summary>
+    /// 取得指定決策供應商的預設端點 URL。
+    /// </summary>
+    /// <param name="providerId">決策供應商識別碼。</param>
+    /// <returns>預設端點 URL。</returns>
     public static string GetDefaultEndpoint(string providerId)
     {
         return Get(providerId).DefaultEndpoint;

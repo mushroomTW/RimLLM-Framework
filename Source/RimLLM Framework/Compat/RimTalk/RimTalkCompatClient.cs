@@ -42,8 +42,8 @@ namespace RimLLM_Framework.Compat;
 /// </para>
 /// <para>
 /// 串流粒度與原生一致：RimTalk 的回應是 JSONL（多行、一行一個 pawn 氣泡），<see cref="StreamAsync"/>
-/// 把 MEAI 串流的文字塊逐塊交給 RimTalk 自己的 <see cref="JsonStreamParser{T}"/>（在 RimTalk 的
-/// <c>GetStreamingChatCompletionAsync<T></c> 包裝層裡），每湊齊一個完整物件就回呼一次——
+/// 把 MEAI 串流的文字塊逐塊交給 RimTalk 自己的 <c>JsonStreamParser&lt;T&gt;</c>（在 RimTalk 的
+/// <c>GetStreamingChatCompletionAsync&lt;T&gt;</c> 包裝層裡），每湊齊一個完整物件就回呼一次——
 /// 第一個氣泡不必等整段對話生成完。
 /// </para>
 /// <para>
@@ -203,7 +203,7 @@ internal sealed class RimTalkCompatClient
     /// 把中性結果包回 RimTalk 的 <see cref="Payload"/>；失敗一律包成 <see cref="AIRequestException"/> 並附上
     /// <see cref="Payload"/>，RimTalk 的重試與 API Log 才能照常運作；取消原樣往外丟。
     /// lambda 必須捕捉 <paramref name="requestJson"/>：不捕捉的 lambda 會被編譯器快取成
-    /// <c>Func<Task<Completion>, Payload></c> 型別的靜態欄位，違反欄位不得含 RimTalk 型別的防線。
+    /// <c>Func&lt;Task&lt;Completion&gt;, Payload&gt;</c> 型別的靜態欄位，違反欄位不得含 RimTalk 型別的防線。
     /// 本方法與 <see cref="Wrap"/> 刻意是實例方法：Debug 動作選單只掃靜態方法的簽章，靜態版會因簽章含 RimTalk 型別而讓選單炸開。
     /// </summary>
     private Task<Payload> ToPayload(Task<Completion> core, string requestJson)

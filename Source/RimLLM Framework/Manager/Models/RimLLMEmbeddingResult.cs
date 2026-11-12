@@ -14,8 +14,10 @@ namespace RimLLM_Framework.Manager;
 /// </summary>
 public class RimLLMEmbeddingResult
 {
+    /// <summary>計算所得的浮點數特徵向量陣列。</summary>
     public float[] Vector { get; }
 
+    /// <summary>供應商回報的輸入 Token 數量；未回報時為 null。</summary>
     public long? InputTokenCount { get; }
 
     /// <summary>實際計算這筆向量的模型名稱。</summary>
@@ -24,11 +26,23 @@ public class RimLLMEmbeddingResult
     /// <summary>實際計算這筆向量的供應商識別。</summary>
     public string ProviderId { get; }
 
+    /// <summary>
+    /// 初始化 <see cref="RimLLMEmbeddingResult"/> 類別的新執行個體。
+    /// </summary>
+    /// <param name="vector">特徵向量陣列。</param>
+    /// <param name="inputTokenCount">輸入 Token 數。</param>
     public RimLLMEmbeddingResult(float[] vector, long? inputTokenCount)
         : this(vector, inputTokenCount, null, null)
     {
     }
 
+    /// <summary>
+    /// 使用指定的向量、用量、模型與供應商資訊初始化 <see cref="RimLLMEmbeddingResult"/> 類別的新執行個體。
+    /// </summary>
+    /// <param name="vector">特徵向量陣列。</param>
+    /// <param name="inputTokenCount">輸入 Token 數。</param>
+    /// <param name="modelId">計算所用的模型識別碼。</param>
+    /// <param name="providerId">計算所用的供應商識別碼。</param>
     public RimLLMEmbeddingResult(float[] vector, long? inputTokenCount, string modelId, string providerId)
     {
         Vector = vector;

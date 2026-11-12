@@ -780,7 +780,7 @@ public class RimLLMEmbeddingService
     /// <summary>
     /// 一批文字一次 API 呼叫。usage 掛在整個集合上（不分筆），因此平均分攤到每一筆：
     /// 各筆的 <see cref="RimLLMEmbeddingResult.InputTokenCount"/> 加總即為供應商回報的總量。
-    /// <paramref name="model"/> 與 <paramref name="provider"/> 是請求開始時捕捉的實際
+    /// <paramref name="model"/> 與 <paramref name="providerId"/> 是請求開始時捕捉的實際
     /// 供應商身分，帶進每一筆結果供呼叫端標記向量與記帳，避免 await 之後設定被改。
     /// </summary>
     private static async Task<List<RimLLMEmbeddingResult>> ComputeOpenAiCompatibleEmbeddingsAsync(
@@ -819,7 +819,7 @@ public class RimLLMEmbeddingService
 
     /// <summary>
     /// 把整批的輸入 token 數平均分攤到每一筆（餘數給前幾筆），沒回報用量時每筆都是 null。
-    /// 每一筆都帶上實際使用的模型與供應商（由請求開始時捕捉，見 <see cref="ComputeEmbeddingsAsync"/>）。
+    /// 每一筆都帶上實際使用的模型與供應商（由請求開始時捕捉，見 <see cref="ComputeEmbeddingsAsync(IEnumerable{string}, CancellationToken)"/>）。
     /// </summary>
     private static List<RimLLMEmbeddingResult> DistributeUsage(IReadOnlyList<float[]> vectors, long? totalInputTokens, string modelId, string providerId)
     {
@@ -861,6 +861,11 @@ public class RimLLMEmbeddingService
         return normalized.Length == 0 ? null : normalized;
     }
 
+    /// <summary>
+    /// 將 Embedding 服務識別碼轉換為對話主要供應商的識別碼（用於沿用金鑰與用量統計）。
+    /// </summary>
+    /// <param name="embeddingProvider">Embedding 供應商識別碼。</param>
+    /// <returns>對應的對話供應商識別碼。</returns>
     public static string GetMainProviderIdForEmbedding(string embeddingProvider)
     {
         return embeddingProvider switch

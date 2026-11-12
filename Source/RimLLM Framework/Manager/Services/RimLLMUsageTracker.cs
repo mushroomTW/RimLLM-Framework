@@ -39,19 +39,16 @@ public class RimLLMUsageTracker
     /// <summary>本次執行中有用量但查無費率的呼叫數；不把未知費用誤認為免費。</summary>
     public long UnpricedUsageCount => Interlocked.Read(ref _unpricedUsageCount);
 
+    /// <summary>高階模型等級（Level 3）。</summary>
     public const int ModelLevelHigh = 3;
+    /// <summary>中階模型等級（Level 2）。</summary>
     public const int ModelLevelMedium = 2;
+    /// <summary>入門/免費模型等級（Level 1）。</summary>
     public const int ModelLevelLow = 1;
 
     private const float HighTierCompletionCostThreshold = 3.00f;
     private const float MediumTierCompletionCostThreshold = 0.50f;
 
-    /// <summary>
-    /// 依據模型的 API 費率（每百萬 Token 輸出費率）判定其等級：
-    /// Level 3 (High): 輸出費率 >= $3.00 / 1M Tokens (如 GPT-4o, Gemini Pro, Grok, Qwen-Max)
-    /// Level 2 (Medium): 輸出費率 >= $0.50 / 1M Tokens (如 Gemini Flash, DeepSeek-V4-Pro, Qwen-Plus)
-    /// Level 1 (Low): 輸出費率 < $0.50 / 1M Tokens 或本地免費模型 ($0)
-    /// </summary>
     /// <summary>
     /// 模型分級快取：費率表為靜態唯讀，同一 provider:model 的分級永不變化。
     /// 鍵保留原始大小寫，以 OrdinalIgnoreCase 比對，省下每次的 ToLower 配置。
@@ -61,6 +58,15 @@ public class RimLLMUsageTracker
     private static readonly ConcurrentDictionary<string, int> ModelLevelCache =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// 依據模型的 API 費率（每百萬 Token 輸出費率）判定其等級：
+    /// Level 3 (High): 輸出費率 &gt;= $3.00 / 1M Tokens (如 GPT-4o, Gemini Pro, Grok, Qwen-Max)
+    /// Level 2 (Medium): 輸出費率 &gt;= $0.50 / 1M Tokens (如 Gemini Flash, DeepSeek-V4-Pro, Qwen-Plus)
+    /// Level 1 (Low): 輸出費率 &lt; $0.50 / 1M Tokens 或本地免費模型 ($0)
+    /// </summary>
+    /// <param name="providerId">LLM 供應商識別碼。</param>
+    /// <param name="modelName">模型名稱。</param>
+    /// <returns>模型的等級（1、2 或 3）。</returns>
     public int GetModelLevel(string providerId, string modelName)
     {
         if (string.IsNullOrEmpty(modelName) ||
@@ -526,7 +532,10 @@ public class RimLLMUsageTracker
     /// <summary>
     /// 累加 Token 統計值，並估計該次 API 消耗的美元成本。
     /// </summary>
+    /// <param name="providerId">LLM 供應商識別碼。</param>
+    /// <param name="modelName">使用的模型名稱。</param>
     /// <param name="promptTokens">本次請求的「輸入 Token 總量」，須包含被快取命中的部分，以反映真實用量。</param>
+    /// <param name="completionTokens">本次請求的「輸出 Token 總量」。</param>
     /// <param name="cachedPromptTokens">
     /// 輸入 Token 中由上下文快取（cache read / cachedContent）命中的部分；
     /// 這些 Token 以折扣費率計價，是 Context Caching 節省成本的來源。
@@ -759,11 +768,17 @@ public class RimLLMUsageTracker
             : new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
     }
 
+    /// <summary>
+    /// 嘗試預留指定數量的每日 Token 預算。
+    /// </summary>
+    /// <param name="estimatedTokens">預估消耗的 Token 數量。</param>
+    /// <param name="reservation">成功預留時傳回的預留物件憑據，失敗時為 null。</param>
     /// <param name="contended">
     /// true 代表擋下的原因只是剩餘額度暫時被在途請求預留，並非真的超限。
     /// 這種情況不發超限警告：預留釋放後請求就能通過，而超限警告每天只發一次，
     /// 誤報會把當天真正超限時的警告吃掉。
     /// </param>
+    /// <returns>若成功預留額度則傳回 true，否則傳回 false。</returns>
     internal bool TryReserveBudget(long estimatedTokens, out BudgetReservation reservation, out bool contended)
     {
         CheckDailyReset();

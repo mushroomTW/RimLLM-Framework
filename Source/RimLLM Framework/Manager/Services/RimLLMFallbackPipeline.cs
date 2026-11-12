@@ -51,10 +51,13 @@ public class RimLLMFallbackPipeline
     /// 只做「選誰、依什麼順序」的決策；實際的嘗試、重試與健康記錄由
     /// <see cref="RimLLMFailoverChatClient"/> 負責。
     /// </remarks>
+    /// <param name="preferredModelId">指定優先使用的模型識別碼，可為 null。</param>
+    /// <param name="minFallbackLevel">允許降級的最低模型等級下限，可為 null。</param>
     /// <param name="includeCoolingDown">
     /// 為 true 時不過濾冷卻中的候選。能力查詢用：冷卻會到期，查詢當下被過濾掉的候選
     /// 仍可能在稍後的請求中被路由到。
     /// </param>
+    /// <returns>已排序的可用候選名單。</returns>
     internal List<ResolvedCandidate> ResolveCandidates(string preferredModelId, string minFallbackLevel, bool includeCoolingDown = false)
     {
         if (!TryResolveCandidates(preferredModelId, minFallbackLevel, includeCoolingDown, out List<ResolvedCandidate> candidates, out string failureReason))

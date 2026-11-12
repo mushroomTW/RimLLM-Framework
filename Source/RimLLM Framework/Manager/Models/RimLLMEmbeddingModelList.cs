@@ -12,10 +12,17 @@ namespace RimLLM_Framework.Manager;
 /// </summary>
 public class RimLLMEmbeddingModelList
 {
+    /// <summary>抓取到的模型名稱列表。</summary>
     public List<string> Models { get; }
 
+    /// <summary>清單是否已確認過濾為純 Embedding 模型。</summary>
     public bool Filtered { get; }
 
+    /// <summary>
+    /// 初始化 <see cref="RimLLMEmbeddingModelList"/> 類別的新執行個體。
+    /// </summary>
+    /// <param name="models">模型名稱列表。</param>
+    /// <param name="filtered">是否經過能力過濾。</param>
     public RimLLMEmbeddingModelList(List<string> models, bool filtered)
     {
         Models = models ?? [];

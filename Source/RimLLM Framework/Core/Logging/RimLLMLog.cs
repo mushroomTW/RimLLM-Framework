@@ -11,6 +11,7 @@ namespace RimLLM_Framework.Core;
 /// </summary>
 public static class RimLLMLog
 {
+    /// <summary>是否啟用一般資訊（Message）等級的日誌輸出。</summary>
     public static bool Enabled { get; set; } = true;
     /// <summary>
     /// 敏感字串遮罩樣式。除了通用的 api_key／authorization 賦值形式外，
@@ -55,6 +56,12 @@ public static class RimLLMLog
             || value.IndexOf("nvapi-", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
+    /// <summary>
+    /// 對字串進行日誌安全清理：遮罩 API 金鑰與敏感憑證，轉義換行符號，並限制最大長度。
+    /// </summary>
+    /// <param name="value">原始字串。</param>
+    /// <param name="maxLength">截斷上限字元數。</param>
+    /// <returns>已清理並可安全記錄的字串。</returns>
     public static string SanitizeForLog(string value, int maxLength = 500)
     {
         if (string.IsNullOrEmpty(value)) return value;
@@ -81,6 +88,10 @@ public static class RimLLMLog
         return sanitized;
     }
 
+    /// <summary>
+    /// 輸出一般資訊日誌。僅在 <see cref="Enabled"/> 為 true 時輸出至遊戲主控台。
+    /// </summary>
+    /// <param name="msg">日誌訊息內容。</param>
     public static void Message(string msg)
     {
         if (!Enabled) return;

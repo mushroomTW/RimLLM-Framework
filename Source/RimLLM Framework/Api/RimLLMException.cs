@@ -57,11 +57,22 @@ public class RimLLMException : Exception
     /// </summary>
     public bool IsBalanceExhausted { get; set; }
 
+    /// <summary>
+    /// 使用指定的錯誤代碼與訊息初始化 <see cref="RimLLMException"/> 類別的新執行個體。
+    /// </summary>
+    /// <param name="error">標準化錯誤列舉代碼。</param>
+    /// <param name="message">錯誤詳細訊息。</param>
     public RimLLMException(LLMError error, string message) : base(message)
     {
         Error = error;
     }
 
+    /// <summary>
+    /// 使用指定的錯誤代碼、訊息與內部例外狀況初始化 <see cref="RimLLMException"/> 類別的新執行個體。
+    /// </summary>
+    /// <param name="error">標準化錯誤列舉代碼。</param>
+    /// <param name="message">錯誤詳細訊息。</param>
+    /// <param name="innerException">導致此例外狀況的內部例外狀況。</param>
     public RimLLMException(LLMError error, string message, Exception innerException) : base(message, innerException)
     {
         Error = error;

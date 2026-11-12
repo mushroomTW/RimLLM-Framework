@@ -147,7 +147,7 @@ public static class RimLLMUIStyle
     /// <summary>
     /// 過濾結果的快取。模型清單與過濾字串都只在使用者操作時變動，但 OnGUI 每幀跑好幾次，
     /// 沒有這層的話每個 pass 都要重新走一遍數百筆比對。
-    /// 以呼叫端提供的 <paramref name="cacheKey"/>（通常是供應商 ID）與清單版本號區分項目。
+    /// 以呼叫端提供的 <c>cacheKey</c>（通常是供應商 ID）與清單版本號區分項目。
     /// </summary>
     private sealed class FilteredModelsEntry
     {
@@ -266,7 +266,11 @@ public static class RimLLMUIStyle
     /// 那會讓遮罩字串直接覆蓋掉真正的金鑰。改畫唯讀外觀的標籤。
     /// 供應商分頁與 Embedding 分頁共用，否則兩處的遮罩規則會各自漂移。
     /// </summary>
+    /// <param name="inputRect">金鑰輸入框或遮罩方塊繪製區域。</param>
+    /// <param name="revealRect">明文/遮罩切換按鈕繪製區域。</param>
+    /// <param name="value">金鑰原始字串。</param>
     /// <param name="revealed">傳入目前是否明文顯示；使用者按下切換鈕時就地翻轉。</param>
+    /// <returns>編輯後的金鑰字串。</returns>
     public static string DrawMaskableKeyField(Rect inputRect, Rect revealRect, string value, ref bool revealed)
     {
         string result = value;

@@ -136,7 +136,7 @@ public static class RimLLMJsonHelper
     }
 
     /// <summary>
-    /// 修復不完整的 JSON 字串，例如移除 `<think>` 標籤、Markdown 語法、多餘的尾隨逗號以及補齊括號。
+    /// 修復不完整的 JSON 字串，例如移除 <c>&lt;think&gt;</c> 標籤、Markdown 語法、多餘的尾隨逗號以及補齊括號。
     /// </summary>
     public static string RepairJson(string json)
     {

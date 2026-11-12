@@ -388,6 +388,13 @@ internal static class RimLLMChatClientExecutor
         }
     }
 
+    /// <summary>
+    /// 記錄請求用量至用量帳本，若供應商未回報則改用字元估算值。
+    /// </summary>
+    /// <param name="providerId">LLM 供應商識別碼。</param>
+    /// <param name="model">使用的模型名稱。</param>
+    /// <param name="messages">送出的提示訊息列表。</param>
+    /// <param name="usage">供應商回傳的用量明細（可為 null）。</param>
     /// <param name="completionEstimate">provider 沒回報用量時使用的 completion token 估算值（<see cref="EstimateTokensRaw"/> 的累計）。</param>
     /// <param name="onUsage">供應商有回報用量時的 token 回呼（數字與帳本相同）；只有估算值時不觸發，以免日誌把估算當實際值顯示。</param>
     private static void RecordUsage(

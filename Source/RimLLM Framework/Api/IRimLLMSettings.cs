@@ -179,9 +179,24 @@ public interface IRimLLMSettings
     /// </summary>
     string EmbeddingApiKey { get; set; }
 
+    /// <summary>
+    /// 啟用中的決策服務供應商識別碼（例如 "TypeSafe"、"Clef" 等）；停用時為 "Disabled"。
+    /// </summary>
     string DecisionProvider { get; set; }
+
+    /// <summary>
+    /// 決策模型名稱。
+    /// </summary>
     string DecisionModel { get; set; }
+
+    /// <summary>
+    /// 決策服務端點 URL。
+    /// </summary>
     string DecisionEndpoint { get; set; }
+
+    /// <summary>
+    /// 決策服務 API 金鑰。
+    /// </summary>
     string DecisionApiKey { get; set; }
 
     /// <summary>

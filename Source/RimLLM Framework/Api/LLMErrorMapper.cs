@@ -230,6 +230,12 @@ public static class LLMErrorMapper
         return LooksLikeContentPolicyRejection(probe) ? LLMError.ContentFilter : LLMError.InvalidResponse;
     }
 
+    /// <summary>
+    /// 檢查字串是否包含指定的子字串（使用不區分大小寫的序數比對）。
+    /// </summary>
+    /// <param name="haystack">要搜尋的來源字串。</param>
+    /// <param name="needle">要比對的子字串。</param>
+    /// <returns>若來源字串包含該子字串則為 true，否則為 false。</returns>
     public static bool ContainsIgnoreCase(string haystack, string needle)
     {
         return !string.IsNullOrEmpty(haystack) &&
