@@ -358,7 +358,7 @@ ChatResponse response = await client.GetResponseAsync(messages, options);
 1. **多供應商支援** —— Gemini、OpenAI、DeepSeek、Groq、Grok、Z.ai、OpenRouter、Kimi、MiniMax、Qwen、NVIDIA、Player2，以及任何 OpenAI 相容端點（LM Studio、Ollama、vLLM 等）。
 2. **容錯與模型 Fallback** —— 玩家設定的備援鏈，搭配指數退避、以模型為單位的冷卻、四種路由策略與上下文上限查詢。
 3. **API 金鑰加密** —— AES-256，金鑰由目前 OS 使用者保護；設定介面預設遮蔽，也不會出現在請求 URL。
-4. **設定介面** —— 首頁用紅／綠狀態卡說明「能不能用」，「連接 AI」三步驟精靈會自動加入可用的模型（一把 Gemini 金鑰同時設好 Embedding 與決策）；進階頁預設折疊並附白話說明，另有可過濾的模型選擇器與支援 Markdown 的對話測試頁。
+4. **設定介面** —— 首頁用紅／綠狀態卡說明「能不能用」，並有需確認的「恢復預設」按鈕，「連接 AI」四步驟精靈（預選 Gemini）讓你從供應商清單挑模型，測試成功後自動加入（一把 Gemini 金鑰同時用你選的模型設好 Embedding 與決策）；框架不會預選任何模型；進階頁預設折疊並附白話說明，另有可過濾的模型選擇器與支援 Markdown 的對話測試頁。
 5. **除錯分頁** —— 逐請求日誌開關（預設關閉）。
 6. **一鍵連線測試** —— 檢查延遲、API 金鑰與模型。
 7. **執行緒安全** —— 設定加鎖、主執行緒派送、背景節流寫入遙測。

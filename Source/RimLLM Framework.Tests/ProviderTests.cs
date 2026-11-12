@@ -114,19 +114,49 @@ public class ProviderTests
     }
 
     [Test]
-    public void TestGeminiConnectionTestUsesGemini35Flash()
+    public void TestGeminiConnectionTestUsesTheModelChosenInTheFallbackChain()
     {
+        var mockSettings = new MockSettings();
+        mockSettings.ApiKeys["Gemini"] = "mock-key";
+        // 只有純供應商條目與別家的模型不算：要用備援鏈裡第一個屬於 Gemini 且帶模型的條目。
+        mockSettings.FallbackChain = ["Gemini", "OpenAI:gpt-x", "Gemini:player-picked", "Gemini:second"];
+
+        var provider = new TestGeminiProvider(mockSettings);
+        TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
+
+        ClassicAssert.IsTrue(result.Success);
+        ClassicAssert.AreEqual("player-picked", result.Model);
+        ClassicAssert.IsNotNull(provider.InterceptedPayload);
+        var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
+        ClassicAssert.AreEqual("player-picked", (string)payload["model"]);
+    }
+
+    [Test]
+    public void TestConnectionTest_WithoutAChosenModel_FailsBeforeAnyNetworkCall()
+    {
+        // 沒有預設測試模型：玩家還沒選模型就直接回報失敗，不替玩家挑一個送出。
         var mockSettings = new MockSettings();
         mockSettings.ApiKeys["Gemini"] = "mock-key";
 
         var provider = new TestGeminiProvider(mockSettings);
         TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
 
+        ClassicAssert.IsFalse(result.Success);
+        ClassicAssert.IsNull(provider.InterceptedPayload);
+    }
+
+    [Test]
+    public void TestConnectionTest_WithAnExplicitModel_SendsThatModel()
+    {
+        var mockSettings = new MockSettings();
+        mockSettings.ApiKeys["Gemini"] = "mock-key";
+
+        var provider = new TestGeminiProvider(mockSettings);
+        TestResult result = provider.TestConnectionAsync("wizard-pick").GetAwaiter().GetResult();
+
         ClassicAssert.IsTrue(result.Success);
-        ClassicAssert.AreEqual("gemini-3.5-flash", result.Model);
-        ClassicAssert.IsNotNull(provider.InterceptedPayload);
-        var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
-        ClassicAssert.AreEqual("gemini-3.5-flash", (string)payload["model"]);
+        ClassicAssert.AreEqual("wizard-pick", result.Model);
+        ClassicAssert.AreEqual("wizard-pick", (string)JsonNode.Parse(provider.InterceptedPayload).AsObject()["model"]);
     }
 
     [Test]
@@ -146,10 +176,11 @@ public class ProviderTests
     }
 
     [Test]
-    public void TestOpenRouterConnectionTestUsesFreeRouter()
+    public void TestOpenRouterConnectionTestUsesTheChosenModel()
     {
         var mockSettings = new MockSettings();
         mockSettings.ApiKeys["OpenRouter"] = "mock-key";
+        mockSettings.FallbackChain = ["OpenRouter:openrouter/free"];
 
         var provider = new TestOpenRouterProvider(mockSettings);
         TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
@@ -167,10 +198,11 @@ public class ProviderTests
     }
 
     [Test]
-    public void TestZaiConnectionTestUsesFreeFlashModel()
+    public void TestZaiConnectionTestUsesTheChosenModel()
     {
         var mockSettings = new MockSettings();
         mockSettings.ApiKeys[ProviderIds.Zai] = "mock-key";
+        mockSettings.FallbackChain = [ProviderIds.Zai + ":glm-4.5-flash"];
 
         var provider = new TestZaiProvider(mockSettings);
         TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();
@@ -223,6 +255,7 @@ public class ProviderTests
     {
         // 本機 App 模式不需要金鑰：未填金鑰時連線測試仍應送出請求，而非直接回報未設定。
         var mockSettings = new MockSettings();
+        mockSettings.FallbackChain = [ProviderIds.Player2 + ":" + Player2Provider.DefaultModelName];
 
         var provider = new TestPlayer2Provider(mockSettings);
         TestResult result = provider.TestConnectionAsync().GetAwaiter().GetResult();

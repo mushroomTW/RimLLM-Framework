@@ -26,6 +26,26 @@ public class EmbeddingReviewRegressionTests
         "\"usage\":{\"prompt_tokens\":10,\"total_tokens\":10}}";
 
     [Test]
+    public async Task EmbeddingWithoutAChosenModelRejectsBeforeSendingRequest()
+    {
+        // 沒有預設模型：玩家沒選 Embedding 模型就拒絕送出，不替玩家挑一個。
+        var settings = CreateEmbeddingSettings();
+        settings.EmbeddingModel = "";
+        var manager = new RimLLMManager(settings);
+        var handler = SuccessfulEmbeddingHandler();
+
+        await WithEmbeddingTransportAsync(handler, async () =>
+        {
+            var generator = manager.CreateEmbeddingGenerator("test.embed.nomodel");
+            await Assert.ThrowsAsync<RimLLMException>(async () =>
+            {
+                await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
+            });
+            ClassicAssert.AreEqual(0, handler.RequestCount, "沒選模型時不應送出 HTTP 請求。");
+        }).ConfigureAwait(false);
+    }
+
+    [Test]
     public async Task EmbeddingFacadeHardBlockRejectsBeforeSendingRequest()
     {
         var settings = CreateEmbeddingSettings();
@@ -243,6 +263,7 @@ public class EmbeddingReviewRegressionTests
             "\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"message\":{" +
             "\"role\":\"assistant\",\"content\":\"pong\"},\"finish_reason\":\"stop\"}]}");
         settings.Endpoints[ProviderIds.OpenAI] = server.Endpoint.ToString();
+        settings.FallbackChain = [ProviderIds.OpenAI + ":gpt-4o-mini"];
         var provider = new OpenAIProvider(settings);
 
         TestResult result = await provider.TestConnectionAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);

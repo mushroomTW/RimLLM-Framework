@@ -127,11 +127,11 @@ public static class ModelSettingsDrawer
             : Settings.IsProviderEnabled(providerId);
     }
 
-    private static void SetDefaultAddModelName(string providerId)
+    private static void SelectAddProvider(string providerId)
     {
         addProviderId = providerId;
-        // GetDefaultModel 已是「有快取清單就取第一筆，否則用預設值」的語意。
-        addModelName = Settings.GetDefaultModel(providerId, "default");
+        // 沒有預設模型：換供應商就清空，由玩家從清單自己選。
+        addModelName = "";
     }
 
     /// <summary>
@@ -144,14 +144,8 @@ public static class ModelSettingsDrawer
             string firstEnabled = GetRegisteredProviderIds().FirstOrDefault(IsProviderSelectable);
             if (firstEnabled != null)
             {
-                addProviderId = firstEnabled;
-                addModelName = ""; // 重設模型名稱以重新加載預設值
+                SelectAddProvider(firstEnabled);
             }
-        }
-
-        if (string.IsNullOrEmpty(addModelName))
-        {
-            SetDefaultAddModelName(addProviderId);
         }
     }
 
@@ -159,7 +153,7 @@ public static class ModelSettingsDrawer
     {
         List<FloatMenuOption> options = [.. GetRegisteredProviderIds()
             .Where(IsProviderSelectable)
-            .Select(prov => new FloatMenuOption(prov, () => SetDefaultAddModelName(prov)))];
+            .Select(prov => new FloatMenuOption(prov, () => SelectAddProvider(prov)))];
 
         if (options.Count == 0)
         {
@@ -170,6 +164,11 @@ public static class ModelSettingsDrawer
 
     private static void TryAddModelToChain()
     {
+        if (string.IsNullOrEmpty(addModelName))
+        {
+            Messages.Message("RimLLM_MsgSelectModelFirst".Translate(), MessageTypeDefOf.RejectInput, false);
+            return;
+        }
         string entry = $"{addProviderId}:{addModelName}";
         var chain = Settings.FallbackChain;
         if (chain.Contains(entry))
@@ -206,7 +205,7 @@ public static class ModelSettingsDrawer
 
         // 選擇該供應商底下的快取模型
         var models = Settings.GetModelList(addProviderId);
-        string modelBtnLabel = string.IsNullOrEmpty(addModelName) ? "default" : addModelName;
+        string modelBtnLabel = string.IsNullOrEmpty(addModelName) ? "RimLLM_SelectModelPlaceholder".Translate().ToString() : addModelName;
 
         if (Widgets.ButtonText(addModBtn, "RimLLM_SelectModelBtn".Translate(modelBtnLabel)))
         {

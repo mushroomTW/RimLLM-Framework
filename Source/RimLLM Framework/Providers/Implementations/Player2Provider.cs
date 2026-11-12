@@ -31,7 +31,7 @@ public class Player2Provider : OpenAIProvider
         ProviderIds.RequiresApiKey(ProviderId, Settings.GetEndpoint(ProviderId, LocalDefaultEndpoint));
 
     public Player2Provider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.Player2, LocalDefaultEndpoint, DefaultModelName)
+        : base(settings, ProviderIds.Player2, LocalDefaultEndpoint)
     {
     }
 

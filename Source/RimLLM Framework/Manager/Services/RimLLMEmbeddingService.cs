@@ -181,6 +181,13 @@ public class RimLLMEmbeddingService
         string model = !string.IsNullOrWhiteSpace(generationOptions?.ModelId)
             ? generationOptions.ModelId
             : _settings.EmbeddingModel;
+        // 沒有預設模型：玩家沒選就不送出請求。
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            throw new RimLLMException(
+                LLMError.Unknown,
+                "No embedding model is selected; pick one in the RimLLM Embedding settings first.");
+        }
         string apiKey = string.IsNullOrEmpty(_settings.EmbeddingApiKey)
             ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
             : _settings.EmbeddingApiKey;

@@ -15,10 +15,11 @@ public class EmbeddingSettingsTests
     {
         var settings = new RimLLMFrameworkSettings();
 
-        ClassicAssert.AreEqual("gemini-embedding-2", settings.GetEmbeddingModel("Google"));
-        ClassicAssert.AreEqual("text-embedding-3-small", settings.GetEmbeddingModel("OpenAI"));
-        ClassicAssert.AreEqual("nomic-embed-text", settings.GetEmbeddingModel("LocalAPI_Ollama"));
-        ClassicAssert.AreEqual("text-embedding-3-small", settings.GetEmbeddingModel("LocalAPI_OpenAI"));
+        // 沒有預設模型：玩家沒選時一律是空字串；端點仍有預設值。
+        ClassicAssert.AreEqual("", settings.GetEmbeddingModel("Google"));
+        ClassicAssert.AreEqual("", settings.GetEmbeddingModel("OpenAI"));
+        ClassicAssert.AreEqual("", settings.GetEmbeddingModel("LocalAPI_Ollama"));
+        ClassicAssert.AreEqual("", settings.GetEmbeddingModel("LocalAPI_OpenAI"));
 
         ClassicAssert.AreEqual("https://generativelanguage.googleapis.com/v1beta/openai", settings.GetEmbeddingEndpoint("Google"));
         ClassicAssert.AreEqual("https://api.openai.com/v1", settings.GetEmbeddingEndpoint("OpenAI"));
@@ -38,7 +39,7 @@ public class EmbeddingSettingsTests
 
         ClassicAssert.AreEqual("my-gemini-embed", settings.GetEmbeddingModel("Google"));
         ClassicAssert.AreEqual("my-ollama-embed", settings.GetEmbeddingModel("LocalAPI_Ollama"));
-        ClassicAssert.AreEqual("text-embedding-3-small", settings.GetEmbeddingModel("OpenAI"));
+        ClassicAssert.AreEqual("", settings.GetEmbeddingModel("OpenAI"));
 
         ClassicAssert.AreEqual("http://192.168.1.100:11434/v1", settings.GetEmbeddingEndpoint("LocalAPI_Ollama"));
         ClassicAssert.AreEqual("https://generativelanguage.googleapis.com/v1beta/openai", settings.GetEmbeddingEndpoint("Google"));
@@ -106,19 +107,5 @@ public class EmbeddingSettingsTests
         ClassicAssert.AreEqual("Ollama (本地)", EmbeddingSettingsDrawer.GetProviderDisplayName("LocalAPI_Ollama"));
         ClassicAssert.AreEqual("OpenAI 相容 (本地/自訂)", EmbeddingSettingsDrawer.GetProviderDisplayName("LocalAPI_OpenAI"));
         ClassicAssert.AreEqual("CustomProvider", EmbeddingSettingsDrawer.GetProviderDisplayName("CustomProvider"));
-    }
-
-    [Test]
-    public void TestDefaultPresetModelsContainsExpectedPresets()
-    {
-        ClassicAssert.IsTrue(EmbeddingSettingsDrawer.DefaultPresetModels.ContainsKey("Google"));
-        ClassicAssert.IsTrue(EmbeddingSettingsDrawer.DefaultPresetModels["Google"].Contains("gemini-embedding-2"));
-        ClassicAssert.IsTrue(EmbeddingSettingsDrawer.DefaultPresetModels["Google"].Contains("gemini-embedding-001"));
-
-        ClassicAssert.IsTrue(EmbeddingSettingsDrawer.DefaultPresetModels.ContainsKey("OpenAI"));
-        ClassicAssert.IsTrue(EmbeddingSettingsDrawer.DefaultPresetModels["OpenAI"].Contains("text-embedding-3-small"));
-
-        ClassicAssert.IsTrue(EmbeddingSettingsDrawer.DefaultPresetModels.ContainsKey("LocalAPI_Ollama"));
-        ClassicAssert.IsTrue(EmbeddingSettingsDrawer.DefaultPresetModels["LocalAPI_Ollama"].Contains("nomic-embed-text"));
     }
 }

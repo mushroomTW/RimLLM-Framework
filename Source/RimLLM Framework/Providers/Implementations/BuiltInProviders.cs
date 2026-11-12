@@ -18,7 +18,7 @@ namespace RimLLM_Framework.Providers;
 public class GeminiProvider : OpenAIProvider
 {
     public GeminiProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.Gemini, "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash")
+        : base(settings, ProviderIds.Gemini, "https://generativelanguage.googleapis.com/v1beta/openai")
     {
     }
 
@@ -98,7 +98,7 @@ public class DeepSeekProvider : OpenAIProvider
     protected override ReasoningWireFormat ReasoningFormat => ReasoningWireFormat.ThinkingSwitch;
 
     public DeepSeekProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.DeepSeek, "https://api.deepseek.com", "deepseek-v4-flash")
+        : base(settings, ProviderIds.DeepSeek, "https://api.deepseek.com")
     {
     }
 }
@@ -120,7 +120,7 @@ public class GrokProvider : OpenAIProvider
     protected override bool SupportsDisablingReasoning => false;
 
     public GrokProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.Grok, "https://api.x.ai/v1", "grok-2-1212")
+        : base(settings, ProviderIds.Grok, "https://api.x.ai/v1")
     {
     }
 }
@@ -132,7 +132,7 @@ public class GrokProvider : OpenAIProvider
 public class GroqProvider : OpenAIProvider
 {
     public GroqProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.Groq, "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile")
+        : base(settings, ProviderIds.Groq, "https://api.groq.com/openai/v1")
     {
     }
 }
@@ -148,7 +148,7 @@ public class MiniMaxProvider : OpenAIProvider
     protected override bool SupportsNativeJsonSchemaPayload => false;
 
     public MiniMaxProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.MiniMax, "https://api.minimax.io/v1", "MiniMax-M3")
+        : base(settings, ProviderIds.MiniMax, "https://api.minimax.io/v1")
     {
     }
 }
@@ -164,7 +164,7 @@ public class NvidiaProvider : OpenAIProvider
     protected override bool SupportsNativeJsonSchemaPayload => false;
 
     public NvidiaProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.Nvidia, "https://integrate.api.nvidia.com/v1", "meta/llama-3.1-8b-instruct")
+        : base(settings, ProviderIds.Nvidia, "https://integrate.api.nvidia.com/v1")
     {
     }
 }
@@ -185,7 +185,7 @@ public class QwenProvider : OpenAIProvider
     protected override ReasoningWireFormat ReasoningFormat => ReasoningWireFormat.EnableThinkingFlag;
 
     public QwenProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.Qwen, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "qwen-plus")
+        : base(settings, ProviderIds.Qwen, "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
     {
     }
 }
@@ -207,7 +207,7 @@ public class ZaiProvider : OpenAIProvider
     protected override ReasoningWireFormat ReasoningFormat => ReasoningWireFormat.ThinkingSwitch;
 
     public ZaiProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.Zai, "https://api.z.ai/api/paas/v4", "glm-4.5-flash")
+        : base(settings, ProviderIds.Zai, "https://api.z.ai/api/paas/v4")
     {
     }
 }

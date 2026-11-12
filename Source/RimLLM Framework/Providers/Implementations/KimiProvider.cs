@@ -31,7 +31,7 @@ public class KimiProvider : OpenAIProvider
     }
 
     public KimiProvider(IRimLLMSettings settings)
-        : base(settings, ProviderIds.Kimi, "https://api.moonshot.ai/v1", "moonshot-v1-8k")
+        : base(settings, ProviderIds.Kimi, "https://api.moonshot.ai/v1")
     {
     }
 }

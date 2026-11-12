@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
@@ -1014,6 +1016,43 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         DefaultReasoningEffort = null;
     }
 
+    /// <summary>
+    /// 首頁的「恢復預設」：所有設定（供應商、金鑰、備援鏈、Embedding、決策、逾時、預算上限…）回到剛安裝的狀態。
+    /// 以一份新建的預設實例逐欄覆寫，之後新增的欄位也不會漏掉；集合欄位就地清空再填入，
+    /// 外部持有的參考維持有效。遙測（用量統計、對話歷史、當日預算累計）不屬於設定，保留不動，
+    /// 免得重設成為繞過每日預算的方法。呼叫端負責 <see cref="ModSettings.Write"/>。
+    /// </summary>
+    public void ResetAllSettingsToDefaults()
+    {
+        var defaults = new RimLLMFrameworkSettings();
+        lock (_settingsLock)
+        {
+            foreach (FieldInfo field in typeof(RimLLMFrameworkSettings).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
+            {
+                if (field.Name is nameof(_settingsLock) or nameof(_telemetry) or nameof(_modelListVersion)) continue;
+
+                object fresh = field.GetValue(defaults);
+                object current = field.GetValue(this);
+                if (current is IDictionary dictionary && fresh is IDictionary freshDictionary)
+                {
+                    dictionary.Clear();
+                    foreach (DictionaryEntry entry in freshDictionary) dictionary[entry.Key] = entry.Value;
+                }
+                else if (current is IList list && fresh is IList freshList && field.IsInitOnly)
+                {
+                    list.Clear();
+                    foreach (object item in freshList) list.Add(item);
+                }
+                else if (!field.IsInitOnly)
+                {
+                    field.SetValue(this, fresh);
+                }
+            }
+            // 模型清單已清空：讓設定頁的過濾快取失效。
+            _modelListVersion++;
+        }
+    }
+
     public List<string> GetModelList(string providerId)
     {
         lock (_settingsLock)
@@ -1206,18 +1245,6 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         }
     }
 
-    public static string GetDefaultEmbeddingModel(string provider)
-    {
-        return provider switch
-        {
-            "Google" => "gemini-embedding-2",
-            "OpenAI" => "text-embedding-3-small",
-            "LocalAPI_Ollama" => "nomic-embed-text",
-            "LocalAPI_OpenAI" => "text-embedding-3-small",
-            _ => "gemini-embedding-2",
-        };
-    }
-
     /// <summary>預設端點的唯一來源在 <see cref="RimLLMEmbeddingService"/>，這裡只是轉呼叫，避免兩張表各自漂移。</summary>
     public static string GetDefaultEmbeddingEndpoint(string provider)
     {
@@ -1228,9 +1255,8 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     {
         lock (_settingsLock)
         {
-            if (!string.IsNullOrEmpty(provider) && _embeddingModels.TryGetValue(provider, out string val) && !string.IsNullOrEmpty(val))
-                return val;
-            return GetDefaultEmbeddingModel(provider);
+            // 沒有預設模型：玩家沒選就回傳空字串，服務會拒絕送出並提示到設定頁選擇。
+            return !string.IsNullOrEmpty(provider) && _embeddingModels.TryGetValue(provider, out string val) ? val ?? "" : "";
         }
     }
 
@@ -1297,11 +1323,6 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         }
     }
 
-    public static string GetDefaultDecisionModel(string provider)
-    {
-        return RimLLMDecisionProviderCatalog.GetDefaultModel(provider);
-    }
-
     public static string GetDefaultDecisionEndpoint(string provider)
     {
         return RimLLMDecisionProviderCatalog.GetDefaultEndpoint(provider);
@@ -1311,13 +1332,10 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     {
         lock (_settingsLock)
         {
-            if (!string.IsNullOrEmpty(provider) &&
-                _decisionModels.TryGetValue(provider, out string value) &&
-                !string.IsNullOrEmpty(value))
-            {
-                return value;
-            }
-            return GetDefaultDecisionModel(provider);
+            // 沒有預設模型：玩家沒選就回傳空字串，送決策前會被擋下。
+            return !string.IsNullOrEmpty(provider) && _decisionModels.TryGetValue(provider, out string value)
+                ? value ?? ""
+                : "";
         }
     }
 

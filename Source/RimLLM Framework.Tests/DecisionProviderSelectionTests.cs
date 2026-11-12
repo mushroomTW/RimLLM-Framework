@@ -55,6 +55,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Disabled] = "test-model";
 
         DecisionAvailability availability = AvailabilityFor(settings);
 
@@ -95,10 +96,8 @@ public class DecisionProviderSelectionTests
         ClassicAssert.IsTrue(availability.Enabled);
         ClassicAssert.AreEqual(RimLLMDecisionProviderCatalog.TypeSafe, availability.ProviderId);
         ClassicAssert.IsFalse(availability.HasKey);
-        // 沒設模型時用供應商目錄的預設值，讓呼叫端知道實際會送出的模型。
-        ClassicAssert.AreEqual(
-            RimLLMDecisionProviderCatalog.GetDefaultModel(RimLLMDecisionProviderCatalog.TypeSafe),
-            availability.Model);
+        // 沒有預設模型：玩家沒選時回報空字串，不替玩家挑模型。
+        ClassicAssert.AreEqual("", availability.Model);
     }
 
     [Test]
@@ -106,6 +105,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "super-secret-key";
 
         DecisionAvailability availability = AvailabilityFor(settings);
@@ -122,6 +122,7 @@ public class DecisionProviderSelectionTests
         MockSettings settings = DecisionTestDoubles.NewSettings();
         // 啟用的是 TypeSafe（沒有金鑰），要使用的是未啟用但自己存了金鑰的 Liquid。
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Liquid] = "liquid-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Liquid] = FakeEndpoint;
         settings.DecisionModels[RimLLMDecisionProviderCatalog.Liquid] = "liquid/d1";
@@ -155,6 +156,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Liquid] = "";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Liquid] = FakeEndpoint;
 
@@ -170,10 +172,30 @@ public class DecisionProviderSelectionTests
     }
 
     [Test]
+    public async Task EvaluateWithProviderAsync_WithoutAChosenModel_FailsBeforeAnyNetworkCall()
+    {
+        // 沒有預設模型：玩家沒選模型就拒絕送出，不替玩家挑一個。
+        MockSettings settings = DecisionTestDoubles.NewSettings();
+        settings.DecisionProvider = RimLLMDecisionProviderCatalog.Liquid;
+        settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Liquid] = "liquid-key";
+        settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Liquid] = FakeEndpoint;
+
+        RimLLMManager manager = new(settings);
+        RimLLMDecisionClient client = new(manager, TestModId);
+
+        await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
+            await client.EvaluateWithProviderAsync(
+                "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.Liquid));
+
+        ClassicAssert.IsEmpty(_handler.RequestUris, "沒選模型時不得送出任何網路請求");
+    }
+
+    [Test]
     public async Task EvaluateWithProviderAsync_WithUnknownProvider_FailsWithUnknownError()
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
 
         RimLLMManager manager = new(settings);
@@ -192,6 +214,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Disabled] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
 
         RimLLMManager manager = new(settings);
@@ -210,6 +233,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Disabled] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
 
         RimLLMManager manager = new(settings);
@@ -228,6 +252,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Liquid] = "liquid-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Liquid] = FakeEndpoint;
@@ -251,6 +276,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.TypeSafe] = FakeEndpoint;
 
@@ -271,6 +297,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Liquid] = "liquid-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.TypeSafe] = FakeEndpoint;
@@ -295,6 +322,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Liquid] = "liquid-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Liquid] = FakeEndpoint;
 
@@ -315,6 +343,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Liquid] = "liquid-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Liquid] = FakeEndpoint;
         // 每日 token 預算早已超限：模型清單查詢不該被它擋下。
@@ -338,6 +367,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.TypeSafe] = FakeEndpoint;
         settings.DailyTokenBudgetLimit = 1;
@@ -362,6 +392,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.TypeSafe] = FakeEndpoint;
 
@@ -380,6 +411,7 @@ public class DecisionProviderSelectionTests
         // 設定頁在尚未啟用供應商時，用明確的端點／模型／金鑰預覽模型清單。
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Disabled] = "test-model";
 
         var service = new RimLLMDecisionService(settings);
         IReadOnlyList<JevModel> models = await service.FetchModelsAsync(FakeEndpoint, "jev-latest", "preview-key");
@@ -394,6 +426,7 @@ public class DecisionProviderSelectionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Disabled] = "test-model";
 
         var service = new RimLLMDecisionService(settings);
         RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>

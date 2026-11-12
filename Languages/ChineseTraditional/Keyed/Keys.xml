@@ -169,7 +169,6 @@
   <RimLLM_EmbeddingKeyHintDefault>自訂 API 金鑰 (選填，為空時自動繼承主 API 金鑰): </RimLLM_EmbeddingKeyHintDefault>
   <RimLLM_EmbeddingKeyHintLocal>自訂 API 金鑰 (選填，若伺服器不需驗證可留空): </RimLLM_EmbeddingKeyHintLocal>
   <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;尚未抓取模型清單。可按下方按鈕抓取，或直接於上方輸入模型名稱。&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
-  <RimLLM_EmbeddingPresetModelsHint>（展示官方常見推薦模型；亦可點擊下方按鈕從伺服器抓取完整清單）</RimLLM_EmbeddingPresetModelsHint>
   <RimLLM_EmbeddingFetchedModelsHint>✓ 已從伺服器成功同步最新模型清單</RimLLM_EmbeddingFetchedModelsHint>
   <RimLLM_EmbeddingFetchSuccessCount>&lt;color=green&gt;獲取成功&lt;/color&gt; (共 {0} 個 Embedding 模型，已依伺服器回報的能力過濾)</RimLLM_EmbeddingFetchSuccessCount>
   <RimLLM_EmbeddingFetchSuccessUnfiltered>&lt;color=yellow&gt;獲取成功&lt;/color&gt; (共 {0} 個模型；伺服器未回報模型能力，清單未過濾，可能混有對話模型)</RimLLM_EmbeddingFetchSuccessUnfiltered>
@@ -253,7 +252,6 @@
   <RimLLM_DecisionEndpointLabel>自訂端點 URL（僅限 origin）：</RimLLM_DecisionEndpointLabel>
   <RimLLM_DecisionModelLabel>決策模型名稱：</RimLLM_DecisionModelLabel>
   <RimLLM_DecisionNoModelList>&lt;color=grey&gt;尚未抓取模型清單。可在下方抓取，或直接在上方輸入模型名稱。&lt;/color&gt;</RimLLM_DecisionNoModelList>
-  <RimLLM_DecisionPresetModelsHint>（目前顯示已知預設模型；也可在下方向伺服器抓取完整清單）</RimLLM_DecisionPresetModelsHint>
   <RimLLM_DecisionFetchedModelsHint>模型清單已與伺服器同步</RimLLM_DecisionFetchedModelsHint>
   <RimLLM_DecisionSetAsModel>設為決策模型</RimLLM_DecisionSetAsModel>
   <RimLLM_DecisionTestBtn>測試連線</RimLLM_DecisionTestBtn>
@@ -280,7 +278,7 @@
   <RimLLM_TabHome>首頁</RimLLM_TabHome>
   <RimLLM_TitleHome>首頁</RimLLM_TitleHome>
   <RimLLM_TabSetup>連接 AI</RimLLM_TabSetup>
-  <RimLLM_TitleSetup>連接 AI（三步驟）</RimLLM_TitleSetup>
+  <RimLLM_TitleSetup>連接 AI（四步驟）</RimLLM_TitleSetup>
   <RimLLM_MenuAdvancedGroup>進階設定（不用動）</RimLLM_MenuAdvancedGroup>
   <RimLLM_MenuHomeReady>可以用了</RimLLM_MenuHomeReady>
   <RimLLM_MenuHomeNotReady>還不能用</RimLLM_MenuHomeNotReady>
@@ -306,7 +304,7 @@
   <RimLLM_HomeBackupTip>多加一家當備用：第一家壞掉或額度用完時，會自動改用下一家。</RimLLM_HomeBackupTip>
   <RimLLM_SetupStep1>① 選 AI 公司</RimLLM_SetupStep1>
   <RimLLM_SetupStep2>② 貼金鑰</RimLLM_SetupStep2>
-  <RimLLM_SetupStep3>③ 測試</RimLLM_SetupStep3>
+  <RimLLM_SetupStep3>③ 選模型</RimLLM_SetupStep3>
   <RimLLM_SetupPickTitle>第 1 步：你想用哪一家 AI？</RimLLM_SetupPickTitle>
   <RimLLM_SetupDesc_Gemini>有免費額度，不用綁信用卡</RimLLM_SetupDesc_Gemini>
   <RimLLM_SetupDesc_DeepSeek>很便宜，中文很好</RimLLM_SetupDesc_DeepSeek>
@@ -332,8 +330,8 @@
   <RimLLM_SetupNoKeyTitle>第 2 步：先把 AI 打開</RimLLM_SetupNoKeyTitle>
   <RimLLM_SetupPlayer2Help>請先打開 Player2 App 並登入。這個不用金鑰，按「下一步」就好。</RimLLM_SetupPlayer2Help>
   <RimLLM_SetupLocalHelp>請先打開 Ollama 或 LM Studio，並載入一個模型。我們會自動找到它，不用填任何東西。</RimLLM_SetupLocalHelp>
-  <RimLLM_SetupTestTitle>第 3 步：測試看看</RimLLM_SetupTestTitle>
-  <RimLLM_SetupTestHelp>按下按鈕，我們會自動幫你：連線 → 找可以用的模型 → 挑一個 → 設定好。</RimLLM_SetupTestHelp>
+  <RimLLM_SetupTestTitle>第 4 步：測試看看</RimLLM_SetupTestTitle>
+  <RimLLM_SetupTestHelp>按下按鈕，用你選的模型實際問 AI 一句話；成功就自動設定好。</RimLLM_SetupTestHelp>
   <RimLLM_SetupTestBtn>▶ 開始測試</RimLLM_SetupTestBtn>
   <RimLLM_SetupTestingBtn>測試中…</RimLLM_SetupTestingBtn>
   <RimLLM_SetupProgressDetect>正在找你電腦上的 AI…</RimLLM_SetupProgressDetect>
@@ -368,13 +366,28 @@
   <RimLLM_ServiceStatusOn>● 使用中：{0}</RimLLM_ServiceStatusOn>
   <RimLLM_ServiceStatusOff>○ 沒有開</RimLLM_ServiceStatusOff>
   <RimLLM_SetupOptionalOpenPage>到設定頁</RimLLM_SetupOptionalOpenPage>
-  <RimLLM_SetupEmbeddingOneClick>一鍵開啟（沿用 {0} 金鑰）</RimLLM_SetupEmbeddingOneClick>
   <RimLLM_SetupEmbeddingTesting>測試中…</RimLLM_SetupEmbeddingTesting>
   <RimLLM_SetupEmbeddingFailed>✗ 開啟失敗，已還原</RimLLM_SetupEmbeddingFailed>
   <RimLLM_SetupDecisionHint>決策模型是另一批服務（例如 TypeSafe），要另外申請金鑰，請到設定頁設定。</RimLLM_SetupDecisionHint>
-  <RimLLM_SetupOptionalAutoHint>能沿用同一把金鑰的服務已自動開啟；其餘只有模組說明寫到需要時才設定。這些都不影響上面的「可以用了」。</RimLLM_SetupOptionalAutoHint>
-  <RimLLM_SetupDecisionOneClick>一鍵開啟（沿用 {0} 金鑰）</RimLLM_SetupDecisionOneClick>
+  <RimLLM_SetupOptionalAutoHint>你在第 3 步選了模型的服務已自動開啟；其餘只有模組說明寫到需要時才設定。這些都不影響上面的「可以用了」。</RimLLM_SetupOptionalAutoHint>
   <RimLLM_SetupDecisionTesting>測試中…</RimLLM_SetupDecisionTesting>
   <RimLLM_SetupDecisionFailed>✗ 開啟失敗，已還原</RimLLM_SetupDecisionFailed>
   <RimLLM_DecisionInheritedKeyHint>&lt;color=grey&gt;✓ 已自動繼承主 API 金鑰&lt;/color&gt;</RimLLM_DecisionInheritedKeyHint>
+  <RimLLM_SetupStep4>④ 測試</RimLLM_SetupStep4>
+  <RimLLM_SetupModelsTitle>第 3 步：選模型</RimLLM_SetupModelsTitle>
+  <RimLLM_SetupModelsHelp>從 AI 公司提供的清單挑一個對話模型。框架不會替你預選模型。</RimLLM_SetupModelsHelp>
+  <RimLLM_SetupRetryFetchBtn>重新取得清單</RimLLM_SetupRetryFetchBtn>
+  <RimLLM_SetupChatModel>對話模型</RimLLM_SetupChatModel>
+  <RimLLM_SetupChooseModelBtn>選擇模型</RimLLM_SetupChooseModelBtn>
+  <RimLLM_SelectModelPlaceholder>（尚未選擇）</RimLLM_SelectModelPlaceholder>
+  <RimLLM_SetupManualModelLabel>沒有模型清單可選，請直接輸入模型名稱：</RimLLM_SetupManualModelLabel>
+  <RimLLM_SetupModelsEmpty>AI 公司沒有回傳任何模型。可以重新取得，或直接輸入模型名稱。</RimLLM_SetupModelsEmpty>
+  <RimLLM_SetupOptionalModelsHint>同一把 {0} 金鑰也能開啟下面的服務。選了模型就會在測試成功後一起開啟；不選就不開。</RimLLM_SetupOptionalModelsHint>
+  <RimLLM_SetupOptionalSkip>不使用</RimLLM_SetupOptionalSkip>
+  <RimLLM_SetupOptionalNoModels>抓不到模型清單，之後可到設定頁設定</RimLLM_SetupOptionalNoModels>
+  <RimLLM_TestNeedModel>請先到「模型設置」分頁替這家 AI 加入一個模型，再測試連線。</RimLLM_TestNeedModel>
+  <RimLLM_MsgSelectModelFirst>請先選擇模型。</RimLLM_MsgSelectModelFirst>
+  <RimLLM_HomeResetAllBtn>恢復預設</RimLLM_HomeResetAllBtn>
+  <RimLLM_HomeResetAllHint>把所有設定（含金鑰、模型、Embedding 與決策）恢復成剛安裝的狀態。用量統計不受影響。</RimLLM_HomeResetAllHint>
+  <RimLLM_HomeResetAllConfirm>確定要把所有 RimLLM 設定恢復預設嗎？\n\n已填的金鑰、選好的模型、Embedding 與決策設定都會被清除，無法復原。</RimLLM_HomeResetAllConfirm>
 </LanguageData>

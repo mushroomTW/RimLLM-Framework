@@ -169,7 +169,6 @@
   <RimLLM_EmbeddingKeyHintDefault>Custom API Key (optional, defaults to main API key if empty): </RimLLM_EmbeddingKeyHintDefault>
   <RimLLM_EmbeddingKeyHintLocal>Custom API Key (optional, leave blank if no authentication required): </RimLLM_EmbeddingKeyHintLocal>
   <RimLLM_EmbeddingNoModelList>&lt;color=grey&gt;No model list fetched yet. Fetch one below, or type the model name above.&lt;/color&gt;</RimLLM_EmbeddingNoModelList>
-  <RimLLM_EmbeddingPresetModelsHint>(Showing verified preset models; you can also fetch the full list from your server below)</RimLLM_EmbeddingPresetModelsHint>
   <RimLLM_EmbeddingFetchedModelsHint>✓ Model list synchronized from server</RimLLM_EmbeddingFetchedModelsHint>
   <RimLLM_EmbeddingFetchSuccessCount>&lt;color=green&gt;Fetch Successful&lt;/color&gt; ({0} embedding models, filtered by the capabilities the server reports)</RimLLM_EmbeddingFetchSuccessCount>
   <RimLLM_EmbeddingFetchSuccessUnfiltered>&lt;color=yellow&gt;Fetch Successful&lt;/color&gt; ({0} models; the server reports no capabilities, so the list is unfiltered and may include chat models)</RimLLM_EmbeddingFetchSuccessUnfiltered>
@@ -253,7 +252,6 @@
   <RimLLM_DecisionEndpointLabel>Custom Endpoint URL (origin only): </RimLLM_DecisionEndpointLabel>
   <RimLLM_DecisionModelLabel>Decision Model Name: </RimLLM_DecisionModelLabel>
   <RimLLM_DecisionNoModelList>&lt;color=grey&gt;No model list fetched yet. Fetch one below, or type the model name above.&lt;/color&gt;</RimLLM_DecisionNoModelList>
-  <RimLLM_DecisionPresetModelsHint>(Showing known preset models; you can also fetch the full list from the server below)</RimLLM_DecisionPresetModelsHint>
   <RimLLM_DecisionFetchedModelsHint>Model list synchronized from server</RimLLM_DecisionFetchedModelsHint>
   <RimLLM_DecisionSetAsModel>Set as Decision Model</RimLLM_DecisionSetAsModel>
   <RimLLM_DecisionTestBtn>Test Connection</RimLLM_DecisionTestBtn>
@@ -280,7 +278,7 @@
   <RimLLM_TabHome>Home</RimLLM_TabHome>
   <RimLLM_TitleHome>Home</RimLLM_TitleHome>
   <RimLLM_TabSetup>Connect AI</RimLLM_TabSetup>
-  <RimLLM_TitleSetup>Connect AI (3 steps)</RimLLM_TitleSetup>
+  <RimLLM_TitleSetup>Connect AI (4 steps)</RimLLM_TitleSetup>
   <RimLLM_MenuAdvancedGroup>Advanced (optional)</RimLLM_MenuAdvancedGroup>
   <RimLLM_MenuHomeReady>Ready</RimLLM_MenuHomeReady>
   <RimLLM_MenuHomeNotReady>Not ready</RimLLM_MenuHomeNotReady>
@@ -306,7 +304,7 @@
   <RimLLM_HomeBackupTip>Add a backup AI: if the first one breaks or runs out of quota, the next one is used automatically.</RimLLM_HomeBackupTip>
   <RimLLM_SetupStep1>1. Pick AI</RimLLM_SetupStep1>
   <RimLLM_SetupStep2>2. Paste key</RimLLM_SetupStep2>
-  <RimLLM_SetupStep3>3. Test</RimLLM_SetupStep3>
+  <RimLLM_SetupStep3>③ Pick models</RimLLM_SetupStep3>
   <RimLLM_SetupPickTitle>Step 1: Which AI do you want to use?</RimLLM_SetupPickTitle>
   <RimLLM_SetupDesc_Gemini>Free tier, no credit card</RimLLM_SetupDesc_Gemini>
   <RimLLM_SetupDesc_DeepSeek>Very cheap</RimLLM_SetupDesc_DeepSeek>
@@ -332,8 +330,8 @@
   <RimLLM_SetupNoKeyTitle>Step 2: Turn the AI on first</RimLLM_SetupNoKeyTitle>
   <RimLLM_SetupPlayer2Help>Open the Player2 app and log in first. No key needed, just press "Next".</RimLLM_SetupPlayer2Help>
   <RimLLM_SetupLocalHelp>Open Ollama or LM Studio first and load a model. We will find it automatically, nothing to fill in.</RimLLM_SetupLocalHelp>
-  <RimLLM_SetupTestTitle>Step 3: Test it</RimLLM_SetupTestTitle>
-  <RimLLM_SetupTestHelp>Press the button and we will: connect, find usable models, pick one and set it up for you.</RimLLM_SetupTestHelp>
+  <RimLLM_SetupTestTitle>Step 4: Test it</RimLLM_SetupTestTitle>
+  <RimLLM_SetupTestHelp>Press the button to send the AI one short message with the model you picked. If it works, everything is set up for you.</RimLLM_SetupTestHelp>
   <RimLLM_SetupTestBtn>▶ Start test</RimLLM_SetupTestBtn>
   <RimLLM_SetupTestingBtn>Testing...</RimLLM_SetupTestingBtn>
   <RimLLM_SetupProgressDetect>Looking for the AI on your computer...</RimLLM_SetupProgressDetect>
@@ -368,13 +366,28 @@
   <RimLLM_ServiceStatusOn>● On: {0}</RimLLM_ServiceStatusOn>
   <RimLLM_ServiceStatusOff>○ Off</RimLLM_ServiceStatusOff>
   <RimLLM_SetupOptionalOpenPage>Open settings page</RimLLM_SetupOptionalOpenPage>
-  <RimLLM_SetupEmbeddingOneClick>Turn on (reuse {0} key)</RimLLM_SetupEmbeddingOneClick>
   <RimLLM_SetupEmbeddingTesting>Testing...</RimLLM_SetupEmbeddingTesting>
   <RimLLM_SetupEmbeddingFailed>✗ Could not turn on, reverted</RimLLM_SetupEmbeddingFailed>
   <RimLLM_SetupDecisionHint>Decision models are separate services (e.g. TypeSafe) with their own key. Set them up on the settings page.</RimLLM_SetupDecisionHint>
-  <RimLLM_SetupOptionalAutoHint>Services that can reuse the same key were turned on automatically. Set up the rest only if a mod's description says it needs them. None of this affects "Ready" above.</RimLLM_SetupOptionalAutoHint>
-  <RimLLM_SetupDecisionOneClick>Turn on (reuse {0} key)</RimLLM_SetupDecisionOneClick>
+  <RimLLM_SetupOptionalAutoHint>Services you picked a model for in step 3 are already on. Set up the rest only when a mod says it needs them. None of this affects "ready to use" above.</RimLLM_SetupOptionalAutoHint>
   <RimLLM_SetupDecisionTesting>Testing...</RimLLM_SetupDecisionTesting>
   <RimLLM_SetupDecisionFailed>✗ Could not turn on, reverted</RimLLM_SetupDecisionFailed>
   <RimLLM_DecisionInheritedKeyHint>&lt;color=grey&gt;✓ Inherited main API key&lt;/color&gt;</RimLLM_DecisionInheritedKeyHint>
+  <RimLLM_SetupStep4>④ Test</RimLLM_SetupStep4>
+  <RimLLM_SetupModelsTitle>Step 3: Pick a model</RimLLM_SetupModelsTitle>
+  <RimLLM_SetupModelsHelp>Pick a chat model from the AI company's list. The framework doesn't pick one for you.</RimLLM_SetupModelsHelp>
+  <RimLLM_SetupRetryFetchBtn>Fetch the list again</RimLLM_SetupRetryFetchBtn>
+  <RimLLM_SetupChatModel>Chat model</RimLLM_SetupChatModel>
+  <RimLLM_SetupChooseModelBtn>Choose model</RimLLM_SetupChooseModelBtn>
+  <RimLLM_SelectModelPlaceholder>(not chosen)</RimLLM_SelectModelPlaceholder>
+  <RimLLM_SetupManualModelLabel>No model list to pick from. Type the model name:</RimLLM_SetupManualModelLabel>
+  <RimLLM_SetupModelsEmpty>The AI company returned no models. Fetch the list again, or type a model name.</RimLLM_SetupModelsEmpty>
+  <RimLLM_SetupOptionalModelsHint>The same {0} key can also turn on the services below. Pick a model and it is turned on after the test succeeds; leave it unpicked to keep it off.</RimLLM_SetupOptionalModelsHint>
+  <RimLLM_SetupOptionalSkip>Don't use</RimLLM_SetupOptionalSkip>
+  <RimLLM_SetupOptionalNoModels>Couldn't fetch the model list; set it up later on the settings page</RimLLM_SetupOptionalNoModels>
+  <RimLLM_TestNeedModel>Add a model for this AI company on the Model settings tab first, then test the connection.</RimLLM_TestNeedModel>
+  <RimLLM_MsgSelectModelFirst>Choose a model first.</RimLLM_MsgSelectModelFirst>
+  <RimLLM_HomeResetAllBtn>Reset to defaults</RimLLM_HomeResetAllBtn>
+  <RimLLM_HomeResetAllHint>Return every setting (keys, models, Embedding and decisions included) to a fresh install. Usage stats are kept.</RimLLM_HomeResetAllHint>
+  <RimLLM_HomeResetAllConfirm>Reset all RimLLM settings to defaults?\n\nYour API keys, chosen models, Embedding and decision settings will be erased. This cannot be undone.</RimLLM_HomeResetAllConfirm>
 </LanguageData>

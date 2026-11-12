@@ -36,6 +36,29 @@ public static class HomeDrawer
         }
 
         DrawOptionalServices(listing);
+        DrawResetAll(listing);
+    }
+
+    /// <summary>
+    /// 「恢復預設」：所有設定（含金鑰）回到剛安裝的狀態，先跳確認視窗。用量統計不受影響。
+    /// </summary>
+    private static void DrawResetAll(Listing_Standard listing)
+    {
+        listing.Gap(24f);
+        Rect row = listing.GetRect(30f);
+        if (Widgets.ButtonText(new Rect(row.x, row.y, 220f, row.height), "RimLLM_HomeResetAllBtn".Translate()))
+        {
+            Find.WindowStack.Add(Dialog_MessageBox.CreateConfirmation(
+                "RimLLM_HomeResetAllConfirm".Translate(),
+                () =>
+                {
+                    Settings.ResetAllSettingsToDefaults();
+                    Settings.Write();
+                    SetupWizardDrawer.Restart();
+                },
+                destructive: true));
+        }
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_HomeResetAllHint".Translate());
     }
 
     /// <summary>

@@ -57,6 +57,4 @@ public class OpenRouterProvider : OpenAIProvider
                 chatCompletionOptions.Patch.Set(OpenAIPatchPaths.Models, JsonSerializer.SerializeToUtf8Bytes(modelsArray));
             });
     }
-
-    protected override string DefaultTestModel => "openrouter/free";
 }

@@ -27,7 +27,6 @@ public class OpenAIProvider : ILLMProvider
     protected readonly IRimLLMSettings Settings;
     private readonly string _providerId;
     private readonly string _defaultEndpoint;
-    private readonly string _defaultTestModel;
 
     public virtual string ProviderId => _providerId;
     protected virtual string DefaultEndpoint => _defaultEndpoint;
@@ -62,16 +61,15 @@ public class OpenAIProvider : ILLMProvider
     });
 
     public OpenAIProvider(IRimLLMSettings settings)
-        : this(settings, ProviderIds.OpenAI, "https://api.openai.com/v1/chat/completions", "gpt-4o-mini")
+        : this(settings, ProviderIds.OpenAI, "https://api.openai.com/v1/chat/completions")
     {
     }
 
-    protected OpenAIProvider(IRimLLMSettings settings, string providerId, string defaultEndpoint, string defaultTestModel)
+    protected OpenAIProvider(IRimLLMSettings settings, string providerId, string defaultEndpoint)
     {
         Settings = settings;
         _providerId = providerId;
         _defaultEndpoint = defaultEndpoint;
-        _defaultTestModel = defaultTestModel;
     }
 
     public virtual IChatClient CreateChatClient(string model)
@@ -711,8 +709,38 @@ public class OpenAIProvider : ILLMProvider
                name.StartsWith("gpt-5");
     }
 
-    public virtual async Task<TestResult> TestConnectionAsync()
+    /// <summary>
+    /// 以玩家在備援鏈為此供應商選的第一個模型測試連線。沒有預設測試模型：還沒選模型就回報失敗。
+    /// </summary>
+    public virtual Task<TestResult> TestConnectionAsync()
     {
+        return TestConnectionAsync(GetChosenModel(Settings, ProviderId));
+    }
+
+    /// <summary>
+    /// 備援鏈中第一個屬於 <paramref name="providerId"/> 且帶模型名稱的條目的模型；沒有時回傳空字串。
+    /// </summary>
+    internal static string GetChosenModel(IRimLLMSettings settings, string providerId)
+    {
+        string prefix = providerId + ":";
+        foreach (string entry in settings?.FallbackChain ?? [])
+        {
+            if (entry != null && entry.Length > prefix.Length && entry.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return entry.Substring(prefix.Length);
+            }
+        }
+        return "";
+    }
+
+    /// <summary>以指定模型送一則極短訊息測試連線；設定精靈在模型加入備援鏈之前用這個驗證玩家選的模型。</summary>
+    public virtual async Task<TestResult> TestConnectionAsync(string model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return new TestResult { Success = false, Provider = ProviderId, ErrorMessage = "No model selected; add one for this provider in the Model settings tab first.", ErrorCode = LLMError.Unknown };
+        }
+
         string apiKey = Settings.GetActiveApiKey(ProviderId);
         if (string.IsNullOrEmpty(apiKey) && RequiresApiKey)
         {
@@ -735,13 +763,7 @@ public class OpenAIProvider : ILLMProvider
             {
                 ["rimllm_disable_reasoning"] = true
             };
-            // 優先使用 DefaultTestModel 作為連線測試模型，因為這是最便宜且穩定的內建對話模型。
-            // 只有在 DefaultTestModel 為 "default" (如 OpenAICompatible 本地相容介面) 時，才去讀取快取清單的第一個模型。
-            string testModel = DefaultTestModel;
-            if (testModel == "default")
-            {
-                testModel = Settings.GetDefaultModel(ProviderId, DefaultTestModel);
-            }
+            string testModel = model.Trim();
 
             using IChatClient client = CreateChatClient(testModel);
             await client.GetResponseAsync(messages, options, timeoutCts.Token).ConfigureAwait(false);
@@ -778,8 +800,6 @@ public class OpenAIProvider : ILLMProvider
 
         return result;
     }
-
-    protected virtual string DefaultTestModel => _defaultTestModel;
 
     /// <summary>
     /// 透過官方 SDK 的 /models 端點取得可用模型清單。

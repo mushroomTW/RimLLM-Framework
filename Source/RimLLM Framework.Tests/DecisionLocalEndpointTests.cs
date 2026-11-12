@@ -121,6 +121,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Ollama;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Ollama] = "test-model";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Ollama] = "http://localhost:11434";
         // 本機服務不需要金鑰：這裡刻意不設定金鑰。
 
@@ -143,6 +144,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Ollama;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Ollama] = "test-model";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Ollama] = "http://localhost:11434";
 
         RimLLMManager manager = new(settings);
@@ -162,6 +164,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Unsloth;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Unsloth] = "test-model";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Unsloth] = "http://localhost:8888";
 
         RimLLMManager manager = new(settings);
@@ -183,6 +186,7 @@ public class DecisionLocalEndpointTests
 
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Unsloth;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Unsloth] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Unsloth] = "sk-unsloth-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Unsloth] = "http://localhost:8888";
 
@@ -216,6 +220,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Local;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Local] = "test-model";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Local] = "http://localhost:8000";
 
         RimLLMManager manager = new(settings);
@@ -235,6 +240,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.TypeSafe] = "https://api.typesafe.ai";
 
         RimLLMManager manager = new(settings);
@@ -253,6 +259,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.TypeSafe] = "type-safe-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.TypeSafe] = "https://api.typesafe.ai";
 
@@ -271,6 +278,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Unsloth;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Unsloth] = "test-model";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Unsloth] = "sk-unsloth-key";
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.Unsloth] = "http://localhost:8888";
 
@@ -290,6 +298,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Ollama;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Ollama] = "test-model";
 
         DecisionAvailability availability = DecisionTestDoubles.WithManager(
             settings, RimLLMProvider.GetDecisionAvailability);
@@ -299,7 +308,7 @@ public class DecisionLocalEndpointTests
         ClassicAssert.IsFalse(availability.HasKey);
         ClassicAssert.IsFalse(availability.RequiresKey);
         ClassicAssert.AreEqual("http://localhost:11434", availability.Endpoint);
-        ClassicAssert.AreEqual("tev1:4b", availability.Model);
+        ClassicAssert.AreEqual("test-model", availability.Model);
     }
 
     [Test]
@@ -307,6 +316,7 @@ public class DecisionLocalEndpointTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.TypeSafe;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.TypeSafe] = "test-model";
 
         DecisionAvailability availability = DecisionTestDoubles.WithManager(
             settings, RimLLMProvider.GetDecisionAvailability);

@@ -45,7 +45,7 @@ public static class DecisionSettingsDrawer
     public static string GetProviderDisplayName(string providerId)
     {
         RimLLMDecisionProvider provider = RimLLMDecisionProviderCatalog.Get(providerId);
-        string fallback = provider.DefaultModel;
+        string fallback = provider.Id;
         try
         {
             if (LanguageDatabase.activeLanguage != null)
@@ -64,10 +64,6 @@ public static class DecisionSettingsDrawer
     {
         string providerId = ActiveDecisionSubTab;
         int modelCount = Settings.GetModelCount(RimLLMDecisionService.GetModelListKey(providerId));
-        if (modelCount == 0 && RimLLMDecisionProviderCatalog.TryGet(providerId, out RimLLMDecisionProvider provider))
-        {
-            modelCount = provider.PresetModels.Count;
-        }
         float modelSectionHeight = modelCount > 0 ? 280f : 70f;
         return 460f + modelSectionHeight;
     }
@@ -186,7 +182,7 @@ public static class DecisionSettingsDrawer
 
         DrawApiKeySection(listing, providerId);
         DrawEndpointSection(listing, providerId, provider);
-        DrawModelSection(listing, providerId, provider);
+        DrawModelSection(listing, providerId);
 
         listing.Gap(8f);
         DrawConnectionTest(listing, providerId);
@@ -260,14 +256,9 @@ public static class DecisionSettingsDrawer
         listing.Gap(8f);
     }
 
-    private static void DrawModelSection(
-        Listing_Standard listing,
-        string providerId,
-        RimLLMDecisionProvider provider)
+    private static void DrawModelSection(Listing_Standard listing, string providerId)
     {
-        listing.Label(
-            "RimLLM_DecisionModelLabel".Translate() +
-            $" {ColorTagOpen}grey>({provider.DefaultModel}){ColorTagClose}");
+        listing.Label("RimLLM_DecisionModelLabel".Translate());
 
         string currentModel = Settings.GetDecisionModelRaw(providerId);
         string newModel = listing.TextEntry(currentModel);
@@ -280,23 +271,20 @@ public static class DecisionSettingsDrawer
 
         listing.Label("RimLLM_AvailableModelsTitle".Translate());
         string modelListKey = RimLLMDecisionService.GetModelListKey(providerId);
-        int cachedCount = Settings.GetModelCount(modelListKey);
-        bool isPreset = cachedCount == 0 && provider.PresetModels.Count > 0;
-        bool hasModels = cachedCount > 0 || isPreset;
-
-        if (!hasModels)
+        // 沒有預設模型清單：只顯示從伺服器抓回的模型。
+        if (Settings.GetModelCount(modelListKey) == 0)
         {
             listing.Label("RimLLM_DecisionNoModelList".Translate());
         }
         else
         {
-            DrawModelFilterBar(listing, providerId, isPreset);
+            DrawModelFilterBar(listing, providerId);
 
             List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
                 "decision:" + providerId,
                 Settings.ModelListVersion,
                 ModelFilters.TryGetValue(providerId, out string filter) ? filter : "",
-                () => ResolveAvailableModels(providerId));
+                () => Settings.GetModelList(modelListKey));
 
             Rect scrollRect = listing.GetRect(200f);
             Widgets.DrawMenuSection(scrollRect);
@@ -327,29 +315,14 @@ public static class DecisionSettingsDrawer
             buttonWidth: 200f);
     }
 
-    private static IList<string> ResolveAvailableModels(string providerId)
-    {
-        List<string> cached = Settings.GetModelList(RimLLMDecisionService.GetModelListKey(providerId));
-        if (cached.Count == 0 &&
-            RimLLMDecisionProviderCatalog.TryGet(providerId, out RimLLMDecisionProvider provider))
-        {
-            return new List<string>(provider.PresetModels);
-        }
-        return cached;
-    }
-
-    private static void DrawModelFilterBar(Listing_Standard listing, string providerId, bool isPreset)
+    private static void DrawModelFilterBar(Listing_Standard listing, string providerId)
     {
         Rect hintRect = listing.GetRect(18f);
         using (RimLLMUIStyle.With(font: GameFont.Tiny))
         {
             Color oldC = GUI.color;
-            GUI.color = isPreset ? RimLLMUIStyle.Muted : RimLLMUIStyle.Success;
-            Widgets.Label(
-                hintRect,
-                isPreset
-                    ? "RimLLM_DecisionPresetModelsHint".Translate()
-                    : "RimLLM_DecisionFetchedModelsHint".Translate());
+            GUI.color = RimLLMUIStyle.Success;
+            Widgets.Label(hintRect, "RimLLM_DecisionFetchedModelsHint".Translate());
             GUI.color = oldC;
         }
         listing.Gap(2f);

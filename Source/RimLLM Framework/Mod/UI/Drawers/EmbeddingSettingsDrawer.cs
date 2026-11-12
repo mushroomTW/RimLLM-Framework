@@ -88,38 +88,10 @@ public static class EmbeddingSettingsDrawer
         return fallback;
     }
 
-    /// <summary>
-    /// 各供應商預先定義的真實存在推薦模型清單。
-    /// 當尚未從遠端 API 抓取模型清單時，作為預設選項展示，供玩家即點即用。
-    /// </summary>
-    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> DefaultPresetModels = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
-    {
-        {
-            ProviderGoogle,
-            new List<string> { "gemini-embedding-2", "gemini-embedding-001", "gemini-embedding-2-preview" }
-        },
-        {
-            ProviderOpenAI,
-            new List<string> { "text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002" }
-        },
-        {
-            ProviderOllama,
-            new List<string> { "nomic-embed-text", "bge-m3", "all-minilm", "mxbai-embed-large", "snowflake-arctic-embed" }
-        },
-        {
-            ProviderLocalOpenAI,
-            new List<string> { "text-embedding-3-small", "text-embedding-3-large", "bge-m3", "nomic-embed-text" }
-        }
-    };
-
     public static float GetHeight(float width)
     {
         string providerId = ActiveEmbeddingSubTab;
         int modelCount = Settings.GetModelCount(RimLLMEmbeddingService.GetModelListKey(providerId));
-        if (modelCount == 0 && DefaultPresetModels.TryGetValue(providerId, out var presets))
-        {
-            modelCount = presets.Count;
-        }
         float modelSectionHeight = modelCount > 0 ? 280f : 70f;
         float localDetectHeight = (providerId == ProviderOllama || providerId == ProviderLocalOpenAI) ? 40f : 0f;
         return 460f + modelSectionHeight + localDetectHeight;
@@ -441,24 +413,21 @@ public static class EmbeddingSettingsDrawer
 
         listing.Label("RimLLM_AvailableModelsTitle".Translate());
         string modelListKey = RimLLMEmbeddingService.GetModelListKey(providerId);
-        int cachedCount = Settings.GetModelCount(modelListKey);
-        bool isPreset = cachedCount == 0 && DefaultPresetModels.ContainsKey(providerId);
-        bool hasModels = cachedCount > 0 || isPreset;
-
-        if (!hasModels)
+        // 沒有預設模型清單：只顯示從伺服器抓回的模型。
+        if (Settings.GetModelCount(modelListKey) == 0)
         {
             listing.Label("RimLLM_EmbeddingNoModelList".Translate());
         }
         else
         {
-            DrawModelFilterBar(listing, providerId, isPreset);
+            DrawModelFilterBar(listing, providerId);
 
             // 過濾結果與清單複製都走快取：只有模型清單版本或過濾字串變了才重算。
             List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
                 "embedding:" + providerId,
                 Settings.ModelListVersion,
                 ModelFilters[providerId],
-                () => ResolveAvailableModels(providerId));
+                () => Settings.GetModelList(modelListKey));
             Rect scrollRect = listing.GetRect(200f);
             Widgets.DrawMenuSection(scrollRect);
 
@@ -490,7 +459,7 @@ public static class EmbeddingSettingsDrawer
 
     private static void DrawModelInputField(Listing_Standard listing, string providerId)
     {
-        listing.Label("RimLLM_EmbeddingModelLabel".Translate() + $" {ColorTagOpen}grey>({RimLLMFrameworkSettings.GetDefaultEmbeddingModel(providerId)}){ColorTagClose}");
+        listing.Label("RimLLM_EmbeddingModelLabel".Translate());
         string currentModel = Settings.GetEmbeddingModelRaw(providerId);
         string newModel = listing.TextEntry(currentModel);
         if (newModel != currentModel)
@@ -501,26 +470,14 @@ public static class EmbeddingSettingsDrawer
         listing.Gap(4f);
     }
 
-    /// <summary>抓取過的模型清單優先，沒有才退回內建預設清單。只在過濾快取失效時被呼叫。</summary>
-    private static IList<string> ResolveAvailableModels(string providerId)
-    {
-        string cacheKey = RimLLMEmbeddingService.GetModelListKey(providerId);
-        List<string> cachedModels = Settings.GetModelList(cacheKey);
-        if (cachedModels.Count == 0 && DefaultPresetModels.TryGetValue(providerId, out var presets))
-        {
-            return new List<string>(presets);
-        }
-        return cachedModels;
-    }
-
-    private static void DrawModelFilterBar(Listing_Standard listing, string providerId, bool isPreset)
+    private static void DrawModelFilterBar(Listing_Standard listing, string providerId)
     {
         Rect hintRect = listing.GetRect(18f);
         using (RimLLMUIStyle.With(font: GameFont.Tiny))
         {
             Color oldC = GUI.color;
-            GUI.color = isPreset ? RimLLMUIStyle.Muted : RimLLMUIStyle.Success;
-            Widgets.Label(hintRect, isPreset ? "RimLLM_EmbeddingPresetModelsHint".Translate() : "RimLLM_EmbeddingFetchedModelsHint".Translate());
+            GUI.color = RimLLMUIStyle.Success;
+            Widgets.Label(hintRect, "RimLLM_EmbeddingFetchedModelsHint".Translate());
             GUI.color = oldC;
         }
         listing.Gap(2f);

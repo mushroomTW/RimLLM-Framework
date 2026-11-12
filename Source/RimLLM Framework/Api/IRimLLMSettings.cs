@@ -215,7 +215,7 @@ public interface IRimLLMSettings
         string.Equals(providerId, DecisionProvider, StringComparison.Ordinal) ? DecisionApiKey : "";
 
     /// <summary>
-    /// 獲取指定決策供應商的模型名稱（未設定時由供應商目錄提供預設值）。
+    /// 獲取指定決策供應商的模型名稱（沒有預設模型，未設定時為空字串）。
     /// </summary>
     /// <inheritdoc cref="GetDecisionApiKey" path="/remarks"/>
     string GetDecisionModel(string providerId) =>

@@ -335,6 +335,19 @@ public class RimLLMManager
         return await provider.TestConnectionAsync().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 以指定模型測試連線（設定精靈在模型加入備援鏈前驗證玩家的選擇）。
+    /// 外部供應商沒有指定模型的測試入口，退回它自己的 <see cref="ILLMProvider.TestConnectionAsync"/>。
+    /// </summary>
+    public async Task<TestResult> TestProviderAsync(string providerId, string model)
+    {
+        if (TryGetProvider(providerId, out ILLMProvider provider) && provider is OpenAIProvider builtIn)
+        {
+            return await builtIn.TestConnectionAsync(model).ConfigureAwait(false);
+        }
+        return await TestProviderAsync(providerId).ConfigureAwait(false);
+    }
+
     public async Task<List<string>> FetchProviderModelsAsync(string providerId)
     {
         if (!TryGetProvider(providerId, out ILLMProvider provider))

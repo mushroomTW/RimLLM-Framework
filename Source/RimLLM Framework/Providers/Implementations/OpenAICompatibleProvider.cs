@@ -50,10 +50,4 @@ public class OpenAICompatibleProvider : OpenAIProvider
                 }
             });
     }
-
-    /// <summary>
-    /// 本地伺服器沒有固定的模型名稱，回傳 "default" 讓基底的連線測試改讀快取模型清單的第一筆。
-    /// 搭配 <see cref="RequiresApiKey"/> 為 false，基底也會自動略過金鑰檢查。
-    /// </summary>
-    protected override string DefaultTestModel => "default";
 }

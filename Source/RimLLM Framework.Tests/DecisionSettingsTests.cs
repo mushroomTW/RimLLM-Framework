@@ -21,13 +21,14 @@ public class DecisionSettingsTests
     }
 
     [Test]
-    public void EveryCatalogProvider_HasDefaultModelAndEndpoint()
+    public void EveryCatalogProvider_HasDefaultEndpointButNoDefaultModel()
     {
         var settings = new RimLLMFrameworkSettings();
 
         foreach (RimLLMDecisionProvider provider in RimLLMDecisionProviderCatalog.All)
         {
-            ClassicAssert.AreEqual(provider.DefaultModel, settings.GetDecisionModel(provider.Id), provider.Id);
+            // 沒有預設模型：模型一律由玩家從伺服器清單選擇。
+            ClassicAssert.AreEqual("", settings.GetDecisionModel(provider.Id), provider.Id);
             ClassicAssert.AreEqual(provider.DefaultEndpoint, settings.GetDecisionEndpoint(provider.Id), provider.Id);
             ClassicAssert.AreEqual("", settings.GetDecisionApiKey(provider.Id), provider.Id);
         }
@@ -45,7 +46,7 @@ public class DecisionSettingsTests
 
         ClassicAssert.AreEqual("jev-custom", settings.GetDecisionModel("TypeSafe"));
         ClassicAssert.AreEqual("liquid-custom", settings.GetDecisionModel("Liquid"));
-        ClassicAssert.AreEqual("cloudflare/clef", settings.GetDecisionModel("Clef"));
+        ClassicAssert.AreEqual("", settings.GetDecisionModel("Clef"));
 
         ClassicAssert.AreEqual("https://api.typesafe.ai", settings.GetDecisionEndpoint("TypeSafe"));
         ClassicAssert.AreEqual("https://gateway.example", settings.GetDecisionEndpoint("Liquid"));
@@ -73,7 +74,7 @@ public class DecisionSettingsTests
     }
 
     [Test]
-    public void RawDecisionSettings_PreserveBlankInput_WhileEffectiveValuesUseDefaults()
+    public void RawDecisionSettings_PreserveBlankInput_EndpointFallsBackButModelStaysBlank()
     {
         var settings = new RimLLMFrameworkSettings();
 
@@ -82,7 +83,7 @@ public class DecisionSettingsTests
 
         ClassicAssert.AreEqual("", settings.GetDecisionModelRaw("TypeSafe"));
         ClassicAssert.AreEqual("", settings.GetDecisionEndpointRaw("TypeSafe"));
-        ClassicAssert.AreEqual("jev-latest", settings.GetDecisionModel("TypeSafe"));
+        ClassicAssert.AreEqual("", settings.GetDecisionModel("TypeSafe"));
         ClassicAssert.AreEqual("https://api.typesafe.ai", settings.GetDecisionEndpoint("TypeSafe"));
     }
 

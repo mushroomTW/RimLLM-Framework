@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Providers;
@@ -435,6 +436,15 @@ public static class GenericProviderSubTabDrawer
 
     private static void StartTest(string providerId)
     {
+        // 沒有預設測試模型：用玩家在模型設置分頁為這家選的模型測試，還沒選就提示先選。
+        // 外部供應商的測試由它自己決定用哪個模型，不在這裡擋。
+        if (ProviderIds.BuiltIn.Contains(providerId) &&
+            string.IsNullOrEmpty(OpenAIProvider.GetChosenModel(Settings, providerId)))
+        {
+            TestStatus[providerId] = "RimLLM_TestNeedModel".Translate();
+            return;
+        }
+
         RunProviderOperation(
             providerId,
             Testing,

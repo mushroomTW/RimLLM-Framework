@@ -203,7 +203,7 @@ public class ContextWindowTests
     private sealed class FilteringProvider : OpenAIProvider
     {
         public FilteringProvider(IRimLLMSettings settings)
-            : base(settings, "FilteringTest", "http://localhost:1/v1", "m") { }
+            : base(settings, "FilteringTest", "http://localhost:1/v1") { }
 
         public override System.Threading.Tasks.Task<List<string>> FetchAvailableModelsAsync()
         {

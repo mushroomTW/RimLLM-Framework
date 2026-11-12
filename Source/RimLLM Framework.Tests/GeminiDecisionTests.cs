@@ -46,6 +46,7 @@ public class GeminiDecisionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Gemini;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Gemini] = "gemini-decision-1";
         settings.DecisionApiKeys[RimLLMDecisionProviderCatalog.Gemini] = "gemini-test-key";
         return new RimLLMDecisionService(settings);
     }
@@ -66,12 +67,10 @@ public class GeminiDecisionTests
     }
 
     [Test]
-    public void Catalog_GeminiDefaultsToTheOfficialEndpointAndModel()
+    public void Catalog_GeminiDefaultsToTheOfficialEndpoint()
     {
         ClassicAssert.AreEqual(GeminiEndpoint,
             RimLLMDecisionProviderCatalog.GetDefaultEndpoint(RimLLMDecisionProviderCatalog.Gemini));
-        ClassicAssert.AreEqual("gemini-decision-1",
-            RimLLMDecisionProviderCatalog.GetDefaultModel(RimLLMDecisionProviderCatalog.Gemini));
     }
 
     [Test]
@@ -231,6 +230,7 @@ public class GeminiDecisionTests
     {
         MockSettings settings = DecisionTestDoubles.NewSettings();
         settings.DecisionProvider = RimLLMDecisionProviderCatalog.Gemini;
+        settings.DecisionModels[RimLLMDecisionProviderCatalog.Gemini] = "gemini-decision-1";
         settings.ApiKeys[ProviderIds.Gemini] = "chat-gemini-key";
         return settings;
     }

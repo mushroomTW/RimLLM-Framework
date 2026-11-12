@@ -145,26 +145,37 @@ public class RimLLMDecisionService
             // SDK 只接受 https origin；明文本機端點在這裡先換成同 host／port 的 https，
             // 實際連線由 CreateHttpClient 的改寫處理器接回明文。
             BaseAddress = DecisionEndpointRouting.GetSdkBaseAddress(endpoint),
-            DefaultModel = string.IsNullOrWhiteSpace(model)
-                ? RimLLMDecisionProviderCatalog.GetDefaultModel(effectiveProviderId)
-                : model,
+            // 沒有預設模型：只抓模型清單時模型可以是空的，送決策前由 RequireModel 擋下。
+            DefaultModel = model ?? "",
             Credential = new SettingsCredential(() => apiKey ?? ""),
             Timeout = TimeSpan.FromSeconds(_settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30)
         };
     }
 
     /// <summary>
-    /// 解析指定供應商要用的模型名稱：逐次覆寫優先，其次供應商自己的設定，
-    /// 兩者都沒有就用供應商目錄的預設值。
+    /// 解析指定供應商要用的模型名稱：逐次覆寫優先，其次供應商自己的設定。
+    /// 沒有預設模型，兩者都沒有就回傳空字串，由玩家到設定頁選擇。
     /// </summary>
     private string ResolveModel(string providerId, string modelOverride)
     {
         string model = !string.IsNullOrWhiteSpace(modelOverride)
             ? modelOverride
             : _settings.GetDecisionModel(providerId);
-        return string.IsNullOrWhiteSpace(model)
-            ? RimLLMDecisionProviderCatalog.GetDefaultModel(providerId)
-            : model;
+        return string.IsNullOrWhiteSpace(model) ? "" : model.Trim();
+    }
+
+    /// <summary>只用來建立查模型清單的 JevClient；清單請求不帶模型名稱，這個值不會送出。</summary>
+    private const string ModelListPlaceholderModel = "model-list";
+
+    /// <summary>送出決策前確認已選模型；沒有預設模型可退，未選就不送出請求。</summary>
+    private static void RequireModel(string model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            throw new RimLLMException(
+                LLMError.Unknown,
+                "No decision model is selected; pick one in the Decision settings tab first.");
+        }
     }
 
     /// <summary>
@@ -388,7 +399,9 @@ public class RimLLMDecisionService
         string normalizedEndpoint, string model, string apiKey, string providerId, CancellationToken cancellationToken)
     {
         using HttpClient http = CreateHttpClient(normalizedEndpoint);
-        var client = new JevClient(http, CreateOptions(normalizedEndpoint, model, apiKey, providerId));
+        // JevClientOptions 要求 DefaultModel 非空，但查清單不會送出它；玩家還沒選模型時填佔位名稱。
+        string clientModel = string.IsNullOrWhiteSpace(model) ? ModelListPlaceholderModel : model;
+        var client = new JevClient(http, CreateOptions(normalizedEndpoint, clientModel, apiKey, providerId));
         IReadOnlyList<JevModel> models =
             await client.GetModelsAsync(new JevRequestOptions(), cancellationToken).ConfigureAwait(false);
         return models ?? Array.Empty<JevModel>();
@@ -406,6 +419,7 @@ public class RimLLMDecisionService
     {
         try
         {
+            RequireModel(model);
             var builder = new JevDecisionPlanBuilder();
             builder.AddNoul("reachable", "Is this request reachable?", default);
             JevDecisionPlan plan = builder.Build();
@@ -474,6 +488,7 @@ public class RimLLMDecisionService
 
             DecisionConnection connection = ResolveConnection(providerId, model);
             string selectedModel = connection.Model;
+            RequireModel(selectedModel);
 
             using HttpClient http = CreateHttpClient(connection.Endpoint);
             var client = new JevClient(http, CreateOptions(connection.Endpoint, selectedModel, connection.ApiKey, connection.ProviderId));

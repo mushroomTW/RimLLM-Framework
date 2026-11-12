@@ -33,11 +33,6 @@ public class DecisionProviderTests
                 uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && IsLoopbackHost(uri.Host)),
                 Is.True,
                 $"{provider.Id} 必須使用 HTTPS（本機端點才可以用明文 HTTP）");
-            Assert.That(provider.DefaultModel, Is.Not.Null.And.Not.Empty, $"{provider.Id} 缺少預設模型");
-            Assert.That(
-                provider.PresetModels,
-                Does.Contain(provider.DefaultModel),
-                $"{provider.Id} 的預設模型不在預設清單中");
         }
     }
 
@@ -104,8 +99,6 @@ public class DecisionProviderTests
     {
         Assert.That(RimLLMDecisionProviderCatalog.Get("NotAProvider").Id,
             Is.EqualTo(RimLLMDecisionProviderCatalog.TypeSafe));
-        Assert.That(RimLLMDecisionProviderCatalog.GetDefaultModel("NotAProvider"),
-            Is.EqualTo("jev-latest"));
         Assert.That(RimLLMDecisionProviderCatalog.GetDefaultEndpoint("NotAProvider"),
             Is.EqualTo("https://api.typesafe.ai"));
     }

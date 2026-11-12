@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
@@ -10,9 +11,10 @@ using Verse;
 namespace RimLLM_Framework.Mod;
 
 /// <summary>
-/// 「連接 AI」三步驟精靈：選 AI 公司 → 貼金鑰 → 一鍵測試。
-/// 第三步會依序抓模型清單、測試連線，成功後把測試用的模型自動加進備援鏈，
-/// 省掉原本最容易漏掉的「到模型設置分頁手動新增」。
+/// 「連接 AI」四步驟精靈：選 AI 公司（預選 Gemini）→ 貼金鑰 → 選模型 → 一鍵測試。
+/// 框架不提供預設模型，因此第三步會抓模型清單讓玩家挑對話模型；能沿用同一把金鑰的
+/// Embedding 與決策模型（例如 Gemini）也在同一頁選，不選就不開啟。第四步用選好的模型
+/// 實際測試，成功後把它加進備援鏈，省掉原本最容易漏掉的「到模型設置分頁手動新增」。
 /// 它只是既有設定的捷徑：寫入的都是供應商分頁與模型設置分頁本來就會寫的欄位。
 /// </summary>
 public static class SetupWizardDrawer
@@ -59,7 +61,7 @@ public static class SetupWizardDrawer
     private enum Outcome { None, Success, Failed }
 
     private static int _step = 1;
-    private static Choice _pick;
+    private static Choice _pick = Featured[0];
     private static bool _revealKey;
     private static bool _busy;
     private static string _progressKey;
@@ -67,6 +69,24 @@ public static class SetupWizardDrawer
     private static string _addedEntry;
     private static string _failKey;
     private static string _failDetail;
+
+    // 第 3 步「選模型」。_fetchGeneration 讓玩家回上一步後，舊的背景抓取結果不會蓋掉新的。
+    private static int _fetchGeneration;
+    private static bool _modelsBusy;
+    private static List<string> _chatModels = [];
+    private static string _chatModel = "";
+    private static string _modelsFailKey;
+    private static string _modelsFailDetail;
+    /// <summary>能沿用對話金鑰、且目前沒開啟的 Embedding 供應商；null 代表這頁不提供選擇。</summary>
+    private static string _embeddingPickProvider;
+    private static bool _embeddingListBusy;
+    private static List<string> _embeddingModels = [];
+    /// <summary>玩家選的 Embedding 模型；空字串代表不開啟。</summary>
+    private static string _embeddingModel = "";
+    private static string _decisionPickProvider;
+    private static bool _decisionListBusy;
+    private static List<string> _decisionModels = [];
+    private static string _decisionModel = "";
 
     // 成功頁「選用」區的 Embedding 一鍵開啟狀態
     private static bool _embeddingBusy;
@@ -88,8 +108,10 @@ public static class SetupWizardDrawer
         // 只有對話測試進行中才擋：它的回呼會改步驟與結果。Embedding／決策的背景測試
         // 只更新自己那一列的狀態，玩家按「完成」時照常重設精靈。
         if (_busy) return;
+        _fetchGeneration++;
+        _modelsBusy = _embeddingListBusy = _decisionListBusy = false;
         _step = 1;
-        _pick = null;
+        _pick = Featured[0];
         _revealKey = false;
         _outcome = Outcome.None;
         _embeddingOutcome = Outcome.None;
@@ -110,6 +132,7 @@ public static class SetupWizardDrawer
         {
             case 1: DrawStepPick(listing); break;
             case 2: DrawStepKey(listing); break;
+            case 3: DrawStepModels(listing); break;
             default: DrawStepTest(listing); break;
         }
     }
@@ -118,12 +141,13 @@ public static class SetupWizardDrawer
     {
         Rect bar = listing.GetRect(32f);
         float gap = 6f;
-        float width = (bar.width - gap * 2f) / 3f;
-        for (int i = 1; i <= 3; i++)
+        const int steps = 4;
+        float width = (bar.width - gap * (steps - 1)) / steps;
+        for (int i = 1; i <= steps; i++)
         {
             Rect cell = new Rect(bar.x + (i - 1) * (width + gap), bar.y, width, bar.height);
             bool now = i == _step;
-            bool done = i < _step || (i == 3 && _outcome == Outcome.Success);
+            bool done = i < _step || (i == steps && _outcome == Outcome.Success);
             RimLLMUIStyle.DrawSelectableFrame(cell, now);
             Color color = done ? RimLLMUIStyle.StatusGreen : now ? Color.white : RimLLMUIStyle.Muted;
             using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
@@ -298,10 +322,265 @@ public static class SetupWizardDrawer
             Settings.Write();
             _outcome = Outcome.None;
             _step = 3;
+            StartFetchModels(id);
         });
     }
 
-    // ── 第 3 步：一鍵測試並自動設定 ──────────────────────
+    // ── 第 3 步：選模型 ──────────────────────────────────
+
+    private static void DrawStepModels(Listing_Standard listing)
+    {
+        DrawHeading(listing, "RimLLM_SetupModelsTitle".Translate());
+        listing.Label("RimLLM_SetupModelsHelp".Translate());
+        listing.Gap(8f);
+
+        if (_modelsBusy)
+        {
+            listing.Label(_progressKey.Translate());
+        }
+        else
+        {
+            if (_modelsFailKey != null)
+            {
+                RimLLMUIStyle.DrawHint(listing, _modelsFailKey.Translate());
+                if (!string.IsNullOrEmpty(_modelsFailDetail))
+                {
+                    RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_modelsFailDetail));
+                }
+                Rect retryRow = listing.GetRect(30f);
+                if (Widgets.ButtonText(new Rect(retryRow.x, retryRow.y, 220f, retryRow.height), "RimLLM_SetupRetryFetchBtn".Translate()))
+                {
+                    StartFetchModels(_pick.Id);
+                }
+                listing.Gap(6f);
+            }
+
+            if (_chatModels.Count > 0)
+            {
+                DrawOptionalRow(listing, "RimLLM_SetupChatModel".Translate(), DescribePick(_chatModel, "RimLLM_SelectModelPlaceholder"),
+                    "RimLLM_SetupChooseModelBtn".Translate(),
+                    () => Find.WindowStack.Add(new Dialog_SelectModel(_chatModels, model => _chatModel = model)));
+            }
+            else
+            {
+                // 抓不到清單（或伺服器回傳空清單）時讓玩家手動輸入模型名稱。
+                listing.Label("RimLLM_SetupManualModelLabel".Translate());
+                _chatModel = listing.TextEntry(_chatModel ?? "").Trim();
+            }
+
+            if (_embeddingPickProvider != null || _decisionPickProvider != null)
+            {
+                listing.Gap(14f);
+                listing.Label($"<b>{"RimLLM_SetupOptionalTitle".Translate()}</b>");
+                RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupOptionalModelsHint".Translate(_pick.DisplayName));
+                if (_embeddingPickProvider != null)
+                {
+                    DrawOptionalModelRow(listing, "RimLLM_ServiceEmbedding".Translate(), _embeddingListBusy, _embeddingModels, _embeddingModel, model => _embeddingModel = model);
+                }
+                if (_decisionPickProvider != null)
+                {
+                    DrawOptionalModelRow(listing, "RimLLM_ServiceDecision".Translate(), _decisionListBusy, _decisionModels, _decisionModel, model => _decisionModel = model);
+                }
+            }
+        }
+
+        listing.Gap(16f);
+        DrawNavRow(listing, showBack: true, "RimLLM_SetupNextBtn".Translate(), !_modelsBusy && !string.IsNullOrEmpty(_chatModel), () =>
+        {
+            _outcome = Outcome.None;
+            _step = 4;
+        });
+    }
+
+    private static string DescribePick(string model, string emptyKey)
+    {
+        return string.IsNullOrEmpty(model)
+            ? $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Muted)}>{emptyKey.Translate()}</color>"
+            : model;
+    }
+
+    /// <summary>選用服務的模型列：清單抓取中、抓不到、或「不使用＋各模型」的選單。</summary>
+    private static void DrawOptionalModelRow(Listing_Standard listing, string name, bool busy, List<string> models, string current, Action<string> onPick)
+    {
+        if (busy)
+        {
+            DrawOptionalRow(listing, name, "RimLLM_SetupProgressFetch".Translate(), null, null);
+            return;
+        }
+        if (models.Count == 0)
+        {
+            DrawOptionalRow(listing, name, "RimLLM_SetupOptionalNoModels".Translate(), null, null);
+            return;
+        }
+        DrawOptionalRow(listing, name, DescribePick(current, "RimLLM_SetupOptionalSkip"), "RimLLM_SetupChooseModelBtn".Translate(), () =>
+        {
+            var options = new List<FloatMenuOption> { new("RimLLM_SetupOptionalSkip".Translate(), () => onPick("")) };
+            options.AddRange(models.Select(model => new FloatMenuOption(model, () => onPick(model))));
+            Find.WindowStack.Add(new FloatMenu(options));
+        });
+    }
+
+    /// <summary>
+    /// 抓對話模型清單（本機 AI 先找伺服器）；同時替能沿用這把金鑰的 Embedding／決策模型抓清單。
+    /// 網路動作在背景執行，結果回到主線程才寫入；回上一步再進來時舊結果會被丟掉。
+    /// </summary>
+    private static void StartFetchModels(string providerId)
+    {
+        Settings.SetProviderEnabled(providerId, true);
+        Settings.Write();
+
+        int generation = ++_fetchGeneration;
+        _modelsBusy = true;
+        _chatModels = [];
+        _chatModel = "";
+        _modelsFailKey = null;
+        _modelsFailDetail = null;
+        _progressKey = providerId == ProviderIds.OpenAICompatible ? "RimLLM_SetupProgressDetect" : "RimLLM_SetupProgressFetch";
+
+        // 玩家已經自己開啟的服務不在這裡改。
+        string embedding = SetupStatus.OneClickEmbeddingProviderFor(providerId);
+        _embeddingPickProvider = embedding != null && Settings.EmbeddingProvider == RimLLMFrameworkSettings.DisabledProvider ? embedding : null;
+        string decision = SetupStatus.OneClickDecisionProviderFor(providerId);
+        _decisionPickProvider = decision != null && Settings.DecisionProvider == RimLLMDecisionProviderCatalog.Disabled ? decision : null;
+        _embeddingModel = "";
+        _decisionModel = "";
+        _embeddingModels = [];
+        _decisionModels = [];
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                if (!RimLLMProvider.TryGetManager(out var manager))
+                {
+                    await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_Other", "SDK not initialized")).ConfigureAwait(false);
+                    return;
+                }
+
+                if (providerId == ProviderIds.OpenAICompatible)
+                {
+                    LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(GenericProviderSubTabDrawer.LocalTargets).ConfigureAwait(false);
+                    if (hit == null)
+                    {
+                        await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_LocalNotFound", null)).ConfigureAwait(false);
+                        return;
+                    }
+                    await FinishFetch(generation, () =>
+                    {
+                        Settings.SetEndpoint(providerId, hit.BaseUrl);
+                        Settings.Write();
+                        _progressKey = "RimLLM_SetupProgressFetch";
+                    }).ConfigureAwait(false);
+                }
+
+                var catalog = await manager.FetchProviderModelCatalogAsync(providerId).ConfigureAwait(false);
+                await FinishFetch(generation, () =>
+                {
+                    if (catalog.Models != null && catalog.Models.Count > 0)
+                    {
+                        Settings.SetModelList(providerId, catalog.Models);
+                        Settings.SetProviderContextWindows(providerId, catalog.ContextWindows);
+                        Settings.Write();
+                        _chatModels = new List<string>(catalog.Models);
+                    }
+                    else
+                    {
+                        _modelsFailKey = "RimLLM_SetupModelsEmpty";
+                    }
+                    _modelsBusy = false;
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Warning($"Setup wizard: fetching models for {providerId} failed: {RimLLMLog.SanitizeForLog(ex.Message, 220)}");
+                string key = ex is RimLLMException llm ? SetupStatus.DescribeFailureKey(llm.Error) : "RimLLM_SetupFail_Other";
+                await FinishFetch(generation, () => FailFetch(key, ex.Message)).ConfigureAwait(false);
+            }
+        });
+
+        if (_embeddingPickProvider != null) StartFetchEmbeddingList(_embeddingPickProvider, generation);
+        if (_decisionPickProvider != null) StartFetchDecisionList(_decisionPickProvider, generation);
+    }
+
+    private static void FailFetch(string key, string detail)
+    {
+        _modelsFailKey = key;
+        _modelsFailDetail = string.IsNullOrEmpty(detail) ? null : RimLLMLog.SanitizeForLog(detail, 220);
+        _modelsBusy = false;
+    }
+
+    /// <summary>回到主線程執行；這段期間玩家若回上一步重新抓取，就丟掉這次的結果。</summary>
+    private static Task FinishFetch(int generation, Action action)
+    {
+        return Finish(() =>
+        {
+            if (generation == _fetchGeneration) action();
+        });
+    }
+
+    /// <summary>Embedding 金鑰留空時服務會沿用對話金鑰，所以第二步貼的金鑰就能抓清單。</summary>
+    private static void StartFetchEmbeddingList(string embeddingProviderId, int generation)
+    {
+        _embeddingListBusy = true;
+        string endpoint = Settings.GetEmbeddingEndpoint(embeddingProviderId);
+        string apiKey = Settings.GetEmbeddingApiKey(embeddingProviderId);
+        Task.Run(async () =>
+        {
+            List<string> models = [];
+            try
+            {
+                var result = await new RimLLMEmbeddingService(Settings).FetchAvailableModelsAsync(embeddingProviderId, endpoint, apiKey).ConfigureAwait(false);
+                models = result?.Models ?? [];
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Warning($"Setup wizard: fetching embedding models for {embeddingProviderId} failed: {RimLLMLog.SanitizeForLog(ex.Message, 220)}");
+            }
+            await FinishFetch(generation, () =>
+            {
+                if (models.Count > 0)
+                {
+                    Settings.SetModelList(RimLLMEmbeddingService.GetModelListKey(embeddingProviderId), models);
+                    Settings.Write();
+                }
+                _embeddingModels = models;
+                _embeddingListBusy = false;
+            }).ConfigureAwait(false);
+        });
+    }
+
+    /// <summary>決策金鑰留空時沿用對話金鑰（見 <see cref="RimLLMDecisionProvider.ChatKeyProviderId"/>）。</summary>
+    private static void StartFetchDecisionList(string decisionProviderId, int generation)
+    {
+        _decisionListBusy = true;
+        var service = new RimLLMDecisionService(Settings);
+        DecisionPreviewArguments args = service.GetPreviewArguments(decisionProviderId);
+        Task.Run(async () =>
+        {
+            List<string> models = [];
+            try
+            {
+                var fetched = await service.FetchModelsAsync(args.Endpoint, args.Model, args.ApiKey).ConfigureAwait(false);
+                models = fetched.Where(model => model != null && !string.IsNullOrEmpty(model.Name)).Select(model => model.Name).ToList();
+            }
+            catch (Exception ex)
+            {
+                RimLLMLog.Warning($"Setup wizard: fetching decision models for {decisionProviderId} failed: {RimLLMLog.SanitizeForLog(ex.Message, 220)}");
+            }
+            await FinishFetch(generation, () =>
+            {
+                if (models.Count > 0)
+                {
+                    Settings.SetModelList(RimLLMDecisionService.GetModelListKey(decisionProviderId), models);
+                    Settings.Write();
+                }
+                _decisionModels = models;
+                _decisionListBusy = false;
+            }).ConfigureAwait(false);
+        });
+    }
+
+    // ── 第 4 步：用選好的模型測試並自動設定 ──────────────────
 
     private static void DrawStepTest(Listing_Standard listing)
     {
@@ -346,7 +625,7 @@ public static class SetupWizardDrawer
                 "RimLLM_SetupFailTitle".Translate(),
                 _failKey.Translate(),
                 "RimLLM_SetupBackBtn".Translate(),
-                () => { _outcome = Outcome.None; _step = 2; });
+                () => { _outcome = Outcome.None; _step = 3; });
             if (!string.IsNullOrEmpty(_failDetail))
             {
                 RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_failDetail));
@@ -363,37 +642,20 @@ public static class SetupWizardDrawer
 
     /// <summary>
     /// 成功頁的「選用」區：只有部分模組會用到 Embedding 與決策模型，因此不列入必要步驟、
-    /// 也不影響首頁紅／綠。Embedding 能沿用對話金鑰時一鍵開啟；否則與決策模型一樣跳到進階頁。
+    /// 也不影響首頁紅／綠。第三步選了模型的服務已在測試成功後開啟；其餘到進階頁選模型。
     /// </summary>
     private static void DrawOptionalServices(Listing_Standard listing)
     {
         listing.Gap(14f);
         listing.Label($"<b>{"RimLLM_SetupOptionalTitle".Translate()}</b>");
-        // Embedding
-        string oneClick = SetupStatus.OneClickEmbeddingProviderFor(_pick.Id);
-        string decisionOneClick = SetupStatus.OneClickDecisionProviderFor(_pick.Id);
-        // 能沿用金鑰的服務已在測試成功後自動開啟，提示要說明這一點，而不是叫玩家「需要時才設定」。
-        RimLLMUIStyle.DrawHint(listing, (oneClick != null || decisionOneClick != null
+        bool choseOptional = !string.IsNullOrEmpty(_embeddingModel) || !string.IsNullOrEmpty(_decisionModel);
+        // 第三步選了模型的服務已在測試成功後自動開啟，提示要說明這一點，而不是叫玩家「需要時才設定」。
+        RimLLMUIStyle.DrawHint(listing, (choseOptional
             ? "RimLLM_SetupOptionalAutoHint"
             : "RimLLM_SetupOptionalHint").Translate());
+
+        // Embedding
         bool embeddingOn = Settings.EmbeddingProvider != RimLLMFrameworkSettings.DisabledProvider;
-        string embeddingButton;
-        Action embeddingAction;
-        if (embeddingOn)
-        {
-            embeddingButton = "RimLLM_SetupOptionalOpenPage".Translate();
-            embeddingAction = RimLLMSettingsUI.OpenEmbeddingPage;
-        }
-        else if (oneClick != null)
-        {
-            embeddingButton = "RimLLM_SetupEmbeddingOneClick".Translate(_pick.DisplayName);
-            embeddingAction = () => StartEmbeddingOneClick(oneClick);
-        }
-        else
-        {
-            embeddingButton = "RimLLM_SetupOptionalOpenPage".Translate();
-            embeddingAction = RimLLMSettingsUI.OpenEmbeddingPage;
-        }
 
         string embeddingStatus;
         if (_embeddingBusy)
@@ -405,20 +667,14 @@ public static class SetupWizardDrawer
         else
             embeddingStatus = "RimLLM_ServiceStatusOff".Translate();
 
-        DrawOptionalRow(listing, "RimLLM_ServiceEmbedding".Translate(), embeddingStatus, embeddingButton, _embeddingBusy ? null : embeddingAction);
+        DrawOptionalRow(listing, "RimLLM_ServiceEmbedding".Translate(), embeddingStatus, "RimLLM_SetupOptionalOpenPage".Translate(), _embeddingBusy ? null : RimLLMSettingsUI.OpenEmbeddingPage);
         if (_embeddingOutcome == Outcome.Failed && !string.IsNullOrEmpty(_embeddingFailDetail))
         {
             RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_embeddingFailDetail));
         }
 
-        // 決策模型：Gemini 可沿用同一把金鑰一鍵開啟；其他對話供應商要另外申請決策服務的金鑰，只能到進階頁設定。
+        // 決策模型：Gemini 可沿用同一把金鑰（第三步選模型）；其他對話供應商要另外申請決策服務的金鑰，只能到進階頁設定。
         bool decisionOn = Settings.DecisionProvider != RimLLMDecisionProviderCatalog.Disabled;
-        string decisionButton = !decisionOn && decisionOneClick != null
-            ? "RimLLM_SetupDecisionOneClick".Translate(_pick.DisplayName).ToString()
-            : "RimLLM_SetupOptionalOpenPage".Translate().ToString();
-        Action decisionAction = !decisionOn && decisionOneClick != null
-            ? () => StartDecisionOneClick(decisionOneClick)
-            : RimLLMSettingsUI.OpenDecisionPage;
 
         string decisionStatus;
         if (_decisionBusy)
@@ -430,33 +686,36 @@ public static class SetupWizardDrawer
         else
             decisionStatus = "RimLLM_ServiceStatusOff".Translate();
 
-        DrawOptionalRow(listing, "RimLLM_ServiceDecision".Translate(), decisionStatus, decisionButton, _decisionBusy ? null : decisionAction);
+        DrawOptionalRow(listing, "RimLLM_ServiceDecision".Translate(), decisionStatus, "RimLLM_SetupOptionalOpenPage".Translate(), _decisionBusy ? null : RimLLMSettingsUI.OpenDecisionPage);
         if (_decisionOutcome == Outcome.Failed && !string.IsNullOrEmpty(_decisionFailDetail))
         {
             RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_decisionFailDetail));
         }
-        if (decisionOneClick == null)
+        if (SetupStatus.OneClickDecisionProviderFor(_pick.Id) == null)
         {
             RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupDecisionHint".Translate());
         }
     }
 
     /// <summary>
-    /// 對話測試成功後，自動開啟能沿用同一把金鑰的 Embedding 與決策模型（例如 Gemini 三項全包），
-    /// 玩家只要貼一次金鑰。玩家已經自己開啟的服務不覆蓋；每項都實際測試，失敗就還原。
+    /// 對話測試成功後，開啟玩家在第三步選了模型、能沿用同一把金鑰的 Embedding 與決策模型
+    /// （例如 Gemini 三項全包），玩家只要貼一次金鑰。沒選模型的服務不開；玩家已經自己開啟的服務不覆蓋；
+    /// 每項都實際測試，失敗就還原。
     /// </summary>
-    private static void AutoEnableOptionalServices(string chatProviderId)
+    private static void EnableChosenOptionalServices()
     {
-        string embedding = SetupStatus.OneClickEmbeddingProviderFor(chatProviderId);
-        if (embedding != null && Settings.EmbeddingProvider == RimLLMFrameworkSettings.DisabledProvider)
+        if (_embeddingPickProvider != null && !string.IsNullOrEmpty(_embeddingModel) &&
+            Settings.EmbeddingProvider == RimLLMFrameworkSettings.DisabledProvider)
         {
-            StartEmbeddingOneClick(embedding);
+            Settings.SetEmbeddingModel(_embeddingPickProvider, _embeddingModel);
+            StartEmbeddingOneClick(_embeddingPickProvider);
         }
 
-        string decision = SetupStatus.OneClickDecisionProviderFor(chatProviderId);
-        if (decision != null && Settings.DecisionProvider == RimLLMDecisionProviderCatalog.Disabled)
+        if (_decisionPickProvider != null && !string.IsNullOrEmpty(_decisionModel) &&
+            Settings.DecisionProvider == RimLLMDecisionProviderCatalog.Disabled)
         {
-            StartDecisionOneClick(decision);
+            Settings.SetDecisionModel(_decisionPickProvider, _decisionModel);
+            StartDecisionOneClick(_decisionPickProvider);
         }
     }
 
@@ -593,17 +852,15 @@ public static class SetupWizardDrawer
     }
 
     /// <summary>
-    /// 依序：（本機 AI）找到伺服器 → 抓模型清單 → 測試連線 → 成功就把測試模型加進備援鏈。
-    /// 網路動作在背景執行，所有設定寫入都回到主線程。
+    /// 用第三步選好的模型送一則極短訊息測試；成功就把它加進備援鏈，
+    /// 再開啟玩家在第三步選了模型的 Embedding／決策模型。網路動作在背景執行，設定寫入都回到主線程。
     /// </summary>
     private static void StartSetup(string providerId)
     {
-        Settings.SetProviderEnabled(providerId, true);
-        Settings.Write();
-
+        string model = _chatModel;
         _busy = true;
         _outcome = Outcome.None;
-        _progressKey = providerId == ProviderIds.OpenAICompatible ? "RimLLM_SetupProgressDetect" : "RimLLM_SetupProgressFetch";
+        _progressKey = "RimLLM_SetupProgressTest";
 
         Task.Run(async () =>
         {
@@ -615,44 +872,7 @@ public static class SetupWizardDrawer
                     return;
                 }
 
-                if (providerId == ProviderIds.OpenAICompatible)
-                {
-                    LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(GenericProviderSubTabDrawer.LocalTargets).ConfigureAwait(false);
-                    if (hit == null)
-                    {
-                        await Finish(() => Fail("RimLLM_SetupFail_LocalNotFound", null)).ConfigureAwait(false);
-                        return;
-                    }
-                    await Finish(() =>
-                    {
-                        Settings.SetEndpoint(providerId, hit.BaseUrl);
-                        Settings.Write();
-                        _progressKey = "RimLLM_SetupProgressFetch";
-                    }).ConfigureAwait(false);
-                }
-
-                // 模型清單抓不到不算失敗：金鑰錯誤時下一步的連線測試會給出更明確的錯誤碼。
-                try
-                {
-                    var catalog = await manager.FetchProviderModelCatalogAsync(providerId).ConfigureAwait(false);
-                    await Finish(() =>
-                    {
-                        if (catalog.Models != null && catalog.Models.Count > 0)
-                        {
-                            Settings.SetModelList(providerId, catalog.Models);
-                            Settings.SetProviderContextWindows(providerId, catalog.ContextWindows);
-                            Settings.Write();
-                        }
-                        _progressKey = "RimLLM_SetupProgressTest";
-                    }).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    RimLLMLog.Warning($"Setup wizard: fetching models for {providerId} failed: {RimLLMLog.SanitizeForLog(ex.Message, 220)}");
-                    await Finish(() => _progressKey = "RimLLM_SetupProgressTest").ConfigureAwait(false);
-                }
-
-                TestResult result = await RimLLMProvider.TestProviderAsync(providerId).ConfigureAwait(false);
+                TestResult result = await manager.TestProviderAsync(providerId, model).ConfigureAwait(false);
                 await Finish(() =>
                 {
                     if (!result.Success)
@@ -661,7 +881,7 @@ public static class SetupWizardDrawer
                         return;
                     }
 
-                    string entry = $"{providerId}:{result.Model}";
+                    string entry = $"{providerId}:{model}";
                     List<string> chain = Settings.FallbackChain;
                     if (!chain.Contains(entry))
                     {
@@ -672,7 +892,7 @@ public static class SetupWizardDrawer
                     _addedEntry = entry;
                     _outcome = Outcome.Success;
                     _busy = false;
-                    AutoEnableOptionalServices(providerId);
+                    EnableChosenOptionalServices();
                 }).ConfigureAwait(false);
             }
             catch (Exception ex)

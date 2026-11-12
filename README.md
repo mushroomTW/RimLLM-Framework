@@ -360,7 +360,7 @@ Everything else — `IChatClient`, `ChatMessage`, `ChatResponse`, `ChatResponseU
 1. **Multi-provider support** — Gemini, OpenAI, DeepSeek, Groq, Grok, Z.ai, OpenRouter, Kimi, MiniMax, Qwen, NVIDIA and Player2, plus any OpenAI-compatible endpoint (LM Studio, Ollama, vLLM, …).
 2. **Failover and model fallback** — a player-configured fallback chain with exponential backoff, per-model cooldowns, four routing strategies and context window lookup.
 3. **Encrypted API keys** — AES-256 with a key protected by the current OS user; masked in the settings UI and never sent in request URLs.
-4. **Settings UI** — a home page with a ready/not-ready status card, a three-step "Connect AI" wizard that adds a working model for you (one Gemini key also sets up Embedding and decisions), advanced pages folded away with plain-language hints, a filterable model picker and a chat test page with Markdown rendering.
+4. **Settings UI** — a home page with a ready/not-ready status card and a confirmed "Reset to defaults" button, a four-step "Connect AI" wizard (Gemini preselected) where you pick the model from the provider's list and it is tested and added for you (one Gemini key also sets up Embedding and decisions with the models you pick); no model is ever preselected, advanced pages folded away with plain-language hints, a filterable model picker and a chat test page with Markdown rendering.
 5. **Debug tab** — a per-request logging toggle (off by default).
 6. **One-click connection test** — checks latency, the API key and the model.
 7. **Thread safety** — locked settings, main-thread dispatch and throttled background telemetry writes.

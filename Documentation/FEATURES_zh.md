@@ -12,7 +12,7 @@
    * 支援 **OpenAI 相容 API**，可設定任何本地或第三方相容端點（LM Studio、Ollama、LocalAI、vLLM 等）。預設端點為 `http://localhost:1234/v1`，並支援 API 金鑰。
    * **Kimi**、**MiniMax**、**Qwen** 提供一鍵切換「使用中國專用端點」（預設關閉），以改善連線品質。
 2. **容錯與模型 Fallback**
-   * **客戶端 Fallback 鏈**：可設定由主要模型與多個精確備援模型組成的鏈。目前模型遇到逾時、速率限制（HTTP 429）或連線錯誤時，框架會無縫往下切換。UI 產生的項目為 `Provider:Model` 形式；框架仍相容只填供應商的舊項目，並使用該供應商的預設模型。
+   * **客戶端 Fallback 鏈**：可設定由主要模型與多個精確備援模型組成的鏈。目前模型遇到逾時、速率限制（HTTP 429）或連線錯誤時，框架會無縫往下切換。UI 產生的項目為 `Provider:Model` 形式；框架仍相容只填供應商的舊項目，並使用該供應商已抓取清單的第一個模型（框架沒有內建預設模型）。
      * 「模型設置」分頁逐列列出備援鏈條目的分級、上下文上限與 **X** 刪除鈕。刪除前會先確認，並一併清除該條目的手動上下文上限（分級覆寫則在鏈上已無同名模型時才清）。
    * **OpenRouter 服務端 Fallback**：OpenRouter 的項目可以用逗號列出多個模型 —— 把 `ChatOptions.ModelId` 設為 `"OpenRouter:model-a, model-b, model-c"`（Fallback 鏈項目也接受同樣的格式）。此時供應商會改送 OpenRouter 的 `models` 陣列而非單一 `model` 欄位，把「要用哪一個」的決定交給 OpenRouter 服務端；只填一個模型名時仍送出一般的 `model`。由 `TestOpenRouterFallbackPayload` 驗證。注意設定介面是從快取模型清單一次挑一個模型來組出項目，因此這種多模型寫法來自呼叫端程式碼，而不是 Fallback 鏈編輯器。
    * `Retry-After` 在所有路徑上都支援 RFC 7231 允許的兩種格式 —— 延遲秒數與 HTTP 日期。
@@ -33,18 +33,19 @@
    * 所有供應商（含 Gemini）都以 HTTP Header 傳遞金鑰，絕不放在請求 URL，避免金鑰進入代理或伺服器的存取日誌。
    * RimWorld 的所有 Mod 都在同一個遊戲行程內執行。本框架不宣稱能阻止惡意 Mod 讀取記憶體、對公開 API 使用反射，或以其他行程內手段繞過邊界。
 4. **設定介面**
-   * **首頁與設定精靈**：視窗一打開就是首頁，用紅／綠卡片說明現在能不能真的送出請求、不能的話原因是什麼。「可以用」的定義是備援鏈上至少有一個條目的供應商已啟用、需要金鑰時也已填金鑰 —— 與路由層的候選資格相同，所以不會出現卡片顯示可用、實際每次呼叫都失敗的情況（`SetupStatus`，由 `SetupStatusTests` 驗證）。左側選單的首頁項目在每個分頁都顯示同一顆狀態點。「連接 AI」精靈一次只問一件事：選供應商（六張常用卡片，其餘收在「更多」）、貼金鑰（附按鈕直接開啟該供應商的金鑰頁；Player2 與本機服務略過金鑰）、按一顆測試鈕。測試會啟用供應商、必要時探測本機服務、抓模型清單、執行一般的連線測試，成功後把測試用的模型加到備援鏈尾端。成功畫面與首頁接著列出「選用」服務，它們不影響紅／綠卡片。能沿用對話金鑰的服務會在對話測試成功後自動開啟（玩家已自行開啟的不覆蓋）：Gemini 與 OpenAI 開啟 Embedding，Gemini 另外開啟 Gemini Decision 決策模型 —— 因此一把 Gemini 金鑰就能設好對話、Embedding 與決策。這些服務的金鑰留空，由服務沿用對話金鑰；每項都以一次真的請求驗證（一次向量請求、一題決策），失敗就還原，該列保留一鍵重試按鈕。其他供應商的 Embedding，以及與對話供應商無關、需另外申請金鑰的決策服務，則提供按鈕跳到對應的進階頁，並預先選好啟用中的那一家。最後這一步正是新玩家以往會漏掉的：先前只填金鑰什麼都不會發生，必須到另一個分頁手動加入模型。失敗時依錯誤碼以白話說明（金鑰錯誤、額度、連不上、找不到本機服務），下方附原始訊息方便回報問題。
+   * **首頁與設定精靈**：視窗一打開就是首頁，用紅／綠卡片說明現在能不能真的送出請求、不能的話原因是什麼。「可以用」的定義是備援鏈上至少有一個條目的供應商已啟用、需要金鑰時也已填金鑰 —— 與路由層的候選資格相同，所以不會出現卡片顯示可用、實際每次呼叫都失敗的情況（`SetupStatus`，由 `SetupStatusTests` 驗證）。左側選單的首頁項目在每個分頁都顯示同一顆狀態點。「連接 AI」精靈一次只問一件事：選供應商（六張常用卡片並預選 Gemini，其餘收在「更多」）、貼金鑰（附按鈕直接開啟該供應商的金鑰頁；Player2 與本機服務略過金鑰）、選模型、按一顆測試鈕。框架不會預選任何模型，所以第 3 步會啟用供應商、必要時探測本機服務、抓模型清單讓玩家挑對話模型；清單抓不到或是空的時候改為手動輸入模型名稱。同一頁也替能沿用對話金鑰的服務抓各自的清單 —— Gemini 與 OpenAI 的 Embedding，Gemini 另有 Gemini Decision 決策模型 —— 提供「不使用」與各模型可選；玩家已自行開啟的服務不動。第 4 步用選好的對話模型執行連線測試，成功後把這個模型加到備援鏈尾端，再只開啟玩家選了模型的選用服務 —— 因此一把 Gemini 金鑰就能設好對話、Embedding 與決策。這些服務的金鑰留空，由服務沿用對話金鑰；每項都以一次真的請求驗證（一次向量請求、一題決策），失敗就還原。成功畫面與首頁接著列出「選用」服務，它們不影響紅／綠卡片；沒開啟的服務、其他供應商，以及與對話供應商無關、需另外申請金鑰的決策服務，則提供按鈕跳到對應的進階頁，並預先選好啟用中的那一家。最後這一步正是新玩家以往會漏掉的：先前只填金鑰什麼都不會發生，必須到另一個分頁手動加入模型。失敗時依錯誤碼以白話說明（金鑰錯誤、額度、連不上、找不到本機服務），下方附原始訊息方便回報問題。
+   * **恢復預設**：首頁底部的按鈕，確認後把所有設定（金鑰、供應商、備援鏈、模型、Embedding、決策、逾時與預算上限）恢復成剛安裝的狀態。用量統計、對話紀錄與今日預算計數保留，避免藉重置繞過每日預算。
    * **進階頁預設折疊**：預設只顯示首頁、連接 AI 與對話測試；其餘分頁收在折疊的「進階設定」群組，分頁名稱改為白話，開著進階分頁時群組保持展開。「等待與重試」與「花費上限」頁在每個選項下方加一行說明，「等待與重試」頁另有「全部恢復預設」（`ResetRequestSettingsToDefaults`，不會動到供應商、金鑰與備援鏈）。
    * 多欄供應商頁面，附狀態標示（已啟用／已停用／缺少金鑰）；快取的模型以標籤呈現，點一下就能加入備援鏈。
    * 模型選擇器支援搜尋與常見模型系列的快速過濾。
    * 對話測試頁：每則回覆會標示實際回答的模型、延遲與 token 用量（`~` 表示估計值），可以複製，也可以在串流途中停止。模型選擇器可把備援鏈上某一項釘選到鏈首測試（失敗仍會沿鏈降級），選自動則沿用備援鏈順序。回覆以 Markdig 解析 Markdown 後轉成 Unity rich text；Unity 表達不了的結構（例如表格）以近似方式呈現。
    * Embedding 設定沿用同樣的版面，提供本地伺服器自動偵測，以及會回報向量維度的連線測試。
-   * 決策設定沿用同樣的「供應商清單＋右側詳細設定」版面。每個供應商有自己的啟用開關、模型、端點與 API 金鑰；抓取前先顯示預設模型，也能向閘道拉取清單，連線測試會送出真正的一題決策，而不是只檢查 `/v1/models`。
+   * 決策設定沿用同樣的「供應商清單＋右側詳細設定」版面。每個供應商有自己的啟用開關、模型、端點與 API 金鑰；只列出從閘道抓回的模型（沒有預設或內建模型清單；選定模型前決策請求會在送出前被擋下），連線測試會送出真正的一題決策，而不是只檢查 `/v1/models`。
    * 停止對話會保留當時可見的部分回覆。串流更新與收尾回呼都綁定原請求；停止、清空或送出新請求後，舊回呼不能還原已刪除的歷史、覆蓋新回覆或改變新請求的載入狀態。
 5. **獨立除錯分頁與日誌開關**
    * 獨立的**除錯**設定分頁，含「詳細日誌」核取方塊（預設關閉——每次請求都會寫一行日誌，而 Verse 的共用日誌上限為 10000 筆），讓 Mod 開發者與玩家在排查問題時自由開關本 Mod 逐次請求的日誌輸出。一次性的警告（例如 API 金鑰無法解密、遙測寫檔失敗）則一律記錄。最近請求歷史會在供應商有回報用量時附上該次 token 數；拿不到用量的條目省略不顯示。
 6. **一鍵連線測試**
-   * 即時連線檢查，量測延遲並驗證 API 金鑰與模型。在基底類別實作一次，所有供應商共用。
+   * 即時連線檢查，量測延遲並驗證 API 金鑰與模型。在基底類別實作一次，所有供應商共用。沒有內建測試模型：供應商頁用玩家在備援鏈為該供應商加入的第一個模型測試（還沒加入時提示先加入），精靈則用選模型步驟選定的模型測試。
    * 連線測試與初始模型清單請求均使用設定的 API 逾時，包含原本會沿用 SDK 預設逾時的呼叫。
 7. **執行緒安全與主執行緒 UI 派送**
    * 所有設定字典皆以鎖保護，防止多執行緒並發讀寫。
@@ -60,21 +61,21 @@
    * **成本估算來自內建費率表**（OpenAI、Gemini、DeepSeek、Groq、Qwen、Kimi、MiniMax、Z.ai、Player2 與 xAI 模型；`gpt-4o-2024-11-20` 這類帶日期的變體會對到基底模型）。Player2 記為已知的 $0（本地免費，雲端以 joules 而非美元計費，joules 不列入費用估算）。查無費率代表**費用未知**，不是已知免費：其 token 照計入每日預算，但費用不列入顯示總額。Debug 分頁會顯示本次執行中查無費率的請求數。HardBlock 會替進行中的邏輯請求保留輸入與輸出 token 估算，並在各次嘗試回報時結算實際用量；每日預算仍是估算門檻，不是精準的消費上限。
    * **預算超限應對策略只有兩種**：**直接阻斷並警告**（預設，請求被擋下並回報 `LLMError.QuotaExceeded`，每天彈一次遊戲內提示說明是 RimLLM 預算擋下的）與**只警告並照常送出**（每天彈一次遊戲內提示後繼續呼叫，超支要不要繼續由使用者自己決定）。HardBlock 會以原子方式保留並行請求的估算額度，避免多個請求同時認領同一份餘額。只因餘額被在途請求預留而被擋下的請求會收到可重試的 `RateLimit`，也不會跳預算提示，因為預算其實還沒超限。設定檔若還留著已移除的策略（包含數值與「只警告」撞號的舊 SilentMocking），載入時會重設為「直接阻斷並警告」並提示一次，不會靜默變成放行。舊版以美元計的每日上限無法換算成 token，載入時會移除並提示一次，請玩家重新設定 token 預算。其他 Mod 自行實作、不記錄 token 的設定則退回舊版美元門檻。兩者都不改寫回應內容 —— 框架不會代你偽造一句看似正常的回答，那會讓呼叫端與玩家都誤以為模型真的回應了。
 10. **Embedding SDK**
-    * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。`EmbeddingGenerationOptions.ModelId` 可覆寫設定預設模型；`Dimensions` 會傳給供應商 SDK，端點支援時即可生效。
+    * 框架公開由 Google Gemini、OpenAI、Ollama 或 OpenAI 相容端點支援的 embedding 功能。其他 Mod 可透過 `RimLLMProvider.CreateEmbeddingGenerator` 取得標準 `IEmbeddingGenerator`，用於語意檢索與分群。`EmbeddingGenerationOptions.ModelId` 可覆寫設定中的模型（框架沒有預設 Embedding 模型，兩者都沒有時拒絕送出）；`Dimensions` 會傳給供應商 SDK，端點支援時即可生效。
     * 所有線上來源都走 OpenAI SDK：Google 經官方 OpenAI 相容端點存取 Gemini，OpenAI 走其原生端點；Ollama 與自架服務使用 OpenAI SDK 的 `EmbeddingClient`（Ollama 走其 OpenAI 相容的 `/v1` 端點）。因此「Embedding 端點」欄位填的是**服務根位址**（如 `http://localhost:11434/v1`）；填入完整 `/embeddings` 路徑會自動正規化。模型、端點與金鑰依 Embedding 供應商分別保存，切換啟用的供應商不會遺失其他供應商的設定；模型或端點留空代表使用該供應商預設值，金鑰留空則繼承對應對話供應商的金鑰。
     * 設定頁可直接抓取可用模型清單，不必憑記憶輸入名稱；只要伺服器說得出哪些是 embedding 模型，清單就**只留真正的 embedding 模型**：Google 走原生 `/models` 清單（`supportedGenerationMethods` 含 `embedContent`）、Ollama 看 `/api/show` 的 `capabilities`、LM Studio 看 `/api/v0/models` 的 `type`，OpenAI 則依官方型錄固定的 `text-embedding-*` 命名過濾。只有兩者皆無的通用 OpenAI 相容伺服器才退回沒有能力資訊的 `/v1/models`，此時清單只**排序**（把像 embedding 的名稱排前面）而不過濾 —— 伺服器的模型名可能由使用者自訂，過濾會把合法選項藏起來；狀態列會明講清單未過濾。沒有模型清單端點的伺服器仍可手動輸入。
     * Embedding 屬計費 API，因此與一般生成請求共用防濫用與每日預算檢查。HardBlock 會原子保留進行中呼叫的輸入 token 估算，餘額已被保留時就拒絕新請求；實際用量仍會在供應商回報時完整結算。WarnOnly 照常送出。用量變更會標記並排程遙測保存。其金鑰採用與供應商金鑰相同的 AES 加密。呼叫端取消保留 `OperationCanceledException`，只有框架自身逾時才轉為 `LLMError.Timeout`。
 11. **決策模型**
     * 框架提供決策服務，透過 TypeSafe 的 System One 協議取得型別化答案（是／否、選項、分數）。其他 Mod 可透過 `RimLLMProvider.CreateDecisionService(modId)` 取得受防護的 client；計畫以 `JevDecisionPlanBuilder` 建一次後重複使用。服務不內建安全閘門、路由或提示工程：計畫與機率解讀都由呼叫端負責。
     * 設定頁列出 TypeSafe（Jev）、Clef、Liquid d1、Solar Decide、Kev、Tev1、Laya、Span、Microsoft Decision-1、OpenAI Decisions 與 Google Gemini Decision。模型、端點與金鑰依供應商分開保存，切換啟用的供應商不會遺失其他設定。模型或端點留空代表使用供應商預設值；端點填 origin，client 會自動接上 `/v1/systemone`。
-    * 所有金鑰採用與供應商金鑰相同的 AES 加密。設定頁可抓取閘道的模型清單（閘道沒有 `/v1/models` 時仍顯示預設模型），連線測試會送出真正的一題決策，因此「模型清單可用但決策回應格式不相容」的閘道會在呼叫端依賴前就被抓出來。
+    * 所有金鑰採用與供應商金鑰相同的 AES 加密。設定頁可抓取閘道的模型清單（閘道沒有 `/v1/models` 時請手動輸入模型名稱），連線測試會送出真正的一題決策，因此「模型清單可用但決策回應格式不相容」的閘道會在呼叫端依賴前就被抓出來。
     * 決策屬計費 API：每次呼叫都經過與對話、embedding 相同的呼叫者記錄、防濫用節流與每日 token 預算，並把供應商回報的輸入／輸出 token 記入並保存於用量帳本。HardBlock 會替進行中呼叫保留估算輸入 token，避免多個並行請求認領同一份餘額。所有失敗一律以 `RimLLMException`（附 `LLMError` 代碼）呈現——HTTP 狀態碼走共用的 `LLMErrorMapper` 對照（401 → `InvalidKey`、429 → `RateLimit` 且保留伺服器的 `Retry-After`、5xx → `ProviderOffline`），SDK 逾時對應 `Timeout`、斷網對應 `NetworkError`、協議違規對應 `InvalidResponse`；未啟用的供應商——以及 `https://` 端點缺金鑰——都會在送出前就被拒絕。玩家全域停用決策服務時，指定供應商的呼叫同樣會被拒絕，第三方 Mod 無法花用留存的金鑰。呼叫端取消保留 `OperationCanceledException`。
     * **Mod 可以選用自己的決策供應商。** 三個公開入口讓第三方 Mod 不必動到玩家設定就能這麼做：
         * `RimLLMProvider.GetDecisionAvailability()` 回傳 `DecisionAvailability` 快照——有沒有啟用決策供應商、是哪一家、解析後的模型、解析後的端點（origin）與有沒有保存金鑰。這是純查詢：不發網路請求，也絕不外洩金鑰本身。沒有啟用任何決策供應商時回報 `Enabled = false` 而不擲例外——「玩家還沒設定」是答案，不是錯誤。
         * `RimLLMDecisionClient.EvaluateWithProviderAsync(state, plan, providerId, model, ct)` 的端點、金鑰與模型都取自該供應商自己的設定，因此完全不會動到玩家的設定；缺金鑰、供應商 id 不存在或是 `Disabled` 標記，都會在送出任何請求之前就以 `RimLLMException`（`InvalidKey` 或 `Unknown`）拒絕。用量記到實際服務該次請求的供應商帳上，而不是啟用中的那一家，且歸屬資訊在請求開始時就快照下來。
         * `RimLLMDecisionClient.FetchModelsAsync(providerId, ct)` 回傳純字串的模型名稱清單（`IReadOnlyList<string>`），第三方 Mod 完全不必引用 `Kkdev92.Jev` 的型別。模型清單查詢會記錄呼叫者並套用防濫用節流，但不消耗推論額度、也不記入用量。
         * 逐供應商的存取方法放在 `IRimLLMSettings`（`GetDecisionApiKey`、`GetDecisionModel`、`GetDecisionEndpoint`）。這三個宣告帶有預設介面實作，舊版編譯的外部 Mod 仍能正常載入；框架內建的 `RimLLMFrameworkSettings` 覆寫了三者，各供應商的值分開保存。預設實作只回答啟用中供應商，其他供應商一律回空字串——把啟用中供應商的金鑰借給別家等於送到錯誤的主機、記到錯誤的帳上，因此寧可讓呼叫被拒絕。
-    * **決策模型可以跑在玩家自己的機器上。** 供應商目錄新增三個本機項目：*Ollama*（`http://localhost:11434`，預設模型 `tev1:4b`——Ollama 0.35 以上在 `/v1/systemone` 提供 Jev 風格的決策端點）、*Unsloth*（`http://localhost:8888`，預設模型 `laya`——Unsloth 以 TypeSafe 相容的 Jev API 提供服務）與*其他本機服務*（`http://localhost:8000`，給任何其他 System One 相容的程序）。這三家的端點、模型與模型清單都和其他供應商一樣分開保存。本機服務的 `/v1/models` 多半回 OpenAI 格式（`data[].id`），Jev SDK 無法直接解析；框架在傳輸層遇到這種格式時，會帶 `output_modalities=decisions` 重查一次（Unsloth 只有這樣才列出決策模型），再轉成 SDK 的模型清單格式。
+    * **決策模型可以跑在玩家自己的機器上。** 供應商目錄新增三個本機項目：*Ollama*（`http://localhost:11434`——Ollama 0.35 以上在 `/v1/systemone` 提供 Jev 風格的決策端點）、*Unsloth*（`http://localhost:8888`——Unsloth 以 TypeSafe 相容的 Jev API 提供服務）與*其他本機服務*（`http://localhost:8000`，給任何其他 System One 相容的程序）。這三家的端點、模型與模型清單都和其他供應商一樣分開保存。本機服務的 `/v1/models` 多半回 OpenAI 格式（`data[].id`），Jev SDK 無法直接解析；框架在傳輸層遇到這種格式時，會帶 `output_modalities=decisions` 重查一次（Unsloth 只有這樣才列出決策模型），再轉成 SDK 的模型清單格式。
     * 讓本機端點能運作的兩條規則，都依玩家設定的端點推導，而不是看供應商的身分：
         * **明文 `http://` 端點不需要 API 金鑰。** 本機服務多半不驗證憑證，金鑰欄位可以留白，框架改送佔位值（`local`）——Jev SDK 直接拒絕空金鑰。`https://` 端點仍然一定要有真金鑰，缺金鑰的呼叫會在送出前就以 `InvalidKey` 拒絕。
         * **Jev SDK 只接受 HTTPS origin**（`ClientSettings.ValidateBaseAddress` 會拒絕其他 scheme），但本機服務講的是明文 HTTP。`DecisionEndpointRouting` 把兩者接起來：交給 SDK 一個同 host 與 port 的 HTTPS origin，`PlaintextEndpointRewriteHandler` 再於請求送上線前改寫回玩家設定的明文端點。因此本機服務收到的就是一般的明文 HTTP，不需要代理、隧道或憑證。改寫只動請求 URI，SDK 自己的請求編碼與回應解碼完全沿用。
