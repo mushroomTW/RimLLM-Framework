@@ -95,7 +95,61 @@ public static class CompatSettingsDrawer
     public static float GetHeight(float width)
     {
         // 說明段落 + 共用警語 + 每個目標一列
-        return 150f + RimLLMCompatBootstrap.Targets.Count * (RimLLMUIStyle.StatusRowHeight + RimLLMUIStyle.StatusRowGap);
+        float height = 150f;
+        foreach (Row row in Rows)
+        {
+            height += RimLLMUIStyle.StatusRowHeight + RimLLMUIStyle.StatusRowGap;
+            if (ShowsModelPicker(row)) height += ModelRowHeight + RimLLMUIStyle.StatusRowGap;
+        }
+        return height;
+    }
+
+    private const float ModelRowHeight = 28f;
+
+    /// <summary>只有已掛載且接管開啟的 Mod 才需要選模型。</summary>
+    private static bool ShowsModelPicker(Row row)
+    {
+        return row.State == CompatRowState.Ready && Settings.IsCompatTakeoverEnabled(row.Target.ModId);
+    }
+
+    /// <summary>每個接管中的 Mod 一行：顯示目前專用模型，點擊從備援鏈條目挑選或回到預設路由。</summary>
+    private static void DrawModelPicker(Rect rect, Row row)
+    {
+        string modId = row.Target.ModId;
+        string pin = Settings.GetCompatModelPin(modId);
+        string shown = string.IsNullOrEmpty(pin) ? (string)"RimLLM_CompatModelDefault".Translate() : pin;
+
+        Rect labelRect = new Rect(rect.x + RowPadding, rect.y, 120f, rect.height);
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            GUI.color = RimLLMUIStyle.Muted;
+            Widgets.Label(labelRect, "RimLLM_CompatModelLabel".Translate());
+            GUI.color = Color.white;
+        }
+
+        Rect buttonRect = new Rect(labelRect.xMax, rect.y + 2f, Mathf.Min(360f, rect.width - labelRect.width - RowPadding * 2f), rect.height - 4f);
+        if (Widgets.ButtonText(buttonRect, shown))
+        {
+            var options = new List<FloatMenuOption>
+            {
+                new FloatMenuOption("RimLLM_CompatModelDefault".Translate(), () => SavePin(row.Target, null))
+            };
+            foreach (string entry in Settings.FallbackChain)
+            {
+                string captured = entry;
+                options.Add(new FloatMenuOption(entry, () => SavePin(row.Target, captured)));
+            }
+            Find.WindowStack.Add(new FloatMenu(options));
+        }
+        TooltipHandler.TipRegion(buttonRect, "RimLLM_CompatModelTip".Translate());
+    }
+
+    /// <summary>儲存專用模型，並重新寫入該 Mod 的設定，讓它設定頁顯示的模型名跟著更新。</summary>
+    private static void SavePin(RimLLMCompatTarget target, string entry)
+    {
+        Settings.SetCompatModelPin(target.ModId, entry);
+        Settings.Write();
+        target.OnTakeoverToggled(true);
     }
 
     public static void DrawCompatSettings(Listing_Standard listing)
@@ -121,6 +175,11 @@ public static class CompatSettingsDrawer
         {
             DrawRow(listing.GetRect(RimLLMUIStyle.StatusRowHeight), row);
             listing.Gap(RimLLMUIStyle.StatusRowGap);
+            if (ShowsModelPicker(row))
+            {
+                DrawModelPicker(listing.GetRect(ModelRowHeight), row);
+                listing.Gap(RimLLMUIStyle.StatusRowGap);
+            }
         }
     }
 

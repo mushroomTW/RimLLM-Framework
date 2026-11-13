@@ -26,7 +26,8 @@ internal static class RimLLMCompatBootstrap
         new DelegateCompatTarget(
             RimTalkCompatTarget.PackageId,
             "RimTalk",
-            h => RimTalkCompatPatch.Apply(h)),
+            h => RimTalkCompatPatch.Apply(h),
+            enabled => RimTalkCompatPatch.OnTakeoverToggled(enabled)),
         new DelegateCompatTarget(
             AutoTranslationCompatTarget.PackageId,
             "Auto Translation",
@@ -40,7 +41,8 @@ internal static class RimLLMCompatBootstrap
         new DelegateCompatTarget(
             ModCompatCheckerCompatTarget.PackageId,
             "Mod 兼容性檢查器 (Mod Compatibility Checker)",
-            h => ModCompatCheckerCompatPatch.Apply(h))
+            h => ModCompatCheckerCompatPatch.Apply(h),
+            enabled => ModCompatCheckerCompatPatch.OnTakeoverToggled(enabled))
     };
 
     static RimLLMCompatBootstrap()

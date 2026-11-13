@@ -1,241 +1,179 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
-using System.Threading;
-using System.Threading.Tasks;
 using HarmonyLib;
 using Verse;
 
 namespace RimLLM_Framework.Compat;
 
 /// <summary>
-/// 純 Harmony 接管簡中自動化 One（RimTranslation）的 AI 翻譯流量，框架本身不實作它的任何介面。
+/// 簡中自動化 One（RimTranslation）的接管設定：不攔截它的任何方法，只把它的 API 設定指向框架的本機端點。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 該 Mod 的 <c>ResponsesClient</c>、<c>ApiConfigurationStore</c> 等類別都是 <c>internal</c>，無法在編譯期引用，
-/// 因此整個相容層<b>只靠反射與 Harmony</b>：型別與方法以名稱解析，補丁方法的簽章只用 <see cref="object"/>、
-/// <see cref="Delegate"/> 與 BCL 型別。這同時滿足型別載入防線（見 <see cref="RimLLMCompatTarget"/>）——
-/// 目標 Mod 缺席或版本漂移時，框架 DLL 與 Debug 動作選單都不會因型別解析失敗而出事。
+/// One 的翻譯、評審、連線測試、能力測試全都是「對 Base URL 發 OpenAI 相容請求」，
+/// 所以只要 Base URL 指向 <see cref="LocalOpenAIEndpoint"/>，所有功能自然走框架，
+/// 不需要像過去那樣逐一攔截它的傳輸層、金鑰檢查與探測流程。
 /// </para>
 /// <para>
-/// 攔截點：
-/// <list type="number">
-/// <item><c>ResponsesClient.PostOnceCoreAsync</c>：翻譯、評審、健康探測等一切請求的唯一傳輸出口，Chat 與 Responses
-/// 兩種協議共用。接管開啟時把請求 JSON 交給 <see cref="ScAutoCompatClient"/>，再把合成的回應 JSON 餵給該 Mod 傳進來的
-/// 解析委派，由它自己產出內部結果。</item>
-/// <item><c>ApiConfigurationStore.IsLocalBaseUrl(string)</c>：該 Mod 在「無金鑰且非本機位址」時拒絕啟動隊列與儲存設定；
-/// 接管開啟時視為本機，玩家不必填假金鑰。（可選，缺席時只記警告。）</item>
-/// <item><c>ApiConnectionProbe.FetchModelsAsync</c> 與 <c>ThinkingParameterProbeService.RunAsync</c>：設定頁的「測試連線」與
-/// 思考參數探測原本直連端點，接管開啟時短路為成功。（可選。）攔的是它們的 <c>Task.Run</c> 薄殼而不是裡面的
-/// <c>ProbeCore</c>：在薄殼短路就不會排入背景工作。</item>
-/// </list>
-/// 不處理的：OpenAI Batch API 通道（<c>BatchClient</c>，非同步批次檔案上傳，無法對應 RimLLM 的請求模型）。
+/// 它的類別多為 <c>internal</c>，無法在編譯期引用，因此寫入設定只靠反射呼叫它自己的
+/// <c>ApiConfigurationStore.Save</c>（由它處理格式、檔案與金鑰檔），型別與方法以名稱解析。
+/// 金鑰不寫入（本機端點不驗證金鑰，真實金鑰不離開框架）。
 /// </para>
 /// </remarks>
 internal static class ScAutoCompatPatch
 {
     private const string Namespace = "RimTranslation.Api.";
 
-    /// <summary>接管開啟時，連線測試回報的模型清單。</summary>
-    private const string ProbeModelLabel = "RimLLM";
+    private const string DisplayName = "Simplified Chinese Automation: One";
 
-    private static ScAutoCompatClient _client;
-
-    private static readonly CompatTakeoverGate _gate = new(
-        ScAutoCompatTarget.PackageId,
-        "Simplified Chinese Automation: One takeover is on, but the framework is not ready; using the native path for now. Reason: {0}",
-        "Simplified Chinese Automation: One takeover is on, but RimLLM has no usable provider; using the native path for now. Reason: {0}");
-
-    /// <summary>以該 Mod 的 <c>ResponsesResult</c> 型別封閉過的 <see cref="ParseAsync{T}"/>；Apply 時建好。</summary>
-    private static MethodInfo _parseAsync;
-
-    private static Type _connectionResultType;
-    private static Type _thinkingResultType;
-
-    internal static ScAutoCompatClient Client
-    {
-        get => _client ?? (_client = new ScAutoCompatClient());
-        set => _client = value;
-    }
-
+    /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply(Harmony harmony)
     {
-        Apply(harmony, AccessTools.TypeByName);
+        _ = harmony;
+        CompatSeedUtil.RegisterEndpoint(ScAutoCompatTarget.PackageId, OpenAICompatClient.DefaultMaxOutputTokens);
+        OnTakeoverToggled(Mod.RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ScAutoCompatTarget.PackageId) == true);
     }
 
-    /// <summary>型別解析器可注入，供測試以假型別驗證補丁綁定而不需要真的安裝目標 Mod。</summary>
-    internal static void Apply(Harmony harmony, Func<string, Type> resolveType)
+    /// <summary>
+    /// 玩家切換接管開關或專用模型時呼叫：開啟時把端點位址寫進它的設定，關閉時移除框架寫入的位址。
+    /// </summary>
+    public static void OnTakeoverToggled(bool enabled)
     {
-        Type responsesClient = resolveType(Namespace + "ResponsesClient");
-        MethodInfo postOnce = (responsesClient == null ? null : AccessTools.Method(responsesClient, "PostOnceCoreAsync")) ?? throw new MissingMethodException("RimTranslation.Api.ResponsesClient.PostOnceCoreAsync was not found (Simplified Chinese Automation: One may have changed).");
-
-        Type resultType = (postOnce.ReturnType.IsGenericType ? postOnce.ReturnType.GetGenericArguments()[0] : null) ?? throw new MissingMethodException("ResponsesClient.PostOnceCoreAsync does not return Task<ResponsesResult> (Simplified Chinese Automation: One may have changed).");
-        Type store = resolveType(Namespace + "ApiConfigurationStore");
-        MethodInfo isLocal = store == null ? null : AccessTools.Method(store, "IsLocalBaseUrl", [typeof(string)]);
-
-        Type connectionProbe = resolveType(Namespace + "ApiConnectionProbe");
-        MethodInfo probeConnection = connectionProbe == null ? null : AccessTools.Method(connectionProbe, "FetchModelsAsync");
-
-        Type thinkingProbe = resolveType(Namespace + "ThinkingParameterProbeService");
-        MethodInfo probeThinking = thinkingProbe == null ? null : AccessTools.Method(thinkingProbe, "RunAsync");
-
-        _parseAsync = AccessTools.Method(typeof(ScAutoCompatPatch), nameof(ParseAsync)).MakeGenericMethod(resultType);
-        _connectionResultType = TaskResultType(probeConnection);
-        _thinkingResultType = TaskResultType(probeThinking);
-
-        harmony.Patch(postOnce, prefix: new HarmonyMethod(typeof(ScAutoCompatPatch), nameof(PostOnceCoreAsyncPrefix)));
-
-        PatchOptional(harmony, isLocal, "ApiConfigurationStore.IsLocalBaseUrl", nameof(IsLocalBaseUrlPostfix), postfix: true,
-            "A native key is still needed to start the translation queue with takeover on.");
-        PatchOptional(harmony, probeConnection, "ApiConnectionProbe.FetchModelsAsync", nameof(ConnectionProbePrefix), postfix: false,
-            "The settings page connection test will call the native endpoint directly.");
-        PatchOptional(harmony, probeThinking, "ThinkingParameterProbeService.RunAsync", nameof(ThinkingProbePrefix), postfix: false,
-            "The thinking parameter probe will call the native endpoint directly.");
-    }
-
-    /// <summary>方法回傳 <c>Task&lt;T&gt;</c> 時取出 T；否則回傳 null（該攔截視為不適用）。</summary>
-    private static Type TaskResultType(MethodInfo method)
-    {
-        return method != null && method.ReturnType.IsGenericType ? method.ReturnType.GetGenericArguments()[0] : null;
-    }
-
-    private static void PatchOptional(Harmony harmony, MethodInfo target, string label, string patchName, bool postfix, string consequence)
-    {
-        if (target == null)
+        if (enabled)
         {
-            Log.Warning($"[RimLLM] Compat: {label} was not found (Simplified Chinese Automation: One may have changed), so this patch is not applied. {consequence}");
-            return;
+            SeedNativeConfig();
         }
+        else
+        {
+            RevertNativeConfig();
+        }
+    }
 
-        var patch = new HarmonyMethod(typeof(ScAutoCompatPatch), patchName);
+    /// <summary>
+    /// 接管關閉時，若位址是框架寫的，改回它的預設位址（它不接受空位址）。
+    /// 框架不寫入金鑰，還原後它會以「未設定金鑰」明確報錯，而不是持續連到已不服務的本機端點。
+    /// </summary>
+    internal static void RevertNativeConfig()
+    {
         try
         {
-            harmony.Patch(target, prefix: postfix ? null : patch, postfix: postfix ? patch : null);
+            Type store = AccessTools.TypeByName(Namespace + "ApiConfigurationStore");
+            MethodInfo strictLoad = store == null ? null : AccessTools.Method(store, "Load", Type.EmptyTypes);
+            MethodInfo createDefault = store == null ? null : AccessTools.Method(store, "CreateDefault", Type.EmptyTypes);
+            MethodInfo save = strictLoad == null ? null : AccessTools.Method(store, "Save", [strictLoad.ReturnType, typeof(string), typeof(bool)]);
+            if (save == null || createDefault == null)
+            {
+                return;
+            }
+
+            object config;
+            try
+            {
+                config = strictLoad.Invoke(null, null);
+            }
+            catch (TargetInvocationException)
+            {
+                return; // 沒有設定檔：沒有需要還原的東西。
+            }
+
+            PropertyInfo baseUrl = config == null ? null : AccessTools.Property(config.GetType(), "BaseUrl");
+            if (baseUrl == null || !LocalOpenAIEndpoint.IsOwnBaseUrl(baseUrl.GetValue(config) as string, ScAutoCompatTarget.PackageId))
+            {
+                return;
+            }
+
+            baseUrl.SetValue(config, baseUrl.GetValue(createDefault.Invoke(null, null)));
+            save.Invoke(null, [config, string.Empty, false]);
+            RefreshNativeSettingsDraft(AccessTools.Method(store, "LoadForEditing"));
+            CompatSeedUtil.LogReverted(DisplayName);
         }
         catch (Exception ex)
         {
-            // 可選攔截失敗不能中止 Apply：此時必要的傳輸補丁已生效，中止只會留下「已接管卻顯示未掛載」的半掛載狀態。
-            Log.Warning($"[RimLLM] Compat: failed to patch {label}; skipped. {consequence} Reason: {ex.Message}");
+            CompatSeedUtil.WarnRevertFailed(DisplayName, ex);
         }
     }
 
     /// <summary>
-    /// 攔截傳輸出口：接管開啟時改由 RimLLM 處理。回傳 false 跳過原生；<paramref name="__result"/> 是以該 Mod 的
-    /// <c>ResponsesResult</c> 封閉過的 <c>Task</c>，所以宣告為 <see cref="object"/>。
+    /// 把它的設定改成指向本機端點。只改「沒有設定」或「框架自己先前寫的」位址（埠號每次啟動都不同，
+    /// 需要更新）；玩家自己填的真實位址一律不動。
     /// </summary>
-    /// <remarks>
-    /// 請求在這一層才轉成 RimLLM 呼叫，原生的 <c>PostWithRetriesAsync</c> 等重試、降級、解析邏輯都留在外面照常運作；
-    /// 取消則由 token 觸發 <see cref="OperationCanceledException"/> 往上傳，與原生行為一致。
-    /// </remarks>
-    public static bool PostOnceCoreAsyncPrefix(
-        string relativeUrl,
-        string payload,
-        Delegate parseJson,
-        CancellationToken cancellationToken,
-        ref object __result)
+    internal static void SeedNativeConfig()
     {
-        if (_parseAsync == null || !_gate.ShouldTakeOver())
-        {
-            return true;
-        }
-
-        bool chatProtocol = relativeUrl != null && relativeUrl.IndexOf("chat/completions", StringComparison.OrdinalIgnoreCase) >= 0;
-        Task<string> response = Client.CompleteAsync(payload, chatProtocol, cancellationToken);
-        __result = _parseAsync.Invoke(null, [response, parseJson, chatProtocol]);
-        return false;
-    }
-
-    /// <summary>
-    /// 把合成的回應 JSON 交給該 Mod 的解析委派。泛型參數是它的 <c>ResponsesResult</c>：以泛型而不是反射建構結果，
-    /// 型別不必出現在任何簽章，委派的回傳值再轉型即可。
-    /// </summary>
-    private static async Task<T> ParseAsync<T>(Task<string> response, Delegate parseJson, bool chatProtocol)
-    {
-        string json = await response.ConfigureAwait(false);
         try
         {
-            return (T)parseJson.DynamicInvoke(json);
+            string endpointUrl = LocalOpenAIEndpoint.GetBaseUrl(ScAutoCompatTarget.PackageId);
+            if (endpointUrl == null)
+            {
+                Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
+                return;
+            }
+
+            Type store = AccessTools.TypeByName(Namespace + "ApiConfigurationStore");
+            MethodInfo load = store == null ? null : AccessTools.Method(store, "LoadForEditing");
+            MethodInfo save = load == null ? null : AccessTools.Method(store, "Save", [load.ReturnType, typeof(string), typeof(bool)]);
+            if (save == null)
+            {
+                Log.Warning("[RimLLM] Compat: ApiConfigurationStore.Save was not found (Simplified Chinese Automation: One may have changed); its settings were not pre-filled.");
+                return;
+            }
+
+            // LoadForEditing 在沒有設定檔時會回傳帶 OpenAI 預設位址的草稿，不能拿它判斷「玩家設定過」；
+            // 改用會擲錯的 Load()：能載入且位址不是框架自己寫的，才代表玩家有自己的設定。
+            bool refreshingOwnConfig = false;
+            MethodInfo strictLoad = AccessTools.Method(store, "Load", Type.EmptyTypes);
+            if (strictLoad != null)
+            {
+                try
+                {
+                    object existing = strictLoad.Invoke(null, null);
+                    string existingUrl = existing == null ? null : (string)AccessTools.Property(existing.GetType(), "BaseUrl").GetValue(existing);
+                    if (!string.IsNullOrWhiteSpace(existingUrl) && !LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, ScAutoCompatTarget.PackageId))
+                    {
+                        CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
+                        return;
+                    }
+                    refreshingOwnConfig = !string.IsNullOrWhiteSpace(existingUrl);
+                }
+                catch (TargetInvocationException)
+                {
+                    // 設定檔不存在或無效：視為尚未設定。
+                }
+            }
+
+            object config = load.Invoke(null, null);
+            Type configType = config.GetType();
+
+            AccessTools.Property(configType, "BaseUrl").SetValue(config, endpointUrl);
+            // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
+            AccessTools.Property(configType, "Model").SetValue(config, CompatSeedUtil.ModelLabel(ScAutoCompatTarget.PackageId));
+            if (!refreshingOwnConfig)
+            {
+                // 首次寫入才給預設協議；之後只更新埠號與模型名，不覆蓋玩家在設定頁改過的協議。
+                AccessTools.Property(configType, "Protocol").SetValue(config, "responses");
+            }
+            save.Invoke(null, [config, string.Empty, false]);
+            RefreshNativeSettingsDraft(load);
         }
-        catch (TargetInvocationException ex)
+        catch (Exception ex)
         {
-            // 解析器對格式錯誤擲 FormatException；原生在同一位置把它轉成 parse 失敗結果，這裡比照辦理。
-            string failure = ScAutoCompatClient.BuildErrorJson("parse", ex.InnerException?.Message ?? ex.Message, chatProtocol);
-            return (T)parseJson.DynamicInvoke(failure);
+            CompatSeedUtil.WarnFailed(DisplayName, ex);
         }
     }
 
-    /// <summary>接管開啟時，無金鑰也視為可啟動：該 Mod 只在憑證閘門上用這個判斷。</summary>
-    public static void IsLocalBaseUrlPostfix(ref bool __result)
+    /// <summary>
+    /// One 在建構時就把設定檔讀進私有欄位 <c>apiDraft</c> 當作設定頁的草稿，之後不會重讀。
+    /// 我們晚於它才寫入檔案，所以要把草稿換成剛寫好的內容，設定頁才看得到。
+    /// </summary>
+    private static void RefreshNativeSettingsDraft(MethodInfo loadForEditing)
     {
-        if (!__result && _gate.ShouldTakeOver())
+        Type mod = AccessTools.TypeByName("RimTranslation.Core.RimTranslationMod");
+        object instance = mod == null ? null : AccessTools.Property(mod, "Instance")?.GetValue(null);
+        FieldInfo draft = mod == null ? null : AccessTools.Field(mod, "apiDraft");
+        if (instance == null || draft == null)
         {
-            __result = true;
-        }
-    }
-
-    /// <summary>接管開啟時，「測試連線」回報成功並列出 RimLLM 作為唯一模型。</summary>
-    public static bool ConnectionProbePrefix(ref object __result)
-    {
-        if (_connectionResultType == null || !_gate.ShouldTakeOver())
-        {
-            return true;
+            return;
         }
 
-        object result = Activator.CreateInstance(_connectionResultType, nonPublic: true);
-        AccessTools.Property(_connectionResultType, "Ok").SetValue(result, true, null);
-        AccessTools.Property(_connectionResultType, "Models").SetValue(result, new List<string> { ProbeModelLabel }, null);
-        __result = CompletedTask(_connectionResultType, result);
-        return false;
-    }
-
-    /// <summary>接管開啟時，思考參數探測直接判為通過：思考模式由 RimLLM 處理，探測原生端點沒有意義。</summary>
-    public static bool ThinkingProbePrefix(ref object __result)
-    {
-        if (_thinkingResultType == null || !_gate.ShouldTakeOver())
-        {
-            return true;
-        }
-
-        object result = Activator.CreateInstance(_thinkingResultType, nonPublic: true);
-        AccessTools.Field(_thinkingResultType, "Success").SetValue(result, true);
-        AccessTools.Field(_thinkingResultType, "Attempts").SetValue(result, new List<string>());
-        AccessTools.Field(_thinkingResultType, "Message").SetValue(result,
-            "已由 RimLLM 接管：思考模式由 RimLLM 處理，略過探測。(RimLLM takeover active: probe skipped.)");
-        __result = CompletedTask(_thinkingResultType, result);
-        return false;
-    }
-
-    /// <summary>建立以該 Mod 的結果型別封閉的已完成 <c>Task</c>。</summary>
-    private static object CompletedTask(Type resultType, object value)
-    {
-        return AccessTools.Method(typeof(ScAutoCompatPatch), nameof(FromResult)).MakeGenericMethod(resultType).Invoke(null, [value]);
-    }
-
-    private static Task<T> FromResult<T>(object value)
-    {
-        return Task.FromResult((T)value);
-    }
-
-    /// <summary>玩家在設定分頁切換接管開關時即時呼叫，讓判定快取失效。</summary>
-    public static void OnTakeoverToggled(bool enabled)
-    {
-        _ = enabled;
-        _gate.OnTakeoverToggled();
-    }
-
-    /// <summary>測試隔離用：還原判定快取、封閉過的方法與結果型別，避免測試間順序相依。</summary>
-    internal static void ResetForTests()
-    {
-        _gate.ResetCacheForTests();
-        _parseAsync = null;
-        _connectionResultType = null;
-        _thinkingResultType = null;
-    }
-
-    /// <summary>測試用：直接指定接管判定結果（繞過開關＋供應商檢查）。生產程式不得呼叫。</summary>
-    internal static void SetTakeOverCacheForTests(bool value)
-    {
-        _gate.SetTakeOverCacheForTests(value);
+        draft.SetValue(instance, loadForEditing.Invoke(null, null));
     }
 }

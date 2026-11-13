@@ -1,276 +1,193 @@
 using System;
+using System.Collections;
 using System.Reflection;
-using AutoTranslation;
-using AutoTranslation.Services;
-using AutoTranslation.Translators;
 using HarmonyLib;
-using RimLLM_Framework.Api;
 using RimLLM_Framework.Mod;
 using Verse;
 
 namespace RimLLM_Framework.Compat;
 
 /// <summary>
-/// 純 Harmony 接管 Auto Translation 的翻譯流量，框架本身不實作任何 Auto Translation 介面。
+/// Auto Translation 的接管設定：不攔截它的任何方法，只把它的「OpenAI 相容」翻譯器指向框架的本機端點，並選用該翻譯器。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 核心設計：
-/// <list type="number">
-/// <item>以 Auto Translation 原生具備批次與佔位符防護的 <see cref="Translator_OpenAICompatible"/> 建構哨兵實例（<c>_sentinel</c>）。</item>
-/// <item>攔截 <c>Translator_OpenAICompatible.GetResponseUnsafe</c>：當 <c>__instance</c> 為哨兵時改由
-/// <see cref="AutoTranslationCompatClient"/> 呼叫 RimLLM，其餘原生實例一律放行。</item>
-/// <item>攔截 <c>TranslatorManager.Translate</c>：在任何文本入列前以 <see cref="SyncCurrentTranslator"/>
-/// 確保當前翻譯器與接管開關狀態完全同步；若接管開啟且線程尚未啟動，則自動喚醒。</item>
-/// </list>
-/// </para>
-/// <para>
-/// 型別載入防線：Auto Translation 型別不得出現在類別繼承、介面或欄位型別（欄位刻意使用 <see cref="object"/>），
-/// 僅允許於方法本體與實例方法簽章中出現（靜態方法簽章也不行：Debug 動作選單會解析），保證在未安裝 Auto Translation 時框架 DLL 仍能安全載入。
-/// </para>
+/// 它的 <c>OpenAI Compatible (Local/Other)</c> 翻譯器本來就是「對一個 Base URL 發 OpenAI Chat Completions
+/// 請求、不需要金鑰」，正好是本機端點的形狀。全程以名稱反射存取，它缺席或改版時框架 DLL 仍能安全載入。
 /// </remarks>
 internal static class AutoTranslationCompatPatch
 {
-    private static AutoTranslationCompatClient _client;
+    private const string DisplayName = "Auto Translation";
 
-    /// <summary>哨兵 translator 實例，欄位型別刻意用 object 隔絕型別載入依賴。</summary>
-    internal static object Sentinel { get; set; }
+    /// <summary>該翻譯器在 Auto Translation 內的顯示名，同時是它的設定字典的鍵。</summary>
+    private const string TranslatorName = "OpenAI Compatible (Local/Other)";
 
-    /// <summary>在接管前或接管停用時的原生 translator 實例。</summary>
-    internal static object NativeTranslator { get; set; }
+    /// <summary>Auto Translation 的預設翻譯器（免金鑰），接管關閉時改回它。</summary>
+    private const string DefaultTranslatorName = "Google";
 
-    private static readonly CompatTakeoverGate _gate = new(
-        AutoTranslationCompatTarget.PackageId,
-        "Auto Translation takeover is on, but the framework is not ready; using the native path for now. Reason: {0}",
-        "Auto Translation takeover is on, but RimLLM has no usable provider; using the native path for now. Reason: {0}");
-
-    internal static AutoTranslationCompatClient Client
-    {
-        get => _client ?? (_client = new AutoTranslationCompatClient());
-        set => _client = value;
-    }
-
+    /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply(Harmony harmony)
     {
-        MethodInfo getResponse = AccessTools.Method(
-            typeof(Translator_OpenAICompatible),
-            "GetResponseUnsafe",
-            [typeof(string), typeof(string)]) ?? throw new MissingMethodException("AutoTranslation.Translators.Translator_OpenAICompatible.GetResponseUnsafe 不存在（Auto Translation 版本可能已變動）。");
-
-        MethodInfo translate = AccessTools.Method(
-            typeof(TranslatorManager),
-            nameof(TranslatorManager.Translate),
-            [typeof(string), typeof(string), typeof(string), typeof(Action<string>)]) ?? throw new MissingMethodException("AutoTranslation.Services.TranslatorManager.Translate 不存在（Auto Translation 版本可能已變動）。");
-
-        // 建構哨兵實例：啟用批次翻譯與 RimLLM 模型標識。
-        // 注意：RequestTimeoutSeconds 刻意不設——哨兵的 GetResponseUnsafe 全數被 Prefix 攔走，
-        // 從不走原生網路，RimLLM 側實際走框架自己的超時；在此設值只會誤導。
-        var sentinel = new Translator_OpenAICompatible
-        {
-            Settings = new TranslatorSettings_AIModel
-            {
-                UserSelectedModel = "RimLLM",
-                EnableBatchTranslation = true,
-                BatchSizeTokens = 2000
-            }
-        };
-        sentinel.Prepare();
-        sentinel.Ready = true;
-
-        Sentinel = sentinel;
-
-        harmony.Patch(getResponse, prefix: new HarmonyMethod(typeof(AutoTranslationCompatPatch), nameof(GetResponseUnsafePrefix)));
-        harmony.Patch(translate, prefix: new HarmonyMethod(typeof(AutoTranslationCompatPatch), nameof(TranslatePrefix)));
-
-        // 啟動階段初始同步：fail-soft，避免 Manager 尚未初始化時把半掛載留給 TryApply。
-        // Harmony Prefix 此時已掛上，Sync 失敗不應讓 Apply 跟著炸。
-        try
-        {
-            SyncCurrentTranslator();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning($"[RimLLM] Compat: skipped the initial Auto Translation sync; the first Translate call will retry. Reason: {ex.Message}");
-        }
+        _ = harmony;
+        CompatSeedUtil.RegisterEndpoint(AutoTranslationCompatTarget.PackageId, 2048, 0.3f);
+        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId) == true);
     }
 
     /// <summary>
-    /// 文本入列翻譯隊列時觸發，確保 CurrentTranslator 狀態最新。
-    /// fail-soft：啟動期 Manager 可能尚未初始化，不可把例外丟回遊戲執行緒。
-    /// </summary>
-    public static void TranslatePrefix()
-    {
-        try
-        {
-            SyncCurrentTranslator();
-        }
-        catch (Exception)
-        {
-            // EvaluateTakeOver 已把供應商缺席轉為 false 並節流警告；
-            // 這裡只吞掉啟動順序異常等非預期路徑，避免每次入列都拋。
-        }
-    }
-
-    /// <summary>
-    /// 攔截哨兵實例的底層連線請求，改走 RimLLM 管道。
-    /// </summary>
-    /// <remarks>
-    /// 離線退回注意：此時已在哨兵的 <c>TryTranslate</c> 內部（背景執行緒），無法把「當下這筆」
-    /// 改派給原生翻譯器——原生可能是 DeepL／Google 等異構型別，其 <c>GetResponseUnsafe</c>
-    /// 是受保護方法且回傳格式不同。因此退回策略是：後續入列經 <see cref="SyncCurrentTranslator"/>
-    /// 切回原生；當下這筆擲出例外，走 Auto Translation 的失敗路徑，
-    /// 而非放行哨兵原生網路（預設打 localhost，超時可達數十秒）。
-    /// 不能回傳原文當作成功：<c>TranslatorManager</c> 會把成功結果永久寫入翻譯快取，
-    /// 那些文字之後就再也不會被翻譯。
-    /// Client 拋出（瞬斷、限流）時同樣原樣上拋。
-    /// </remarks>
-    public static bool GetResponseUnsafePrefix(
-        object __instance,
-        string text,
-        string prompt,
-        ref string __result)
-    {
-        if (!ReferenceEquals(__instance, Sentinel))
-        {
-            return true;
-        }
-
-        if (!_gate.ShouldTakeOver())
-        {
-            try
-            {
-                SyncCurrentTranslator();
-            }
-            catch (Exception)
-            {
-                // 忽略同步例外，避免中斷調用流程
-            }
-            throw new RimLLMException(LLMError.ProviderOffline, "RimLLM has no usable provider for this Auto Translation request.");
-        }
-
-        try
-        {
-            __result = Client.GetResponseUnsafe(text, prompt);
-            return false;
-        }
-        catch (Exception)
-        {
-            // 下一筆起有機會切回原生；當下這筆由 Auto Translation 重試／回原文。
-            try
-            {
-                SyncCurrentTranslator();
-            }
-            catch (Exception)
-            {
-                // 忽略同步例外，避免中斷調用流程
-            }
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// 玩家在設定分頁切換接管開關時即時呼叫。
-    /// 只做快取失效再同步，讓 <see cref="ShouldTakeOver"/> 重走開關＋供應商判定，
-    /// 避免無供應商時開啟開關仍有約 1 秒誤接管空窗。
+    /// 玩家切換接管開關或專用模型時呼叫：開啟時把端點位址寫進它的設定，關閉時移除框架寫入的位址。
     /// </summary>
     public static void OnTakeoverToggled(bool enabled)
     {
-        _ = enabled;
-        _gate.OnTakeoverToggled();
-        try
+        if (enabled)
         {
-            SyncCurrentTranslator();
-        }
-        catch (Exception)
-        {
-            // 忽略同步例外，避免中斷調用流程
-        }
-    }
-
-    /// <summary>
-    /// 同步 Auto Translation 的 CurrentTranslator 實例與線程狀態。
-    /// </summary>
-    internal static void SyncCurrentTranslator()
-    {
-        if (Sentinel == null) return;
-
-        if (_gate.ShouldTakeOver())
-        {
-            ApplySentinelTranslator();
+            SeedNativeConfig();
         }
         else
         {
-            RestoreNativeTranslator();
+            RevertNativeConfig();
         }
-    }
-
-    private static void ApplySentinelTranslator()
-    {
-        if (!ReferenceEquals(TranslatorManager.CurrentTranslator, Sentinel))
-        {
-            NativeTranslator = TranslatorManager.CurrentTranslator;
-            TranslatorManager.CurrentTranslator = (ITranslator)Sentinel;
-            TranslatorManager.Ready = true;
-
-            if (!TranslatorManager.Working)
-            {
-                TranslatorManager.StartThread();
-            }
-        }
-    }
-
-    private static void RestoreNativeTranslator()
-    {
-        if (!ReferenceEquals(TranslatorManager.CurrentTranslator, Sentinel)) return;
-
-        // 還原優先用即時查詢：接管期間玩家可能在 Auto Translation 自家設定改了翻譯器，
-        // 快照此時已陳舊。快照僅作後備；兩者皆 null 則不寫入，避免 CurrentTranslator=null 停擺。
-        ITranslator live = null;
-        try
-        {
-            live = TranslatorManager.GetTranslator(global::AutoTranslation.Settings.TranslatorName);
-        }
-        catch (Exception)
-        {
-            // 忽略設定讀取錯誤，後續嘗試使用快照還原
-        }
-        ITranslator snap = NativeTranslator as ITranslator;
-        ITranslator native = (ITranslator)PickRestoreTranslator(live, snap);
-        if (native == null)
-        {
-            Log.Warning("[RimLLM] Compat: could not restore the native Auto Translation translator (live lookup and snapshot are both null); keeping the sentinel so translation does not stall.");
-            return;
-        }
-        TranslatorManager.CurrentTranslator = native;
-        TranslatorManager.Ready = native.Ready;
-    }
-
-    /// <summary>還原用翻譯器挑選：就緒者優先，其次即時值，最後快照。</summary>
-    private static object PickRestoreTranslator(object live, object snap)
-    {
-        if (live is ITranslator l && l.Ready) return live;
-        if (snap is ITranslator s && s.Ready) return snap;
-        return live ?? snap;
-    }
-
-    /// <summary>測試隔離用：還原判定快取與警告節流，避免測試間順序相依。</summary>
-    internal static void ResetCacheForTests()
-    {
-        _gate.ResetCacheForTests();
     }
 
     /// <summary>
-    /// 測試用：直接指定接管判定結果（繞過開關＋供應商檢查）。
-    /// 生產程式不得呼叫；離線降級分支請用 <c>false</c> 覆蓋。
+    /// 接管關閉時，若翻譯器位址是框架寫的，清空位址並改回它的預設翻譯器（Google），
+    /// 避免它繼續對已不服務的本機端點發請求。玩家自己的位址不動。
     /// </summary>
-    internal static void SetTakeOverCacheForTests(bool value)
+    internal static void RevertNativeConfig()
     {
-        _gate.SetTakeOverCacheForTests(value);
+        try
+        {
+            Type settingsType = AccessTools.TypeByName("AutoTranslation.Settings");
+            Type managerType = AccessTools.TypeByName("AutoTranslation.Services.TranslatorManager");
+            FieldInfo translatorNameField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorName");
+            FieldInfo translatorSettingsField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorSettings");
+            MethodInfo getTranslator = managerType == null ? null : AccessTools.Method(managerType, "GetTranslator", [typeof(string)]);
+            if (translatorNameField == null || translatorSettingsField == null || getTranslator == null)
+            {
+                return;
+            }
+
+            object translator = getTranslator.Invoke(null, [TranslatorName]);
+            object config = (translator == null ? null : CompatSeedUtil.GetMember(translator, "Settings"))
+                ?? ((IDictionary)translatorSettingsField.GetValue(null))[TranslatorName];
+            if (config == null
+                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(config, "UserCustomBaseURL") as string, AutoTranslationCompatTarget.PackageId))
+            {
+                return;
+            }
+
+            CompatSeedUtil.SetMember(config, "UserCustomBaseURL", string.Empty);
+            if (string.Equals(translatorNameField.GetValue(null) as string, TranslatorName, StringComparison.Ordinal))
+            {
+                translatorNameField.SetValue(null, DefaultTranslatorName);
+                object fallback = getTranslator.Invoke(null, [DefaultTranslatorName]);
+                if (fallback != null)
+                {
+                    AccessTools.Field(managerType, "CurrentTranslator")?.SetValue(null, fallback);
+                }
+            }
+
+            ((Verse.Mod)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
+            CompatSeedUtil.LogReverted(DisplayName);
+        }
+        catch (Exception ex)
+        {
+            CompatSeedUtil.WarnRevertFailed(DisplayName, ex);
+        }
     }
 
-    /// <summary>測試用：直接讀取當前判定結果（用於斷言驗證）。</summary>
-    internal static bool ShouldTakeOver()
+    /// <summary>
+    /// 把它的 OpenAI 相容翻譯器指向本機端點並選用。玩家自己填的位址（例如 Ollama）或已填金鑰的其他翻譯器不覆蓋；
+    /// 框架先前寫的位址只更新埠號與模型名，不改它選用的翻譯器。
+    /// </summary>
+    internal static void SeedNativeConfig()
     {
-        return _gate.ShouldTakeOver();
+        try
+        {
+            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(AutoTranslationCompatTarget.PackageId);
+            if (baseUrl == null)
+            {
+                Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
+                return;
+            }
+
+            Type settingsType = AccessTools.TypeByName("AutoTranslation.Settings");
+            Type managerType = AccessTools.TypeByName("AutoTranslation.Services.TranslatorManager");
+            Type aiSettingsType = AccessTools.TypeByName("AutoTranslation.Translators.TranslatorSettings_AIModel");
+            FieldInfo translatorNameField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorName");
+            FieldInfo translatorSettingsField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorSettings");
+            MethodInfo getTranslator = managerType == null ? null : AccessTools.Method(managerType, "GetTranslator", [typeof(string)]);
+            if (translatorNameField == null || translatorSettingsField == null || getTranslator == null || aiSettingsType == null)
+            {
+                Log.Warning($"[RimLLM] Compat: {DisplayName} settings were not found (the mod may have changed); its settings were not pre-filled.");
+                return;
+            }
+
+            object translator = getTranslator.Invoke(null, [TranslatorName]);
+            if (translator == null)
+            {
+                Log.Warning($"[RimLLM] Compat: the '{TranslatorName}' translator of {DisplayName} was not found; its settings were not pre-filled.");
+                return;
+            }
+
+            // 該翻譯器的設定：優先用翻譯器已持有的，否則從設定字典取或新建，並把兩邊接起來。
+            var dictionary = (IDictionary)translatorSettingsField.GetValue(null);
+            object config = CompatSeedUtil.GetMember(translator, "Settings") ?? dictionary[TranslatorName];
+            if (config == null || !aiSettingsType.IsInstanceOfType(config))
+            {
+                config = Activator.CreateInstance(aiSettingsType);
+            }
+
+            string existingUrl = CompatSeedUtil.GetMember(config, "UserCustomBaseURL") as string;
+            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, AutoTranslationCompatTarget.PackageId);
+            if (!string.IsNullOrWhiteSpace(existingUrl) && !ours)
+            {
+                CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
+                return;
+            }
+
+            // 玩家目前選用的是填了金鑰、已就緒的其他翻譯器（例如 DeepL），代表有自己的 API 設定，不切走。
+            if (!ours && UsesOwnKeyedTranslator(translatorNameField.GetValue(null) as string, getTranslator))
+            {
+                CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
+                return;
+            }
+
+            CompatSeedUtil.SetMember(config, "UserCustomBaseURL", baseUrl);
+            // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
+            CompatSeedUtil.SetMember(config, "UserSelectedModel", CompatSeedUtil.ModelLabel(AutoTranslationCompatTarget.PackageId));
+            if (!ours)
+            {
+                translatorNameField.SetValue(null, TranslatorName);
+            }
+            dictionary[TranslatorName] = config;
+            CompatSeedUtil.SetMember(translator, "Settings", config);
+
+            if (!ours)
+            {
+                // 讓翻譯器立即以新設定就緒並成為目前使用的翻譯器，不必重開遊戲。
+                AccessTools.Method(translator.GetType(), "Prepare", Type.EmptyTypes)?.Invoke(translator, null);
+                FieldInfo current = AccessTools.Field(managerType, "CurrentTranslator");
+                current?.SetValue(null, translator);
+            }
+
+            ((Verse.Mod)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
+        }
+        catch (Exception ex)
+        {
+            CompatSeedUtil.WarnFailed(DisplayName, ex);
+        }
+    }
+
+    /// <summary>目前選用的翻譯器是否為需要金鑰且已就緒（玩家已填金鑰）的其他翻譯器。</summary>
+    private static bool UsesOwnKeyedTranslator(string currentName, MethodInfo getTranslator)
+    {
+        if (string.IsNullOrEmpty(currentName) || string.Equals(currentName, TranslatorName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        object current = getTranslator.Invoke(null, [currentName]);
+        return current != null
+            && CompatSeedUtil.GetMember(current, "RequiresKey") is true
+            && CompatSeedUtil.GetMember(current, "Ready") is true;
     }
 }

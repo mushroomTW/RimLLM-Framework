@@ -31,7 +31,7 @@ public class CompatScAutoTests
         string json = "{\"model\":\"m\",\"messages\":[{\"role\":\"system\",\"content\":\"sys\"},{\"role\":\"user\",\"content\":\"usr\"}],"
             + "\"temperature\":0.3,\"top_p\":0.9,\"max_tokens\":4096}";
 
-        ScAutoCompatClient.RequestSpec spec = ScAutoCompatClient.ParsePayload(json, chatProtocol: true);
+        OpenAICompatClient.RequestSpec spec = OpenAICompatClient.ParsePayload(json, chatProtocol: true);
 
         ClassicAssert.AreEqual(2, spec.Messages.Count);
         ClassicAssert.AreEqual(ChatRole.System, spec.Messages[0].Role);
@@ -45,7 +45,7 @@ public class CompatScAutoTests
     [Test]
     public void ParsePayload_Chat_MaxCompletionTokensIsHonoured()
     {
-        ScAutoCompatClient.RequestSpec spec = ScAutoCompatClient.ParsePayload(
+        OpenAICompatClient.RequestSpec spec = OpenAICompatClient.ParsePayload(
             "{\"messages\":[{\"role\":\"user\",\"content\":\"x\"}],\"max_completion_tokens\":777}", chatProtocol: true);
         ClassicAssert.AreEqual(777, spec.MaxOutputTokens);
     }
@@ -56,7 +56,7 @@ public class CompatScAutoTests
         string json = "{\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},"
             + "{\"type\":\"image_url\",\"image_url\":{\"url\":\"" + SampleImageDataUrl + "\"}}]}]}";
 
-        ScAutoCompatClient.RequestSpec spec = ScAutoCompatClient.ParsePayload(json, chatProtocol: true);
+        OpenAICompatClient.RequestSpec spec = OpenAICompatClient.ParsePayload(json, chatProtocol: true);
 
         IList<AIContent> contents = spec.Messages.Single().Contents;
         ClassicAssert.AreEqual(2, contents.Count);
@@ -69,7 +69,7 @@ public class CompatScAutoTests
     [Test]
     public void ParsePayload_Responses_StringInputWithInstructions()
     {
-        ScAutoCompatClient.RequestSpec spec = ScAutoCompatClient.ParsePayload(
+        OpenAICompatClient.RequestSpec spec = OpenAICompatClient.ParsePayload(
             "{\"instructions\":\"rules\",\"input\":\"translate me\",\"max_output_tokens\":1234}", chatProtocol: false);
 
         ClassicAssert.AreEqual(2, spec.Messages.Count);
@@ -87,7 +87,7 @@ public class CompatScAutoTests
             + "{\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"a\"},"
             + "{\"type\":\"input_image\",\"image_url\":\"" + SampleImageDataUrl + "\"}]}]}";
 
-        ScAutoCompatClient.RequestSpec spec = ScAutoCompatClient.ParsePayload(json, chatProtocol: false);
+        OpenAICompatClient.RequestSpec spec = OpenAICompatClient.ParsePayload(json, chatProtocol: false);
 
         ClassicAssert.AreEqual(2, spec.Messages.Count);
         ClassicAssert.AreEqual(ChatRole.System, spec.Messages[0].Role);
@@ -98,9 +98,9 @@ public class CompatScAutoTests
     [Test]
     public void ParsePayload_NoMessages_Throws()
     {
-        Assert.Throws<FormatException>(() => ScAutoCompatClient.ParsePayload("{\"model\":\"m\"}", chatProtocol: true));
-        Assert.Throws<FormatException>(() => ScAutoCompatClient.ParsePayload("[]", chatProtocol: true));
-        Assert.Catch<JsonException>(() => ScAutoCompatClient.ParsePayload("not json", chatProtocol: true));
+        Assert.Throws<FormatException>(() => OpenAICompatClient.ParsePayload("{\"model\":\"m\"}", chatProtocol: true));
+        Assert.Throws<FormatException>(() => OpenAICompatClient.ParsePayload("[]", chatProtocol: true));
+        Assert.Catch<JsonException>(() => OpenAICompatClient.ParsePayload("not json", chatProtocol: true));
     }
 
     // ---------- 回應合成 ----------
@@ -108,7 +108,7 @@ public class CompatScAutoTests
     [Test]
     public void BuildSuccessJson_Chat_HasChoicesMessageContent()
     {
-        using JsonDocument doc = JsonDocument.Parse(ScAutoCompatClient.BuildSuccessJson("譯文 \"q\"", chatProtocol: true));
+        using JsonDocument doc = JsonDocument.Parse(OpenAICompatClient.BuildSuccessJson("譯文 \"q\"", chatProtocol: true));
         JsonElement choice = doc.RootElement.GetProperty("choices")[0];
         ClassicAssert.AreEqual("譯文 \"q\"", choice.GetProperty("message").GetProperty("content").GetString());
         ClassicAssert.AreEqual("stop", choice.GetProperty("finish_reason").GetString());
@@ -117,7 +117,7 @@ public class CompatScAutoTests
     [Test]
     public void BuildSuccessJson_Responses_HasCompletedStatusAndOutputText()
     {
-        using JsonDocument doc = JsonDocument.Parse(ScAutoCompatClient.BuildSuccessJson("譯文", chatProtocol: false));
+        using JsonDocument doc = JsonDocument.Parse(OpenAICompatClient.BuildSuccessJson("譯文", chatProtocol: false));
         ClassicAssert.AreEqual("completed", doc.RootElement.GetProperty("status").GetString());
         JsonElement part = doc.RootElement.GetProperty("output")[0].GetProperty("content")[0];
         ClassicAssert.AreEqual("output_text", part.GetProperty("type").GetString());
@@ -127,8 +127,8 @@ public class CompatScAutoTests
     [Test]
     public void BuildErrorJson_Responses_AlsoMarksStatusFailed()
     {
-        using JsonDocument chat = JsonDocument.Parse(ScAutoCompatClient.BuildErrorJson("network", "boom", chatProtocol: true));
-        using JsonDocument responses = JsonDocument.Parse(ScAutoCompatClient.BuildErrorJson("network", "boom", chatProtocol: false));
+        using JsonDocument chat = JsonDocument.Parse(OpenAICompatClient.BuildErrorJson("network", "boom", chatProtocol: true));
+        using JsonDocument responses = JsonDocument.Parse(OpenAICompatClient.BuildErrorJson("network", "boom", chatProtocol: false));
         ClassicAssert.AreEqual("network", chat.RootElement.GetProperty("error").GetProperty("type").GetString());
         ClassicAssert.IsFalse(chat.RootElement.TryGetProperty("status", out _));
         ClassicAssert.AreEqual("failed", responses.RootElement.GetProperty("status").GetString());
@@ -143,7 +143,7 @@ public class CompatScAutoTests
     [TestCase(LLMError.InvalidResponse, "parse")]
     public void MapErrorType_TransientAndKnownKinds(LLMError error, string expected)
     {
-        ClassicAssert.AreEqual(expected, ScAutoCompatClient.MapErrorType(error));
+        ClassicAssert.AreEqual(expected, OpenAICompatClient.MapErrorType(error));
     }
 
     [TestCase(LLMError.InvalidKey)]
@@ -156,7 +156,7 @@ public class CompatScAutoTests
     {
         // 該 Mod 以子字串判斷暫時性錯誤（network／timeout／TooManyRequests／rate_limit／server／service_unavailable），
         // 永久性錯誤的名稱不能含這些字樣，否則它會白白重試。
-        string mapped = ScAutoCompatClient.MapErrorType(error);
+        string mapped = OpenAICompatClient.MapErrorType(error);
         foreach (string keyword in new[] { "network", "timeout", "toomanyrequests", "rate_limit", "server", "service_unavailable" })
         {
             StringAssert.DoesNotContain(keyword, mapped.ToLowerInvariant());
@@ -169,7 +169,7 @@ public class CompatScAutoTests
     public async Task CompleteAsync_Chat_ForwardsMessagesAndReturnsChatJson()
     {
         var fake = new CapturingChatClient { ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "譯")) };
-        var client = new ScAutoCompatClient(fake);
+        var client = new OpenAICompatClient(fake);
 
         string json = await client.CompleteAsync(
             "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":0.5,\"max_tokens\":99}", true, CancellationToken.None);
@@ -186,9 +186,9 @@ public class CompatScAutoTests
     {
         var fake = new CapturingChatClient { ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "x")) };
 
-        await new ScAutoCompatClient(fake).CompleteAsync("{\"input\":\"hi\"}", false, CancellationToken.None);
+        await new OpenAICompatClient(fake).CompleteAsync("{\"input\":\"hi\"}", false, CancellationToken.None);
 
-        ClassicAssert.AreEqual(ScAutoCompatClient.DefaultMaxOutputTokens, fake.ReceivedOptions.Single().MaxOutputTokens);
+        ClassicAssert.AreEqual(OpenAICompatClient.DefaultMaxOutputTokens, fake.ReceivedOptions.Single().MaxOutputTokens);
     }
 
     [Test]
@@ -196,7 +196,7 @@ public class CompatScAutoTests
     {
         var fake = new CapturingChatClient { ResponseException = new RimLLMException(LLMError.RateLimit, "slow down") };
 
-        string json = await new ScAutoCompatClient(fake).CompleteAsync(
+        string json = await new OpenAICompatClient(fake).CompleteAsync(
             "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", true, CancellationToken.None);
 
         using JsonDocument doc = JsonDocument.Parse(json);
@@ -210,7 +210,7 @@ public class CompatScAutoTests
     {
         var fake = new CapturingChatClient();
 
-        string json = await new ScAutoCompatClient(fake).CompleteAsync("garbage", true, CancellationToken.None);
+        string json = await new OpenAICompatClient(fake).CompleteAsync("garbage", true, CancellationToken.None);
 
         using (JsonDocument doc = JsonDocument.Parse(json))
         {
@@ -225,224 +225,40 @@ public class CompatScAutoTests
         var fake = new CapturingChatClient { ResponseException = new OperationCanceledException() };
         using var cts = new CancellationTokenSource();
         cts.Cancel();
-        await Assert.ThrowsAsync<OperationCanceledException>(() => new ScAutoCompatClient(fake).CompleteAsync(
+        await Assert.ThrowsAsync<OperationCanceledException>(() => new OpenAICompatClient(fake).CompleteAsync(
             "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", true, cts.Token));
     }
 
-    // ---------- Harmony 補丁綁定（假型別，結構同該 Mod 的真簽章） ----------
+    // ---------- 本機端點的輔助判斷 ----------
 
-    /// <summary>對應 RimTranslation.Api.ResponsesResult。</summary>
-    internal sealed class FakeResult
+    [TestCase("rate_limit", 429)]
+    [TestCase("quota_exceeded", 429)]
+    [TestCase("invalid_key", 401)]
+    [TestCase("model_not_found", 404)]
+    [TestCase("timeout", 504)]
+    [TestCase("network", 502)]
+    [TestCase("server", 502)]
+    [TestCase("parse", 400)]
+    public void Endpoint_ErrorJson_MapsToHttpStatus(string errorType, int expected)
     {
-        public string Status;
-        public string OutputText;
-        public string ErrorType;
-    }
-
-    /// <summary>對應 ResponsesClient；PostOnceCoreAsync 是私有 async 方法，簽章逐字對應。</summary>
-    internal sealed class FakeResponsesClient
-    {
-        internal Task<FakeResult> PostOnceCoreAsync(
-            string relativeUrl,
-            string payload,
-            bool stream,
-            Func<string, FakeResult> parseJson,
-            Func<IReadOnlyList<string>, FakeResult> parseSse,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(new FakeResult { Status = "completed", OutputText = "native" });
-        }
-    }
-
-    internal static class FakeStore
-    {
-        internal static bool IsLocalBaseUrl(string baseUrl) => false;
-    }
-
-    internal sealed class FakeConnectionResult
-    {
-        public bool Ok { get; set; }
-        public IReadOnlyList<string> Models { get; set; }
-    }
-
-    /// <summary>對應 ApiConnectionProbe；攔的是 <c>Task.Run</c> 薄殼 FetchModelsAsync，而非內部的 ProbeCore。</summary>
-    internal static class FakeConnectionProbe
-    {
-        public static Task<FakeConnectionResult> FetchModelsAsync(CancellationToken token)
-            => Task.FromResult(new FakeConnectionResult { Ok = false });
-    }
-
-#pragma warning disable CS0649 // 欄位由補丁以反射寫入，與該 Mod 真實的 ThinkingProbeResult（公開欄位）一致
-    internal sealed class FakeThinkingResult
-    {
-        public bool Success;
-        public string Message;
-        public List<string> Attempts;
-    }
-#pragma warning restore CS0649
-
-    internal static class FakeThinkingProbe
-    {
-        public static Task<FakeThinkingResult> RunAsync(object config, string apiKey, object handler, CancellationToken token)
-            => Task.FromResult(new FakeThinkingResult { Success = false });
-    }
-
-    /// <summary>模擬該 Mod 的兩個解析器：Chat 讀 choices[0].message.content，Responses 讀 output[0].content[0].text。</summary>
-    private static FakeResult ParseFake(string json)
-    {
-        using JsonDocument doc = JsonDocument.Parse(json);
-        JsonElement root = doc.RootElement;
-        var result = new FakeResult { Status = root.TryGetProperty("error", out _) ? "failed" : "completed" };
-        if (root.TryGetProperty("error", out JsonElement error))
-        {
-            result.ErrorType = error.GetProperty("type").GetString();
-        }
-        else if (root.TryGetProperty("choices", out JsonElement choices))
-        {
-            result.OutputText = choices[0].GetProperty("message").GetProperty("content").GetString();
-        }
-        else
-        {
-            result.OutputText = root.GetProperty("output")[0].GetProperty("content")[0].GetProperty("text").GetString();
-        }
-        return result;
-    }
-
-    private static Type ResolveFake(string name)
-    {
-        return name switch
-        {
-            "RimTranslation.Api.ResponsesClient" => typeof(FakeResponsesClient),
-            "RimTranslation.Api.ApiConfigurationStore" => typeof(FakeStore),
-            "RimTranslation.Api.ApiConnectionProbe" => typeof(FakeConnectionProbe),
-            "RimTranslation.Api.ThinkingParameterProbeService" => typeof(FakeThinkingProbe),
-            _ => null,
-        };
-    }
-
-    private static Task<FakeResult> CallPostOnce(string relativeUrl, string payload)
-    {
-        return new FakeResponsesClient().PostOnceCoreAsync(relativeUrl, payload, false, ParseFake, lines => null, CancellationToken.None);
-    }
-
-    /// <summary>套上補丁、執行測試主體、一定還原；Harmony id 獨立，不干擾框架自己的補丁。</summary>
-    private static async Task WithPatches(Func<Task> body, CapturingChatClient chat)
-    {
-        const string id = "test.rimllm.scauto";
-        var harmony = new Harmony(id);
-        ScAutoCompatClient previousClient = ScAutoCompatPatch.Client;
-        try
-        {
-            ScAutoCompatPatch.Apply(harmony, ResolveFake);
-            ScAutoCompatPatch.Client = new ScAutoCompatClient(chat);
-            await body();
-        }
-        finally
-        {
-            harmony.UnpatchAll(id);
-            ScAutoCompatPatch.Client = previousClient;
-            ScAutoCompatPatch.ResetForTests();
-        }
+        string json = OpenAICompatClient.BuildErrorJson(errorType, "x", true);
+        ClassicAssert.IsTrue(LocalOpenAIEndpoint.TryGetErrorStatus(json, out int status));
+        ClassicAssert.AreEqual(expected, status);
     }
 
     [Test]
-    public async Task Patch_TakeoverOn_RoutesChatRequestThroughRimLLMAndParsesWithNativeParser()
+    public void Endpoint_SuccessJson_IsNotAnError()
     {
-        var chat = new CapturingChatClient { ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "routed")) };
-        await WithPatches(async () =>
-        {
-            ScAutoCompatPatch.SetTakeOverCacheForTests(true);
-
-            FakeResult result = await CallPostOnce("chat/completions", "{\"messages\":[{\"role\":\"user\",\"content\":\"q\"}]}");
-
-            ClassicAssert.AreEqual("routed", result.OutputText);
-            ClassicAssert.AreEqual("completed", result.Status);
-            ClassicAssert.AreEqual("q", chat.ReceivedMessages.Single().Single().Text);
-        }, chat);
+        ClassicAssert.IsFalse(LocalOpenAIEndpoint.TryGetErrorStatus(OpenAICompatClient.BuildSuccessJson("ok", true), out _));
     }
 
-    [Test]
-    public async Task Patch_TakeoverOn_RoutesResponsesRequest()
+    [TestCase("http://127.0.0.1:5123/m/ow1r.scauto/v1", true)]
+    [TestCase("http://127.0.0.1:1/v1", true)]
+    [TestCase("https://api.openai.com/v1", false)]
+    [TestCase("http://127.0.0.1:5123/m/other.mod/v1", false)]
+    [TestCase("", false)]
+    public void Endpoint_IsOwnBaseUrl_OnlyRecognisesFrameworkAddresses(string url, bool expected)
     {
-        var chat = new CapturingChatClient { ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "r")) };
-        await WithPatches(async () =>
-        {
-            ScAutoCompatPatch.SetTakeOverCacheForTests(true);
-
-            FakeResult result = await CallPostOnce("responses", "{\"input\":\"q\"}");
-
-            ClassicAssert.AreEqual("r", result.OutputText);
-        }, chat);
-    }
-
-    [Test]
-    public async Task Patch_TakeoverOn_ProviderFailureSurfacesAsFailedResultWithErrorType()
-    {
-        var chat = new CapturingChatClient { ResponseException = new RimLLMException(LLMError.NetworkError, "down") };
-        await WithPatches(async () =>
-        {
-            ScAutoCompatPatch.SetTakeOverCacheForTests(true);
-
-            FakeResult result = await CallPostOnce("chat/completions", "{\"messages\":[{\"role\":\"user\",\"content\":\"q\"}]}");
-
-            ClassicAssert.AreEqual("failed", result.Status);
-            ClassicAssert.AreEqual("network", result.ErrorType);
-        }, chat);
-    }
-
-    [Test]
-    public async Task Patch_TakeoverOff_RunsNativePath()
-    {
-        var chat = new CapturingChatClient();
-        await WithPatches(async () =>
-        {
-            ScAutoCompatPatch.SetTakeOverCacheForTests(false);
-
-            FakeResult result = await CallPostOnce("chat/completions", "{\"messages\":[{\"role\":\"user\",\"content\":\"q\"}]}");
-
-            ClassicAssert.AreEqual("native", result.OutputText);
-            ClassicAssert.IsEmpty(chat.ReceivedMessages);
-        }, chat);
-    }
-
-    [Test]
-    public async Task Patch_IsLocalBaseUrl_TreatedAsLocalOnlyWhileTakingOver()
-    {
-        await WithPatches(() =>
-        {
-            ScAutoCompatPatch.SetTakeOverCacheForTests(false);
-            ClassicAssert.IsFalse(FakeStore.IsLocalBaseUrl("https://api.example.com"));
-
-            ScAutoCompatPatch.SetTakeOverCacheForTests(true);
-            ClassicAssert.IsTrue(FakeStore.IsLocalBaseUrl("https://api.example.com"));
-            return Task.CompletedTask;
-        }, new CapturingChatClient());
-    }
-
-    [Test]
-    public async Task Patch_Probes_ShortCircuitToSuccessWhileTakingOver()
-    {
-        await WithPatches(() =>
-        {
-            ScAutoCompatPatch.SetTakeOverCacheForTests(false);
-            ClassicAssert.IsFalse(FakeConnectionProbe.FetchModelsAsync(CancellationToken.None).Result.Ok);
-            ClassicAssert.IsFalse(FakeThinkingProbe.RunAsync(null, null, null, CancellationToken.None).Result.Success);
-
-            ScAutoCompatPatch.SetTakeOverCacheForTests(true);
-            FakeConnectionResult connection = FakeConnectionProbe.FetchModelsAsync(CancellationToken.None).Result;
-            ClassicAssert.IsTrue(connection.Ok);
-            CollectionAssert.AreEqual(new[] { "RimLLM" }, connection.Models);
-            FakeThinkingResult thinking = FakeThinkingProbe.RunAsync(null, null, null, CancellationToken.None).Result;
-            ClassicAssert.IsTrue(thinking.Success);
-            ClassicAssert.IsEmpty(thinking.Attempts);
-            ClassicAssert.IsNotEmpty(thinking.Message);
-            return Task.CompletedTask;
-        }, new CapturingChatClient());
-    }
-
-    [Test]
-    public void Apply_MissingTransportMethod_Throws()
-    {
-        Assert.Throws<MissingMethodException>(() => ScAutoCompatPatch.Apply(new Harmony("test.rimllm.scauto.missing"), _ => null));
+        ClassicAssert.AreEqual(expected, LocalOpenAIEndpoint.IsOwnBaseUrl(url, "ow1r.scauto"));
     }
 }

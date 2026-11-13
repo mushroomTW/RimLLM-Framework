@@ -50,30 +50,5 @@
     <PackageReference Include="OpenAI" Version="2.15.0" />
     <PackageReference Include="System.ClientModel" Version="1.16.0" />
     <PackageReference Include="Kkdev92.Jev" Version="0.1.2-alpha" />
-
-    <!--
-      RimTalk 編譯期參考（Source/Libs/RimTalk/README.md）。Private=false 不出貨；
-      執行期綁定的是玩家實際安裝的 RimTalk.dll。
-    -->
-    <Reference Include="RimTalk">
-      <HintPath>..\Libs\RimTalk\RimTalk.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <!--
-      AutoTranslation 編譯期參考（Source/Libs/AutoTranslation/README.md）。Private=false 不出貨；
-      執行期綁定的是玩家實際安裝的 AutoTranslation.dll。
-    -->
-    <Reference Include="AutoTranslation">
-      <HintPath>..\Libs\AutoTranslation\AutoTranslation.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <!--
-      ModCompatChecker 編譯期參考（Source/Libs/ModCompatChecker/README.md）。Private=false 不出貨；
-      執行期綁定的是玩家實際安裝的 ModCompatChecker.dll。
-    -->
-    <Reference Include="ModCompatChecker">
-      <HintPath>..\Libs\ModCompatChecker\ModCompatChecker.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
   </ItemGroup>
 </Project>

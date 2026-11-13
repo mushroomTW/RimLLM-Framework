@@ -357,7 +357,7 @@ public sealed class ReviewFindingsRegressionTests
         const string json = "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]," +
                             "\"response_format\":{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"n\",\"strict\":true,\"schema\":{\"type\":\"object\"}}}}";
 
-        ScAutoCompatClient.RequestSpec spec = ScAutoCompatClient.ParsePayload(json, chatProtocol: true);
+        OpenAICompatClient.RequestSpec spec = OpenAICompatClient.ParsePayload(json, chatProtocol: true);
 
         var format = spec.ResponseFormat as ChatResponseFormatJson;
         ClassicAssert.AreEqual("object", format?.Schema?.GetProperty("type").GetString());
@@ -370,8 +370,8 @@ public sealed class ReviewFindingsRegressionTests
         const string schemaJson = "{\"input\":\"hi\",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"n\",\"schema\":{\"type\":\"object\"}}}}";
         const string objectJson = "{\"input\":\"hi\",\"text\":{\"format\":{\"type\":\"json_object\"}}}";
 
-        var schemaFormat = ScAutoCompatClient.ParsePayload(schemaJson, chatProtocol: false).ResponseFormat as ChatResponseFormatJson;
-        var objectFormat = ScAutoCompatClient.ParsePayload(objectJson, chatProtocol: false).ResponseFormat as ChatResponseFormatJson;
+        var schemaFormat = OpenAICompatClient.ParsePayload(schemaJson, chatProtocol: false).ResponseFormat as ChatResponseFormatJson;
+        var objectFormat = OpenAICompatClient.ParsePayload(objectJson, chatProtocol: false).ResponseFormat as ChatResponseFormatJson;
 
         ClassicAssert.IsNotNull(schemaFormat?.Schema);
         ClassicAssert.IsNotNull(objectFormat);

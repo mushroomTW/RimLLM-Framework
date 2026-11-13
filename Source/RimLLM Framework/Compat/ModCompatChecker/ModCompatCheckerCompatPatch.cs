@@ -1,166 +1,135 @@
 using System;
-using System.Globalization;
-using System.Reflection;
+using System.Collections;
 using HarmonyLib;
-using ModCompatChecker.AI;
-using ModCompatChecker.Core;
-using RimLLM_Framework.Api;
 using RimLLM_Framework.Mod;
 using Verse;
 
 namespace RimLLM_Framework.Compat;
 
 /// <summary>
-/// 純 Harmony 接管 Mod 兼容性檢查器的 AI 診斷流量，框架本身不實作任何 ModCompatChecker 介面。
+/// Mod 兼容性檢查器的接管設定：不攔截它的任何方法，只把它的「自訂模型」API 設定指向框架的本機端點。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 核心設計：
-/// <list type="number">
-/// <item>攔截 <c>AIService.CallAPIWithTimeout</c>（唯一的傳輸出口）：接管開啟且 RimLLM 有可用供應商時，
-/// 改由 <see cref="ModCompatCheckerCompatClient"/> 呼叫 RimLLM 並將結果填入 <c>__result</c>。</item>
-/// <item>攔截 <c>ModCompatSettings.IsAIConfigured</c>：接管開啟時強制回傳 <c>true</c>，
-/// 讓 UI 上的 AI 分析按鈕即使未填原生金鑰也能啟用。</item>
-/// <item>攔截 <c>ApiBalanceChecker.CheckBalance</c>：接管開啟時短路跳過，
-/// 避免未填原生金鑰時發出 401 錯誤。</item>
-/// </list>
-/// </para>
-/// <para>
-/// 型別載入防線：ModCompatChecker 型別不得出現在類別繼承、介面或欄位型別（欄位刻意使用 <see cref="object"/>），
-/// 僅允許於方法本體與實例方法簽章中出現（靜態方法簽章也不行：Debug 動作選單會解析），保證在未安裝 ModCompatChecker 時框架 DLL 仍能安全載入。
-/// </para>
+/// 它的 AI 診斷是對自訂端點發 OpenAI Chat Completions 請求，所以端點指向
+/// <see cref="LocalOpenAIEndpoint"/> 後，所有 AI 功能自然走框架。設定欄位都是 public，
+/// 但為了在它缺席或改版時框架 DLL 仍能安全載入，一律以名稱反射存取，不在編譯期引用它。
 /// </remarks>
 internal static class ModCompatCheckerCompatPatch
 {
-    private static ModCompatCheckerCompatClient _client;
+    private const string DisplayName = "Mod Compatibility Checker";
 
-    private static readonly CompatTakeoverGate _gate = new(
-        ModCompatCheckerCompatTarget.PackageId,
-        "ModCompatChecker takeover is on, but the framework is not ready; using the native path for now. Reason: {0}",
-        "ModCompatChecker takeover is on, but RimLLM has no usable provider; using the native path for now. Reason: {0}");
-
-    internal static ModCompatCheckerCompatClient Client
-    {
-        get => _client ?? (_client = new ModCompatCheckerCompatClient());
-        set => _client = value;
-    }
-
-    /// <summary>取消／逾時時回給 UI 的提示文字（不經原生，避免依賴原生 endpoint 設定）。</summary>
-    private const string CancelledText = "分析已取消。(Analysis cancelled.)";
-    private const string TimeoutTextFormat = "[RimLLM] 分析逾時（{0} 秒），未再嘗試原生路徑。(Timed out after {0}s via RimLLM; native path skipped.)";
-
+    /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply(Harmony harmony)
     {
-        // 1. 攔截 AIService.CallAPIWithTimeout——所有 AI 請求的唯一出口
-        MethodInfo callAPI = AccessTools.Method(
-            typeof(AIService),
-            nameof(AIService.CallAPIWithTimeout)) ?? throw new MissingMethodException("ModCompatChecker.AI.AIService.CallAPIWithTimeout 不存在（ModCompatChecker 版本可能已變動）。");
-
-        // 2. 攔截 ModCompatSettings.IsAIConfigured——讓接管開啟時無需填原生金鑰
-        Type settingsType = AccessTools.TypeByName("ModCompatChecker.ModCompatSettings");
-        MethodInfo isConfigured = settingsType != null
-            ? AccessTools.Method(settingsType, "IsAIConfigured")
-            : null;
-
-        // 3. 攔截 ApiBalanceChecker.CheckBalance——接管開啟時短路跳過
-        MethodInfo checkBalance = AccessTools.Method(
-            typeof(ApiBalanceChecker),
-            nameof(ApiBalanceChecker.CheckBalance));
-
-        harmony.Patch(callAPI,
-            prefix: new HarmonyMethod(typeof(ModCompatCheckerCompatPatch), nameof(CallAPIWithTimeoutPrefix)));
-
-        if (isConfigured != null)
-        {
-            harmony.Patch(isConfigured,
-                postfix: new HarmonyMethod(typeof(ModCompatCheckerCompatPatch), nameof(IsAIConfiguredPostfix)));
-        }
-        else
-        {
-            Log.Warning("[RimLLM] Compat: ModCompatSettings.IsAIConfigured was not found (ModCompatChecker may have changed); the AI button override is not applied, so a native key is still needed even with takeover on.");
-        }
-
-        if (checkBalance != null)
-        {
-            harmony.Patch(checkBalance,
-                prefix: new HarmonyMethod(typeof(ModCompatCheckerCompatPatch), nameof(CheckBalancePrefix)));
-        }
-        else
-        {
-            Log.Warning("[RimLLM] Compat: ApiBalanceChecker.CheckBalance was not found (ModCompatChecker may have changed); the balance check is not skipped, so a 401 notice may appear with takeover on and no native key.");
-        }
+        _ = harmony;
+        CompatSeedUtil.RegisterEndpoint(ModCompatCheckerCompatTarget.PackageId, 1500, 0.3f);
+        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ModCompatCheckerCompatTarget.PackageId) == true);
     }
 
     /// <summary>
-    /// 攔截 AIService.CallAPIWithTimeout：接管開啟時由 RimLLM 處理並填入結果。
+    /// 玩家切換接管開關或專用模型時呼叫：開啟時把端點位址寫進它的設定，關閉時移除框架寫入的位址。
     /// </summary>
-    /// <remarks>
-    /// 例外分流：取消／逾時直接回提示文字並跳過原生——原生會再用同樣的
-    /// <c>timeoutSeconds</c> 跑一次，總等待時間翻倍；離線等其他失敗才退回原生。
-    /// </remarks>
-    public static bool CallAPIWithTimeoutPrefix(
-        string userMessage,
-        int timeoutSeconds,
-        ref bool cancelFlag,
-        ref string __result)
+    public static void OnTakeoverToggled(bool enabled)
     {
-        if (!_gate.ShouldTakeOver())
+        if (enabled)
         {
-            return true; // 放行原生
+            SeedNativeConfig();
         }
+        else
+        {
+            RevertNativeConfig();
+        }
+    }
 
+    /// <summary>它的預設端點（與其設定類別的欄位預設值一致）。</summary>
+    private const string DefaultEndpoint = "https://api.deepseek.com/v1/chat/completions";
+
+    /// <summary>
+    /// 接管關閉時，若端點是框架寫的，把端點、佔位金鑰與模型選擇改回它的預設值。
+    /// 框架只在玩家沒填金鑰時才寫入，所以還原不會丟掉玩家自己的設定。
+    /// </summary>
+    internal static void RevertNativeConfig()
+    {
         try
         {
-            __result = Client.CallAPI(userMessage, timeoutSeconds, ref cancelFlag);
-            return false; // 跳過原生
-        }
-        catch (Exception ex) when (ex is OperationCanceledException || ex is TimeoutException ||
-                                   ex is RimLLMException { Error: LLMError.Timeout })
-        {
-            __result = cancelFlag
-                ? CancelledText
-                : string.Format(CultureInfo.InvariantCulture, TimeoutTextFormat, timeoutSeconds);
-            return false;
+            object mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
+            object settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
+            if (settings == null
+                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(settings, "APIEndpoint") as string, ModCompatCheckerCompatTarget.PackageId))
+            {
+                return;
+            }
+
+            CompatSeedUtil.SetMember(settings, "APIEndpoint", DefaultEndpoint);
+            if (CompatSeedUtil.GetMember(settings, "APIKey") as string == CompatSeedUtil.PlaceholderApiKey)
+            {
+                CompatSeedUtil.SetMember(settings, "APIKey", string.Empty);
+            }
+            CompatSeedUtil.SetMember(settings, "CustomModelId", string.Empty);
+            CompatSeedUtil.SetMember(settings, "SelectedModelIndex", 0);
+            ((Verse.Mod)mod).WriteSettings();
+            CompatSeedUtil.LogReverted(DisplayName);
         }
         catch (Exception ex)
         {
-            // 呼叫失敗時退回原生路徑
-            _gate.WarnThrottled($"ModCompatChecker takeover request failed; falling back to the native path. Reason: {ex.Message}");
-            return true;
+            CompatSeedUtil.WarnRevertFailed(DisplayName, ex);
         }
     }
 
     /// <summary>
-    /// 接管開啟且 RimLLM 有可用供應商時，強制 IsAIConfigured 回傳 true。
+    /// 把它的設定改成指向本機端點。只改「從未設定（金鑰為空）」或「框架自己先前寫的」位址；
+    /// 玩家自己填的真實端點與金鑰一律不動。
     /// </summary>
-    public static void IsAIConfiguredPostfix(ref bool __result)
+    internal static void SeedNativeConfig()
     {
-        if (!__result && _gate.ShouldTakeOver())
+        try
         {
-            __result = true;
+            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(ModCompatCheckerCompatTarget.PackageId);
+            if (baseUrl == null)
+            {
+                Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
+                return;
+            }
+
+            object mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
+            object settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
+            if (settings == null)
+            {
+                return;
+            }
+
+            string endpoint = CompatSeedUtil.GetMember(settings, "APIEndpoint") as string;
+            string key = CompatSeedUtil.GetMember(settings, "APIKey") as string;
+            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(endpoint, ModCompatCheckerCompatTarget.PackageId);
+            if (!string.IsNullOrEmpty(key) && !ours)
+            {
+                CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
+                return;
+            }
+
+            CompatSeedUtil.SetMember(settings, "APIEndpoint", baseUrl + "/chat/completions");
+            // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
+            CompatSeedUtil.SetMember(settings, "CustomModelId", CompatSeedUtil.ModelLabel(ModCompatCheckerCompatTarget.PackageId));
+            if (!ours)
+            {
+                // 首次寫入才改金鑰與模型選擇；之後只更新埠號與模型名。
+                // 「自訂模型」的索引等於內建模型清單的長度（IsCustomModel 以此判定）。
+                Type modelConfig = AccessTools.TypeByName("ModCompatChecker.AI.ModelConfig");
+                object models = modelConfig == null ? null : AccessTools.Property(modelConfig, "Models")?.GetValue(null);
+                if (models is not ICollection collection)
+                {
+                    throw new MissingMemberException("ModCompatChecker.AI.ModelConfig", "Models");
+                }
+
+                CompatSeedUtil.SetMember(settings, "APIKey", CompatSeedUtil.PlaceholderApiKey);
+                CompatSeedUtil.SetMember(settings, "SelectedModelIndex", collection.Count);
+            }
+
+            ((Verse.Mod)mod).WriteSettings();
         }
-    }
-
-    /// <summary>
-    /// 接管開啟時短路 ApiBalanceChecker.CheckBalance，避免無原生金鑰時 401 錯誤。
-    /// </summary>
-    public static bool CheckBalancePrefix()
-    {
-        return !_gate.ShouldTakeOver();
-    }
-
-    /// <summary>測試隔離用：還原判定快取與警告節流，避免測試間順序相依。</summary>
-    internal static void ResetCacheForTests()
-    {
-        _gate.ResetCacheForTests();
-    }
-
-    /// <summary>
-    /// 測試用：直接指定接管判定結果（繞過開關＋供應商檢查）。
-    /// 生產程式不得呼叫。
-    /// </summary>
-    internal static void SetTakeOverCacheForTests(bool value)
-    {
-        _gate.SetTakeOverCacheForTests(value);
+        catch (Exception ex)
+        {
+            CompatSeedUtil.WarnFailed(DisplayName, ex);
+        }
     }
 }

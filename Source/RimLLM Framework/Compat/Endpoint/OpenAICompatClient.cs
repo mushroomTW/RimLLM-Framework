@@ -11,7 +11,7 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 namespace RimLLM_Framework.Compat;
 
 /// <summary>
-/// 以 RimLLM 的 <see cref="IChatClient"/> 承接簡中自動化 One 的 AI 翻譯與評審流量。
+/// 以 RimLLM 的 <see cref="IChatClient"/> 承接第三方 Mod 經本機端點送來的 OpenAI 相容請求（Chat Completions 或 Responses）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,24 +24,33 @@ namespace RimLLM_Framework.Compat;
 /// 提示工程與結構化輸出約束完全沿用該 Mod 的請求：訊息原樣轉送，回應格式也照請求轉成 MEAI 的 ResponseFormat。
 /// </para>
 /// </remarks>
-internal sealed class ScAutoCompatClient : CompatClientBase
+internal sealed class OpenAICompatClient : CompatClientBase
 {
-    /// <summary>請求未指定輸出上限時的預設值，對齊該 Mod 自家請求建構器的預設（8192）。</summary>
+    /// <summary>簡中自動化 One 請求未指定輸出上限時的預設值，對齊它自家請求建構器的預設（8192）。</summary>
     internal const int DefaultMaxOutputTokens = 8192;
 
     /// <summary>寫進合成回應的識別，僅用於除錯。</summary>
     private const string ResponseId = "rimllm-takeover";
 
+    private readonly int _defaultMaxOutputTokens;
+    private readonly float? _defaultTemperature;
+
     /// <summary>正式路徑：延遲到第一次請求才向 RimLLM 取 client，避免在攔截掛載階段觸碰 manager。</summary>
-    public ScAutoCompatClient()
-        : base(ScAutoCompatTarget.PackageId)
+    /// <param name="packageId">來源 Mod 的 packageId。</param>
+    /// <param name="defaultMaxOutputTokens">請求未指定輸出上限時的預設值。</param>
+    /// <param name="defaultTemperature">請求未指定溫度時的預設值；null 代表交給供應商預設。</param>
+    public OpenAICompatClient(string packageId, int defaultMaxOutputTokens, float? defaultTemperature)
+        : base(packageId)
     {
+        _defaultMaxOutputTokens = defaultMaxOutputTokens;
+        _defaultTemperature = defaultTemperature;
     }
 
     /// <summary>測試用：注入假的 <see cref="IChatClient"/>，驗證請求轉換與回應合成。</summary>
-    internal ScAutoCompatClient(IChatClient chat)
+    internal OpenAICompatClient(IChatClient chat)
         : base(ScAutoCompatTarget.PackageId, chat)
     {
+        _defaultMaxOutputTokens = DefaultMaxOutputTokens;
     }
 
     /// <summary>
@@ -114,12 +123,17 @@ internal sealed class ScAutoCompatClient : CompatClientBase
     }
 
     /// <summary>
-    /// 預設關閉思考鏈：該 Mod 自家請求固定帶 <c>thinking: disabled</c> 與 <c>reasoning_effort: none</c>，
-    /// 批量翻譯講求速度與成本。輸出上限與取樣參數再由請求內容覆寫。
+    /// 預設關閉思考鏈：接管的 Mod 都是翻譯、對話、衝突分析這類講求速度與成本的批量呼叫。
+    /// 輸出上限與溫度用該 Mod 登錄時給的預設，請求內容有指定時再覆寫。
     /// </summary>
     protected override ChatOptions BuildOptions()
     {
-        return new RimLLMChatOptions { DisableReasoning = true, MaxOutputTokens = DefaultMaxOutputTokens };
+        return new RimLLMChatOptions
+        {
+            DisableReasoning = true,
+            MaxOutputTokens = _defaultMaxOutputTokens,
+            Temperature = _defaultTemperature
+        };
     }
 
     /// <summary>合成 OpenAI 風格的成功回應：Chat 為 <c>choices[0].message.content</c>，Responses 為 <c>output[].content[].output_text</c>。</summary>

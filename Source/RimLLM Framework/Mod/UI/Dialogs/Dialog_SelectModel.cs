@@ -12,6 +12,7 @@ public class Dialog_SelectModel : Window
 {
     private readonly List<string> _allModels;
     private readonly Action<string> _onSelected;
+    private const string SearchControlName = "RimLLM_ModelSearchField";
     private string _filter = "";
     private Vector2 _scrollPosition = Vector2.zero;
 
@@ -67,7 +68,15 @@ public class Dialog_SelectModel : Window
         bool hasFilter = !string.IsNullOrEmpty(_filter);
         float clearBtnWidth = hasFilter ? 30f : 0f;
         Rect filterRect = new Rect(75f, 40f, inRect.width - 75f - clearBtnWidth, 30f);
-        _filter = Widgets.TextField(filterRect, _filter);
+        // 命名控制項：輸入第一個字後清除鈕出現、清單內容改變，匿名控制項 ID 會偏移而丟失焦點。
+        GUI.SetNextControlName(SearchControlName);
+        string newFilter = Widgets.TextField(filterRect, _filter);
+        if (!string.Equals(newFilter, _filter, StringComparison.Ordinal))
+        {
+            _filter = newFilter;
+            // 文字已變動代表使用者正在輸入，維持焦點在搜尋框。
+            GUI.FocusControl(SearchControlName);
+        }
 
         if (hasFilter)
         {
@@ -83,7 +92,7 @@ public class Dialog_SelectModel : Window
     private void DrawQuickFilters(Rect inRect)
     {
         Rect quickFilterRow = new Rect(0f, 75f, inRect.width, 26f);
-        string[] presetFilters = ["", "gemini", "gpt", "claude", "deepseek", "qwen", "flash", "free"];
+        string[] presetFilters = ["", "google", "gpt", "claude", "deepseek", "qwen", "flash", "free"];
         float chipX = quickFilterRow.x;
         for (int p = 0; p < presetFilters.Length; p++)
         {

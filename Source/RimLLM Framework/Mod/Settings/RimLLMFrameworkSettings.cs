@@ -337,6 +337,12 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     /// </summary>
     private readonly Dictionary<string, bool> _compatTakeovers = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 相容 Mod 的專用模型登錄表（packageId → "供應商:模型" 條目）。
+    /// 沒有登錄的 Mod 不釘選，沿用預設備援鏈。
+    /// </summary>
+    private readonly Dictionary<string, string> _compatModelPins = new(StringComparer.Ordinal);
+
     private static Dictionary<string, TValue> BuildBuiltInMap<TValue>(Func<string, TValue> valueFactory)
     {
         var map = new Dictionary<string, TValue>();
@@ -396,6 +402,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         public Dictionary<string, string> EmbeddingEndpoints;
         public Dictionary<string, string> EncryptedEmbeddingApiKeys;
         public Dictionary<string, bool> CompatTakeovers;
+        public Dictionary<string, string> CompatModelPins;
         public string DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
         public Dictionary<string, string> DecisionModels;
         public Dictionary<string, string> DecisionEndpoints;
@@ -541,6 +548,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                     EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
                     EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys,
                     CompatTakeovers = new Dictionary<string, bool>(this._compatTakeovers),
+                    CompatModelPins = new Dictionary<string, string>(this._compatModelPins),
                     DecisionProvider = this.DecisionProvider,
                     DecisionModels = new Dictionary<string, string>(this._decisionModels),
                     DecisionEndpoints = new Dictionary<string, string>(this._decisionEndpoints),
@@ -793,6 +801,15 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                                 foreach (var kvp in dto.CompatTakeovers) _compatTakeovers[kvp.Key] = kvp.Value;
                             }
 
+                            _compatModelPins.Clear();
+                            if (dto.CompatModelPins != null)
+                            {
+                                foreach (var kvp in dto.CompatModelPins)
+                                {
+                                    if (!string.IsNullOrEmpty(kvp.Value)) _compatModelPins[kvp.Key] = kvp.Value;
+                                }
+                            }
+
                             _embeddingApiKeys.Clear();
                             _undecryptableEmbeddingApiKeys.Clear();
                             _undecryptableEmbeddingApiKey = null;
@@ -1022,6 +1039,26 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         lock (_settingsLock)
         {
             _compatTakeovers[modId] = enabled;
+        }
+    }
+
+    /// <summary>取得相容 Mod 專用的 "供應商:模型" 條目；未指定回傳 null。</summary>
+    public string GetCompatModelPin(string modId)
+    {
+        lock (_settingsLock)
+        {
+            return !string.IsNullOrEmpty(modId) && _compatModelPins.TryGetValue(modId, out string pin) ? pin : null;
+        }
+    }
+
+    /// <summary>設定相容 Mod 專用模型；傳入空值代表清除，回到預設備援鏈。</summary>
+    public void SetCompatModelPin(string modId, string entry)
+    {
+        if (string.IsNullOrEmpty(modId)) return;
+        lock (_settingsLock)
+        {
+            if (string.IsNullOrEmpty(entry)) _compatModelPins.Remove(modId);
+            else _compatModelPins[modId] = entry;
         }
     }
 
