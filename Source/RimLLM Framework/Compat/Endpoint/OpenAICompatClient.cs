@@ -24,7 +24,7 @@ namespace RimLLM_Framework.Compat;
 /// 提示工程與結構化輸出約束完全沿用該 Mod 的請求：訊息原樣轉送，回應格式也照請求轉成 MEAI 的 ResponseFormat。
 /// </para>
 /// </remarks>
-internal sealed class OpenAICompatClient : CompatClientBase
+internal sealed class OpenAICompatClient
 {
     /// <summary>簡中自動化 One 請求未指定輸出上限時的預設值，對齊它自家請求建構器的預設（8192）。</summary>
     internal const int DefaultMaxOutputTokens = 8192;
@@ -32,26 +32,32 @@ internal sealed class OpenAICompatClient : CompatClientBase
     /// <summary>寫進合成回應的識別，僅用於除錯。</summary>
     private const string ResponseId = "rimllm-takeover";
 
+    private readonly string _packageId;
     private readonly int _defaultMaxOutputTokens;
     private readonly float? _defaultTemperature;
+    private IChatClient _chat;
 
     /// <summary>正式路徑：延遲到第一次請求才向 RimLLM 取 client，避免在攔截掛載階段觸碰 manager。</summary>
     /// <param name="packageId">來源 Mod 的 packageId。</param>
     /// <param name="defaultMaxOutputTokens">請求未指定輸出上限時的預設值。</param>
     /// <param name="defaultTemperature">請求未指定溫度時的預設值；null 代表交給供應商預設。</param>
     public OpenAICompatClient(string packageId, int defaultMaxOutputTokens, float? defaultTemperature)
-        : base(packageId)
     {
+        _packageId = packageId;
         _defaultMaxOutputTokens = defaultMaxOutputTokens;
         _defaultTemperature = defaultTemperature;
     }
 
     /// <summary>測試用：注入假的 <see cref="IChatClient"/>，驗證請求轉換與回應合成。</summary>
     internal OpenAICompatClient(IChatClient chat)
-        : base(ScAutoCompatTarget.PackageId, chat)
     {
+        _packageId = ScAutoCompatPatch.PackageId;
+        _chat = chat;
         _defaultMaxOutputTokens = DefaultMaxOutputTokens;
     }
+
+    /// <summary>延遲到第一次請求才向 RimLLM 取 client，避免在攔截掛載階段觸碰 manager。</summary>
+    private IChatClient Chat => _chat ??= CreatePinnedChatClient(_packageId);
 
     /// <summary>
     /// 把該 Mod 的請求 JSON 交給 RimLLM，回傳同協議的回應 JSON（成功或錯誤）。
@@ -126,7 +132,7 @@ internal sealed class OpenAICompatClient : CompatClientBase
     /// 預設關閉思考鏈：接管的 Mod 都是翻譯、對話、衝突分析這類講求速度與成本的批量呼叫。
     /// 輸出上限與溫度用該 Mod 登錄時給的預設，請求內容有指定時再覆寫。
     /// </summary>
-    protected override ChatOptions BuildOptions()
+    private ChatOptions BuildOptions()
     {
         return new RimLLMChatOptions
         {
@@ -134,6 +140,54 @@ internal sealed class OpenAICompatClient : CompatClientBase
             MaxOutputTokens = _defaultMaxOutputTokens,
             Temperature = _defaultTemperature
         };
+    }
+
+    /// <summary>
+    /// 建立套用「相容 Mod 專用模型」的 client：玩家在模組相容頁為該 Mod 指定了模型時，
+    /// 該模型固定排在備援鏈首位（失敗仍會退回整條鏈）；未指定則完全沿用預設路由。
+    /// </summary>
+    private static IChatClient CreatePinnedChatClient(string packageId)
+    {
+        return new CompatPinnedChatClient(RimLLMProvider.CreateChatClient(packageId), packageId);
+    }
+
+    private sealed class CompatPinnedChatClient : DelegatingChatClient
+    {
+        private readonly string _packageId;
+
+        public CompatPinnedChatClient(IChatClient inner, string packageId)
+            : base(inner)
+        {
+            _packageId = packageId;
+        }
+
+        public override Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions options = null,
+            CancellationToken cancellationToken = default)
+        {
+            return base.GetResponseAsync(messages, ApplyPin(options), cancellationToken);
+        }
+
+        public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions options = null,
+            CancellationToken cancellationToken = default)
+        {
+            return base.GetStreamingResponseAsync(messages, ApplyPin(options), cancellationToken);
+        }
+
+        /// <summary>呼叫端已自行指定模型時尊重它；需要改寫時複製，不就地修改呼叫端的物件。</summary>
+        private ChatOptions ApplyPin(ChatOptions options)
+        {
+            if (!string.IsNullOrEmpty(options?.ModelId)) return options;
+            string pin = Mod.RimLLMFrameworkMod.Settings?.GetCompatModelPin(_packageId);
+            if (string.IsNullOrEmpty(pin)) return options;
+
+            ChatOptions clone = options?.Clone() ?? new ChatOptions();
+            clone.ModelId = pin;
+            return clone;
+        }
     }
 
     /// <summary>合成 OpenAI 風格的成功回應：Chat 為 <c>choices[0].message.content</c>，Responses 為 <c>output[].content[].output_text</c>。</summary>

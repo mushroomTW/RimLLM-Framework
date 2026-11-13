@@ -23,7 +23,7 @@ public class CompatModCompatCheckerTests
     [Test]
     public void ModCompatCheckerTarget_DeclaresStablePackageId()
     {
-        ClassicAssert.AreEqual("modcompatchecker.main", ModCompatCheckerCompatTarget.PackageId);
+        ClassicAssert.AreEqual("modcompatchecker.main", ModCompatCheckerCompatPatch.PackageId);
     }
 
     [Test]
@@ -31,11 +31,11 @@ public class CompatModCompatCheckerTests
     {
         var settings = new RimLLMFrameworkSettings();
 
-        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatTarget.PackageId));
-        settings.SetCompatTakeoverEnabled(ModCompatCheckerCompatTarget.PackageId, true);
-        ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatTarget.PackageId));
-        settings.SetCompatTakeoverEnabled(ModCompatCheckerCompatTarget.PackageId, false);
-        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatTarget.PackageId));
+        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId));
+        settings.SetCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId, true);
+        ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId));
+        settings.SetCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId, false);
+        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId));
     }
 
     /// <summary>

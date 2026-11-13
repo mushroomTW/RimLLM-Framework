@@ -16,6 +16,9 @@ namespace RimLLM_Framework.Compat;
 /// </remarks>
 internal static class AutoTranslationCompatPatch
 {
+    /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴）。</summary>
+    public const string PackageId = "seohyeon.autotranslation";
+
     private const string DisplayName = "Auto Translation";
 
     /// <summary>該翻譯器在 Auto Translation 內的顯示名，同時是它的設定字典的鍵。</summary>
@@ -25,11 +28,10 @@ internal static class AutoTranslationCompatPatch
     private const string DefaultTranslatorName = "Google";
 
     /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
-    public static void Apply(Harmony harmony)
+    public static void Apply()
     {
-        _ = harmony;
-        CompatSeedUtil.RegisterEndpoint(AutoTranslationCompatTarget.PackageId, 2048, 0.3f);
-        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId) == true);
+        CompatSeedUtil.RegisterEndpoint(AutoTranslationCompatPatch.PackageId, 2048, 0.3f);
+        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId) == true);
     }
 
     /// <summary>
@@ -69,7 +71,7 @@ internal static class AutoTranslationCompatPatch
             object config = (translator == null ? null : CompatSeedUtil.GetMember(translator, "Settings"))
                 ?? ((IDictionary)translatorSettingsField.GetValue(null))[TranslatorName];
             if (config == null
-                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(config, "UserCustomBaseURL") as string, AutoTranslationCompatTarget.PackageId))
+                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(config, "UserCustomBaseURL") as string, AutoTranslationCompatPatch.PackageId))
             {
                 return;
             }
@@ -102,7 +104,7 @@ internal static class AutoTranslationCompatPatch
     {
         try
         {
-            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(AutoTranslationCompatTarget.PackageId);
+            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(AutoTranslationCompatPatch.PackageId);
             if (baseUrl == null)
             {
                 Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
@@ -137,7 +139,7 @@ internal static class AutoTranslationCompatPatch
             }
 
             string existingUrl = CompatSeedUtil.GetMember(config, "UserCustomBaseURL") as string;
-            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, AutoTranslationCompatTarget.PackageId);
+            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, AutoTranslationCompatPatch.PackageId);
             if (!string.IsNullOrWhiteSpace(existingUrl) && !ours)
             {
                 CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
@@ -153,7 +155,7 @@ internal static class AutoTranslationCompatPatch
 
             CompatSeedUtil.SetMember(config, "UserCustomBaseURL", baseUrl);
             // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
-            CompatSeedUtil.SetMember(config, "UserSelectedModel", CompatSeedUtil.ModelLabel(AutoTranslationCompatTarget.PackageId));
+            CompatSeedUtil.SetMember(config, "UserSelectedModel", CompatSeedUtil.ModelLabel(AutoTranslationCompatPatch.PackageId));
             if (!ours)
             {
                 translatorNameField.SetValue(null, TranslatorName);

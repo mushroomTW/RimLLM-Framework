@@ -17,14 +17,16 @@ namespace RimLLM_Framework.Compat;
 /// </remarks>
 internal static class RimTalkCompatPatch
 {
+    /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴）。</summary>
+    public const string PackageId = "cj.rimtalk";
+
     private const string DisplayName = "RimTalk";
 
     /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
-    public static void Apply(Harmony harmony)
+    public static void Apply()
     {
-        _ = harmony;
-        CompatSeedUtil.RegisterEndpoint(RimTalkCompatTarget.PackageId, 2048);
-        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(RimTalkCompatTarget.PackageId) == true);
+        CompatSeedUtil.RegisterEndpoint(RimTalkCompatPatch.PackageId, 2048);
+        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(RimTalkCompatPatch.PackageId) == true);
     }
 
     /// <summary>
@@ -54,7 +56,7 @@ internal static class RimTalkCompatPatch
             object settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, null);
             object local = settings == null ? null : CompatSeedUtil.GetMember(settings, "LocalConfig");
             if (local == null
-                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(local, "BaseUrl") as string, RimTalkCompatTarget.PackageId))
+                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(local, "BaseUrl") as string, RimTalkCompatPatch.PackageId))
             {
                 return;
             }
@@ -80,7 +82,7 @@ internal static class RimTalkCompatPatch
     {
         try
         {
-            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(RimTalkCompatTarget.PackageId);
+            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(RimTalkCompatPatch.PackageId);
             if (baseUrl == null)
             {
                 Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
@@ -96,7 +98,7 @@ internal static class RimTalkCompatPatch
             }
 
             string existingUrl = CompatSeedUtil.GetMember(local, "BaseUrl") as string;
-            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, RimTalkCompatTarget.PackageId);
+            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, RimTalkCompatPatch.PackageId);
             if (!string.IsNullOrWhiteSpace(existingUrl) && !ours)
             {
                 CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
@@ -114,7 +116,7 @@ internal static class RimTalkCompatPatch
             // 它只在路徑是 "/" 或 "/v1" 時才自動補 chat/completions，其餘原樣使用，所以要給完整端點。
             CompatSeedUtil.SetMember(local, "BaseUrl", baseUrl + "/chat/completions");
             // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
-            CompatSeedUtil.SetMember(local, "CustomModelName", CompatSeedUtil.ModelLabel(RimTalkCompatTarget.PackageId));
+            CompatSeedUtil.SetMember(local, "CustomModelName", CompatSeedUtil.ModelLabel(RimTalkCompatPatch.PackageId));
             if (!ours)
             {
                 FieldInfo provider = AccessTools.Field(local.GetType(), "Provider")

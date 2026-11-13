@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using HarmonyLib;
 using Verse;
 
 namespace RimLLM_Framework.Compat;
@@ -13,64 +12,52 @@ namespace RimLLM_Framework.Compat;
 /// 其他 Mod 的組件不一定已載入；StaticConstructorOnStartup 保證所有 Mod 組件都已就緒，
 /// 載入順序因此不影響攔截是否成功。
 ///
-/// 新增一個目標 Mod 只需：在 Targets 清單加入一個 DelegateCompatTarget，指定 PackageId、顯示名稱與 ApplyPatch 委派。
+/// 新增一個目標 Mod 只需：在 Targets 清單加入一個 RimLLMCompatTarget，指定 PackageId、顯示名稱與 Apply 委派。
 /// </remarks>
 [StaticConstructorOnStartup]
 internal static class RimLLMCompatBootstrap
 {
-    internal const string HarmonyId = "GreenMushroom.RimLLMFramework";
-
     /// <summary>所有已知的接管目標（依設定頁顯示順序）。</summary>
     public static readonly IReadOnlyList<RimLLMCompatTarget> Targets = new RimLLMCompatTarget[]
     {
-        new DelegateCompatTarget(
-            RimTalkCompatTarget.PackageId,
+        new RimLLMCompatTarget(
+            RimTalkCompatPatch.PackageId,
             "RimTalk",
-            h => RimTalkCompatPatch.Apply(h),
-            enabled => RimTalkCompatPatch.OnTakeoverToggled(enabled)),
-        new DelegateCompatTarget(
-            AutoTranslationCompatTarget.PackageId,
+            RimTalkCompatPatch.Apply,
+            RimTalkCompatPatch.OnTakeoverToggled),
+        new RimLLMCompatTarget(
+            AutoTranslationCompatPatch.PackageId,
             "Auto Translation",
-            h => AutoTranslationCompatPatch.Apply(h),
-            enabled => AutoTranslationCompatPatch.OnTakeoverToggled(enabled)),
-        new DelegateCompatTarget(
-            ScAutoCompatTarget.PackageId,
+            AutoTranslationCompatPatch.Apply,
+            AutoTranslationCompatPatch.OnTakeoverToggled),
+        new RimLLMCompatTarget(
+            ScAutoCompatPatch.PackageId,
             "One 簡中自動化 (Simplified Chinese Automation: One)",
-            h => ScAutoCompatPatch.Apply(h),
-            enabled => ScAutoCompatPatch.OnTakeoverToggled(enabled)),
-        new DelegateCompatTarget(
-            ModCompatCheckerCompatTarget.PackageId,
+            ScAutoCompatPatch.Apply,
+            ScAutoCompatPatch.OnTakeoverToggled),
+        new RimLLMCompatTarget(
+            ModCompatCheckerCompatPatch.PackageId,
             "Mod 兼容性檢查器 (Mod Compatibility Checker)",
-            h => ModCompatCheckerCompatPatch.Apply(h),
-            enabled => ModCompatCheckerCompatPatch.OnTakeoverToggled(enabled))
+            ModCompatCheckerCompatPatch.Apply,
+            ModCompatCheckerCompatPatch.OnTakeoverToggled)
     };
 
     static RimLLMCompatBootstrap()
     {
         try
         {
-            ApplyAll();
+            foreach (RimLLMCompatTarget target in Targets)
+            {
+                if (target.IsInstalled)
+                {
+                    target.TryApply();
+                }
+            }
         }
         catch (Exception ex)
         {
-            // Harmony 本身缺席（brrainz.harmony 未啟用）或其他啟動期意外：相容層整體停用，主功能不受影響。
+            // 啟動期意外：相容層整體停用，主功能不受影響。
             Log.Warning($"[RimLLM] Compat layer failed to initialize; third-party takeover is disabled: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// 與靜態建構子分開，讓 HarmonyLib 型別的載入延後到這個方法被 JIT 時——
-    /// 0Harmony.dll 缺席時例外才會落在上面的 try/catch 裡，而不是在型別初始化階段炸掉。
-    /// </summary>
-    private static void ApplyAll()
-    {
-        var harmony = new Harmony(HarmonyId);
-        foreach (RimLLMCompatTarget target in Targets)
-        {
-            if (target.IsInstalled)
-            {
-                target.TryApply(harmony);
-            }
         }
     }
 }

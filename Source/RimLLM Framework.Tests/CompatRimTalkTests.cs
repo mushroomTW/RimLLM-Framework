@@ -28,16 +28,16 @@ public class CompatRimTalkTests
     {
         var settings = new RimLLMFrameworkSettings();
 
-        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(RimTalkCompatTarget.PackageId));
+        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(RimTalkCompatPatch.PackageId));
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled("never.registered"));
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(null));
 
-        settings.SetCompatTakeoverEnabled(RimTalkCompatTarget.PackageId, true);
-        ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(RimTalkCompatTarget.PackageId));
+        settings.SetCompatTakeoverEnabled(RimTalkCompatPatch.PackageId, true);
+        ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(RimTalkCompatPatch.PackageId));
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled("never.registered"));
 
-        settings.SetCompatTakeoverEnabled(RimTalkCompatTarget.PackageId, false);
-        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(RimTalkCompatTarget.PackageId));
+        settings.SetCompatTakeoverEnabled(RimTalkCompatPatch.PackageId, false);
+        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(RimTalkCompatPatch.PackageId));
 
         // 空鍵不得寫入也不得擲例外
         settings.SetCompatTakeoverEnabled(null, true);
@@ -112,6 +112,6 @@ public class CompatRimTalkTests
     [Test]
     public void RimTalkTarget_DeclaresStablePackageId()
     {
-        ClassicAssert.AreEqual("cj.rimtalk", RimTalkCompatTarget.PackageId);
+        ClassicAssert.AreEqual("cj.rimtalk", RimTalkCompatPatch.PackageId);
     }
 }

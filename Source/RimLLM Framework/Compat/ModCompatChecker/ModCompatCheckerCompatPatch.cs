@@ -16,14 +16,16 @@ namespace RimLLM_Framework.Compat;
 /// </remarks>
 internal static class ModCompatCheckerCompatPatch
 {
+    /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴）。</summary>
+    public const string PackageId = "modcompatchecker.main";
+
     private const string DisplayName = "Mod Compatibility Checker";
 
     /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
-    public static void Apply(Harmony harmony)
+    public static void Apply()
     {
-        _ = harmony;
-        CompatSeedUtil.RegisterEndpoint(ModCompatCheckerCompatTarget.PackageId, 1500, 0.3f);
-        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ModCompatCheckerCompatTarget.PackageId) == true);
+        CompatSeedUtil.RegisterEndpoint(ModCompatCheckerCompatPatch.PackageId, 1500, 0.3f);
+        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId) == true);
     }
 
     /// <summary>
@@ -55,7 +57,7 @@ internal static class ModCompatCheckerCompatPatch
             object mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
             object settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
             if (settings == null
-                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(settings, "APIEndpoint") as string, ModCompatCheckerCompatTarget.PackageId))
+                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(settings, "APIEndpoint") as string, ModCompatCheckerCompatPatch.PackageId))
             {
                 return;
             }
@@ -84,7 +86,7 @@ internal static class ModCompatCheckerCompatPatch
     {
         try
         {
-            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(ModCompatCheckerCompatTarget.PackageId);
+            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(ModCompatCheckerCompatPatch.PackageId);
             if (baseUrl == null)
             {
                 Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
@@ -100,7 +102,7 @@ internal static class ModCompatCheckerCompatPatch
 
             string endpoint = CompatSeedUtil.GetMember(settings, "APIEndpoint") as string;
             string key = CompatSeedUtil.GetMember(settings, "APIKey") as string;
-            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(endpoint, ModCompatCheckerCompatTarget.PackageId);
+            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(endpoint, ModCompatCheckerCompatPatch.PackageId);
             if (!string.IsNullOrEmpty(key) && !ours)
             {
                 CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
@@ -109,7 +111,7 @@ internal static class ModCompatCheckerCompatPatch
 
             CompatSeedUtil.SetMember(settings, "APIEndpoint", baseUrl + "/chat/completions");
             // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
-            CompatSeedUtil.SetMember(settings, "CustomModelId", CompatSeedUtil.ModelLabel(ModCompatCheckerCompatTarget.PackageId));
+            CompatSeedUtil.SetMember(settings, "CustomModelId", CompatSeedUtil.ModelLabel(ModCompatCheckerCompatPatch.PackageId));
             if (!ours)
             {
                 // 首次寫入才改金鑰與模型選擇；之後只更新埠號與模型名。

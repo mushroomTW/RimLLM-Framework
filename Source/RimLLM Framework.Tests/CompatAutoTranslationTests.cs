@@ -21,7 +21,7 @@ public class CompatAutoTranslationTests
     [Test]
     public void AutoTranslationTarget_DeclaresStablePackageId()
     {
-        ClassicAssert.AreEqual("seohyeon.autotranslation", AutoTranslationCompatTarget.PackageId);
+        ClassicAssert.AreEqual("seohyeon.autotranslation", AutoTranslationCompatPatch.PackageId);
     }
 
     [Test]
@@ -29,11 +29,11 @@ public class CompatAutoTranslationTests
     {
         var settings = new RimLLMFrameworkSettings();
 
-        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId));
-        settings.SetCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId, true);
-        ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId));
-        settings.SetCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId, false);
-        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(AutoTranslationCompatTarget.PackageId));
+        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId));
+        settings.SetCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId, true);
+        ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId));
+        settings.SetCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId, false);
+        ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId));
     }
 
     /// <summary>

@@ -1,5 +1,4 @@
 using System;
-using HarmonyLib;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Mod;
 using Verse;
@@ -14,7 +13,7 @@ namespace RimLLM_Framework.Compat;
 /// 先以 <see cref="IsInstalled"/> 偵測，只有已啟用的目標才呼叫 <see cref="TryApply"/> 套用 Harmony 攔截。
 /// 攔截本身不看設定開關——開關在 Prefix 內每次請求時讀取，因此玩家在設定頁切換不需重啟遊戲。
 ///
-/// 型別載入防護：<see cref="ApplyPatch"/> 與 Harmony patch 類別是唯一允許直接參考目標 Mod
+/// 型別載入防護：各目標的 <c>Apply</c> 方法是唯一允許直接參考目標 Mod
 /// 型別的地方，且只能在 <see cref="IsInstalled"/> 為 true 時被 JIT；目標 Mod 缺席時這些方法
 /// 從未被呼叫，就不會觸發 FileNotFoundException / TypeLoadException。
 /// <b>但這只保護方法本體與實例方法簽章。</b>目標 Mod 的型別不得出現在：(1) 基底類別或介面——RimWorld 載入
@@ -29,13 +28,24 @@ namespace RimLLM_Framework.Compat;
 /// （見 RimTalkCompatClient）。<c>CompatRimTalkTests.FrameworkAssembly_HasNoRimTalkTypesInBaseInterfacesOrFields</c>
 /// 與 <c>CompatAutoTranslationTests.FrameworkAssembly_HasNoCompatTargetTypesInMethodSignatures</c> 鎖住這四條。
 /// </remarks>
-internal abstract class RimLLMCompatTarget
+internal sealed class RimLLMCompatTarget
 {
+    private readonly Action _apply;
+    private readonly Action<bool> _onTakeoverToggled;
+
+    public RimLLMCompatTarget(string modId, string displayName, Action apply, Action<bool> onTakeoverToggled)
+    {
+        ModId = modId;
+        DisplayName = displayName;
+        _apply = apply;
+        _onTakeoverToggled = onTakeoverToggled;
+    }
+
     /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴），同時作為設定登錄表的鍵與遙測歸屬。</summary>
-    public abstract string ModId { get; }
+    public string ModId { get; }
 
     /// <summary>設定頁顯示用名稱。</summary>
-    public abstract string DisplayName { get; }
+    public string DisplayName { get; }
 
     /// <summary>目標 Mod 是否在目前的 Mod 清單中啟用。</summary>
     public bool IsInstalled => ModLister.GetActiveModWithIdentifier(ModId, ignorePostfix: true) != null;
@@ -52,17 +62,15 @@ internal abstract class RimLLMCompatTarget
     /// <summary>攔截套用失敗的原因（通常是目標 Mod 版本漂移導致找不到方法）。</summary>
     public string PatchError { get; private set; }
 
-    /// <summary>套用 Harmony 攔截。只會在 <see cref="IsInstalled"/> 為 true 時被呼叫。</summary>
-    protected abstract void ApplyPatch(Harmony harmony);
-
     /// <summary>
-    /// 套用攔截，失敗時 fail-soft：記警告、把原因存到 <see cref="PatchError"/>，不讓例外炸到遊戲啟動流程。
+    /// 套用接管設定，失敗時 fail-soft：記警告、把原因存到 <see cref="PatchError"/>，不讓例外炸到遊戲啟動流程。
+    /// 只會在 <see cref="IsInstalled"/> 為 true 時被呼叫。
     /// </summary>
-    public void TryApply(Harmony harmony)
+    public void TryApply()
     {
         try
         {
-            ApplyPatch(harmony);
+            _apply();
             IsPatched = true;
             PatchError = null;
             RimLLMLog.Message($"[RimLLM] Compat: hooked {DisplayName} ({ModId}).");
@@ -74,52 +82,12 @@ internal abstract class RimLLMCompatTarget
             Log.Warning($"[RimLLM] Compat: failed to patch {DisplayName} ({ModId}); that mod stays on its native path. Reason: {ex.Message}");
         }
     }
-    /// <summary>玩家在設定頁切換接管開關時觸發，供需要即時同步狀態的目標覆寫。</summary>
-    public virtual void OnTakeoverToggled(bool enabled)
-    {
-    }
 
-    /// <summary>判斷是否為框架未就緒（Manager 尚未初始化）的啟動順序異常，而非單純無可用供應商。</summary>
-    internal static bool IsNotReadyReason(string failureReason)
-    {
-        return !string.IsNullOrEmpty(failureReason) &&
-            (failureReason.IndexOf("InvalidOperationException", StringComparison.OrdinalIgnoreCase) >= 0 ||
-             failureReason.IndexOf("has not been initialized", StringComparison.OrdinalIgnoreCase) >= 0);
-    }
-}
-
-/// <summary>
-/// 委派式相容目標：以建構參數取代三個獨立子類。
-/// 這樣可以只用一個類別定義，透過參數化 PackageId、DisplayName 與 ApplyPatch 委派來覆蓋三個目標。
-/// </summary>
-internal sealed class DelegateCompatTarget : RimLLMCompatTarget
-{
-    private readonly string _modId;
-    private readonly string _displayName;
-    private readonly Action<Harmony> _applyPatch;
-    private readonly Action<bool> _onTakeoverToggled;
-
-    public DelegateCompatTarget(string modId, string displayName, Action<Harmony> applyPatch, Action<bool> onTakeoverToggled = null)
-    {
-        _modId = modId;
-        _displayName = displayName;
-        _applyPatch = applyPatch;
-        _onTakeoverToggled = onTakeoverToggled;
-    }
-
-    public override string ModId => _modId;
-
-    public override string DisplayName => _displayName;
-
-    protected override void ApplyPatch(Harmony harmony)
-    {
-        _applyPatch(harmony);
-    }
-
-    public override void OnTakeoverToggled(bool enabled)
+    /// <summary>玩家在設定頁切換接管開關時觸發，把狀態同步到目標 Mod 的設定。</summary>
+    public void OnTakeoverToggled(bool enabled)
     {
         // 委派會觸及引用目標 Mod 型別的方法，只有目標已安裝且攔截已掛上時才能呼叫（型別載入防線）。
         if (!IsInstalled || !IsPatched) return;
-        _onTakeoverToggled?.Invoke(enabled);
+        _onTakeoverToggled(enabled);
     }
 }

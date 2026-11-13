@@ -24,14 +24,16 @@ internal static class ScAutoCompatPatch
 {
     private const string Namespace = "RimTranslation.Api.";
 
+    /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴）。</summary>
+    public const string PackageId = "ow1r.scauto";
+
     private const string DisplayName = "Simplified Chinese Automation: One";
 
     /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
-    public static void Apply(Harmony harmony)
+    public static void Apply()
     {
-        _ = harmony;
-        CompatSeedUtil.RegisterEndpoint(ScAutoCompatTarget.PackageId, OpenAICompatClient.DefaultMaxOutputTokens);
-        OnTakeoverToggled(Mod.RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ScAutoCompatTarget.PackageId) == true);
+        CompatSeedUtil.RegisterEndpoint(ScAutoCompatPatch.PackageId, OpenAICompatClient.DefaultMaxOutputTokens);
+        OnTakeoverToggled(Mod.RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ScAutoCompatPatch.PackageId) == true);
     }
 
     /// <summary>
@@ -77,7 +79,7 @@ internal static class ScAutoCompatPatch
             }
 
             PropertyInfo baseUrl = config == null ? null : AccessTools.Property(config.GetType(), "BaseUrl");
-            if (baseUrl == null || !LocalOpenAIEndpoint.IsOwnBaseUrl(baseUrl.GetValue(config) as string, ScAutoCompatTarget.PackageId))
+            if (baseUrl == null || !LocalOpenAIEndpoint.IsOwnBaseUrl(baseUrl.GetValue(config) as string, ScAutoCompatPatch.PackageId))
             {
                 return;
             }
@@ -101,7 +103,7 @@ internal static class ScAutoCompatPatch
     {
         try
         {
-            string endpointUrl = LocalOpenAIEndpoint.GetBaseUrl(ScAutoCompatTarget.PackageId);
+            string endpointUrl = LocalOpenAIEndpoint.GetBaseUrl(ScAutoCompatPatch.PackageId);
             if (endpointUrl == null)
             {
                 Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
@@ -127,7 +129,7 @@ internal static class ScAutoCompatPatch
                 {
                     object existing = strictLoad.Invoke(null, null);
                     string existingUrl = existing == null ? null : (string)AccessTools.Property(existing.GetType(), "BaseUrl").GetValue(existing);
-                    if (!string.IsNullOrWhiteSpace(existingUrl) && !LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, ScAutoCompatTarget.PackageId))
+                    if (!string.IsNullOrWhiteSpace(existingUrl) && !LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, ScAutoCompatPatch.PackageId))
                     {
                         CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
                         return;
@@ -145,7 +147,7 @@ internal static class ScAutoCompatPatch
 
             AccessTools.Property(configType, "BaseUrl").SetValue(config, endpointUrl);
             // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
-            AccessTools.Property(configType, "Model").SetValue(config, CompatSeedUtil.ModelLabel(ScAutoCompatTarget.PackageId));
+            AccessTools.Property(configType, "Model").SetValue(config, CompatSeedUtil.ModelLabel(ScAutoCompatPatch.PackageId));
             if (!refreshingOwnConfig)
             {
                 // 首次寫入才給預設協議；之後只更新埠號與模型名，不覆蓋玩家在設定頁改過的協議。
