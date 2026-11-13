@@ -390,4 +390,9 @@
   <RimLLM_HomeResetAllBtn>Reset to defaults</RimLLM_HomeResetAllBtn>
   <RimLLM_HomeResetAllHint>Return every setting (keys, models, Embedding and decisions included) to a fresh install. Usage stats are kept.</RimLLM_HomeResetAllHint>
   <RimLLM_HomeResetAllConfirm>Reset all RimLLM settings to defaults?\n\nYour API keys, chosen models, Embedding and decision settings will be erased. This cannot be undone.</RimLLM_HomeResetAllConfirm>
+  <RimLLM_FallbackChainJoin>Add to fallback chain</RimLLM_FallbackChainJoin>
+  <RimLLM_FallbackChainPosition>#{0}</RimLLM_FallbackChainPosition>
+  <RimLLM_FallbackChainNeedsActive>Fallback chain: enable a provider first; it becomes the first link.</RimLLM_FallbackChainNeedsActive>
+  <RimLLM_FallbackChainEmpty>No fallback yet: {0} is the only provider. Select another provider and add it to the chain.</RimLLM_FallbackChainEmpty>
+  <RimLLM_FallbackChainSummary>Order tried: {0}. If one fails, the next one is used.</RimLLM_FallbackChainSummary>
 </LanguageData>

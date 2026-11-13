@@ -390,4 +390,9 @@
   <RimLLM_HomeResetAllBtn>恢復預設</RimLLM_HomeResetAllBtn>
   <RimLLM_HomeResetAllHint>把所有設定（含金鑰、模型、Embedding 與決策）恢復成剛安裝的狀態。用量統計不受影響。</RimLLM_HomeResetAllHint>
   <RimLLM_HomeResetAllConfirm>確定要把所有 RimLLM 設定恢復預設嗎？\n\n已填的金鑰、選好的模型、Embedding 與決策設定都會被清除，無法復原。</RimLLM_HomeResetAllConfirm>
+  <RimLLM_FallbackChainJoin>加入備援鏈</RimLLM_FallbackChainJoin>
+  <RimLLM_FallbackChainPosition>第 {0} 順位</RimLLM_FallbackChainPosition>
+  <RimLLM_FallbackChainNeedsActive>備援鏈：請先啟用一個供應商，它會成為第一環。</RimLLM_FallbackChainNeedsActive>
+  <RimLLM_FallbackChainEmpty>目前沒有備援：只有 {0}。選取其他供應商並加入備援鏈。</RimLLM_FallbackChainEmpty>
+  <RimLLM_FallbackChainSummary>嘗試順序：{0}。其中一個失敗時改用下一個。</RimLLM_FallbackChainSummary>
 </LanguageData>

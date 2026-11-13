@@ -65,7 +65,7 @@ public static class DecisionSettingsDrawer
         string providerId = ActiveDecisionSubTab;
         int modelCount = Settings.GetModelCount(RimLLMDecisionService.GetModelListKey(providerId));
         float modelSectionHeight = modelCount > 0 ? 280f : 70f;
-        return 460f + modelSectionHeight;
+        return 460f + ProviderFallbackChainControls.Height + modelSectionHeight;
     }
 
     public static void DrawMiddleDecisionMenu(Rect rect)
@@ -161,6 +161,12 @@ public static class DecisionSettingsDrawer
             Settings.DecisionProvider = isCurrentlyActive
                 ? providerId
                 : RimLLMDecisionProviderCatalog.Disabled;
+            if (isCurrentlyActive)
+            {
+                // 啟用中的供應商是鏈的第一環，不再同時留在備援清單裡。
+                List<string> chain = Settings.DecisionFallbackChain;
+                if (chain.Remove(providerId)) Settings.DecisionFallbackChain = chain;
+            }
             Settings.Write();
         }
 
@@ -178,6 +184,20 @@ public static class DecisionSettingsDrawer
             Widgets.Label(expRect, "RimLLM_DecisionExplanation".Translate());
             GUI.color = oldC;
         }
+        listing.Gap(6f);
+
+        ProviderFallbackChainControls.Draw(
+            listing,
+            providerId,
+            Settings.DecisionProvider,
+            RimLLMDecisionProviderCatalog.Disabled,
+            Settings.DecisionFallbackChain,
+            updated =>
+            {
+                Settings.DecisionFallbackChain = updated;
+                Settings.Write();
+            },
+            GetProviderDisplayName);
         listing.Gap(6f);
 
         DrawApiKeySection(listing, providerId);

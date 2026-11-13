@@ -223,6 +223,8 @@ IEmbeddingGenerator<string, Embedding<float>> generator =
 
 同一次 `GenerateAsync` 的多筆輸入會合成一次批次請求送出（為了上限較小的端點，每 100 筆分一批），不再每筆一次 HTTP 來回；供應商回報的輸入 token 也和對話請求一樣計入用量看板與每日 token 預算。
 
+玩家若排了 Embedding 備援供應商，備援會改變結果背後的模型。請連同向量一起存 `ModelId`：不同模型的向量彼此不能比較。
+
 ### 決策模型
 
 需要「有型別的答案」而不是文章時，框架提供決策服務，後端走 TypeSafe 的 System One 協議。計畫建一次就能重複使用：

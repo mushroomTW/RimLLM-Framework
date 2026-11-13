@@ -229,6 +229,43 @@ public interface IRimLLMSettings
         string.Equals(providerId, DecisionProvider, StringComparison.Ordinal) ? DecisionEndpoint : "";
 
     /// <summary>
+    /// Embedding 備援鏈：啟用中的供應商失敗時，依序改用的供應商識別碼（不含啟用中那一家）。
+    /// 每家備援供應商使用自己保存的模型、端點與金鑰。
+    /// </summary>
+    /// <remarks>預設實作回傳空清單，既有的外部設定實作者不必改動，行為等同沒有備援。</remarks>
+    List<string> EmbeddingFallbackChain => [];
+
+    /// <summary>
+    /// 決策備援鏈：啟用中的供應商失敗時，依序改用的供應商識別碼（不含啟用中那一家）。
+    /// </summary>
+    /// <inheritdoc cref="EmbeddingFallbackChain" path="/remarks"/>
+    List<string> DecisionFallbackChain => [];
+
+    /// <summary>
+    /// 獲取指定 Embedding 供應商保存的模型名稱（沒有預設模型，未設定時為空字串）。
+    /// </summary>
+    /// <remarks>
+    /// 預設實作只在 <paramref name="providerId"/> 指向啟用中的供應商時才回傳啟用中供應商的值，
+    /// 其他供應商一律回空字串，原因同 <see cref="GetDecisionApiKey"/>。
+    /// </remarks>
+    string GetEmbeddingModel(string providerId) =>
+        string.Equals(providerId, EmbeddingProvider, StringComparison.Ordinal) ? EmbeddingModel : "";
+
+    /// <summary>
+    /// 獲取指定 Embedding 供應商的端點。
+    /// </summary>
+    /// <inheritdoc cref="GetEmbeddingModel" path="/remarks"/>
+    string GetEmbeddingEndpoint(string providerId) =>
+        string.Equals(providerId, EmbeddingProvider, StringComparison.Ordinal) ? EmbeddingEndpoint : "";
+
+    /// <summary>
+    /// 獲取指定 Embedding 供應商保存的 API 金鑰。
+    /// </summary>
+    /// <inheritdoc cref="GetEmbeddingModel" path="/remarks"/>
+    string GetEmbeddingApiKey(string providerId) =>
+        string.Equals(providerId, EmbeddingProvider, StringComparison.Ordinal) ? EmbeddingApiKey : "";
+
+    /// <summary>
     /// 歷史請求日誌記錄清單。
     /// </summary>
     List<Manager.RimLLMManager.RequestLogEntry> RequestLogs { get; set; }

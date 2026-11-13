@@ -810,6 +810,23 @@ public class MockSettings : IRimLLMSettings, IDailyTokenBudget
     public string EmbeddingEndpoint { get; set; } = "";
     public string EmbeddingApiKey { get; set; } = "";
 
+    // 備援鏈與逐供應商的 Embedding 資料：與決策一樣，mock 要能表達「備援供應商有自己的模型與金鑰」。
+    public List<string> EmbeddingFallbackChain { get; set; } = [];
+    public List<string> DecisionFallbackChain { get; set; } = [];
+    public Dictionary<string, string> EmbeddingModels = [];
+    public Dictionary<string, string> EmbeddingEndpoints = [];
+    public Dictionary<string, string> EmbeddingApiKeys = [];
+
+    public string GetEmbeddingModel(string providerId) =>
+        EmbeddingModels.TryGetValue(providerId, out string model) ? model
+        : providerId == EmbeddingProvider ? EmbeddingModel : "";
+    public string GetEmbeddingEndpoint(string providerId) =>
+        EmbeddingEndpoints.TryGetValue(providerId, out string endpoint) ? endpoint
+        : providerId == EmbeddingProvider ? EmbeddingEndpoint : "";
+    public string GetEmbeddingApiKey(string providerId) =>
+        EmbeddingApiKeys.TryGetValue(providerId, out string key) ? key
+        : providerId == EmbeddingProvider ? EmbeddingApiKey : "";
+
     public string DecisionProvider { get; set; } = "Disabled";
     public string DecisionModel { get; set; } = "";
     public string DecisionEndpoint { get; set; } = "";

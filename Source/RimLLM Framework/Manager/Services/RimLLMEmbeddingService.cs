@@ -196,15 +196,102 @@ public class RimLLMEmbeddingService
 
         // 以 ApiTimeout 建立逾時來源，並與呼叫端的取消 Token 連動。逾時以整批為單位。
         float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
-        var batchContext = new EmbeddingBatchContext(model, provider, apiKey, endpoint, defaultEndpoint, timeoutSeconds, generationOptions?.Clone());
+        var primaryContext = new EmbeddingBatchContext(model, provider, apiKey, endpoint, defaultEndpoint, timeoutSeconds, generationOptions?.Clone());
+
+        // 備援鏈：主供應商失敗時整次請求改交給下一家重算。整次重來而不是逐批換家，
+        // 因為不同模型的向量落在不同語意空間，同一次呼叫的結果不能混著兩個模型。
+        List<string> candidates = ServiceProviderFailover.BuildCandidates(
+            provider, _settings.EmbeddingFallbackChain, DisabledProviderId);
+        // 先濾掉用不了的備援（模型不明、需要金鑰卻沒有、已不被支援），主供應商永遠在最前面：
+        // 打過去只會得到「尚未設定」的錯誤，還會蓋掉主供應商真正的失敗原因。
+        var contexts = new List<EmbeddingBatchContext> { primaryContext };
+        for (int i = 1; i < candidates.Count; i++)
+        {
+            try
+            {
+                EmbeddingBatchContext backup = CreateBackupContext(candidates[i], timeoutSeconds, generationOptions);
+                if (!string.IsNullOrWhiteSpace(backup.Model) &&
+                    (!string.IsNullOrEmpty(backup.ApiKey) || !RequiresApiKey(backup.Provider)))
+                {
+                    contexts.Add(backup);
+                }
+            }
+            catch (RimLLMException)
+            {
+                // 備援名單裡的供應商已不被支援（例如存檔來自較新的版本）：略過這一家。
+            }
+        }
+
+        return await ServiceProviderFailover.RunAsync(
+            contexts,
+            (context, isLast) => ComputeAllBatchesAsync(inputs, context, onBatchCompleted, !isLast, cancellationToken),
+            (context, ex) =>
+            {
+                if (Core.RimLLMLog.Enabled)
+                {
+                    Core.RimLLMLog.Warning(
+                        $"[RimLLM] Embedding provider '{context.Provider}' failed ({Core.RimLLMLog.SanitizeForLog(ex.Message, 200)}); trying the next fallback provider.");
+                }
+            }).ConfigureAwait(false);
+    }
+
+    /// <summary>本機供應商（LocalAPI_*）是玩家自架的服務，可以不填金鑰；雲端供應商少了金鑰就送不出去。</summary>
+    private static bool RequiresApiKey(string provider)
+    {
+        return !provider.StartsWith("LocalAPI_", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 備援供應商的連線參數：模型、端點與金鑰都取自該供應商自己保存的設定。
+    /// 呼叫端指定的模型名稱（<see cref="Microsoft.Extensions.AI.EmbeddingGenerationOptions.ModelId"/>）
+    /// 是針對主供應商的，備援供應商不認得，所以不沿用。
+    /// </summary>
+    private EmbeddingBatchContext CreateBackupContext(
+        string provider, float timeoutSeconds, Microsoft.Extensions.AI.EmbeddingGenerationOptions generationOptions)
+    {
+        string apiKey = string.IsNullOrEmpty(_settings.GetEmbeddingApiKey(provider))
+            ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
+            : _settings.GetEmbeddingApiKey(provider);
+        Microsoft.Extensions.AI.EmbeddingGenerationOptions options = generationOptions?.Clone();
+        if (options != null)
+        {
+            options.ModelId = null;
+        }
+        return new EmbeddingBatchContext(
+            _settings.GetEmbeddingModel(provider),
+            provider,
+            apiKey,
+            _settings.GetEmbeddingEndpoint(provider),
+            ResolveDefaultEndpoint(provider),
+            timeoutSeconds,
+            options);
+    }
+
+    /// <param name="deferUsage">
+    /// 後面還有備援可換時為 true：先把各批結果留著，整次成功才回報用量。
+    /// 失敗就整次作廢重算，已完成的批次若先回報，預算會被重複計入，用量也會記到沒產出結果的供應商。
+    /// </param>
+    private static async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeAllBatchesAsync(
+        List<string> inputs,
+        EmbeddingBatchContext context,
+        Action<IReadOnlyList<RimLLMEmbeddingResult>> onBatchCompleted,
+        bool deferUsage,
+        CancellationToken cancellationToken)
+    {
+        var results = new List<RimLLMEmbeddingResult>(inputs.Count);
+        var deferred = deferUsage ? new List<IReadOnlyList<RimLLMEmbeddingResult>>() : null;
         for (int offset = 0; offset < inputs.Count; offset += MaxEmbeddingBatchSize)
         {
             List<string> batch = inputs.GetRange(offset, Math.Min(MaxEmbeddingBatchSize, inputs.Count - offset));
-            var batchResults = await ComputeBatchAsync(batch, batchContext, cancellationToken).ConfigureAwait(false);
+            var batchResults = await ComputeBatchAsync(batch, context, cancellationToken).ConfigureAwait(false);
             results.AddRange(batchResults);
-            onBatchCompleted?.Invoke(batchResults);
+            if (deferred != null) deferred.Add(batchResults);
+            else onBatchCompleted?.Invoke(batchResults);
         }
-
+        if (deferred != null)
+        {
+            foreach (var batchResults in deferred) onBatchCompleted?.Invoke(batchResults);
+        }
         return results;
     }
 

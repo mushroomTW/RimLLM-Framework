@@ -464,9 +464,59 @@ public class RimLLMDecisionService
         string model = null,
         CancellationToken cancellationToken = default)
     {
-        return await EvaluateWithProviderDetailedAsync(
-                state, plan, _settings.DecisionProvider, model, cancellationToken)
-            .ConfigureAwait(false);
+        // 沒有指定供應商的請求才走備援鏈；呼叫端明確指定供應商的路徑
+        //（EvaluateWithProviderDetailedAsync）是它自己的選擇，不替它換家。
+        List<string> candidates = BuildFailoverCandidates();
+        if (candidates.Count <= 1)
+        {
+            return await EvaluateWithProviderDetailedAsync(
+                    state, plan, _settings.DecisionProvider, model, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return await ServiceProviderFailover.RunAsync(
+            candidates,
+            // 逐次覆寫的模型名稱是針對主供應商的，備援供應商用自己保存的模型。
+            (providerId, _) => EvaluateWithProviderDetailedAsync(
+                state, plan, providerId, providerId == candidates[0] ? model : null, cancellationToken),
+            (providerId, ex) =>
+            {
+                if (RimLLMLog.Enabled)
+                {
+                    RimLLMLog.Warning(
+                        $"[RimLLM] Decision provider '{providerId}' failed ({RimLLMLog.SanitizeForLog(ex.Message, 200)}); trying the next fallback provider.");
+                }
+            }).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 依序嘗試的決策供應商：啟用中的供應商加上備援鏈。備援供應商沒選模型、沒有金鑰（本機明文端點除外）
+    /// 或已不在目錄中就直接略過：打過去只會得到一個「尚未設定」的錯誤，還會蓋掉主供應商真正的失敗原因。
+    /// </summary>
+    private List<string> BuildFailoverCandidates()
+    {
+        List<string> all = ServiceProviderFailover.BuildCandidates(
+            _settings.DecisionProvider, _settings.DecisionFallbackChain, RimLLMDecisionProviderCatalog.Disabled);
+        var usable = new List<string>(all.Count);
+        for (int i = 0; i < all.Count; i++)
+        {
+            if (i == 0 || IsBackupUsable(all[i]))
+            {
+                usable.Add(all[i]);
+            }
+        }
+        return usable;
+    }
+
+    private bool IsBackupUsable(string providerId)
+    {
+        if (!RimLLMDecisionProviderCatalog.TryGet(providerId, out _) ||
+            string.IsNullOrWhiteSpace(ResolveModel(providerId, null)))
+        {
+            return false;
+        }
+        string endpoint = NormalizeBaseEndpoint(_settings.GetDecisionEndpoint(providerId), providerId);
+        return HasEffectiveApiKey(_settings, providerId) || DecisionEndpointRouting.IsPlaintext(endpoint);
     }
 
     /// <summary>

@@ -40,6 +40,38 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         }
     }
 
+    private List<string> _embeddingFallbackChain = [];
+    private List<string> _decisionFallbackChain = [];
+
+    /// <summary>Embedding 備援鏈（供應商識別碼，不含啟用中那一家）。取得的是複本，改完要整份設回來。</summary>
+    public List<string> EmbeddingFallbackChain
+    {
+        get { lock (_settingsLock) { return new List<string>(_embeddingFallbackChain); } }
+        set { lock (_settingsLock) { _embeddingFallbackChain = SanitizeProviderChain(value); } }
+    }
+
+    /// <summary>決策備援鏈（供應商識別碼，不含啟用中那一家）。取得的是複本，改完要整份設回來。</summary>
+    public List<string> DecisionFallbackChain
+    {
+        get { lock (_settingsLock) { return new List<string>(_decisionFallbackChain); } }
+        set { lock (_settingsLock) { _decisionFallbackChain = SanitizeProviderChain(value); } }
+    }
+
+    /// <summary>備援鏈去空去重；存檔裡手改出來的重複或空白條目不該讓同一家被嘗試兩次。</summary>
+    private static List<string> SanitizeProviderChain(IEnumerable<string> chain)
+    {
+        var result = new List<string>();
+        if (chain == null) return result;
+        foreach (string entry in chain)
+        {
+            if (!string.IsNullOrWhiteSpace(entry) && !result.Contains(entry))
+            {
+                result.Add(entry);
+            }
+        }
+        return result;
+    }
+
     // 可調節項 (全域配置)
     // 全域請求配置的預設值；屬性初始值與「恢復預設」按鈕共用，避免兩處各寫一份而漂移。
     internal const float DefaultApiTimeout = 30f;
@@ -368,6 +400,8 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         public Dictionary<string, string> DecisionModels;
         public Dictionary<string, string> DecisionEndpoints;
         public Dictionary<string, string> EncryptedDecisionApiKeys;
+        public List<string> EmbeddingFallbackChain;
+        public List<string> DecisionFallbackChain;
         // 舊版單一供應商欄位。目前仍寫出目前啟用供應商的值作為跨格式冗餘（供降級情境），
         // 僅在新存檔缺少字典欄位時用於載入遷移，載入時字典欄位一律優先；金鑰欄位一律 null，避免明文殘留。
         public string DecisionModel = "";
@@ -511,6 +545,8 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                     DecisionModels = new Dictionary<string, string>(this._decisionModels),
                     DecisionEndpoints = new Dictionary<string, string>(this._decisionEndpoints),
                     EncryptedDecisionApiKeys = encryptedDecisionKeys,
+                    EmbeddingFallbackChain = this.EmbeddingFallbackChain,
+                    DecisionFallbackChain = this.DecisionFallbackChain,
                     DecisionModel = this.GetDecisionModelRaw(this.DecisionProvider),
                     DecisionEndpoint = this.GetDecisionEndpointRaw(this.DecisionProvider),
                     DecisionApiKey = null,
@@ -678,6 +714,10 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                             {
                                 this._embeddingEndpoints[this.EmbeddingProvider] = dto.EmbeddingEndpoint;
                             }
+
+                            // 舊存檔沒有這兩個欄位：保留預設的空備援鏈。
+                            if (dto.EmbeddingFallbackChain != null) this.EmbeddingFallbackChain = dto.EmbeddingFallbackChain;
+                            if (dto.DecisionFallbackChain != null) this.DecisionFallbackChain = dto.DecisionFallbackChain;
 
                             string decisionProvider = SanitizeDecisionProvider(dto.DecisionProvider);
                             this.DecisionProvider = decisionProvider;

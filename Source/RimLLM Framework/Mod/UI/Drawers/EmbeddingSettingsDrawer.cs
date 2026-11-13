@@ -94,7 +94,7 @@ public static class EmbeddingSettingsDrawer
         int modelCount = Settings.GetModelCount(RimLLMEmbeddingService.GetModelListKey(providerId));
         float modelSectionHeight = modelCount > 0 ? 280f : 70f;
         float localDetectHeight = (providerId == ProviderOllama || providerId == ProviderLocalOpenAI) ? 40f : 0f;
-        return 460f + modelSectionHeight + localDetectHeight;
+        return 460f + ProviderFallbackChainControls.Height + modelSectionHeight + localDetectHeight;
     }
 
     /// <summary>
@@ -204,6 +204,12 @@ public static class EmbeddingSettingsDrawer
         if (isCurrentlyActive != oldActive)
         {
             Settings.EmbeddingProvider = isCurrentlyActive ? providerId : "Disabled";
+            if (isCurrentlyActive)
+            {
+                // 啟用中的供應商是鏈的第一環，不再同時留在備援清單裡。
+                List<string> chain = Settings.EmbeddingFallbackChain;
+                if (chain.Remove(providerId)) Settings.EmbeddingFallbackChain = chain;
+            }
             Settings.Write();
         }
 
@@ -222,6 +228,21 @@ public static class EmbeddingSettingsDrawer
             Widgets.Label(expRect, "RimLLM_EmbeddingExplanation".Translate());
             GUI.color = oldC;
         }
+        listing.Gap(6f);
+
+        // 2.5 備援鏈
+        ProviderFallbackChainControls.Draw(
+            listing,
+            providerId,
+            Settings.EmbeddingProvider,
+            "Disabled",
+            Settings.EmbeddingFallbackChain,
+            updated =>
+            {
+                Settings.EmbeddingFallbackChain = updated;
+                Settings.Write();
+            },
+            GetProviderDisplayName);
         listing.Gap(6f);
 
         // 3. API 金鑰設定

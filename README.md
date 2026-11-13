@@ -223,6 +223,8 @@ IEmbeddingGenerator<string, Embedding<float>> generator =
 
 `GenerateAsync`, `GeneratedEmbeddings<T>` and `Embedding<float>` behave as MEAI documents them. Each `Embedding<float>` carries the `ModelId` that actually produced it, and `GeneratedEmbeddings.Usage` carries the input token count when the provider reports one — OpenAI-compatible endpoints do, Gemini's public API does not (its `tokenCount` is Enterprise-only), so there `Usage` stays `null`. As with chat, `null` means the provider reported nothing, not that the call was free. The embedding provider defaults to **Disabled**; until the player picks one, `GenerateAsync` throws `RimLLMException`.
 
+If the player queues backup embedding providers, a failover changes the model behind a result. Store each vector's `ModelId`: vectors from different models are not comparable.
+
 The inputs of one `GenerateAsync` call go out as a single batch request (split into chunks of 100 for endpoints with smaller limits) rather than one HTTP round trip per string, and the reported input tokens are counted in the usage dashboard and the daily token budget exactly like chat calls.
 
 ### Decision models
