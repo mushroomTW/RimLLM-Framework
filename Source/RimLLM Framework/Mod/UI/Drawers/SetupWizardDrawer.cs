@@ -38,7 +38,7 @@ public static class SetupWizardDrawer
     /// <summary>第一步的大卡片：常見、好上手的六家。</summary>
     private static readonly Choice[] Featured =
     [
-        new() { Id = ProviderIds.Gemini, Name = "Google Gemini", DescKey = "RimLLM_SetupDesc_Gemini", TagKey = "RimLLM_SetupTag_Recommended", Url = "https://aistudio.google.com/apikey" },
+        new() { Id = ProviderIds.Gemini, Name = "Google Gemini", DescKey = "RimLLM_SetupDesc_Gemini", TagKey = "RimLLM_SetupTag_Recommended", Url = "https://aistudio.google.com/api-keys" },
         new() { Id = ProviderIds.DeepSeek, Name = "DeepSeek", DescKey = "RimLLM_SetupDesc_DeepSeek", TagKey = "RimLLM_SetupTag_Cheap", Url = "https://platform.deepseek.com/api_keys" },
         new() { Id = ProviderIds.OpenRouter, Name = "OpenRouter", DescKey = "RimLLM_SetupDesc_OpenRouter", TagKey = "RimLLM_SetupTag_FreeModels", Url = "https://openrouter.ai/keys" },
         new() { Id = ProviderIds.OpenAI, Name = "OpenAI (ChatGPT)", DescKey = "RimLLM_SetupDesc_OpenAI", Url = "https://platform.openai.com/api-keys" },
