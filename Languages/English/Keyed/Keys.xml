@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <LanguageData>
   <RimLLM_MainMenu><b>Main Menu</b></RimLLM_MainMenu>
-  <RimLLM_TabProviders>AI Providers</RimLLM_TabProviders>
+  <RimLLM_TabProviders>Language Models</RimLLM_TabProviders>
   <RimLLM_TabFallback>Model Order</RimLLM_TabFallback>
   <RimLLM_TabModels>Model Details</RimLLM_TabModels>
   <RimLLM_TabGlobalConfig>Timeouts</RimLLM_TabGlobalConfig>
@@ -160,7 +160,7 @@
   <RimLLM_ThinkingLabel>[Thinking...]</RimLLM_ThinkingLabel>
   <RimLLM_MsgApiKeyDecryptFailed>Could not decrypt the saved API key for {0} (the device may have changed). The original ciphertext is preserved; please re-enter the key.</RimLLM_MsgApiKeyDecryptFailed>
 
-  <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
+  <RimLLM_TabEmbedding>Embedding Models</RimLLM_TabEmbedding>
   <RimLLM_TitleEmbeddingSettings>Embedding Vector Settings - {0}</RimLLM_TitleEmbeddingSettings>
   <RimLLM_EmbeddingProvidersTitle>Embedding Providers</RimLLM_EmbeddingProvidersTitle>
   <RimLLM_EmbeddingExplanation>Embeddings turn text into numeric vectors for semantic search and clustering. Other mods can call them through the RimLLM SDK. If no provider is enabled, no vectors will be generated.</RimLLM_EmbeddingExplanation>
@@ -239,7 +239,7 @@
   <RimLLM_ConsumersCalled>Sent requests through RimLLM this session (modId: {0})</RimLLM_ConsumersCalled>
   <RimLLM_ConsumersNotCalled>Has not sent any request through RimLLM this session</RimLLM_ConsumersNotCalled>
   <RimLLM_ConsumersUnresolved>This modId does not match any active mod's packageId</RimLLM_ConsumersUnresolved>
-  <RimLLM_TabDecision>Decision</RimLLM_TabDecision>
+  <RimLLM_TabDecision>Decision Models</RimLLM_TabDecision>
   <RimLLM_TitleDecisionSettings>Decision Model Settings - {0}</RimLLM_TitleDecisionSettings>
   <RimLLM_DecisionProvidersTitle>Decision Providers</RimLLM_DecisionProvidersTitle>
   <RimLLM_EnableDecisionProvider>Enable this decision provider</RimLLM_EnableDecisionProvider>
@@ -325,8 +325,8 @@
   <RimLLM_SetupKeyHelp>A key is like a password the AI company gives you. To get one:\n1. Press the button below to open the {0} website in your browser\n2. Log in and press "Create API key"\n3. Press "Copy", come back and paste it in the box below (Ctrl+V)</RimLLM_SetupKeyHelp>
   <RimLLM_SetupOpenSiteBtn>Open the {0} website</RimLLM_SetupOpenSiteBtn>
   <RimLLM_SetupKeyFieldLabel>Paste your key here:</RimLLM_SetupKeyFieldLabel>
-  <RimLLM_SetupKeysAlreadySet>You already have {0} keys set. Just press "Next". (To change them, use the "AI Providers" page under Advanced.)</RimLLM_SetupKeysAlreadySet>
-  <RimLLM_SetupChinaHint>Mainland China account: open the "AI Providers" page under Advanced and tick "Use China-specific endpoint".</RimLLM_SetupChinaHint>
+  <RimLLM_SetupKeysAlreadySet>You already have {0} keys set. Just press "Next". (To change them, use the "Language Models" page under Advanced.)</RimLLM_SetupKeysAlreadySet>
+  <RimLLM_SetupChinaHint>Mainland China account: open the "Language Models" page under Advanced and tick "Use China-specific endpoint".</RimLLM_SetupChinaHint>
   <RimLLM_SetupNoKeyTitle>Step 2: Turn the AI on first</RimLLM_SetupNoKeyTitle>
   <RimLLM_SetupPlayer2Help>Open the Player2 app and log in first. No key needed, just press "Next".</RimLLM_SetupPlayer2Help>
   <RimLLM_SetupLocalHelp>Open Ollama or LM Studio first and load a model. We will find it automatically, nothing to fill in.</RimLLM_SetupLocalHelp>

@@ -353,7 +353,7 @@ public static class RimLLMSettingsUI
     }
 
     /// <summary>
-    /// 選單順序：先列常用的三頁（首頁、連接 AI、對話測試），其餘依原順序收進進階群組。
+    /// 選單順序：先列常用的三頁（首頁、連接 AI、對話測試），進階群組前三為三類核心模型（語言模型、嵌入模型、決策模型），其餘接續微調與診斷工具。
     /// </summary>
     private static readonly DetailPage[] Pages =
     [
@@ -396,30 +396,6 @@ public static class RimLLMSettingsUI
         },
         new() {
             Advanced = true,
-            Id = "Models",
-            MenuLabelKey = "RimLLM_TabModels",
-            Title = () => "RimLLM_TitleModels".Translate(),
-            Draw = ModelSettingsDrawer.DrawModelSettings,
-            EstimateHeight = ModelSettingsDrawer.GetHeight
-        },
-        new() {
-            Advanced = true,
-            Id = "Fallback",
-            MenuLabelKey = "RimLLM_TabFallback",
-            Title = () => "RimLLM_TitleFallback".Translate(),
-            Draw = FallbackSettingsDrawer.DrawFallbackSettings,
-            EstimateHeight = FallbackSettingsDrawer.GetHeight
-        },
-        new() {
-            Advanced = true,
-            Id = "GlobalConfig",
-            MenuLabelKey = "RimLLM_TabGlobalConfig",
-            Title = () => "RimLLM_TitleGlobalConfig".Translate(),
-            Draw = GlobalConfigDrawer.DrawGlobalConfigSettings,
-            EstimateHeight = GlobalConfigDrawer.GetHeight
-        },
-        new() {
-            Advanced = true,
             Id = EmbeddingPageId,
             MenuLabelKey = "RimLLM_TabEmbedding",
             Title = () =>
@@ -442,6 +418,30 @@ public static class RimLLMSettingsUI
             },
             Draw = DecisionSettingsDrawer.DrawRightDetailContent,
             EstimateHeight = DecisionSettingsDrawer.GetHeight
+        },
+        new() {
+            Advanced = true,
+            Id = "Models",
+            MenuLabelKey = "RimLLM_TabModels",
+            Title = () => "RimLLM_TitleModels".Translate(),
+            Draw = ModelSettingsDrawer.DrawModelSettings,
+            EstimateHeight = ModelSettingsDrawer.GetHeight
+        },
+        new() {
+            Advanced = true,
+            Id = "Fallback",
+            MenuLabelKey = "RimLLM_TabFallback",
+            Title = () => "RimLLM_TitleFallback".Translate(),
+            Draw = FallbackSettingsDrawer.DrawFallbackSettings,
+            EstimateHeight = FallbackSettingsDrawer.GetHeight
+        },
+        new() {
+            Advanced = true,
+            Id = "GlobalConfig",
+            MenuLabelKey = "RimLLM_TabGlobalConfig",
+            Title = () => "RimLLM_TitleGlobalConfig".Translate(),
+            Draw = GlobalConfigDrawer.DrawGlobalConfigSettings,
+            EstimateHeight = GlobalConfigDrawer.GetHeight
         },
         new() {
             Advanced = true,

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <LanguageData>
   <RimLLM_MainMenu><b>主菜单</b></RimLLM_MainMenu>
-  <RimLLM_TabProviders>AI 公司</RimLLM_TabProviders>
+  <RimLLM_TabProviders>语言模型</RimLLM_TabProviders>
   <RimLLM_TabFallback>模型顺序</RimLLM_TabFallback>
   <RimLLM_TabModels>模型细节</RimLLM_TabModels>
   <RimLLM_TabGlobalConfig>等待与重试</RimLLM_TabGlobalConfig>
@@ -160,7 +160,7 @@
   <RimLLM_ThinkingLabel>[思考中...]</RimLLM_ThinkingLabel>
   <RimLLM_MsgApiKeyDecryptFailed>无法解密 {0} 已保存的 API 密钥（可能已更换设备）。原始密文已保留，请重新输入密钥。</RimLLM_MsgApiKeyDecryptFailed>
 
-  <RimLLM_TabEmbedding>Embedding</RimLLM_TabEmbedding>
+  <RimLLM_TabEmbedding>嵌入模型</RimLLM_TabEmbedding>
   <RimLLM_TitleEmbeddingSettings>Embedding 向量设置 - {0}</RimLLM_TitleEmbeddingSettings>
   <RimLLM_EmbeddingProvidersTitle>Embedding 供应商</RimLLM_EmbeddingProvidersTitle>
   <RimLLM_EmbeddingExplanation>Embedding 会把文字转换成数值向量，可用于语义检索与分群比对，其他 Mod 能通过 RimLLM SDK 调用。若未启用任何供应商，将无法产生向量。</RimLLM_EmbeddingExplanation>
@@ -325,8 +325,8 @@
   <RimLLM_SetupKeyHelp>密钥就像 AI 公司给你的密码。获取方法：\n1. 点下面的按钮，会用浏览器打开 {0} 的网站\n2. 登录后，点「创建密钥」（Create API key）\n3. 点「复制」，回来粘贴到下面的框里（Ctrl+V）</RimLLM_SetupKeyHelp>
   <RimLLM_SetupOpenSiteBtn>打开 {0} 网站</RimLLM_SetupOpenSiteBtn>
   <RimLLM_SetupKeyFieldLabel>把密钥粘贴在这里：</RimLLM_SetupKeyFieldLabel>
-  <RimLLM_SetupKeysAlreadySet>已经设置了 {0} 把密钥，直接点「下一步」就好。（要修改请到高级设置的「AI 公司」页）</RimLLM_SetupKeysAlreadySet>
-  <RimLLM_SetupChinaHint>中国大陆的账号：请到高级设置的「AI 公司」页，勾选「使用中国专用连接端点」。</RimLLM_SetupChinaHint>
+  <RimLLM_SetupKeysAlreadySet>已经设置了 {0} 把密钥，直接点「下一步」就好。（要修改请到高级设置的「语言模型」页）</RimLLM_SetupKeysAlreadySet>
+  <RimLLM_SetupChinaHint>中国大陆的账号：请到高级设置的「语言模型」页，勾选「使用中国专用连接端点」。</RimLLM_SetupChinaHint>
   <RimLLM_SetupNoKeyTitle>第 2 步：先把 AI 打开</RimLLM_SetupNoKeyTitle>
   <RimLLM_SetupPlayer2Help>请先打开 Player2 App 并登录。这个不用密钥，点「下一步」就好。</RimLLM_SetupPlayer2Help>
   <RimLLM_SetupLocalHelp>请先打开 Ollama 或 LM Studio，并加载一个模型。我们会自动找到它，不用填任何东西。</RimLLM_SetupLocalHelp>

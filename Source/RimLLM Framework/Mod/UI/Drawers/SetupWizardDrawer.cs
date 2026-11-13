@@ -278,7 +278,7 @@ public static class SetupWizardDrawer
             int keyCount = string.IsNullOrEmpty(raw) ? 0 : raw.Split(RimLLMFrameworkSettings.ApiKeySeparators, StringSplitOptions.RemoveEmptyEntries).Length;
             if (keyCount > 1)
             {
-                // 多把金鑰只在進階的「AI 公司」頁編輯，精靈裡改一把會把其他把一起覆蓋掉。
+                // 多把金鑰只在進階的「語言模型」頁編輯，精靈裡改一把會把其他把一起覆蓋掉。
                 listing.Label("RimLLM_SetupKeysAlreadySet".Translate(keyCount));
             }
             else
