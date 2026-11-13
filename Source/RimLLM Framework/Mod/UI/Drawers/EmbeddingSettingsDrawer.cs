@@ -88,13 +88,19 @@ public static class EmbeddingSettingsDrawer
         return fallback;
     }
 
+    private static bool IsLocalProvider(string providerId)
+    {
+        return providerId == ProviderOllama || providerId == ProviderLocalOpenAI;
+    }
+
     public static float GetHeight(float width)
     {
         string providerId = ActiveEmbeddingSubTab;
         int modelCount = Settings.GetModelCount(RimLLMEmbeddingService.GetModelListKey(providerId));
         float modelSectionHeight = modelCount > 0 ? 280f : 70f;
-        float localDetectHeight = (providerId == ProviderOllama || providerId == ProviderLocalOpenAI) ? 40f : 0f;
-        return 460f + ProviderFallbackChainControls.Height + modelSectionHeight + localDetectHeight;
+        // 本機服務多一排自動探測按鈕；其餘供應商不畫端點欄，省下那一段高度
+        float endpointHeight = IsLocalProvider(providerId) ? 40f : -70f;
+        return 460f + ProviderFallbackChainControls.Height + modelSectionHeight + endpointHeight;
     }
 
     /// <summary>
@@ -249,7 +255,11 @@ public static class EmbeddingSettingsDrawer
         DrawApiKeySection(listing, providerId);
 
         // 4. 端點設定
-        DrawEndpointSection(listing, providerId);
+        // 官方服務的端點已固定，只有本機服務才開放自訂
+        if (IsLocalProvider(providerId))
+        {
+            DrawEndpointSection(listing, providerId);
+        }
 
         // 5. 模型名稱與可用模型清單
         DrawModelSection(listing, providerId);
@@ -324,7 +334,7 @@ public static class EmbeddingSettingsDrawer
     /// </summary>
     private static void DrawEndpointSection(Listing_Standard listing, string providerId)
     {
-        bool isLocal = providerId == ProviderOllama || providerId == ProviderLocalOpenAI;
+        bool isLocal = IsLocalProvider(providerId);
         string defaultEndpoint = RimLLMFrameworkSettings.GetDefaultEmbeddingEndpoint(providerId);
 
         listing.Label("RimLLM_EmbeddingEndpointLabel".Translate() + $" {ColorTagOpen}grey>({defaultEndpoint}){ColorTagClose}");

@@ -279,7 +279,7 @@
   <RimLLM_TitleHome>首页</RimLLM_TitleHome>
   <RimLLM_TabSetup>连接 AI</RimLLM_TabSetup>
   <RimLLM_TitleSetup>连接 AI（四步骤）</RimLLM_TitleSetup>
-  <RimLLM_MenuAdvancedGroup>高级设置（不用动）</RimLLM_MenuAdvancedGroup>
+  <RimLLM_MenuAdvancedGroup>高级设置</RimLLM_MenuAdvancedGroup>
   <RimLLM_MenuHomeReady>可以用了</RimLLM_MenuHomeReady>
   <RimLLM_MenuHomeNotReady>还不能用</RimLLM_MenuHomeNotReady>
   <RimLLM_HomeReadyTitle>AI 可以用了！</RimLLM_HomeReadyTitle>
@@ -296,7 +296,7 @@
   <RimLLM_HomeTodo3>③ 按「开始测试」</RimLLM_HomeTodo3>
   <RimLLM_HomeTodoDone>✓ 做好了</RimLLM_HomeTodoDone>
   <RimLLM_HomeTodoPending>✗ 还没做</RimLLM_HomeTodoPending>
-  <RimLLM_HomeTip>不知道选哪家？选 Google Gemini：有免费额度，不用绑信用卡。</RimLLM_HomeTip>
+  <RimLLM_HomeTip>不知道选哪家？选 Google Gemini：免费，一把密钥可设好对话、记忆搜索、决策三种模型。</RimLLM_HomeTip>
   <RimLLM_HomeDefaultModel>默认模型</RimLLM_HomeDefaultModel>
   <RimLLM_HomeCurrentlyUsing>目前使用：{0}　{1}</RimLLM_HomeCurrentlyUsing>
   <RimLLM_HomeTodayUsage>今天用了：{0} tokens</RimLLM_HomeTodayUsage>
@@ -306,10 +306,10 @@
   <RimLLM_SetupStep2>② 粘贴密钥</RimLLM_SetupStep2>
   <RimLLM_SetupStep3>③ 选模型</RimLLM_SetupStep3>
   <RimLLM_SetupPickTitle>第 1 步：你想用哪一家 AI？</RimLLM_SetupPickTitle>
-  <RimLLM_SetupDesc_Gemini>有免费额度，不用绑信用卡</RimLLM_SetupDesc_Gemini>
+  <RimLLM_SetupDesc_Gemini>免费，一把密钥可设好对话、记忆搜索、决策三种模型</RimLLM_SetupDesc_Gemini>
   <RimLLM_SetupDesc_DeepSeek>很便宜，中文很好</RimLLM_SetupDesc_DeepSeek>
   <RimLLM_SetupDesc_OpenRouter>一把密钥用很多种模型</RimLLM_SetupDesc_OpenRouter>
-  <RimLLM_SetupDesc_OpenAI>ChatGPT 的公司，要付费</RimLLM_SetupDesc_OpenAI>
+  <RimLLM_SetupDesc_OpenAI>OpenAI 官方服务，要付费</RimLLM_SetupDesc_OpenAI>
   <RimLLM_SetupDesc_Player2>装好 Player2 App 就能用</RimLLM_SetupDesc_Player2>
   <RimLLM_SetupDesc_Local>Ollama、LM Studio 等</RimLLM_SetupDesc_Local>
   <RimLLM_SetupTag_Recommended>推荐</RimLLM_SetupTag_Recommended>

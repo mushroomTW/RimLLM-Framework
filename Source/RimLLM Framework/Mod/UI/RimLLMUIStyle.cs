@@ -274,9 +274,15 @@ public static class RimLLMUIStyle
     public static string DrawMaskableKeyField(Rect inputRect, Rect revealRect, string value, ref bool revealed)
     {
         string result = value;
-        if (revealed)
+        if (revealed || string.IsNullOrEmpty(value))
         {
-            result = Widgets.TextField(inputRect, value);
+            // 欄位為空時沒有東西需要遮罩，直接給輸入框以便貼上；
+            // 一旦有輸入就轉為明文狀態，避免輸入中途換成唯讀標籤而失去焦點。
+            result = Widgets.TextField(inputRect, value ?? "");
+            if (!revealed && !string.IsNullOrEmpty(result))
+            {
+                revealed = true;
+            }
         }
         else
         {

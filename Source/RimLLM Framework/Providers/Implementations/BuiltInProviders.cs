@@ -31,7 +31,10 @@ public class GeminiProvider : OpenAIProvider
         Task<Dictionary<string, int>> nativeTask = FetchNativeInputTokenLimitsAsync();
         ModelCatalog catalog = await base.FetchModelCatalogAsync().ConfigureAwait(false);
         Dictionary<string, int> windows = await nativeTask.ConfigureAwait(false);
-        return windows == null ? catalog : new ModelCatalog(catalog.Models, windows);
+        // 相容端點的 /models 回傳 "models/xxx"，去掉前綴才會與 Embedding、決策模型及上限表的寫法一致
+        var models = catalog.Models.ConvertAll(name =>
+            name != null && name.StartsWith("models/", StringComparison.Ordinal) ? name.Substring("models/".Length) : name);
+        return new ModelCatalog(models, windows ?? catalog.ContextWindows);
     }
 
     /// <summary>讀取原生端點的輸入上限；無法推得原生端點或請求失敗時回傳 null（失敗會記警告）。</summary>

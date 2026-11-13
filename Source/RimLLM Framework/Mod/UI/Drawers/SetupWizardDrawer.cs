@@ -62,7 +62,8 @@ public static class SetupWizardDrawer
 
     private static int _step = 1;
     private static Choice _pick = Featured[0];
-    private static bool _revealKey;
+    // 精靈預設明文：遮罩模式為唯讀外觀，新手無法在其中貼上金鑰
+    private static bool _revealKey = true;
     private static bool _busy;
     private static string _progressKey;
     private static Outcome _outcome;
@@ -112,7 +113,7 @@ public static class SetupWizardDrawer
         _modelsBusy = _embeddingListBusy = _decisionListBusy = false;
         _step = 1;
         _pick = Featured[0];
-        _revealKey = false;
+        _revealKey = true;
         _outcome = Outcome.None;
         _embeddingOutcome = Outcome.None;
         _decisionOutcome = Outcome.None;
@@ -200,7 +201,7 @@ public static class SetupWizardDrawer
         listing.Gap(16f);
         DrawNavRow(listing, showBack: false, "RimLLM_SetupNextBtn".Translate(), _pick != null, () =>
         {
-            _revealKey = false;
+            _revealKey = true;
             _step = 2;
         });
     }
@@ -906,7 +907,10 @@ public static class SetupWizardDrawer
     private static void Fail(string key, string detail)
     {
         _failKey = key;
-        _failDetail = string.IsNullOrEmpty(detail) ? null : RimLLMLog.SanitizeForLog(detail, 220);
+        // 日誌用的清理會把換行轉成字面的 \r\n；顯示給玩家時還原成空白，不然畫面上會出現一串反斜線
+        _failDetail = string.IsNullOrEmpty(detail)
+            ? null
+            : RimLLMLog.SanitizeForLog(detail, 400).Replace("\\r\\n", " ").Replace("\\n", " ").Replace("\\r", " ");
         _outcome = Outcome.Failed;
         _busy = false;
     }

@@ -26,13 +26,19 @@ public sealed class RimLLMDecisionProvider
     /// 服務的金鑰解析與設定精靈的一鍵開啟都讀這個欄位。
     /// </summary>
     public string ChatKeyProviderId { get; init; }
+
+    /// <summary>
+    /// 是否開放玩家自訂端點。只有自架的本機服務（埠號因人而異）需要；
+    /// 官方與聚合閘道的端點已固定，開放修改只會讓人填錯。
+    /// </summary>
+    public bool AllowCustomEndpoint { get; init; }
 }
 
 /// <summary>
 /// 決策模型供應商清單。這些服務都接受 System One 的 state/questions 結構；
 /// 其中 TypeSafe 是原生 Jev，其餘是提供相同 wire format 的託管服務或聚合閘道；
 /// 唯一例外是 Gemini，由 <see cref="GeminiDecisionsAdapterHandler"/> 在傳輸層轉換格式。
-/// 端點可以在 UI 內修改；模型沒有預設值，由玩家從伺服器清單選擇。
+/// 只有本機服務的端點可以在 UI 內修改；模型沒有預設值，由玩家從伺服器清單選擇。
 /// </summary>
 public static class RimLLMDecisionProviderCatalog
 {
@@ -72,13 +78,21 @@ public static class RimLLMDecisionProviderCatalog
 
     /// <summary>
     /// decisions-api.dev 把多個供應商統一在 /v1/systemone 之下，因此非 TypeSafe 的原生服務
-    /// 也能用同一個 JevClient。玩家仍可在 UI 改成供應商自己的端點。
+    /// 也能用同一個 JevClient。端點固定，UI 只對本機服務開放修改。
     /// </summary>
     private const string AggregatorEndpoint = "https://decisions-api.dev";
 
     /// <summary>所有內建支援的決策供應商預設目錄。</summary>
     public static readonly IReadOnlyList<RimLLMDecisionProvider> All =
     [
+        // Gemini 不走 System One wire format，由傳輸層的轉接處理器換成 /v1beta/decisions。
+        new RimLLMDecisionProvider(
+            Gemini,
+            "https://" + GeminiDecisionsAdapterHandler.GeminiHost)
+        {
+            ChatKeyProviderId = ProviderIds.Gemini
+        },
+
         new RimLLMDecisionProvider(
             TypeSafe,
             "https://api.typesafe.ai"),
@@ -109,25 +123,27 @@ public static class RimLLMDecisionProviderCatalog
         new RimLLMDecisionProvider(
             OpenAI,
             AggregatorEndpoint),
-        // Gemini 不走 System One wire format，由傳輸層的轉接處理器換成 /v1beta/decisions。
-        new RimLLMDecisionProvider(
-            Gemini,
-            "https://" + GeminiDecisionsAdapterHandler.GeminiHost)
-        {
-            ChatKeyProviderId = ProviderIds.Gemini
-        },
 
         // 本機架設：走明文 HTTP，Jev SDK 只接受 HTTPS origin，
         // 由 DecisionEndpointRouting 在傳輸層把兩者接起來。
         new RimLLMDecisionProvider(
             Ollama,
-            "http://localhost:11434"),
+            "http://localhost:11434")
+        {
+            AllowCustomEndpoint = true
+        },
         new RimLLMDecisionProvider(
             Unsloth,
-            "http://localhost:8888"),
+            "http://localhost:8888")
+        {
+            AllowCustomEndpoint = true
+        },
         new RimLLMDecisionProvider(
             Local,
             "http://localhost:8000")
+        {
+            AllowCustomEndpoint = true
+        }
     ];
 
     private static readonly Dictionary<string, RimLLMDecisionProvider> ById =

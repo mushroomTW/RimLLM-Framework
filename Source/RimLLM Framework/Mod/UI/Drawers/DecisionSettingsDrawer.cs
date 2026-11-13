@@ -65,7 +65,9 @@ public static class DecisionSettingsDrawer
         string providerId = ActiveDecisionSubTab;
         int modelCount = Settings.GetModelCount(RimLLMDecisionService.GetModelListKey(providerId));
         float modelSectionHeight = modelCount > 0 ? 280f : 70f;
-        return 460f + ProviderFallbackChainControls.Height + modelSectionHeight;
+        // 端點欄只有本機服務才畫，其餘供應商把那一段高度省下來
+        float endpointHeight = RimLLMDecisionProviderCatalog.Get(providerId).AllowCustomEndpoint ? 0f : -70f;
+        return 460f + endpointHeight + ProviderFallbackChainControls.Height + modelSectionHeight;
     }
 
     public static void DrawMiddleDecisionMenu(Rect rect)
@@ -201,7 +203,10 @@ public static class DecisionSettingsDrawer
         listing.Gap(6f);
 
         DrawApiKeySection(listing, providerId);
-        DrawEndpointSection(listing, providerId, provider);
+        if (provider.AllowCustomEndpoint)
+        {
+            DrawEndpointSection(listing, providerId, provider);
+        }
         DrawModelSection(listing, providerId);
 
         listing.Gap(8f);

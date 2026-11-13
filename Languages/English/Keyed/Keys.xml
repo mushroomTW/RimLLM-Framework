@@ -306,10 +306,10 @@
   <RimLLM_SetupStep2>2. Paste key</RimLLM_SetupStep2>
   <RimLLM_SetupStep3>③ Pick models</RimLLM_SetupStep3>
   <RimLLM_SetupPickTitle>Step 1: Which AI do you want to use?</RimLLM_SetupPickTitle>
-  <RimLLM_SetupDesc_Gemini>Free tier, no credit card</RimLLM_SetupDesc_Gemini>
+  <RimLLM_SetupDesc_Gemini>Free; one key sets up chat, memory search and decision models</RimLLM_SetupDesc_Gemini>
   <RimLLM_SetupDesc_DeepSeek>Very cheap</RimLLM_SetupDesc_DeepSeek>
   <RimLLM_SetupDesc_OpenRouter>One key, many models</RimLLM_SetupDesc_OpenRouter>
-  <RimLLM_SetupDesc_OpenAI>Makers of ChatGPT, paid</RimLLM_SetupDesc_OpenAI>
+  <RimLLM_SetupDesc_OpenAI>Official OpenAI service, paid</RimLLM_SetupDesc_OpenAI>
   <RimLLM_SetupDesc_Player2>Works once the Player2 app is installed</RimLLM_SetupDesc_Player2>
   <RimLLM_SetupDesc_Local>Ollama, LM Studio, etc.</RimLLM_SetupDesc_Local>
   <RimLLM_SetupTag_Recommended>Recommended</RimLLM_SetupTag_Recommended>

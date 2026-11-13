@@ -99,13 +99,31 @@ public class OpenAIProvider : ILLMProvider
             // 無法讀取或解析 Retry-After 時，沿用一般重試延遲。
         }
 
+        // SDK 的 Message 只有狀態碼，服務端說明拒絕原因的內文在原始回應裡；
+        // 不附上的話，使用者看不到原因，依錯誤內文判斷的降級重試（思考、Schema 等）也永遠不會觸發。
+        string body = ReadResponseBody(exception);
+        string fullMessage = string.IsNullOrEmpty(body) ? exception.Message : $"{exception.Message} {body}";
+
         // 顯示用訊息要淨化與截斷（會進連線測試結果與相容層日誌）；關鍵字偵測仍看完整內容。
         return LLMErrorMapper.CreateException(
             exception.Status,
-            RimLLMLog.SanitizeForLog(exception.Message, 300),
+            RimLLMLog.SanitizeForLog(fullMessage, 300),
             retryAfter,
             exception,
-            detectionText: exception.Message);
+            detectionText: fullMessage);
+    }
+
+    /// <summary>讀出錯誤回應的內文；無法讀取時回傳空字串。</summary>
+    private static string ReadResponseBody(ClientResultException exception)
+    {
+        try
+        {
+            return exception.GetRawResponse()?.Content?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     /// <summary>
