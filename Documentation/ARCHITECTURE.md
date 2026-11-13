@@ -6,6 +6,47 @@
 
 ### 1. Unified interface and dispatch core (`IChatClient` / `IEmbeddingGenerator` and `RimLLMProvider`)
 
+```mermaid
+graph TD
+    classDef client fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+    classDef guard fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef core fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
+    classDef provider fill:#f3e8ff,stroke:#9333ea,stroke-width:2px;
+
+    Caller["Consumer Mod (Calls IChatClient / Embedding / Decision)"]:::client
+
+    subgraph Pipeline["DelegatingChatClient Middleware Pipeline"]
+        Normalizer["Reasoning Normalizer (ReasoningEffort)"]:::guard
+        RateLimit["Anti-Abuse Throttle"]:::guard
+        BudgetGuard["Budget Guard (HardBlock Token Ledger)"]:::guard
+        PriorityQueue["Priority & Concurrency Queue (MaxConcurrentRequests)"]:::guard
+    end
+
+    subgraph Dispatch["Dispatch & Fallback Core"]
+        Failover["FailoverChatClient (Fallback Rotation)"]:::core
+        Ledger[("Shared Token Ledger<br/>(Atomic Reserve & Settlement)")]:::core
+        RouterEngine["Routing Engine (Priority / Latency / RoundRobin / Cost)"]:::core
+    end
+
+    subgraph ThreeServices["Core Capabilities & Adapters"]
+        LLMAdapter["Language Model Adapter (OpenAI SDK / Gemini)"]:::provider
+        EmbeddingService["Embedding Service (Batch Aggregator)"]:::provider
+        DecisionService["Decision Service (System One / Gemini)"]:::provider
+    end
+
+    Caller --> Normalizer
+    Normalizer --> RateLimit
+    RateLimit --> BudgetGuard
+    BudgetGuard --> PriorityQueue
+    PriorityQueue --> Failover
+
+    BudgetGuard -.-> Ledger
+    Failover --> RouterEngine
+    RouterEngine --> LLMAdapter
+    RouterEngine --> EmbeddingService
+    RouterEngine --> DecisionService
+```
+
 * The framework exposes the standard Microsoft.Extensions.AI interfaces. Callers only work against `IChatClient` or `IEmbeddingGenerator` and never need to know which provider or model handled the request — `RimLLMManager` handles dispatch and fallback rotation.
 * `CreateChatClient` returns a stack of MEAI `DelegatingChatClient` middleware — reasoning-effort normalization, anti-abuse throttle, budget guard, priority queue — terminating in a `FailoverChatClient` that routes across the fallback chain. Every layer is `internal`. The only framework-specific types a consumer touches are `RimLLMProvider`, `RimLLMDecisionClient`, `DecisionAvailability`, `RimLLMChatOptions`, `RimLLMException` and `LLMError`; everything else crossing the boundary is a MEAI type.
 * `modId` is a plain label, not a credential. It keys per-mod anti-abuse throttling and telemetry attribution, and requires no registration call.
@@ -18,12 +59,45 @@
 
 ### 2. Unity main-thread dispatcher (`RimLLMDispatcher`)
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Worker as Background Thread Pool (Async Task)
+    participant Queue as RimLLMDispatcher (ConcurrentQueue)
+    participant Unity as Unity Main Thread (Per-frame Update)
+    participant Game as RimWorld World State (Pawn / Map / UI)
+
+    Worker->>Worker: Model invokes Tool (Tool Calling)
+    Worker->>Queue: Enqueue(Tool Action Delegate, TaskCompletionSource)
+    Note over Worker: await waiting for main thread execution...
+    loop Unity Render Loop
+        Unity->>Queue: Update() poll dequeue
+        Queue-->>Unity: Dequeued tool action
+        Unity->>Game: Safely read/write game world (Find.CurrentMap / Pawn)
+        Game-->>Unity: Game result data
+        Unity->>Worker: SetResult() wakes background worker
+    end
+    Worker->>Worker: Resume AI request with tool result
+```
+
 * Network requests run asynchronously on background thread-pool threads, but most Unity APIs and RimWorld logic are not thread safe — calling them from a background thread causes crashes or TPS spikes.
 * `RimLLMDispatcher` is a MonoBehaviour singleton that collects callbacks from background threads in a `ConcurrentQueue` and dispatches them back to the main thread during Unity's per-frame `Update`.
 * Request-log snapshots and telemetry dirty state are updated under the tracker lock before the background single-writer is scheduled. Persistence therefore does not depend on the bounded Unity callback queue draining before shutdown; telemetry serialization itself does not use Scribe.
 * Queued tool calls observe cancellation before invocation and can stop waiting while still queued. Once a tool starts, its own cancellation support governs further work. Chat-test callbacks carry a request generation, checked when the callback executes; stopping or clearing a request invalidates its queued updates before history indexes can be reused.
 
 ### 3. Streaming bridge (`Channel<T>`)
+
+```mermaid
+flowchart LR
+    Provider["AI Provider<br/>(Network Stream Chunk)"] -->|HTTP Chunk| Callback["Executor Callback<br/>onUpdateReceived"]
+    Callback -->|await WriteAsync| Channel["Bounded Channel&lt;ChatResponseUpdate&gt;<br/>(Capacity: 64)"]
+    Channel -->|ReadAllAsync| Consumer["Consumer Loop<br/>await foreach"]
+    
+    subgraph Backpressure["Natural Backpressure"]
+        Channel -.->|Blocks write when 64 items full| Callback
+        Callback -.->|Pauses network socket read| Provider
+    end
+```
 
 * The executor's streaming API is callback-shaped (`Func<ChatResponseUpdate, Task> onUpdateReceived`), while MEAI expects `IAsyncEnumerable<ChatResponseUpdate>`. The bridge between them is a **bounded** `System.Threading.Channels.Channel<T>` (64 updates); the producer awaits `WriteAsync`, so a slow consumer applies backpressure to the network read instead of buffering the whole stream in memory. The consumer side is `ChannelReader.ReadAllAsync()`.
 * Updates cross that bridge **verbatim** — the object the provider produced is the object you enumerate, with only `ModelId` rewritten. The framework no longer synthesizes a closing update of its own, so `UsageContent`, `FinishReason` and `ResponseId` are present exactly when the provider emits them.
@@ -34,12 +108,46 @@
 
 ### 4. Unified HTTP error mapping (`LLMErrorMapper`)
 
+```mermaid
+flowchart TD
+    Error["HTTP Exception / Error Response"] --> Mapper["LLMErrorMapper"]
+    
+    Mapper --> Check401{"401 Unauthorized?"}
+    Check401 -- Yes --> InvalidKey["LLMError.InvalidKey<br/>(Fail immediately, no retry)"]
+    
+    Check401 -- No --> Check402{"402 Payment Required<br/>or insufficient_quota?"}
+    Check402 -- Yes --> QuotaExceeded["LLMError.QuotaExceeded<br/>(Balance depleted, instant next candidate)"]
+    
+    Check402 -- No --> Check429{"429 Too Many Requests?"}
+    Check429 -- Yes --> Backoff["Parse Retry-After header<br/>Exponential backoff (2ⁿ × Delay ±20% jitter)"]
+    Backoff --> RetryCandidate{"Retry limit reached?"}
+    RetryCandidate -- No --> RetryNow["Retry same candidate"]
+    RetryCandidate -- Yes --> SwitchNext["Circuit break, switch to next candidate"]
+    
+    Check429 -- No --> Check5xx{"5xx Server Error / Timeout?"}
+    Check5xx -- Yes --> SwitchNext
+```
+
 * The rules that translate HTTP status codes into `LLMError` live in a single place, `LLMErrorMapper`, shared by the official SDK path (`ClientResultException`) and the embedding service.
 * `Retry-After` parsing lives there too, built on `RetryConditionHeaderValue`, so both the delay-seconds and HTTP-date forms are handled identically everywhere.
 * The built-in OpenAI-compatible adapter preserves the response `Retry-After` header when converting SDK exceptions, so the fallback policy can honor server-requested delays.
 * As a result, "which status codes are retryable" and "which indicate a rejected schema that should be downgraded" behave identically everywhere. Third-party custom providers can reference the same mapper.
 
 ### 5. Fault-tolerant structured output (structured output & JSON repair)
+
+```mermaid
+flowchart TD
+    Type["C# Output Type (T)"] --> Exporter["System.Text.Json<br/>JsonSchemaExporter"]
+    Exporter --> Normalizer["RimLLMSchemaBuilder Normalization<br/>• $ref inlined<br/>• Nesting capped at 5 levels<br/>• All fields marked required<br/>• Optional fields as ['type','null'] unions"]
+    Normalizer --> Request["Send to Provider (Strict Mode)"]
+    
+    Request --> Response["Model JSON Output"]
+    Response --> Validate{"Valid JSON format?"}
+    Validate -- Yes --> Deserialize["System.Text.Json Deserialization to T"]
+    Validate -- No --> Repair["RepairJson Automatic Fallback<br/>• Strip markdown fences (```json)<br/>• Close unclosed brackets/braces<br/>• Remove trailing commas<br/>• Preserve strings & think tags"]
+    Repair --> Deserialize
+    Deserialize --> Result["Return Typed Object T"]
+```
 
 * Developers frequently need the model to return a specific JSON shape.
 * The built-in OpenAI-family providers prefer the official SDK's native structured output through `IChatClient`'s JSON Schema response format (Gemini included, via its OpenAI-compatible endpoint). Required JSON member presence and nullability are checked against the generated schema shape derived from the serialization contract, including dictionary values, rather than inferred from CLR defaults after deserialization. Ignored and non-participating members are not treated as required output.
@@ -57,6 +165,32 @@
 ---
 
 ## 🔐 Security notes
+
+```mermaid
+graph LR
+    subgraph Storage["1. Local Storage"]
+        DPAPI["OS Protection Keys<br/>(Windows DPAPI / Keychain / Secret Service)"]
+        AES["AES-256 Symmetric Encryption<br/>(v3: ciphertext only)"]
+    end
+
+    subgraph Transit["2. Transit & Network"]
+        Header["HTTP Authorization Header<br/>(Never leaked in URL query)"]
+        Sanitize["Log Sanitization (SanitizeForLog)<br/>(Mask keys & sensitive JSON properties)"]
+    end
+
+    subgraph UI["3. Player UI"]
+        Mask["Dynamic Key Masking<br/>(Protects streaming & screenshots)"]
+    end
+
+    subgraph Guard["4. Budget & Anti-Abuse"]
+        Ledger["Atomic Token Ledger<br/>(In-flight reservation & settlement)"]
+        Throttle["Anti-Abuse Throttle<br/>(Cools down infinite mod loops)"]
+    end
+
+    Storage --> Transit
+    Transit --> UI
+    UI --> Guard
+```
 
 To avoid misunderstanding, here is an honest description of what each security mechanism actually protects against:
 

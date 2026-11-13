@@ -6,6 +6,47 @@
 
 ### 1. 統一介面與調度核心（`IChatClient` / `IEmbeddingGenerator` 與 `RimLLMProvider`）
 
+```mermaid
+graph TD
+    classDef client fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+    classDef guard fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef core fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
+    classDef provider fill:#f3e8ff,stroke:#9333ea,stroke-width:2px;
+
+    Caller["使用端 Mod (呼叫 IChatClient / Embedding / Decision)"]:::client
+
+    subgraph Pipeline["DelegatingChatClient 中介管線層"]
+        Normalizer["思考強度正規化 (ReasoningEffort)"]:::guard
+        RateLimit["防濫用節流 (Anti-Abuse Throttle)"]:::guard
+        BudgetGuard["預算防護守衛 (HardBlock Token Ledger)"]:::guard
+        PriorityQueue["優先權與併發佇列 (MaxConcurrentRequests)"]:::guard
+    end
+
+    subgraph Dispatch["調度與備援核心"]
+        Failover["FailoverChatClient (備援輪替核心)"]:::core
+        Ledger[("共用 Token 帳本<br/>(原子保留與結算)")]:::core
+        RouterEngine["路由策略 (Priority / Latency / RoundRobin / Cost)"]:::core
+    end
+
+    subgraph ThreeServices["三大模型服務與適配器"]
+        LLMAdapter["語言模型適配器 (OpenAI SDK / Gemini)"]:::provider
+        EmbeddingService["嵌入模型服務 (批次合流)"]:::provider
+        DecisionService["決策模型服務 (System One / Gemini)"]:::provider
+    end
+
+    Caller --> Normalizer
+    Normalizer --> RateLimit
+    RateLimit --> BudgetGuard
+    BudgetGuard --> PriorityQueue
+    PriorityQueue --> Failover
+
+    BudgetGuard -.-> Ledger
+    Failover --> RouterEngine
+    RouterEngine --> LLMAdapter
+    RouterEngine --> EmbeddingService
+    RouterEngine --> DecisionService
+```
+
 * 框架對外暴露標準的 Microsoft.Extensions.AI 介面。呼叫端只面對 `IChatClient` 或 `IEmbeddingGenerator`，完全不需要知道實際由哪個供應商或模型處理 —— 調度與 Fallback 輪替由 `RimLLMManager` 負責。
 * `CreateChatClient` 回傳的是一疊 MEAI `DelegatingChatClient` 中介層——思考強度正規化、防濫用節流、預算保護、優先權佇列——最內層是沿 Fallback 鏈路由的 `FailoverChatClient`。每一層都是 `internal`。使用端會碰到的框架專屬型別只有 `RimLLMProvider`、`RimLLMDecisionClient`、`DecisionAvailability`、`RimLLMChatOptions`、`RimLLMException` 與 `LLMError`，其餘跨越邊界的全是 MEAI 型別。
 * `modId` 是純標籤，不是憑證。它是每個 Mod 防濫用節流與遙測歸屬的鍵，不需要任何註冊呼叫。
@@ -18,12 +59,45 @@
 
 ### 2. Unity 主執行緒派送器（`RimLLMDispatcher`）
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Worker as 背景執行緒池 (Async Task)
+    participant Queue as RimLLMDispatcher (ConcurrentQueue)
+    participant Unity as Unity 主執行緒 (每幀 Update)
+    participant Game as RimWorld 遊戲世界 (Pawn / Map / UI)
+
+    Worker->>Worker: 收到模型呼叫工具 (Tool Calling)
+    Worker->>Queue: Enqueue(工具委派 Action, TaskCompletionSource)
+    Note over Worker: await 等待主執行緒執行完成...
+    loop Unity 渲染主循環
+        Unity->>Queue: Update() 輪詢出列
+        Queue-->>Unity: 取得委派任務
+        Unity->>Game: 安全讀寫遊戲世界 (Find.CurrentMap / Pawn)
+        Game-->>Unity: 傳回遊戲資料
+        Unity->>Worker: SetResult() 喚醒背景工作
+    end
+    Worker->>Worker: 攜帶工具執行結果繼續向 AI 請求
+```
+
 * 網路請求在背景執行緒池上非同步執行，但多數 Unity API 與 RimWorld 邏輯並非執行緒安全 —— 從背景執行緒呼叫會造成崩潰或 TPS 掉幀。
 * `RimLLMDispatcher` 是 MonoBehaviour 單例，以 `ConcurrentQueue` 收集背景執行緒的回呼，並在 Unity 每幀的 `Update` 中派送回主執行緒。
 * 請求日誌快照與遙測 dirty 狀態會在記帳器鎖內更新，再排程背景單寫者。因此持久化不依賴有界 Unity 回呼佇列在關閉前排空；遙測 JSON 序列化本身不使用 Scribe。
 * 排隊中的工具會在叫用前檢查取消，等待端可在工具尚未出列時取消等待；工具開始後則由工具本身配合取消。對話測試回呼攜帶請求世代，並在執行回呼時檢查；停止或清空會先使舊更新失效，避免歷史索引被新請求重用後遭到覆寫。
 
 ### 3. 串流橋接（`Channel<T>`）
+
+```mermaid
+flowchart LR
+    Provider["AI 提供商<br/>(網路串流輸出)"] -->|HTTP Chunk| Callback["Executor 回呼<br/>onUpdateReceived"]
+    Callback -->|await WriteAsync| Channel["有界 Channel&lt;ChatResponseUpdate&gt;<br/>(固定容量: 64)"]
+    Channel -->|ReadAllAsync| Consumer["呼叫端迴圈<br/>await foreach"]
+    
+    subgraph Backpressure["自然背壓機制 (Backpressure)"]
+        Channel -.->|隊列滿 64 筆時阻擋寫入| Callback
+        Callback -.->|暫緩網路讀取| Provider
+    end
+```
 
 * Executor 的串流 API 是回呼形式（`Func<ChatResponseUpdate, Task> onUpdateReceived`），而 MEAI 要的是 `IAsyncEnumerable<ChatResponseUpdate>`。兩者之間以**有界**的 `System.Threading.Channels.Channel<T>`（64 筆 update）橋接，生產端 await `WriteAsync`，因此消費端慢時會把背壓回推到網路讀取，而不是把整段串流緩衝在記憶體。消費端是 `ChannelReader.ReadAllAsync()`。
 * update 以**原樣**穿過這座橋——你列舉到的就是供應商產生的那個物件，只有 `ModelId` 被改寫。框架不再自行合成一個收尾 update，因此 `UsageContent`、`FinishReason` 與 `ResponseId` 只在供應商真的送出時才存在。
@@ -34,12 +108,46 @@
 
 ### 4. 統一的 HTTP 錯誤對照（`LLMErrorMapper`）
 
+```mermaid
+flowchart TD
+    Error["HTTP 異常 / 錯誤回應"] --> Mapper["LLMErrorMapper"]
+    
+    Mapper --> Check401{"401 Unauthorized?"}
+    Check401 -- 是 --> InvalidKey["LLMError.InvalidKey<br/>(不重試，立即報錯)"]
+    
+    Check401 -- 否 --> Check402{"402 Payment Required<br/>或 insufficient_quota?"}
+    Check402 -- 是 --> QuotaExceeded["LLMError.QuotaExceeded<br/>(餘額不足，立即切換下一候選)"]
+    
+    Check402 -- 否 --> Check429{"429 Too Many Requests?"}
+    Check429 -- 是 --> Backoff["解析 Retry-After 標頭<br/>指數退避 (2ⁿ × Delay ±20% 抖動)"]
+    Backoff --> RetryCandidate{"重試次數未超限?"}
+    RetryCandidate -- 是 --> RetryNow["原模型重試"]
+    RetryCandidate -- 否 --> SwitchNext["熔斷冷卻，切換下一候選"]
+    
+    Check429 -- 否 --> Check5xx{"5xx Server Error / 逾時?"}
+    Check5xx -- 是 --> SwitchNext
+```
+
 * HTTP 狀態碼轉換為 `LLMError` 的規則集中在 `LLMErrorMapper` 一處，由官方 SDK 路徑（`ClientResultException`）與 embedding 服務共用。
 * `Retry-After` 的解析也在其中，基於 `RetryConditionHeaderValue`，因此延遲秒數與 HTTP 日期兩種格式在各處行為一致。
 * 內建 OpenAI 相容 adapter 轉換 SDK 例外時會保留回應的 `Retry-After` 標頭，讓 Fallback 策略遵守伺服器要求的等待時間。
 * 這使得「哪些狀態碼可重試」與「哪些代表 Schema 遭拒應降級」在各處行為完全相同。第三方自訂供應商也能引用同一份對照。
 
 ### 5. 容錯的結構化輸出（structured output 與 JSON repair）
+
+```mermaid
+flowchart TD
+    Type["C# 輸出型別 (T)"] --> Exporter["System.Text.Json<br/>JsonSchemaExporter"]
+    Exporter --> Normalizer["RimLLMSchemaBuilder 正規化<br/>• $ref 展開為內嵌<br/>• 巢狀上限 5 層<br/>• 所有欄位設為 required<br/>• 選填以 ['type','null'] 聯集表示"]
+    Normalizer --> Request["發送給提供商 (Strict Mode)"]
+    
+    Request --> Response["取得模型輸出內容"]
+    Response --> Validate{"符合 JSON 格式?"}
+    Validate -- 是 --> Deserialize["System.Text.Json 反序列化為 T"]
+    Validate -- 否 --> Repair["RepairJson 自動修復<br/>• 移除 markdown 圍籬 (```json)<br/>• 補齊未閉合括號<br/>• 去除尾隨逗號<br/>• 保護字串內符號與 think 標籤"]
+    Repair --> Deserialize
+    Deserialize --> Result["回傳強型別物件 T"]
+```
 
 * 開發者經常需要模型回傳特定的 JSON 結構。
 * 內建供應商優先使用官方 SDK 的原生結構化輸出，經 `IChatClient` 的 JSON Schema response format 送出（Gemini 經其 OpenAI 相容端點同樣適用）。框架依序列化契約產生的 Schema 形狀檢查 JSON 必填成員是否存在與可空性，包含字典的值，不以反序列化後的 CLR 預設值推斷完整性；忽略或未參與契約的成員不視為必要輸出。
@@ -57,6 +165,32 @@
 ---
 
 ## 🔐 安全性說明
+
+```mermaid
+graph LR
+    subgraph Storage["1. 本地儲存層"]
+        DPAPI["OS 憑證保護金鑰<br/>(Windows DPAPI / Keychain / Secret Service)"]
+        AES["AES-256 對稱加密<br/>(只接受 v3: 密文)"]
+    end
+
+    subgraph Transit["2. 傳輸與網路層"]
+        Header["HTTP Authorization Header<br/>(絕不透過 URL 查詢參數外洩)"]
+        Sanitize["日誌脫敏 (SanitizeForLog)<br/>(遮蔽金鑰與敏感 JSON 屬性)"]
+    end
+
+    subgraph UI["3. 玩家介面層"]
+        Mask["金鑰輸入框動態遮罩<br/>(防截圖 / 直播串流外洩)"]
+    end
+
+    subgraph Guard["4. 預算與防濫用層"]
+        Ledger["原子 Token 帳本<br/>(在途請求預留與結算)"]
+        Throttle["防濫用冷卻煞車<br/>(防第三方 Mod 無限死迴圈)"]
+    end
+
+    Storage --> Transit
+    Transit --> UI
+    UI --> Guard
+```
 
 為避免誤解，以下誠實說明每項安全機制實際防護的範圍：
 
