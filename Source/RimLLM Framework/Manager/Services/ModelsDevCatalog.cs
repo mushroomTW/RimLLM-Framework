@@ -48,7 +48,7 @@ internal static class ModelsDevCatalog
     /// </summary>
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
     private static readonly object CacheLock = new();
-    private static Task<Dictionary<string, Dictionary<string, int>>> _cached;
+    private static Task<ModelsDevData> _cached;
     private static DateTime _cachedAt;
 
     internal static bool IsCovered(string providerId)
@@ -61,7 +61,7 @@ internal static class ModelsDevCatalog
     /// 同時進行的呼叫共用同一次下載；成功結果快取 <see cref="CacheDuration"/>，失敗則下次重試。
     /// 失敗只記警告並回傳 null，上限只是附帶資訊，不讓模型清單的重新整理失敗。
     /// </summary>
-    internal static Task<Dictionary<string, Dictionary<string, int>>> GetAllAsync(float timeoutSeconds)
+    internal static Task<ModelsDevData> GetAllAsync(float timeoutSeconds)
     {
         lock (CacheLock)
         {
@@ -77,7 +77,7 @@ internal static class ModelsDevCatalog
         }
     }
 
-    private static async Task<Dictionary<string, Dictionary<string, int>>> DownloadAsync(float timeoutSeconds)
+    private static async Task<ModelsDevData> DownloadAsync(float timeoutSeconds)
     {
         try
         {
@@ -86,7 +86,7 @@ internal static class ModelsDevCatalog
             response.EnsureSuccessStatusCode();
             string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             using JsonDocument doc = JsonDocument.Parse(body);
-            return ReadAll(doc.RootElement);
+            return new ModelsDevData(ReadAll(doc.RootElement), ReadAllVision(doc.RootElement));
         }
         catch (Exception ex)
         {
@@ -118,6 +118,58 @@ internal static class ModelsDevCatalog
             all[mapping.Key] = ReadModelWindows(models);
         }
         return all;
+    }
+
+    /// <summary>
+    /// 讀出各供應商每個模型是否支援圖片輸入：<c>modalities.input</c> 含 "image" 即支援。
+    /// 沒有 modalities 欄位的模型不收錄，查詢時視為未知而非不支援。
+    /// </summary>
+    internal static Dictionary<string, Dictionary<string, bool>> ReadAllVision(JsonElement root)
+    {
+        var all = new Dictionary<string, Dictionary<string, bool>>(StringComparer.OrdinalIgnoreCase);
+        if (root.ValueKind != JsonValueKind.Object) return all;
+
+        foreach (var mapping in ProviderKeys)
+        {
+            if (!root.TryGetProperty(mapping.Value, out JsonElement provider)
+                || provider.ValueKind != JsonValueKind.Object
+                || !provider.TryGetProperty("models", out JsonElement models)
+                || models.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var support = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty model in models.EnumerateObject())
+            {
+                if (model.Value.ValueKind == JsonValueKind.Object
+                    && model.Value.TryGetProperty("modalities", out JsonElement modalities)
+                    && modalities.ValueKind == JsonValueKind.Object
+                    && modalities.TryGetProperty("input", out JsonElement input)
+                    && input.ValueKind == JsonValueKind.Array)
+                {
+                    support[model.Name] = input.EnumerateArray().Any(
+                        m => m.ValueKind == JsonValueKind.String && m.GetString() == "image");
+                }
+            }
+            all[mapping.Key] = support;
+        }
+        return all;
+    }
+
+    /// <summary>把該供應商的圖片支援補進 <paramref name="support"/>，已有的值（供應商 API 回報）不覆寫。</summary>
+    internal static void FillMissingVision(Dictionary<string, Dictionary<string, bool>> all, string providerId, Dictionary<string, bool> support)
+    {
+        if (all == null || support == null || string.IsNullOrEmpty(providerId)
+            || !all.TryGetValue(providerId, out var fromDatabase))
+        {
+            return;
+        }
+
+        foreach (var kvp in fromDatabase.Where(k => !support.ContainsKey(k.Key)))
+        {
+            support[kvp.Key] = kvp.Value;
+        }
     }
 
     private static Dictionary<string, int> ReadModelWindows(JsonElement models)
@@ -152,6 +204,19 @@ internal static class ModelsDevCatalog
         {
             windows[kvp.Key] = kvp.Value;
         }
+    }
+
+    /// <summary>models.dev 一次下載的結果：上下文上限與圖片輸入支援，皆為「框架供應商 → 模型名稱 → 值」。</summary>
+    internal sealed class ModelsDevData
+    {
+        public ModelsDevData(Dictionary<string, Dictionary<string, int>> windows, Dictionary<string, Dictionary<string, bool>> vision)
+        {
+            Windows = windows;
+            Vision = vision;
+        }
+
+        public Dictionary<string, Dictionary<string, int>> Windows { get; }
+        public Dictionary<string, Dictionary<string, bool>> Vision { get; }
     }
 
     private static int ReadPositiveInt(JsonElement obj, string name)

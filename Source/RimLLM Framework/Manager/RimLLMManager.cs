@@ -379,9 +379,16 @@ public class RimLLMManager
             : new ModelCatalog(await provider.FetchAvailableModelsAsync().ConfigureAwait(false), null);
 
         // 供應商 API 已回報每個模型的上限時不等 models.dev：下載照樣完成並留在快取，但不拖慢這次重新整理
-        if (modelsDevTask != null && !catalog.Models.TrueForAll(catalog.ContextWindows.ContainsKey))
+        if (modelsDevTask != null
+            && (!catalog.Models.TrueForAll(catalog.ContextWindows.ContainsKey)
+                || !catalog.Models.TrueForAll(catalog.VisionSupport.ContainsKey)))
         {
-            ModelsDevCatalog.FillMissing(await modelsDevTask.ConfigureAwait(false), providerId, catalog.ContextWindows);
+            ModelsDevCatalog.ModelsDevData data = await modelsDevTask.ConfigureAwait(false);
+            if (data != null)
+            {
+                ModelsDevCatalog.FillMissing(data.Windows, providerId, catalog.ContextWindows);
+                ModelsDevCatalog.FillMissingVision(data.Vision, providerId, catalog.VisionSupport);
+            }
         }
         return catalog;
     }
@@ -406,6 +413,19 @@ public class RimLLMManager
         if (colonIndex <= 0 || colonIndex >= modelId.Length - 1) return null;
 
         return (_settings as IContextWindowLookup)?.GetContextWindow(modelId.Substring(0, colonIndex), modelId.Substring(colonIndex + 1));
+    }
+
+    /// <summary>
+    /// 查詢 "ProviderId:ModelName" 是否支援圖片輸入。只接受明確指定的模型；
+    /// 資料不明（未重新整理過模型清單、或來源沒有該模型）時回傳 null，呼叫端應退回玩家的手動設定。
+    /// </summary>
+    internal bool? SupportsVision(string modelId)
+    {
+        if (string.IsNullOrEmpty(modelId)) return null;
+        int colonIndex = modelId.IndexOf(':');
+        if (colonIndex <= 0 || colonIndex >= modelId.Length - 1) return null;
+
+        return (_settings as IVisionLookup)?.GetVisionSupport(modelId.Substring(0, colonIndex), modelId.Substring(colonIndex + 1));
     }
 
     public void ClearLogs()

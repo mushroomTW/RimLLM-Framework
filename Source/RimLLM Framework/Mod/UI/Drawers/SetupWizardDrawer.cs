@@ -481,6 +481,7 @@ public static class SetupWizardDrawer
                     {
                         Settings.SetModelList(providerId, catalog.Models);
                         Settings.SetProviderContextWindows(providerId, catalog.ContextWindows);
+                        Settings.SetProviderVisionSupport(providerId, catalog.VisionSupport);
                         Settings.Write();
                         _chatModels = new List<string>(catalog.Models);
                     }

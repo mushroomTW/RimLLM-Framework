@@ -852,6 +852,7 @@ public class OpenAIProvider : ILLMProvider
 
         var list = new List<string>();
         Dictionary<string, int> contextWindows;
+        Dictionary<string, bool> visionSupport = null;
         try
         {
             ClientResult<OpenAIModelCollection> result = await new OpenAIClient(credential, options)
@@ -865,6 +866,7 @@ public class OpenAIProvider : ILLMProvider
             }
             string rawJson = result.GetRawResponse()?.Content?.ToString();
             contextWindows = ParseContextWindows(rawJson);
+            visionSupport = ParseVisionSupport(rawJson);
             if (list.Count > 0 && contextWindows.Count == 0 && string.IsNullOrEmpty(rawJson))
             {
                 // SDK 有時不保留原始回應（回傳的 Content 為空），此時模型 id 照常解析，
@@ -896,7 +898,54 @@ public class OpenAIProvider : ILLMProvider
                 LLMError.InvalidResponse,
                 $"Failed to fetch {ProviderId} models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
         }
-        return new ModelCatalog(list, contextWindows);
+        return new ModelCatalog(list, contextWindows, visionSupport);
+    }
+
+    /// <summary>
+    /// 從 OpenAI 相容 /models 原始 JSON 讀出「模型 id → 是否支援圖片輸入」。
+    /// 目前只有 OpenRouter 回報（<c>architecture.input_modalities</c>）；沒回報的模型不收錄，視為未知。
+    /// 格式不符時回傳空集合，不讓整個模型清單的重新整理失敗。
+    /// </summary>
+    internal static Dictionary<string, bool> ParseVisionSupport(string json)
+    {
+        var support = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(json)) return support;
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("data", out JsonElement data)
+                || data.ValueKind != JsonValueKind.Array)
+            {
+                return support;
+            }
+
+            foreach (JsonElement model in data.EnumerateArray())
+            {
+                if (model.ValueKind != JsonValueKind.Object
+                    || !model.TryGetProperty("id", out JsonElement idElement)
+                    || idElement.ValueKind != JsonValueKind.String
+                    || !model.TryGetProperty("architecture", out JsonElement arch)
+                    || arch.ValueKind != JsonValueKind.Object
+                    || !arch.TryGetProperty("input_modalities", out JsonElement input)
+                    || input.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+                string id = idElement.GetString();
+                if (string.IsNullOrEmpty(id)) continue;
+
+                support[id] = System.Linq.Enumerable.Any(
+                    input.EnumerateArray(),
+                    m => m.ValueKind == JsonValueKind.String && m.GetString() == "image");
+            }
+        }
+        catch (JsonException)
+        {
+            support.Clear();
+        }
+        return support;
     }
 
     /// <summary>

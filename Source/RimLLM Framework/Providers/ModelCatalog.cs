@@ -8,11 +8,15 @@ namespace RimLLM_Framework.Providers;
 /// </summary>
 internal sealed class ModelCatalog
 {
-    public ModelCatalog(List<string> models, Dictionary<string, int> contextWindows)
+    public ModelCatalog(List<string> models, Dictionary<string, int> contextWindows, Dictionary<string, bool> visionSupport = null)
     {
         Models = models ?? [];
         ContextWindows = contextWindows ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        VisionSupport = visionSupport ?? new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
     }
+
+    /// <summary>模型名稱 → 是否支援圖片輸入。只含 API 或 models.dev 有明確資料的模型。</summary>
+    public Dictionary<string, bool> VisionSupport { get; }
 
     public List<string> Models { get; }
 

@@ -15,7 +15,7 @@ namespace RimLLM_Framework.Mod;
 /// RimWorld Mod 設定檔。
 /// 將複雜的字典結構序列化為單一 JSON 字串儲存，並在序列化時調用 EncryptionUtility 加解密 API 金鑰。
 /// </summary>
-public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWindowLookup, IDailyTokenBudget
+public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWindowLookup, IVisionLookup, IDailyTokenBudget
 {
     /// <summary>
     /// API 供應商的 Fallback Chain 順序。
@@ -285,6 +285,12 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     /// </summary>
     private readonly Dictionary<string, Dictionary<string, int>> _providerContextWindows = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// 重新整理模型清單時得知的圖片輸入支援（providerId → 模型名稱 → 是否支援）。
+    /// 只記有明確資料的模型；沒有的不存，查詢時以 null 表示未知。
+    /// </summary>
+    private readonly Dictionary<string, Dictionary<string, bool>> _providerVisionSupport = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>玩家手動填寫的上下文上限（"Provider:Model" → token 數），優先於 API 回報的值。</summary>
     private readonly Dictionary<string, int> _contextWindowOverrides = new(StringComparer.OrdinalIgnoreCase);
 
@@ -368,6 +374,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         public Dictionary<string, bool> ChinaModeProviders;
         public Dictionary<string, int> ModelLevelOverrides;
         public Dictionary<string, Dictionary<string, int>> ProviderContextWindows;
+        public Dictionary<string, Dictionary<string, bool>> ProviderVisionSupport;
         public Dictionary<string, int> ContextWindowOverrides;
         public float ApiTimeout;
         public int MaxRetries;
@@ -525,6 +532,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                     ChinaModeProviders = this._chinaModeProviders,
                     ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
                     ProviderContextWindows = this._providerContextWindows,
+                    ProviderVisionSupport = this._providerVisionSupport,
                     ContextWindowOverrides = new Dictionary<string, int>(this._contextWindowOverrides),
                     DetailedLogging = this.DetailedLogging,
                     MaxConcurrentRequests = this.MaxConcurrentRequests,
@@ -638,6 +646,15 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                                 foreach (var kvp in dto.ProviderContextWindows)
                                 {
                                     if (kvp.Value != null) SetProviderContextWindows(kvp.Key, kvp.Value);
+                                }
+                            }
+
+                            if (dto.ProviderVisionSupport != null)
+                            {
+                                _providerVisionSupport.Clear();
+                                foreach (var kvp in dto.ProviderVisionSupport)
+                                {
+                                    if (kvp.Value != null) SetProviderVisionSupport(kvp.Key, kvp.Value);
                                 }
                             }
 
@@ -1277,6 +1294,37 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                     if (kvp.Value > 0) map[kvp.Key] = kvp.Value;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// 併入本次重新整理得知的圖片輸入支援，語意同 <see cref="SetProviderContextWindows"/>：
+    /// 新值覆寫舊值，本次沒拿到的保留。
+    /// </summary>
+    public void SetProviderVisionSupport(string providerId, Dictionary<string, bool> support)
+    {
+        if (string.IsNullOrEmpty(providerId) || support == null) return;
+        lock (_settingsLock)
+        {
+            if (!_providerVisionSupport.TryGetValue(providerId, out var map))
+            {
+                map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                _providerVisionSupport[providerId] = map;
+            }
+            foreach (var kvp in support) map[kvp.Key] = kvp.Value;
+        }
+    }
+
+    /// <summary>查詢模型是否支援圖片輸入；沒有資料時回傳 null。</summary>
+    public bool? GetVisionSupport(string providerId, string modelName)
+    {
+        if (string.IsNullOrEmpty(providerId) || string.IsNullOrEmpty(modelName)) return null;
+        lock (_settingsLock)
+        {
+            return _providerVisionSupport.TryGetValue(providerId, out var map)
+                && map.TryGetValue(modelName, out bool supported)
+                ? supported
+                : (bool?)null;
         }
     }
 

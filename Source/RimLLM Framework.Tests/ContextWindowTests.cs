@@ -200,6 +200,55 @@ public class ContextWindowTests
         CollectionAssert.IsEmpty(windows);
     }
 
+    [Test]
+    public void ModelsDevReadsVisionFromInputModalitiesAndSkipsUnknown()
+    {
+        const string json = @"{ ""openai"": { ""models"": {
+            ""gpt-4o"": { ""modalities"": { ""input"": [""text"", ""image""], ""output"": [""text""] } },
+            ""o-text"": { ""modalities"": { ""input"": [""text""], ""output"": [""text""] } },
+            ""no-info"": { ""limit"": { ""context"": 1000 } }
+        } } }";
+        var support = new Dictionary<string, bool> { ["o-text"] = true };
+        using (var doc = JsonDocument.Parse(json))
+        {
+            ModelsDevCatalog.FillMissingVision(ModelsDevCatalog.ReadAllVision(doc.RootElement), ProviderIds.OpenAI, support);
+        }
+
+        ClassicAssert.IsTrue(support["gpt-4o"]);
+        // 供應商 API 已有的值不被 models.dev 覆寫
+        ClassicAssert.IsTrue(support["o-text"]);
+        // 沒有 modalities 的模型不收錄：未知不等於不支援
+        ClassicAssert.IsFalse(support.ContainsKey("no-info"));
+    }
+
+    [Test]
+    public void OpenRouterVisionParsedFromArchitectureInputModalities()
+    {
+        const string json = @"{ ""data"": [
+            { ""id"": ""a/vision"", ""architecture"": { ""input_modalities"": [""text"", ""image""] } },
+            { ""id"": ""a/text"", ""architecture"": { ""input_modalities"": [""text""] } },
+            { ""id"": ""a/none"" }
+        ] }";
+        var support = OpenAIProvider.ParseVisionSupport(json);
+
+        ClassicAssert.IsTrue(support["a/vision"]);
+        ClassicAssert.IsFalse(support["a/text"]);
+        ClassicAssert.IsFalse(support.ContainsKey("a/none"));
+        CollectionAssert.IsEmpty(OpenAIProvider.ParseVisionSupport("not json"));
+    }
+
+    [Test]
+    public void SettingsVisionSupportIsNullWhenUnknown()
+    {
+        var settings = new RimLLMFrameworkSettings();
+        settings.SetProviderVisionSupport("OpenAI", new Dictionary<string, bool> { ["gpt-4o"] = true, ["o-text"] = false });
+
+        ClassicAssert.AreEqual(true, settings.GetVisionSupport("OpenAI", "gpt-4o"));
+        ClassicAssert.AreEqual(false, settings.GetVisionSupport("OpenAI", "o-text"));
+        ClassicAssert.IsNull(settings.GetVisionSupport("OpenAI", "unknown"));
+        ClassicAssert.IsNull(settings.GetVisionSupport("DeepSeek", "gpt-4o"));
+    }
+
     private sealed class FilteringProvider : OpenAIProvider
     {
         public FilteringProvider(IRimLLMSettings settings)
