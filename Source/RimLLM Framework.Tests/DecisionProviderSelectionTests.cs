@@ -32,6 +32,7 @@ public class DecisionProviderSelectionTests
 
     private DecisionTestDoubles.FakeJevHandler _handler;
     private Func<HttpMessageHandler> _originalMessageHandlerFactory;
+    private static readonly string[] expected = new[] { "jev-latest", "jev-1.13" };
 
     [SetUp]
     public void SetUp()
@@ -335,7 +336,7 @@ public class DecisionProviderSelectionTests
         ClassicAssert.AreEqual("/v1/models", _handler.RequestUris[0].AbsolutePath);
         ClassicAssert.AreEqual("https://decision.example.test", _handler.RequestUris[0].GetLeftPart(UriPartial.Authority));
         ClassicAssert.AreEqual("Bearer liquid-key", _handler.AuthorizationHeaders[0]);
-        ClassicAssert.AreEqual(new[] { "jev-latest", "jev-1.13" }, models);
+        ClassicAssert.AreEqual(expected, models);
     }
 
     [Test]

@@ -157,21 +157,23 @@ public static class RimLLMSettingsUI
         Widgets.BeginScrollView(listRect, ref _leftScrollPosition, viewRect);
         Listing_Standard listing = new Listing_Standard();
         listing.Begin(viewRect);
-        foreach (DetailPage page in Pages)
-        {
-            if (!page.Advanced) DrawCategoryButton(listing, page);
-        }
-
+        DrawCategoryButtons(listing, onlyAdvanced: false);
         DrawAdvancedGroupHeader(listing, expanded, activePage);
         if (expanded)
         {
-            foreach (DetailPage page in Pages)
-            {
-                if (page.Advanced) DrawCategoryButton(listing, page);
-            }
+            DrawCategoryButtons(listing, onlyAdvanced: true);
         }
         listing.End();
         Widgets.EndScrollView();
+    }
+
+    /// <summary>繪製所有分頁按鈕。<paramref name="onlyAdvanced"/> 為 true 時只畫進階分頁，否則只畫一般分頁。</summary>
+    private static void DrawCategoryButtons(Listing_Standard listing, bool onlyAdvanced)
+    {
+        foreach (DetailPage page in Pages)
+        {
+            if (page.Advanced == onlyAdvanced) DrawCategoryButton(listing, page);
+        }
     }
 
     private static void DrawAdvancedGroupHeader(Listing_Standard listing, bool expanded, DetailPage activePage)

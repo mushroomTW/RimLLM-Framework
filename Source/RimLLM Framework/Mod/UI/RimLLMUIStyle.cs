@@ -113,9 +113,7 @@ public static class RimLLMUIStyle
             return new string('•', apiKey.Length);
         }
 
-        return apiKey.Substring(0, MaskedPrefixLength) +
-               "…" +
-               apiKey.Substring(apiKey.Length - MaskedSuffixLength);
+        return string.Concat(apiKey.AsSpan(0, MaskedPrefixLength), "…", apiKey.AsSpan(apiKey.Length - MaskedSuffixLength));
     }
 
     /// <summary>
@@ -136,7 +134,7 @@ public static class RimLLMUIStyle
         foreach (string model in models)
         {
             if (string.IsNullOrEmpty(model)) continue;
-            if (matchAll || model.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0)
+            if (matchAll || model.Contains(needle, StringComparison.OrdinalIgnoreCase))
             {
                 result.Add(model);
             }
@@ -166,7 +164,7 @@ public static class RimLLMUIStyle
     /// </summary>
     public static List<string> FilterModelsCached(string cacheKey, int version, string filter, Func<IList<string>> sourceProvider)
     {
-        if (sourceProvider == null) throw new ArgumentNullException(nameof(sourceProvider));
+        ArgumentNullException.ThrowIfNull(sourceProvider);
         filter = filter ?? string.Empty;
 
         if (FilteredModelsCache.TryGetValue(cacheKey ?? string.Empty, out FilteredModelsEntry entry) &&

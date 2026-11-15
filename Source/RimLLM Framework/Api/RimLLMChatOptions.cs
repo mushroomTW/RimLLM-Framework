@@ -11,6 +11,7 @@ namespace RimLLM_Framework;
 /// 自身不持有任何欄位。框架內部一律透過 AdditionalProperties 取值，因此
 /// 呼叫端用 <see cref="RimLLMChatOptions"/> 或直接對純 ChatOptions 塞鍵，效果完全相同；
 /// 也因為沒有自有欄位，MEAI 的 base.Clone() 就能完整複製，不需要覆寫 Clone。
+/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMChatOptions : ChatOptions
 {

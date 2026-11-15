@@ -9,6 +9,7 @@ namespace RimLLM_Framework.Core;
 /// <summary>
 /// Unity 主線程派遣器 (Main Thread Dispatcher)。
 /// 確保所有在背景線程（如 API 請求完成）的 Callback 能夠安全地回到 Unity 主線程執行，防止 TPS 劇烈震盪與 Unity API 非線程安全崩潰。
+/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMDispatcher : MonoBehaviour
 {
@@ -84,7 +85,7 @@ public class RimLLMDispatcher : MonoBehaviour
         Func<System.Threading.Tasks.Task<T>> func,
         CancellationToken cancellationToken)
     {
-        if (func == null) throw new ArgumentNullException(nameof(func));
+        ArgumentNullException.ThrowIfNull(func);
         if (cancellationToken.IsCancellationRequested)
         {
             return System.Threading.Tasks.Task.FromCanceled<T>(cancellationToken);
@@ -149,7 +150,7 @@ public class RimLLMDispatcher : MonoBehaviour
     /// </summary>
     public static System.Threading.Tasks.Task<T> EnqueueOnMainThreadAsync<T>(Func<T> func)
     {
-        if (func == null) throw new ArgumentNullException(nameof(func));
+        ArgumentNullException.ThrowIfNull(func);
 
         var tcs = new System.Threading.Tasks.TaskCompletionSource<T>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -312,20 +313,34 @@ public class RimLLMDispatcher : MonoBehaviour
     /// <summary>主線程 pump 是否運作中（遊戲內整合測試用）。</summary>
     internal static bool HasPump => _hasPump;
 
-    private void Awake()
+    /// <summary>
+    /// 標記主線程 pump 已就緒。
+    /// </summary>
+    /// <remarks>
+    /// Unity 只會叫用執行個體形式的訊息方法，宣告成 static 就不會被呼叫，因此 Awake 必須維持執行個體方法；
+    /// 靜態欄位的寫入改由 <see cref="SetPumpActive"/> 負責，避免執行個體方法直接改動靜態狀態。
+    /// </remarks>
+    #pragma warning disable CA1822 // Awake 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
+    private void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
-        _hasPump = true;
+        SetPumpActive(true);
     }
+    #pragma warning restore CA1822
 
-    private void Update()
+    /// <summary>
+    /// 每幀清空佇列。Unity 訊息方法必須是執行個體方法，理由同 <see cref="Awake"/>。
+    /// </summary>
+    #pragma warning disable CA1822 // Update 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
+    private void Update() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
         // 每幀受項目數與時間預算雙重限制，避免長回應的大量 chunk 在單一幀內全部執行造成卡頓。
         DrainWithBudget(MaxActionsPerFrame, FrameBudgetMs);
     }
+    #pragma warning restore CA1822
 
     private void OnDestroy()
     {
-        _hasPump = false;
+        SetPumpActive(false);
 
         // 先把剩餘項目排乾，避免關閉時遺失遙測寫入等重要回呼。
         int drained = DrainWithBudget(int.MaxValue, long.MaxValue);
@@ -334,7 +349,25 @@ public class RimLLMDispatcher : MonoBehaviour
             RimLLMLog.Message($"[RimLLM] Dispatcher drained {drained} pending callbacks before shutdown.");
         }
 
-        if (_instance == this)
+        ReleaseInstance(this);
+    }
+
+    /// <summary>
+    /// 切換主線程 pump 狀態；<see cref="EnqueueOnMainThread"/> 等靜態入口會據此決定要排入佇列或同步執行。
+    /// </summary>
+    /// <param name="active">true 表示元件已就緒，false 表示正在關閉或尚未建立。</param>
+    private static void SetPumpActive(bool active)
+    {
+        _hasPump = active;
+    }
+
+    /// <summary>
+    /// 僅當目前單例就是 <paramref name="dispatcher"/> 時才清除，避免誤清關機期間已重建的新實例。
+    /// </summary>
+    /// <param name="dispatcher">正在銷毀的派遣器實例。</param>
+    private static void ReleaseInstance(RimLLMDispatcher dispatcher)
+    {
+        if (_instance == dispatcher)
         {
             _instance = null;
         }

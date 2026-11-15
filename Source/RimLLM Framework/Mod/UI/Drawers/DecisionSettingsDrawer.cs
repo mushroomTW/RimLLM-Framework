@@ -70,6 +70,11 @@ public static class DecisionSettingsDrawer
         return 460f + endpointHeight + ProviderFallbackChainControls.Height + modelSectionHeight;
     }
 
+    /// <summary>
+    /// 繪製決策供應商清單。每個供應商都要繪製按鈕並加間距，有 UI 副作用，
+    /// 無法以純 LINQ 運算式替換，故保留迴圈。
+    /// </summary>
+    #pragma warning disable S3267 // 迴圈內有 UI 繪製副作用（DrawDecisionSubButton 與 listing.Gap），無法以 LINQ 取代。
     public static void DrawMiddleDecisionMenu(Rect rect)
     {
         Rect contentRect = rect.ContractedBy(6f);
@@ -95,6 +100,7 @@ public static class DecisionSettingsDrawer
         listing.End();
         Widgets.EndScrollView();
     }
+    #pragma warning restore S3267
 
     private static void DrawDecisionSubButton(Listing_Standard listing, string label, string providerId)
     {
@@ -382,11 +388,11 @@ public static class DecisionSettingsDrawer
         float viewHeight = Mathf.Max(200f, (rows * (chipHeight + gap)) + gap);
         Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
 
-        if (!ModelScrollPositions.ContainsKey(providerId))
+        if (!ModelScrollPositions.TryGetValue(providerId, out Vector2 scrollPos))
         {
-            ModelScrollPositions[providerId] = Vector2.zero;
+            scrollPos = Vector2.zero;
+            ModelScrollPositions[providerId] = scrollPos;
         }
-        Vector2 scrollPos = ModelScrollPositions[providerId];
 
         Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
         ModelScrollPositions[providerId] = scrollPos;

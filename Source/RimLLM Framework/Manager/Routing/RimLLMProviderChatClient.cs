@@ -80,14 +80,15 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             {
                 using IChatClient nativeClient = _provider.CreateChatClient(_model);
                 return await RimLLMChatClientExecutor.GenerateAsync(
-                    nativeClient,
-                    messages,
-                    options,
-                    _model,
-                    useNativeSchema: true,
-                    _provider.ProviderId,
-                    _settings.ApiTimeout,
-                    cancellationToken,
+                    new GenerationParams(
+                        nativeClient,
+                        messages,
+                        options,
+                        _model,
+                        true,
+                        _provider.ProviderId,
+                        _settings.ApiTimeout,
+                        cancellationToken),
                     onUsage: _onUsage).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsNativeSchemaRejected(ex))
@@ -116,14 +117,15 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     {
         using IChatClient client = _provider.CreateChatClient(_model);
         return await RimLLMChatClientExecutor.GenerateAsync(
-            client,
-            ApplyJsonSchemaInstructions(messages, responseType, options),
-            DowngradeCallerSchema(options),
-            _model,
-            useNativeSchema: false,
-            _provider.ProviderId,
-            _settings.ApiTimeout,
-            cancellationToken,
+            new GenerationParams(
+                client,
+                ApplyJsonSchemaInstructions(messages, responseType, options),
+                DowngradeCallerSchema(options),
+                _model,
+                false,
+                _provider.ProviderId,
+                _settings.ApiTimeout,
+                cancellationToken),
             onUsage: _onUsage).ConfigureAwait(false);
     }
 
@@ -137,7 +139,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
     public object GetService(Type serviceType, object serviceKey = null)
     {
-        if (serviceType == null) throw new ArgumentNullException(nameof(serviceType));
+        ArgumentNullException.ThrowIfNull(serviceType);
         // 帶 key 的查詢代表呼叫端要的是具名服務，這一層沒有提供任何具名服務。
         if (serviceKey != null) return null;
 
@@ -230,12 +232,15 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                 {
                     using IChatClient client = _client._provider.CreateChatClient(_client._model);
                     await RimLLMChatClientExecutor.StreamAsync(
-                        client,
-                        providerMessages,
-                        effective,
-                        _client._model,
-                        useNativeSchema,
-                        _client._provider.ProviderId,
+                        new GenerationParams(
+                            client,
+                            providerMessages,
+                            effective,
+                            _client._model,
+                            useNativeSchema,
+                            _client._provider.ProviderId,
+                            _client._settings.ApiTimeout,
+                            cancellationToken),
                         async update =>
                         {
                             // 唯一的改寫：把 ModelId 換成 "供應商:模型" 複合識別，
@@ -250,8 +255,6 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                             }
                             await writer.WriteAsync(update, cancellationToken).ConfigureAwait(false);
                         },
-                        _client._settings.ApiTimeout,
-                        cancellationToken,
                         onUsage: _client._onUsage).ConfigureAwait(false);
 
                     writer.TryComplete();
@@ -300,7 +303,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
         {
             try
             {
-                _linkedCts.Cancel();
+                await _linkedCts.CancelAsync().ConfigureAwait(false);
             }
             catch (ObjectDisposedException)
             {

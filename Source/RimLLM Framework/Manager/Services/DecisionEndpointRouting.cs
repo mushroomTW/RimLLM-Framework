@@ -158,6 +158,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
     }
 
     /// <summary>讀出 OpenAI 格式的 <c>data[].id</c>；不是這個格式時回傳 null。</summary>
+    #pragma warning disable S1168 // API 合約規定格式不符時回傳 null，呼叫端已區分 null 與空集合。
     internal static List<string> TryReadOpenAiModelIds(string body)
     {
         try
@@ -190,6 +191,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
             return null;
         }
     }
+    #pragma warning restore S1168
 
     private static string ToJevModelList(List<string> ids)
     {

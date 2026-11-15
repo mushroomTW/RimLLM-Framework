@@ -27,6 +27,9 @@ internal static class AutoTranslationCompatPatch
     /// <summary>Auto Translation 的預設翻譯器（免金鑰），接管關閉時改回它。</summary>
     private const string DefaultTranslatorName = "Google";
 
+    /// <summary>該翻譯器設定類別中「自訂 Base URL」成員的名稱（反射用，內容不可改）。</summary>
+    private const string UserCustomBaseUrlMember = "UserCustomBaseURL";
+
     /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply()
     {
@@ -71,12 +74,12 @@ internal static class AutoTranslationCompatPatch
             object config = (translator == null ? null : CompatSeedUtil.GetMember(translator, "Settings"))
                 ?? ((IDictionary)translatorSettingsField.GetValue(null))[TranslatorName];
             if (config == null
-                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(config, "UserCustomBaseURL") as string, AutoTranslationCompatPatch.PackageId))
+                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(config, UserCustomBaseUrlMember) as string, AutoTranslationCompatPatch.PackageId))
             {
                 return;
             }
 
-            CompatSeedUtil.SetMember(config, "UserCustomBaseURL", string.Empty);
+            CompatSeedUtil.SetMember(config, UserCustomBaseUrlMember, string.Empty);
             if (string.Equals(translatorNameField.GetValue(null) as string, TranslatorName, StringComparison.Ordinal))
             {
                 translatorNameField.SetValue(null, DefaultTranslatorName);
@@ -111,72 +114,128 @@ internal static class AutoTranslationCompatPatch
                 return;
             }
 
-            Type settingsType = AccessTools.TypeByName("AutoTranslation.Settings");
-            Type managerType = AccessTools.TypeByName("AutoTranslation.Services.TranslatorManager");
-            Type aiSettingsType = AccessTools.TypeByName("AutoTranslation.Translators.TranslatorSettings_AIModel");
-            FieldInfo translatorNameField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorName");
-            FieldInfo translatorSettingsField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorSettings");
-            MethodInfo getTranslator = managerType == null ? null : AccessTools.Method(managerType, "GetTranslator", [typeof(string)]);
-            if (translatorNameField == null || translatorSettingsField == null || getTranslator == null || aiSettingsType == null)
+            if (!TryResolveMembers(out SettingsMembers members))
             {
                 Log.Warning($"[RimLLM] Compat: {DisplayName} settings were not found (the mod may have changed); its settings were not pre-filled.");
                 return;
             }
 
-            object translator = getTranslator.Invoke(null, [TranslatorName]);
+            object translator = members.GetTranslator.Invoke(null, [TranslatorName]);
             if (translator == null)
             {
                 Log.Warning($"[RimLLM] Compat: the '{TranslatorName}' translator of {DisplayName} was not found; its settings were not pre-filled.");
                 return;
             }
 
-            // 該翻譯器的設定：優先用翻譯器已持有的，否則從設定字典取或新建，並把兩邊接起來。
-            var dictionary = (IDictionary)translatorSettingsField.GetValue(null);
-            object config = CompatSeedUtil.GetMember(translator, "Settings") ?? dictionary[TranslatorName];
-            if (config == null || !aiSettingsType.IsInstanceOfType(config))
-            {
-                config = Activator.CreateInstance(aiSettingsType);
-            }
-
-            string existingUrl = CompatSeedUtil.GetMember(config, "UserCustomBaseURL") as string;
-            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, AutoTranslationCompatPatch.PackageId);
-            if (!string.IsNullOrWhiteSpace(existingUrl) && !ours)
-            {
-                CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
-                return;
-            }
-
-            // 玩家目前選用的是填了金鑰、已就緒的其他翻譯器（例如 DeepL），代表有自己的 API 設定，不切走。
-            if (!ours && UsesOwnKeyedTranslator(translatorNameField.GetValue(null) as string, getTranslator))
-            {
-                CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
-                return;
-            }
-
-            CompatSeedUtil.SetMember(config, "UserCustomBaseURL", baseUrl);
-            // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
-            CompatSeedUtil.SetMember(config, "UserSelectedModel", CompatSeedUtil.ModelLabel(AutoTranslationCompatPatch.PackageId));
-            if (!ours)
-            {
-                translatorNameField.SetValue(null, TranslatorName);
-            }
-            dictionary[TranslatorName] = config;
-            CompatSeedUtil.SetMember(translator, "Settings", config);
-
-            if (!ours)
-            {
-                // 讓翻譯器立即以新設定就緒並成為目前使用的翻譯器，不必重開遊戲。
-                AccessTools.Method(translator.GetType(), "Prepare", Type.EmptyTypes)?.Invoke(translator, null);
-                FieldInfo current = AccessTools.Field(managerType, "CurrentTranslator");
-                current?.SetValue(null, translator);
-            }
-
-            ((Verse.Mod)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
+            SeedTranslator(baseUrl, translator, members);
         }
         catch (Exception ex)
         {
             CompatSeedUtil.WarnFailed(DisplayName, ex);
         }
+    }
+
+    /// <summary>
+    /// 找出 Auto Translation 的設定欄位與翻譯器管理員方法。任一項找不到即代表對方改版，呼叫端只記警告。
+    /// </summary>
+    private static bool TryResolveMembers(out SettingsMembers members)
+    {
+        Type settingsType = AccessTools.TypeByName("AutoTranslation.Settings");
+        Type managerType = AccessTools.TypeByName("AutoTranslation.Services.TranslatorManager");
+        Type aiSettingsType = AccessTools.TypeByName("AutoTranslation.Translators.TranslatorSettings_AIModel");
+        FieldInfo translatorNameField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorName");
+        FieldInfo translatorSettingsField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorSettings");
+        MethodInfo getTranslator = managerType == null ? null : AccessTools.Method(managerType, "GetTranslator", [typeof(string)]);
+        members = new SettingsMembers(managerType, translatorNameField, translatorSettingsField, getTranslator, aiSettingsType);
+        return translatorNameField != null && translatorSettingsField != null && getTranslator != null && aiSettingsType != null;
+    }
+
+    /// <summary>把端點位址與專用模型寫進該翻譯器的設定，首次接管時一併選用它。</summary>
+    /// <param name="baseUrl">本機端點的 Base URL。</param>
+    /// <param name="translator">翻譯器實例。</param>
+    /// <param name="members">已解析的反射成員。</param>
+    private static void SeedTranslator(string baseUrl, object translator, SettingsMembers members)
+    {
+        // 該翻譯器的設定：優先用翻譯器已持有的，否則從設定字典取或新建，並把兩邊接起來。
+        var dictionary = (IDictionary)members.TranslatorSettings.GetValue(null);
+        object config = CompatSeedUtil.GetMember(translator, "Settings") ?? dictionary[TranslatorName];
+        if (config == null || !members.AiSettings.IsInstanceOfType(config))
+        {
+            config = Activator.CreateInstance(members.AiSettings);
+        }
+
+        string existingUrl = CompatSeedUtil.GetMember(config, UserCustomBaseUrlMember) as string;
+        bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, AutoTranslationCompatPatch.PackageId);
+        if (!string.IsNullOrWhiteSpace(existingUrl) && !ours)
+        {
+            CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
+            return;
+        }
+
+        // 玩家目前選用的是填了金鑰、已就緒的其他翻譯器（例如 DeepL），代表有自己的 API 設定，不切走。
+        if (!ours && UsesOwnKeyedTranslator(members.TranslatorNameField.GetValue(null) as string, members.GetTranslator))
+        {
+            CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
+            return;
+        }
+
+        CompatSeedUtil.SetMember(config, UserCustomBaseUrlMember, baseUrl);
+        // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
+        CompatSeedUtil.SetMember(config, "UserSelectedModel", CompatSeedUtil.ModelLabel(AutoTranslationCompatPatch.PackageId));
+        if (!ours)
+        {
+            members.TranslatorNameField.SetValue(null, TranslatorName);
+        }
+        dictionary[TranslatorName] = config;
+        CompatSeedUtil.SetMember(translator, "Settings", config);
+
+        if (!ours)
+        {
+            // 讓翻譯器立即以新設定就緒並成為目前使用的翻譯器，不必重開遊戲。
+            AccessTools.Method(translator.GetType(), "Prepare", Type.EmptyTypes)?.Invoke(translator, null);
+            AccessTools.Field(members.ManagerType, "CurrentTranslator")?.SetValue(null, translator);
+        }
+
+        ((Verse.Mod)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
+    }
+
+    /// <summary>Auto Translation 設定與翻譯器管理員的反射成員；任一項為 null 代表對方已改版。</summary>
+    private readonly struct SettingsMembers
+    {
+        /// <summary>建立成員集合。</summary>
+        /// <param name="managerType">翻譯器管理員型別。</param>
+        /// <param name="translatorName">目前翻譯器名稱的靜態欄位。</param>
+        /// <param name="translatorSettings">翻譯器設定字典的靜態欄位。</param>
+        /// <param name="getTranslator">以名稱取得翻譯器的靜態方法。</param>
+        /// <param name="aiSettings">AI 模型翻譯器設定型別。</param>
+        public SettingsMembers(
+            Type managerType,
+            FieldInfo translatorName,
+            FieldInfo translatorSettings,
+            MethodInfo getTranslator,
+            Type aiSettings)
+        {
+            ManagerType = managerType;
+            TranslatorNameField = translatorName;
+            TranslatorSettings = translatorSettings;
+            GetTranslator = getTranslator;
+            AiSettings = aiSettings;
+        }
+
+        /// <summary>翻譯器管理員型別。</summary>
+        public Type ManagerType { get; }
+
+        /// <summary>目前翻譯器名稱的靜態欄位。</summary>
+        public FieldInfo TranslatorNameField { get; }
+
+        /// <summary>翻譯器設定字典的靜態欄位。</summary>
+        public FieldInfo TranslatorSettings { get; }
+
+        /// <summary>以名稱取得翻譯器的靜態方法。</summary>
+        public MethodInfo GetTranslator { get; }
+
+        /// <summary>AI 模型翻譯器設定型別。</summary>
+        public Type AiSettings { get; }
     }
 
     /// <summary>目前選用的翻譯器是否為需要金鑰且已就緒（玩家已填金鑰）的其他翻譯器。</summary>

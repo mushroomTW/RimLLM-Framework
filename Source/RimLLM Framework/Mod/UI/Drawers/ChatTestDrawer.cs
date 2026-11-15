@@ -33,6 +33,12 @@ public static class ChatTestDrawer
     /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
     private const string ChatInputControlName = "RimLLM_ChatInput";
     private const string ChatAiTag = "RimLLM_ChatAi";
+
+    /// <summary>對話測試頁用到的翻譯鍵，集中於此避免重複硬編碼。</summary>
+    private const string ReasoningEffortLabelKey = "RimLLM_ReasoningEffortLabel";
+    private const string ReasoningEffortAutoKey = "RimLLM_ReasoningEffort_Auto";
+    private const string ChatUserPrefixKey = "RimLLM_ChatUser";
+
     private static readonly char[] SpaceTrimChars = [' '];
 
     /// <summary>目前進行中請求的取消來源，供「清空」按鈕中止長時間回應。</summary>
@@ -352,26 +358,7 @@ public static class ChatTestDrawer
         listing.Gap(6f);
 
         // 思考強度設定列
-        Rect effortRowRect = listing.GetRect(30f);
-        float effortLabelWidth = Text.CalcSize("RimLLM_ReasoningEffortLabel".Translate()).x;
-        Rect effortLabelRect = new Rect(effortRowRect.x, effortRowRect.y, effortLabelWidth + 5f, effortRowRect.height);
-        Rect effortBtnRect = new Rect(effortRowRect.x + effortLabelWidth + 15f, effortRowRect.y, 160f, effortRowRect.height);
-        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-        {
-            Widgets.Label(effortLabelRect, "RimLLM_ReasoningEffortLabel".Translate());
-        }
-        string chatEffortLabel = chatReasoningEffort == null ? "RimLLM_ReasoningEffort_Auto".Translate() : $"RimLLM_ReasoningEffort_{chatReasoningEffort}".Translate();
-        if (Widgets.ButtonText(effortBtnRect, chatEffortLabel))
-        {
-            List<FloatMenuOption> options =
-            [
-                new("RimLLM_ReasoningEffort_Auto".Translate(), () => { chatReasoningEffort = null; }),
-                new("RimLLM_ReasoningEffort_Low".Translate(), () => { chatReasoningEffort = ReasoningEffort.Low; }),
-                new("RimLLM_ReasoningEffort_Medium".Translate(), () => { chatReasoningEffort = ReasoningEffort.Medium; }),
-                new("RimLLM_ReasoningEffort_High".Translate(), () => { chatReasoningEffort = ReasoningEffort.High; })
-            ];
-            Find.WindowStack.Add(new FloatMenu(options));
-        }
+        DrawReasoningEffortRow(listing);
         listing.Gap(6f);
 
         // 輸入框、清空按鈕與發送/停止按鈕
@@ -432,7 +419,7 @@ public static class ChatTestDrawer
 
                 string userPrompt = chatInput.Trim();
                 string pinnedModel = chatModelId;
-                chatHistory.Add(EntryPrefix("RimLLM_ChatUser") + userPrompt);
+                chatHistory.Add(EntryPrefix(ChatUserPrefixKey) + userPrompt);
 
                 // 先新增一個 AI 回覆的佔位項目，以利後續串流更新
                 chatHistory.Add(EntryPrefix(ChatAiTag));
@@ -481,7 +468,7 @@ public static class ChatTestDrawer
                         int totalTokens = 0;
                         bool hasExactTokens = false;
 
-                        var enumerator = client.GetStreamingResponseAsync(messages, options, requestToken).GetAsyncEnumerator();
+                        var enumerator = client.GetStreamingResponseAsync(messages, options, requestToken).GetAsyncEnumerator(requestToken);
                         try
                         {
                             while (await enumerator.MoveNextAsync().ConfigureAwait(false))
@@ -581,7 +568,7 @@ public static class ChatTestDrawer
                             }
                             else if (scheduleTrailing)
                             {
-                                Task.Delay(StreamRenderIntervalMs).ContinueWith(_ =>
+                                Task.Delay(StreamRenderIntervalMs, requestToken).ContinueWith(_ =>
                                 {
                                     lock (replyLock)
                                     {
@@ -635,7 +622,9 @@ public static class ChatTestDrawer
                         lock (replyLock) { streamCompleted = true; }
                         requestCts.Dispose();
                     }
-                });
+                // 刻意不傳 requestToken：開始前就取消的話工作不會執行，finally 的收尾（釋放 CTS、標記完成）就會被跳過。
+                // 取消改由工作內部的 requestToken 處理。
+                }, CancellationToken.None);
             }
         }
     }
@@ -681,6 +670,33 @@ public static class ChatTestDrawer
             {
                 options.Add(new FloatMenuOption("RimLLM_ModelsEmptyWarning".Translate(), null));
             }
+            Find.WindowStack.Add(new FloatMenu(options));
+        }
+    }
+
+    /// <summary>
+    /// 思考強度設定列。
+    /// </summary>
+    private static void DrawReasoningEffortRow(Listing_Standard listing)
+    {
+        Rect effortRowRect = listing.GetRect(30f);
+        float effortLabelWidth = Text.CalcSize(ReasoningEffortLabelKey.Translate()).x;
+        Rect effortLabelRect = new Rect(effortRowRect.x, effortRowRect.y, effortLabelWidth + 5f, effortRowRect.height);
+        Rect effortBtnRect = new Rect(effortRowRect.x + effortLabelWidth + 15f, effortRowRect.y, 160f, effortRowRect.height);
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            Widgets.Label(effortLabelRect, ReasoningEffortLabelKey.Translate());
+        }
+        string chatEffortLabel = chatReasoningEffort == null ? ReasoningEffortAutoKey.Translate() : $"RimLLM_ReasoningEffort_{chatReasoningEffort}".Translate();
+        if (Widgets.ButtonText(effortBtnRect, chatEffortLabel))
+        {
+            List<FloatMenuOption> options =
+            [
+                new(ReasoningEffortAutoKey.Translate(), () => { chatReasoningEffort = null; }),
+                new("RimLLM_ReasoningEffort_Low".Translate(), () => { chatReasoningEffort = ReasoningEffort.Low; }),
+                new("RimLLM_ReasoningEffort_Medium".Translate(), () => { chatReasoningEffort = ReasoningEffort.Medium; }),
+                new("RimLLM_ReasoningEffort_High".Translate(), () => { chatReasoningEffort = ReasoningEffort.High; })
+            ];
             Find.WindowStack.Add(new FloatMenu(options));
         }
     }
@@ -823,7 +839,7 @@ public static class ChatTestDrawer
 
         return key switch
         {
-            "RimLLM_ChatUser" => "<b>[Me]:</b> ",
+            ChatUserPrefixKey => "<b>[Me]:</b> ",
             ChatAiTag => "<b>[AI]:</b> ",
             "RimLLM_ChatAiError" => "<b>[AI Error]:</b> ",
             _ => key + " ",
@@ -876,7 +892,7 @@ public static class ChatTestDrawer
             }
         }
 
-        if (TryStripPrefix(entry, "RimLLM_ChatUser", out label, out body)) return true;
+        if (TryStripPrefix(entry, ChatUserPrefixKey, out label, out body)) return true;
         if (TryStripPrefix(entry, "RimLLM_ChatAiError", out label, out body)) return false;
         if (TryStripPrefix(entry, ChatAiTag, out label, out body)) return false;
 

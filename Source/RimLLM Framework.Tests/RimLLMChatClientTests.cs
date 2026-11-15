@@ -13,7 +13,7 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public class RimLLMChatClientTests
 {
-    private RimLLMManager CreateManager()
+    private static RimLLMManager CreateManager()
     {
         var settings = new MockSettings { FallbackChain = ["TestMock:mock-model"] };
         settings.EnabledProviders["TestMock"] = true;
@@ -32,7 +32,7 @@ public class RimLLMChatClientTests
         return manager;
     }
 
-    private IChatClient CreateClient(RimLLMManager manager, string modId)
+    private static IChatClient CreateClient(RimLLMManager manager, string modId)
     {
         return manager.CreateChatClient(modId);
     }

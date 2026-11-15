@@ -8,7 +8,7 @@ namespace RimLLM_Framework.Core;
 
 /// <summary>透過 libsecret 使用登入工作階段的 Secret Service，不將秘密放進程序參數或檔案。</summary>
 [SupportedOSPlatform("linux")]
-internal sealed class LinuxSecretStore : ISecretStore
+internal sealed partial class LinuxSecretStore : ISecretStore
 {
     private const string Secret = "libsecret-1.so.0";
     private const string Glib = "libglib-2.0.so.0";
@@ -22,7 +22,8 @@ internal sealed class LinuxSecretStore : ISecretStore
         try
         {
             CheckError(error);
-            return value == IntPtr.Zero ? null : Convert.FromBase64String(Marshal.PtrToStringUTF8(value));
+            // 項目不存在代表尚未建立金鑰；回傳空集合，讓上層以「金鑰無效」統一回報。
+            return value == IntPtr.Zero ? Array.Empty<byte>() : Convert.FromBase64String(Marshal.PtrToStringUTF8(value));
         }
         finally { if (value != IntPtr.Zero) secret_password_free(value); }
     }
@@ -39,7 +40,8 @@ internal sealed class LinuxSecretStore : ISecretStore
     public void Delete(string account)
     {
         using var call = new SecretCall(account);
-        secret_password_clearv_sync(IntPtr.Zero, call.Attributes, call.Cancellable, out IntPtr error);
+        // 項目不存在時 libsecret 同樣回傳 FALSE；刪除本身是冪等操作，因此結果不影響流程。
+        _ = secret_password_clearv_sync(IntPtr.Zero, call.Attributes, call.Cancellable, out IntPtr error);
         CheckError(error);
     }
 
@@ -55,7 +57,7 @@ internal sealed class LinuxSecretStore : ISecretStore
         finally { g_error_free(error); }
     }
 
-    private sealed class SecretCall : IDisposable
+    private sealed partial class SecretCall : IDisposable
     {
         private IntPtr _glib;
         private readonly CancellationTokenSource _timeout = new(TimeSpan.FromSeconds(10));
@@ -71,8 +73,8 @@ internal sealed class LinuxSecretStore : ISecretStore
                 Attributes = g_hash_table_new_full(NativeLibrary.GetExport(_glib, "g_str_hash"), NativeLibrary.GetExport(_glib, "g_str_equal"),
                     NativeLibrary.GetExport(_glib, "g_free"), NativeLibrary.GetExport(_glib, "g_free"));
                 if (Attributes == IntPtr.Zero) throw new CryptographicException("Could not allocate Secret Service attributes.");
-                g_hash_table_insert(Attributes, g_strdup("application"), g_strdup("GreenMushroom.RimLLMFramework"));
-                g_hash_table_insert(Attributes, g_strdup("account"), g_strdup(account));
+                InsertAttribute("application", "GreenMushroom.RimLLMFramework");
+                InsertAttribute("account", account);
                 Cancellable = g_cancellable_new();
                 if (Cancellable == IntPtr.Zero) throw new CryptographicException("Could not allocate Secret Service cancellation.");
                 _registration = _timeout.Token.Register(() => g_cancellable_cancel(Cancellable));
@@ -84,6 +86,13 @@ internal sealed class LinuxSecretStore : ISecretStore
             }
         }
 
+        /// <summary>寫入一組查詢屬性；插入失敗代表重複鍵，屬程式錯誤，直接中止。</summary>
+        private void InsertAttribute(string name, string value)
+        {
+            if (g_hash_table_insert(Attributes, g_strdup(name), g_strdup(value)) == 0)
+                throw new CryptographicException($"Could not set the Secret Service attribute '{name}'.");
+        }
+
         public void Dispose()
         {
             // 先等待取消回呼結束，才釋放它可能還在使用的原生物件。
@@ -93,32 +102,32 @@ internal sealed class LinuxSecretStore : ISecretStore
             if (Attributes != IntPtr.Zero) { g_hash_table_unref(Attributes); Attributes = IntPtr.Zero; }
             if (_glib != IntPtr.Zero) { NativeLibrary.Free(_glib); _glib = IntPtr.Zero; }
         }
+
+        [LibraryImport(Glib)]
+        private static partial IntPtr g_hash_table_new_full(IntPtr hash, IntPtr equal, IntPtr freeKey, IntPtr freeValue);
+        [LibraryImport(Glib)]
+        private static partial int g_hash_table_insert(IntPtr table, IntPtr key, IntPtr value);
+        [LibraryImport(Glib)]
+        private static partial void g_hash_table_unref(IntPtr table);
+        [LibraryImport(Glib, StringMarshalling = StringMarshalling.Utf8)]
+        private static partial IntPtr g_strdup(string text);
+        [LibraryImport(Gio)]
+        private static partial IntPtr g_cancellable_new();
+        [LibraryImport(Gio)]
+        private static partial void g_cancellable_cancel(IntPtr cancellable);
+        [LibraryImport(GObject)]
+        private static partial void g_object_unref(IntPtr instance);
     }
 
-    [DllImport(Secret, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr secret_password_lookupv_sync(IntPtr schema, IntPtr attributes, IntPtr cancellable, out IntPtr error);
-    [DllImport(Secret, CallingConvention = CallingConvention.Cdecl)]
-    private static extern int secret_password_storev_sync(IntPtr schema, IntPtr attributes,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string collection, [MarshalAs(UnmanagedType.LPUTF8Str)] string label,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string password, IntPtr cancellable, out IntPtr error);
-    [DllImport(Secret, CallingConvention = CallingConvention.Cdecl)]
-    private static extern int secret_password_clearv_sync(IntPtr schema, IntPtr attributes, IntPtr cancellable, out IntPtr error);
-    [DllImport(Secret, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void secret_password_free(IntPtr password);
-    [DllImport(Glib, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr g_hash_table_new_full(IntPtr hash, IntPtr equal, IntPtr freeKey, IntPtr freeValue);
-    [DllImport(Glib, CallingConvention = CallingConvention.Cdecl)]
-    private static extern int g_hash_table_insert(IntPtr table, IntPtr key, IntPtr value);
-    [DllImport(Glib, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void g_hash_table_unref(IntPtr table);
-    [DllImport(Glib, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr g_strdup([MarshalAs(UnmanagedType.LPUTF8Str)] string text);
-    [DllImport(Glib, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void g_error_free(IntPtr error);
-    [DllImport(Gio, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr g_cancellable_new();
-    [DllImport(Gio, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void g_cancellable_cancel(IntPtr cancellable);
-    [DllImport(GObject, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void g_object_unref(IntPtr instance);
+    [LibraryImport(Secret)]
+    private static partial IntPtr secret_password_lookupv_sync(IntPtr schema, IntPtr attributes, IntPtr cancellable, out IntPtr error);
+    [LibraryImport(Secret, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int secret_password_storev_sync(IntPtr schema, IntPtr attributes,
+        string collection, string label, string password, IntPtr cancellable, out IntPtr error);
+    [LibraryImport(Secret)]
+    private static partial int secret_password_clearv_sync(IntPtr schema, IntPtr attributes, IntPtr cancellable, out IntPtr error);
+    [LibraryImport(Secret)]
+    private static partial void secret_password_free(IntPtr password);
+    [LibraryImport(Glib)]
+    private static partial void g_error_free(IntPtr error);
 }

@@ -53,7 +53,7 @@ public static class RimLLMClientExtensions
         RimLLMChatOptions options = null,
         CancellationToken cancellationToken = default)
     {
-        if (client == null) throw new ArgumentNullException(nameof(client));
+        ArgumentNullException.ThrowIfNull(client);
 
         // 以 GetService 而非型別轉換辨識框架堆疊：MEAI 的 DelegatingChatClient 會把
         // GetService 往內層轉發，因此無論外面包了幾層中介層都認得出來。

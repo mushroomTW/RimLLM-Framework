@@ -226,22 +226,22 @@ public static class RimLLMJsonHelper
         // 3b. 清掉截斷造成的懸空 token，避免補完括號後仍無法解析。
         //     只清除 JSON 允許的空白字元。
         json = json.TrimEnd(' ', '\t', '\r', '\n');
-        if (json.EndsWith(":"))
+        if (json.EndsWith(':'))
         {
             json += "null";
         }
-        else if (json.EndsWith(","))
+        else if (json.EndsWith(','))
         {
             json = json.Substring(0, json.Length - 1);
         }
 
         // 3c. 依 LIFO 順序補齊
+        var sb = new StringBuilder(json);
         for (int i = expectedClosers.Count - 1; i >= 0; i--)
         {
-            json += expectedClosers[i];
+            sb.Append(expectedClosers[i]);
         }
-
-        return json;
+        return sb.ToString();
     }
 
     private static string RemoveThinkBlocksOutsideStrings(string json)
@@ -255,20 +255,7 @@ public static class RimLLMJsonHelper
             char current = json[index];
             if (inString)
             {
-                result.Append(current);
-                if (escapeNext)
-                {
-                    escapeNext = false;
-                }
-                else if (current == '\\')
-                {
-                    escapeNext = true;
-                }
-                else if (current == '"')
-                {
-                    inString = false;
-                }
-                index++;
+                index = AppendStringChar(result, index, current, ref escapeNext, ref inString);
                 continue;
             }
 
@@ -280,17 +267,10 @@ public static class RimLLMJsonHelper
                 continue;
             }
 
-            const string thinkStart = "<think>";
-            if (index + thinkStart.Length <= json.Length &&
-                string.CompareOrdinal(json, index, thinkStart, 0, thinkStart.Length) == 0)
+            if (TrySkipThinkBlock(json, index, out int nextIndex))
             {
-                const string thinkEnd = "</think>";
-                int end = json.IndexOf(thinkEnd, index + thinkStart.Length, StringComparison.Ordinal);
-                if (end >= 0)
-                {
-                    index = end + thinkEnd.Length;
-                    continue;
-                }
+                index = nextIndex;
+                continue;
             }
 
             result.Append(current);
@@ -298,6 +278,50 @@ public static class RimLLMJsonHelper
         }
 
         return result.ToString();
+    }
+
+    /// <summary>處理字串內的單一字元：處理跳脫與結束引號，回傳下一個索引。</summary>
+    /// <param name="result">輸出緩衝區。</param>
+    /// <param name="index">目前字元的索引。</param>
+    /// <param name="current">目前字元。</param>
+    /// <param name="escapeNext">上一個字元是否為跳脫反斜線。</param>
+    /// <param name="inString">是否仍在字串內；遇到結束引號時會被設回 false。</param>
+    private static int AppendStringChar(StringBuilder result, int index, char current, ref bool escapeNext, ref bool inString)
+    {
+        result.Append(current);
+        if (escapeNext)
+        {
+            escapeNext = false;
+        }
+        else if (current == '\\')
+        {
+            escapeNext = true;
+        }
+        else if (current == '"')
+        {
+            // 字串結束：下一個字元起回到非字串分支，區塊標記與逗號清理才不會誤判。
+            inString = false;
+        }
+        return index + 1;
+    }
+
+    /// <summary>嘗試跳過 <c>&lt;think&gt;</c>…<c>&lt;/think&gt;</c> 區塊，若找到並跳過則回傳 true 並給出下一個索引。</summary>
+    private static bool TrySkipThinkBlock(string json, int index, out int nextIndex)
+    {
+        const string thinkStart = "<think>";
+        const string thinkEnd = "</think>";
+        if (index + thinkStart.Length <= json.Length &&
+            string.CompareOrdinal(json, index, thinkStart, 0, thinkStart.Length) == 0)
+        {
+            int end = json.IndexOf(thinkEnd, index + thinkStart.Length, StringComparison.Ordinal);
+            if (end >= 0)
+            {
+                nextIndex = end + thinkEnd.Length;
+                return true;
+            }
+        }
+        nextIndex = index;
+        return false;
     }
 
     private static string RemoveTrailingCommasOutsideStrings(string json)
@@ -441,7 +465,8 @@ public static class RimLLMJsonHelper
                     {
                         field.SetValue(instance, CreateDummyInstance(field.FieldType, new HashSet<Type>(visitedTypes)));
                     }
-                    catch { }
+                    // 欄位由 JsonSerializer 已驗證，這裡僅建立 dummy 結構；失敗的欄位維持預設值不影響輸出。
+                    catch { RimLLMLog.Warning($"[RimLLM] Dummy instance field skipped: {field.Name}"); }
                 }
                 foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
                 {
@@ -451,7 +476,8 @@ public static class RimLLMJsonHelper
                         {
                             prop.SetValue(instance, CreateDummyInstance(prop.PropertyType, new HashSet<Type>(visitedTypes)), null);
                         }
-                        catch { }
+                        // 屬性可能有自訂 setter 邏輯，dummy 建構不保證成功；失敗的屬性維持預設值。
+                        catch { RimLLMLog.Warning($"[RimLLM] Dummy instance property skipped: {prop.Name}"); }
                     }
                 }
             }
@@ -561,6 +587,8 @@ public static class RimLLMJsonHelper
         }
     }
 
+    /// <summary>驗證 JSON 值是否包含 schema 要求的所有成員。</summary>
+    #pragma warning disable S3267 // JsonElement.ObjectEnumerator 不實現 IEnumerable，無法直接套用 LINQ Where/FirstOrDefault。
     private static void ValidateRequiredJsonMembers(JsonElement value, JsonElement schema)
     {
         if (value.ValueKind == JsonValueKind.Null)
@@ -634,6 +662,7 @@ public static class RimLLMJsonHelper
             }
         }
     }
+    #pragma warning restore S3267
 
     private static void ValidateRuntimeMember(
         object value,

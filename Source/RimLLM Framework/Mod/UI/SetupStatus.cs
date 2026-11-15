@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using RimLLM_Framework.Manager.Services;
 
 namespace RimLLM_Framework.Mod;
@@ -59,11 +60,7 @@ internal static class SetupStatus
     internal static bool IsProviderUsable(string providerId)
     {
         RimLLMFrameworkSettings settings = RimLLMFrameworkMod.Settings;
-        bool builtIn = false;
-        foreach (string id in ProviderIds.BuiltIn)
-        {
-            if (id == providerId) { builtIn = true; break; }
-        }
+        bool builtIn = ProviderIds.BuiltIn.Contains(providerId);
 
         if (!builtIn)
         {

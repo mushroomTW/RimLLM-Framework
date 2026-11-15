@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +18,7 @@ namespace RimLLM_Framework.Manager;
 /// - 使用量與日誌追蹤器 (RimLLMUsageTracker)
 /// - 備用管道 (RimLLMFallbackPipeline)
 /// - 請求佇列 (RimLLMRequestQueue)
+/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMManager
 {
@@ -62,7 +62,7 @@ public class RimLLMManager
     /// <summary>
     /// 提供外部 UI 查詢的呼叫日誌歷史記錄轉發。
     /// </summary>
-    public ConcurrentQueue<RequestLogEntry> RequestLogs => _usageTracker.RequestLogs;
+    public IReadOnlyCollection<RequestLogEntry> RequestLogs => _usageTracker.RequestLogs;
 
     public RimLLMManager(IRimLLMSettings settings)
     {
@@ -121,8 +121,7 @@ public class RimLLMManager
     /// <exception cref="InvalidOperationException">當 ProviderId 與既有供應商重複時擲出，防止覆蓋內建供應商。</exception>
     public void RegisterProvider(ILLMProvider provider)
     {
-        if (provider == null)
-            throw new ArgumentNullException(nameof(provider));
+        ArgumentNullException.ThrowIfNull(provider);
         if (string.IsNullOrEmpty(provider.ProviderId))
             throw new ArgumentException("ProviderId cannot be empty or null", nameof(provider));
 

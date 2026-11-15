@@ -12,6 +12,8 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public sealed class StructuredReviewRegressionTests
 {
+    private static readonly string[] expected = new[] { "Name" };
+
     [Test]
     public void SchemaAndValidationFollowStjDeserializationContract()
     {
@@ -23,7 +25,7 @@ public sealed class StructuredReviewRegressionTests
         {
             propertyNames.Add(property.Key);
         }
-        CollectionAssert.AreEquivalent(new[] { "Name" }, propertyNames);
+        CollectionAssert.AreEquivalent(expected, propertyNames);
 
         ContractDto parsed = RimLLMJsonHelper.DeserializeAndValidate<ContractDto>(
             "{\"Name\":\"ok\",\"Unknown\":\"extension value\"}");
@@ -78,6 +80,8 @@ public sealed class StructuredReviewRegressionTests
         Assert.Throws<InvalidOperationException>(() => RimLLMJsonHelper.ValidateStructuredObject(root));
     }
 
+    private static readonly string[] expectedIntegerOrNull = new[] { "integer", "null" };
+
     [Test]
     public void NullableCollectionAndMapValuesRemainNullableInSchema()
     {
@@ -86,8 +90,8 @@ public sealed class StructuredReviewRegressionTests
         JsonObject itemType = properties["Values"].AsObject()["items"].AsObject();
         JsonObject mapValueType = properties["Lookup"].AsObject()["additionalProperties"].AsObject();
 
-        CollectionAssert.AreEquivalent(new[] { "integer", "null" }, itemType["type"].Deserialize<string[]>());
-        CollectionAssert.AreEquivalent(new[] { "integer", "null" }, mapValueType["type"].Deserialize<string[]>());
+        CollectionAssert.AreEquivalent(expectedIntegerOrNull, itemType["type"].Deserialize<string[]>());
+        CollectionAssert.AreEquivalent(expectedIntegerOrNull, mapValueType["type"].Deserialize<string[]>());
 
         NullableContainersDto parsed = RimLLMJsonHelper.DeserializeAndValidate<NullableContainersDto>(
             "{\"Values\":[null,1],\"Lookup\":{\"empty\":null}}");
@@ -112,9 +116,11 @@ public sealed class StructuredReviewRegressionTests
         ClassicAssert.IsNull(parsed.Lookup["empty"]);
     }
 
+    private static readonly string[] expectedStringOrNull = new[] { "string", "null" };
+
     private static void AssertNullableEnumSchema(JsonObject schema)
     {
-        CollectionAssert.AreEquivalent(new[] { "string", "null" }, schema["type"].Deserialize<string[]>());
+        CollectionAssert.AreEquivalent(expectedStringOrNull, schema["type"].Deserialize<string[]>());
 
         bool enumAllowsNull = false;
         foreach (JsonNode enumValue in schema["enum"].AsArray())
@@ -150,7 +156,7 @@ public sealed class StructuredReviewRegressionTests
         [JsonExtensionData]
         public Dictionary<string, JsonElement> Extra { get; set; } = new();
 
-        public string ReadOnly => null;
+        public static string ReadOnly => null;
     }
 
     public sealed class RequiredDto

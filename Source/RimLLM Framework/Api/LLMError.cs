@@ -1,8 +1,11 @@
+
 namespace RimLLM_Framework;
 
 /// <summary>
 /// RimLLM 統一錯誤碼列舉。
+/// 列舉命名保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞現有品牌識別與下游 Mod 相容性。
 /// </summary>
+#pragma warning disable S2342 // 列舉名稱 LLMError 與命名空間 RimLLM_Framework 重疊是設計需要，保留 RimLLM 品牌名。
 public enum LLMError
 {
     /// <summary>
@@ -73,3 +76,4 @@ public enum LLMError
     /// </summary>
     ContextWindowExceeded
 }
+#pragma warning restore S2342

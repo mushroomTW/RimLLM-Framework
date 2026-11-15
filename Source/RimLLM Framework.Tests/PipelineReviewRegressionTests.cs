@@ -28,19 +28,20 @@ public sealed class PipelineReviewRegressionTests
         var usage = new List<UsageTokens>();
 
         Task stream = RimLLMChatClientExecutor.StreamAsync(
-            client,
-            [new ChatMessage(ChatRole.User, "billable prompt")],
-            null,
-            "mock-model",
-            false,
-            "Mock",
+            new GenerationParams(
+                client,
+                [new ChatMessage(ChatRole.User, "billable prompt")],
+                null,
+                "mock-model",
+                false,
+                "Mock",
+                10f,
+                cancellation.Token),
             _ =>
             {
                 updateReceived.TrySetResult();
                 return Task.CompletedTask;
             },
-            10f,
-            cancellation.Token,
             onUsage: value => usage.Add(value));
 
         await updateReceived.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -57,15 +58,16 @@ public sealed class PipelineReviewRegressionTests
     {
         var usage = new List<UsageTokens>();
         Task stream = RimLLMChatClientExecutor.StreamAsync(
-            new FailingAfterPartialUpdateClient(),
-            [new ChatMessage(ChatRole.User, "billable prompt")],
+            new GenerationParams(
+                new FailingAfterPartialUpdateClient(),
+                [new ChatMessage(ChatRole.User, "billable prompt")],
+                null,
+                "mock-model",
+                false,
+                "Mock",
+                10f,
+                CancellationToken.None),
             null,
-            "mock-model",
-            false,
-            "Mock",
-            null,
-            10f,
-            CancellationToken.None,
             onUsage: value => usage.Add(value));
 
         RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
@@ -80,15 +82,16 @@ public sealed class PipelineReviewRegressionTests
     {
         var usage = new List<UsageTokens>();
         Task stream = RimLLMChatClientExecutor.StreamAsync(
-            new PartialStreamClient(),
-            [new ChatMessage(ChatRole.User, "billable prompt")],
+            new GenerationParams(
+                new PartialStreamClient(),
+                [new ChatMessage(ChatRole.User, "billable prompt")],
+                null,
+                "mock-model",
+                false,
+                "Mock",
+                0.1f,
+                CancellationToken.None),
             null,
-            "mock-model",
-            false,
-            "Mock",
-            null,
-            0.1f,
-            CancellationToken.None,
             onUsage: value => usage.Add(value));
 
         RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
@@ -106,15 +109,16 @@ public sealed class PipelineReviewRegressionTests
         var usage = new List<UsageTokens>();
 
         Task stream = RimLLMChatClientExecutor.StreamAsync(
-            client,
-            [new ChatMessage(ChatRole.User, "not yet billable")],
+            new GenerationParams(
+                client,
+                [new ChatMessage(ChatRole.User, "not yet billable")],
+                null,
+                "mock-model",
+                false,
+                "Mock",
+                10f,
+                cancellation.Token),
             null,
-            "mock-model",
-            false,
-            "Mock",
-            null,
-            10f,
-            cancellation.Token,
             onUsage: value => usage.Add(value));
 
         await client.StreamStarted.WaitAsync(TimeSpan.FromSeconds(2));
@@ -168,6 +172,11 @@ public sealed class PipelineReviewRegressionTests
         ClassicAssert.AreEqual("keep this prompt", inner.ReceivedMessages.Single().Text);
     }
 
+    private static readonly string[] expected = new[] { "P1", "P2", "P3" };
+    private static readonly string[] expectedFirstRotation = new[] { "P2", "P3", "P1" };
+    private static readonly string[] expectedSecondRotation = new[] { "P3", "P1", "P2" };
+    private static readonly string[] expectedPreferredLast = new[] { "P3", "P2", "P1" };
+
     [Test]
     public void RoundRobin_RotatesFallbackCandidatesAndKeepsPreferredFirst()
     {
@@ -178,9 +187,9 @@ public sealed class PipelineReviewRegressionTests
             .Select(_ => pipeline.ResolveCandidates(null, null).Select(c => c.ProviderId).ToArray())
             .ToArray();
 
-        CollectionAssert.AreEqual(new[] { "P1", "P2", "P3" }, actual[0]);
-        CollectionAssert.AreEqual(new[] { "P2", "P3", "P1" }, actual[1]);
-        CollectionAssert.AreEqual(new[] { "P3", "P1", "P2" }, actual[2]);
+        CollectionAssert.AreEqual(expected, actual[0]);
+        CollectionAssert.AreEqual(expectedFirstRotation, actual[1]);
+        CollectionAssert.AreEqual(expectedSecondRotation, actual[2]);
         CollectionAssert.AreEqual(actual[0], actual[3]);
 
         string[][] preferred = Enumerable.Range(0, 2)
@@ -189,8 +198,8 @@ public sealed class PipelineReviewRegressionTests
 
         ClassicAssert.AreEqual("P3", preferred[0][0]);
         ClassicAssert.AreEqual("P3", preferred[1][0]);
-        CollectionAssert.AreEqual(new[] { "P3", "P1", "P2" }, preferred[0]);
-        CollectionAssert.AreEqual(new[] { "P3", "P2", "P1" }, preferred[1]);
+        CollectionAssert.AreEqual(expectedSecondRotation, preferred[0]);
+        CollectionAssert.AreEqual(expectedPreferredLast, preferred[1]);
     }
 
     [Test]
@@ -305,7 +314,7 @@ public sealed class PipelineReviewRegressionTests
         ClassicAssert.Greater(RimLLMDispatcher.QueuedCount, 0, "The tool invocation should be waiting in the main-thread queue.");
     }
 
-    private static void AssertReportedUsage(IReadOnlyList<UsageTokens> usage)
+    private static void AssertReportedUsage(List<UsageTokens> usage)
     {
         ClassicAssert.AreEqual(1, usage.Count);
         ClassicAssert.AreEqual(101, usage[0].Prompt);

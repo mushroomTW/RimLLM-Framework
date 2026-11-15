@@ -641,7 +641,7 @@ public class DispatcherAndCircuitBreakerTests
         // 預熱無空建構子、帶有循環引用的型別，驗證不會 StackOverflow 且產生合理 JSON
         RimLLMJsonHelper.GetSampleJson<ComplexTestDataStructure>();
 
-        string json = RimLLMJsonHelper.GetSampleJson(typeof(ComplexTestDataStructure));
+        string json = RimLLMJsonHelper.GetSampleJson<ComplexTestDataStructure>();
 
         ClassicAssert.IsNotEmpty(json);
         ClassicAssert.AreNotEqual("{}", json);
@@ -743,6 +743,8 @@ public class DispatcherAndCircuitBreakerTests
             "不含 Dictionary 的型別不應被誤判為開放式 map");
     }
 
+    private static readonly string[] expected = new[] { "integer", "null" };
+
     [Test]
     public void TestJsonSchemaNullableIsRequiredButTypedAsUnion()
     {
@@ -750,7 +752,7 @@ public class DispatcherAndCircuitBreakerTests
 
         var optionalType = schema["properties"].AsObject()["OptionalCount"].AsObject()["type"].AsArray();
         CollectionAssert.AreEquivalent(
-            new[] { "integer", "null" },
+            expected,
             optionalType.Deserialize<string[]>(),
             "Nullable<int> 的選填性應以聯集型別表達");
 
@@ -1264,5 +1266,5 @@ public class DispatcherAndCircuitBreakerTests
         }
     }
 
-    private string okStr(string s) => s;
+    private static string okStr(string s) => s;
 }

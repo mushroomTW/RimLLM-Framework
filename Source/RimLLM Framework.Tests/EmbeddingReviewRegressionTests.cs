@@ -39,7 +39,7 @@ public class EmbeddingReviewRegressionTests
             var generator = manager.CreateEmbeddingGenerator("test.embed.nomodel");
             await Assert.ThrowsAsync<RimLLMException>(async () =>
             {
-                await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
+                await generator.GenerateAsync(values).ConfigureAwait(false);
             });
             ClassicAssert.AreEqual(0, handler.RequestCount, "沒選模型時不應送出 HTTP 請求。");
         }).ConfigureAwait(false);
@@ -60,7 +60,7 @@ public class EmbeddingReviewRegressionTests
             var generator = manager.CreateEmbeddingGenerator("test.embed.budget.hardblock");
             RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
             {
-                await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
+                await generator.GenerateAsync(values).ConfigureAwait(false);
             });
 
             ClassicAssert.AreEqual(LLMError.QuotaExceeded, exception.Error);
@@ -83,7 +83,7 @@ public class EmbeddingReviewRegressionTests
         {
             var generator = warnManager.CreateEmbeddingGenerator("test.embed.budget.warnonly");
             GeneratedEmbeddings<Embedding<float>> generated =
-                await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
+                await generator.GenerateAsync(values).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(1, generated.Count);
             ClassicAssert.AreEqual(1, warnHandler.RequestCount);
@@ -100,7 +100,7 @@ public class EmbeddingReviewRegressionTests
         {
             var generator = resetManager.CreateEmbeddingGenerator("test.embed.budget.reset");
             GeneratedEmbeddings<Embedding<float>> generated =
-                await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
+                await generator.GenerateAsync(values).ConfigureAwait(false);
 
             ClassicAssert.AreEqual(1, generated.Count);
             ClassicAssert.AreEqual(1, resetHandler.RequestCount);
@@ -122,7 +122,7 @@ public class EmbeddingReviewRegressionTests
         {
             OperationCanceledException exception = await Assert.CatchAsync<OperationCanceledException>(async () =>
             {
-                await service.ComputeEmbeddingsAsync(new[] { "hello" }, cancellation.Token).ConfigureAwait(false);
+                await service.ComputeEmbeddingsAsync(values, cancellation.Token).ConfigureAwait(false);
             });
 
             ClassicAssert.IsNotNull(exception);
@@ -174,7 +174,7 @@ public class EmbeddingReviewRegressionTests
         {
             OperationCanceledException computeException = await Assert.CatchAsync<OperationCanceledException>(async () =>
             {
-                await service.ComputeEmbeddingsAsync(new[] { "hello" }, computeCancellation.Token).ConfigureAwait(false);
+                await service.ComputeEmbeddingsAsync(values, computeCancellation.Token).ConfigureAwait(false);
             });
             ClassicAssert.IsNotNull(computeException);
             ClassicAssert.AreEqual(1, computeHandler.RequestCount);
@@ -222,7 +222,7 @@ public class EmbeddingReviewRegressionTests
         {
             RimLLMException computeException = await Assert.ThrowsAsync<RimLLMException>(async () =>
             {
-                await service.ComputeEmbeddingsAsync(new[] { "hello" }).ConfigureAwait(false);
+                await service.ComputeEmbeddingsAsync(values).ConfigureAwait(false);
             });
             ClassicAssert.AreEqual(LLMError.Timeout, computeException.Error);
 
@@ -296,6 +296,8 @@ public class EmbeddingReviewRegressionTests
     }
 
     private static string Today => DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static readonly string[] values = new[] { "hello" };
 
     private static MockSettings CreateEmbeddingSettings()
     {
@@ -374,6 +376,8 @@ public class EmbeddingReviewRegressionTests
         public int AcceptedConnections => Volatile.Read(ref _acceptedConnections);
         public Task Completion { get; }
 
+        private static readonly string[] separator = new[] { "\r\n" };
+
         public SlowLocalHttpServer(TimeSpan responseDelay, string responseBody)
         {
             _responseDelay = responseDelay;
@@ -403,8 +407,8 @@ public class EmbeddingReviewRegressionTests
                 byte[] body = Encoding.UTF8.GetBytes(_responseBody);
                 byte[] headers = Encoding.ASCII.GetBytes(
                     $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");
-                await stream.WriteAsync(headers, 0, headers.Length).ConfigureAwait(false);
-                await stream.WriteAsync(body, 0, body.Length).ConfigureAwait(false);
+                await stream.WriteAsync(headers.AsMemory()).ConfigureAwait(false);
+                await stream.WriteAsync(body.AsMemory()).ConfigureAwait(false);
             }
             catch (Exception exception) when (
                 exception is IOException || exception is SocketException || exception is ObjectDisposedException || exception is OperationCanceledException)
@@ -419,7 +423,7 @@ public class EmbeddingReviewRegressionTests
             var singleByte = new byte[1];
             while (!header.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal))
             {
-                int read = await stream.ReadAsync(singleByte, 0, singleByte.Length, cancellationToken).ConfigureAwait(false);
+                int read = await stream.ReadAsync(singleByte.AsMemory(), cancellationToken).ConfigureAwait(false);
                 if (read == 0) return false;
                 header.Append((char)singleByte[0]);
             }
@@ -427,7 +431,7 @@ public class EmbeddingReviewRegressionTests
             int contentLength = 0;
             bool chunked = false;
             bool expectContinue = false;
-            foreach (string line in header.ToString().Split(new[] { "\r\n" }, StringSplitOptions.None))
+            foreach (string line in header.ToString().Split(separator, StringSplitOptions.None))
             {
                 int separator = line.IndexOf(':');
                 if (separator <= 0) continue;
@@ -440,18 +444,18 @@ public class EmbeddingReviewRegressionTests
                 }
                 else if (name.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
                 {
-                    chunked = value.IndexOf("chunked", StringComparison.OrdinalIgnoreCase) >= 0;
+                    chunked = value.Contains("chunked", StringComparison.OrdinalIgnoreCase);
                 }
                 else if (name.Equals("Expect", StringComparison.OrdinalIgnoreCase))
                 {
-                    expectContinue = value.IndexOf("100-continue", StringComparison.OrdinalIgnoreCase) >= 0;
+                    expectContinue = value.Contains("100-continue", StringComparison.OrdinalIgnoreCase);
                 }
             }
 
             if (expectContinue)
             {
                 byte[] continueResponse = Encoding.ASCII.GetBytes("HTTP/1.1 100 Continue\r\n\r\n");
-                await stream.WriteAsync(continueResponse, 0, continueResponse.Length, cancellationToken).ConfigureAwait(false);
+                await stream.WriteAsync(continueResponse.AsMemory(), cancellationToken).ConfigureAwait(false);
             }
 
             if (contentLength > 0)
@@ -495,7 +499,7 @@ public class EmbeddingReviewRegressionTests
             var singleByte = new byte[1];
             while (true)
             {
-                int read = await stream.ReadAsync(singleByte, 0, singleByte.Length, cancellationToken).ConfigureAwait(false);
+                int read = await stream.ReadAsync(singleByte.AsMemory(), cancellationToken).ConfigureAwait(false);
                 if (read == 0) return null;
                 if (singleByte[0] == '\n') return line.ToString().TrimEnd('\r');
                 line.Append((char)singleByte[0]);
@@ -508,7 +512,7 @@ public class EmbeddingReviewRegressionTests
             int remaining = count;
             while (remaining > 0)
             {
-                int read = await stream.ReadAsync(buffer, 0, Math.Min(buffer.Length, remaining), cancellationToken).ConfigureAwait(false);
+                int read = await stream.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, remaining)), cancellationToken).ConfigureAwait(false);
                 if (read == 0) return false;
                 remaining -= read;
             }

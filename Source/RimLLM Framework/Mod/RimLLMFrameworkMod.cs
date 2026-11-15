@@ -9,6 +9,7 @@ namespace RimLLM_Framework.Mod;
 /// <summary>
 /// RimLLM Framework Mod 本體進入點。
 /// 初始化 SDK、掛載 Dispatcher 並委託設定 GUI 的渲染。
+/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMFrameworkMod : Verse.Mod
 {
@@ -55,7 +56,8 @@ public class RimLLMFrameworkMod : Verse.Mod
         catch (Exception ex)
         {
             // 關閉期間 GenFilePaths 等 Verse 服務可能已不可用，不得讓例外中斷關機流程。
-            try { Log.Warning($"[RimLLM] Failed to write telemetry on shutdown: {ex.Message}"); } catch { }
+            // RimLLMLog 本身會在 Verse.Log 失敗時退回主控台輸出，因此這裡不需要再包一層 try/catch。
+            RimLLMLog.Warning($"[RimLLM] Failed to write telemetry on shutdown: {ex.Message}");
         }
     }
 

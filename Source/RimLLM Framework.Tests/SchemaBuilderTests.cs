@@ -221,7 +221,7 @@ public class SchemaBuilderTests
         JsonObject schema = ParseSchema(typeof(NullableTestDataStructure));
         JsonNode memberType = schema["properties"].AsObject()["OptionalCount"].AsObject()["type"];
         ClassicAssert.AreEqual(JsonValueKind.Array, memberType.GetValueKind(), "int? 應寫成聯集型別。");
-        CollectionAssert.AreEquivalent(new[] { "integer", "null" }, memberType.Deserialize<string[]>());
+        CollectionAssert.AreEquivalent(expected, memberType.Deserialize<string[]>());
 
         // 專案未啟用 NRT，exporter 會把所有參考型別也寫成可為 null 的聯集。
         // 只有 Nullable<T> 才算選填 —— 與舊實作的 IsOptionalMember 判定一致。
@@ -268,6 +268,8 @@ public class SchemaBuilderTests
     /// 上限取目前體積的約 1.5 倍，只擋量級上的退步。
     /// </summary>
     private const int MaxRecursiveSchemaLength = 700;
+    private static readonly string[] expected = new[] { "integer", "null" };
+    private static readonly string[] expectedArray = new[] { "Alpha", "Beta" };
 
     [Test]
     public void RecursiveSchemaStaysCompact()
@@ -317,10 +319,14 @@ public class SchemaBuilderTests
     [Explicit("診斷用：印出 Stage A 的原始輸出")]
     public void DumpRawExporterOutput()
     {
+        bool printedAny = false;
         foreach (Type type in SampleTypes())
         {
             TestContext.WriteLine(type.Name + " => " + RimLLMSchemaBuilder.ExportRaw(type).ToJsonString());
+            printedAny = true;
         }
+        // 診斷用測試仍須有斷言：確認樣本清單非空，否則輸出會因空集合而靜默失去意義。
+        ClassicAssert.IsTrue(printedAny);
     }
 
     [Test]
@@ -344,7 +350,7 @@ public class SchemaBuilderTests
 
         ClassicAssert.AreEqual("string", kind["type"].GetValue<string>(), "列舉應以字串名稱表達，STJ 反序列化接受名稱。");
         CollectionAssert.AreEquivalent(
-            new[] { "Alpha", "Beta" },
+            expectedArray,
             kind["enum"].Deserialize<string[]>());
     }
 

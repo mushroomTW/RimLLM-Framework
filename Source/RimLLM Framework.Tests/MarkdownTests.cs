@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Mod;
@@ -9,8 +10,16 @@ namespace RimLLM_Framework.Tests;
 /// 重點在於「只產生舊版 IMGUI 認得的六個標籤」，以及不要把模型輸出的內容誤判成語法。
 /// </summary>
 [TestFixture]
-public class MarkdownTests
+public partial class MarkdownTests
 {
+    /// <summary>比對 rich text 標籤名稱的樣式。</summary>
+    [GeneratedRegex("</?([a-zA-Z]+)")]
+    private static partial Regex RichTextTagRegex();
+
+    /// <summary>行內碼與程式碼區塊共用的顏色標籤樣式。</summary>
+    [GeneratedRegex("<color=#4ec9b0>")]
+    private static partial Regex CodeColorTagRegex();
+
     [Test]
     public void BoldAndItalicBecomeRichTextTags()
     {
@@ -173,8 +182,7 @@ public class MarkdownTests
         // 舊版 IMGUI 只認得 b/i/size/color/material/quad，其餘標籤會被原樣印出來。
         string result = RimLLMMarkdown.ToRichText(
             "# 標題\n- 項目 **粗** *斜* `碼`\n> 引用\n\n---\n\n[連結](https://example.com)");
-        foreach (System.Text.RegularExpressions.Match match in
-            System.Text.RegularExpressions.Regex.Matches(result, @"</?([a-zA-Z]+)"))
+        foreach (Match match in RichTextTagRegex().Matches(result))
         {
             string tag = match.Groups[1].Value.ToLowerInvariant();
             ClassicAssert.IsTrue(
@@ -222,7 +230,7 @@ public class MarkdownTests
         StringAssert.Contains("＜b＞bold＜/b＞ ＜color=red＞x＜/color＞ <span>ok</span>", result);
         StringAssert.Contains("＜i＞x＜/i＞", result);
         // 只有程式碼區塊自己的 <color> 包裝與行內碼的包裝是真正的標籤
-        ClassicAssert.AreEqual(2, System.Text.RegularExpressions.Regex.Matches(result, "<color=#4ec9b0>").Count);
+        ClassicAssert.AreEqual(2, CodeColorTagRegex().Count(result));
     }
 
     [Test]

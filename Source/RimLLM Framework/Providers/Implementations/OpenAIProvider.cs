@@ -254,7 +254,7 @@ public class OpenAIProvider : ILLMProvider
     private static string NormalizeModelName(string modelName)
     {
         if (string.IsNullOrEmpty(modelName)) return string.Empty;
-        string name = modelName.Contains("/") ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
+        string name = modelName.Contains('/') ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
         return name.ToLowerInvariant();
     }
 
@@ -331,46 +331,59 @@ public class OpenAIProvider : ILLMProvider
 
             if (effortLiteral == null) return chatCompletionOptions;
 
-            switch (format)
-            {
-                case ReasoningWireFormat.OpenAIEffort:
-                    chatCompletionOptions.Patch.Set(
-                        OpenAIPatchPaths.ReasoningEffort,
-                        JsonSerializer.SerializeToUtf8Bytes(effortLiteral));
-                    break;
-
-                case ReasoningWireFormat.OpenRouterReasoning:
-                    chatCompletionOptions.Patch.Set(
-                        OpenAIPatchPaths.Reasoning,
-                        JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { { "effort", effortLiteral } }));
-                    break;
-
-                case ReasoningWireFormat.ThinkingSwitch:
-                    chatCompletionOptions.Patch.Set(
-                        OpenAIPatchPaths.Thinking,
-                        JsonSerializer.SerializeToUtf8Bytes(
-                            new Dictionary<string, string> { { "type", thinkingEnabled ? "enabled" : "disabled" } }));
-                    if (thinkingEnabled)
-                    {
-                        chatCompletionOptions.Patch.Set(
-                            OpenAIPatchPaths.ReasoningEffort,
-                            JsonSerializer.SerializeToUtf8Bytes(effortLiteral));
-                    }
-                    break;
-
-                case ReasoningWireFormat.EnableThinkingFlag:
-                    chatCompletionOptions.Patch.Set(
-                        OpenAIPatchPaths.EnableThinking, thinkingEnabled);
-                    if (thinkingEnabled && effort.HasValue)
-                    {
-                        chatCompletionOptions.Patch.Set(
-                            OpenAIPatchPaths.ThinkingBudget, ResolveThinkingBudget(effort.Value));
-                    }
-                    break;
-            }
+            ApplyReasoningPatch(chatCompletionOptions, format, effortLiteral, thinkingEnabled, effort);
 
             return chatCompletionOptions;
         };
+    }
+
+    /// <summary>
+    /// 依方將思考強度字面值寫入 Patch。方言差異由 Patch 路徑與序列化內容區分。
+    /// </summary>
+    private static void ApplyReasoningPatch(
+        ChatCompletionOptions chatCompletionOptions,
+        ReasoningWireFormat format,
+        string effortLiteral,
+        bool thinkingEnabled,
+        ReasoningEffort? effort)
+    {
+        switch (format)
+        {
+            case ReasoningWireFormat.OpenAIEffort:
+                chatCompletionOptions.Patch.Set(
+                    OpenAIPatchPaths.ReasoningEffort,
+                    JsonSerializer.SerializeToUtf8Bytes(effortLiteral));
+                break;
+
+            case ReasoningWireFormat.OpenRouterReasoning:
+                chatCompletionOptions.Patch.Set(
+                    OpenAIPatchPaths.Reasoning,
+                    JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { { "effort", effortLiteral } }));
+                break;
+
+            case ReasoningWireFormat.ThinkingSwitch:
+                chatCompletionOptions.Patch.Set(
+                    OpenAIPatchPaths.Thinking,
+                    JsonSerializer.SerializeToUtf8Bytes(
+                        new Dictionary<string, string> { { "type", thinkingEnabled ? "enabled" : "disabled" } }));
+                if (thinkingEnabled)
+                {
+                    chatCompletionOptions.Patch.Set(
+                        OpenAIPatchPaths.ReasoningEffort,
+                        JsonSerializer.SerializeToUtf8Bytes(effortLiteral));
+                }
+                break;
+
+            case ReasoningWireFormat.EnableThinkingFlag:
+                chatCompletionOptions.Patch.Set(
+                    OpenAIPatchPaths.EnableThinking, thinkingEnabled);
+                if (thinkingEnabled && effort.HasValue)
+                {
+                    chatCompletionOptions.Patch.Set(
+                        OpenAIPatchPaths.ThinkingBudget, ResolveThinkingBudget(effort.Value));
+                }
+                break;
+        }
     }
 
     /// <summary>
@@ -735,22 +748,6 @@ public class OpenAIProvider : ILLMProvider
         return TestConnectionAsync(GetChosenModel(Settings, ProviderId));
     }
 
-    /// <summary>
-    /// 備援鏈中第一個屬於 <paramref name="providerId"/> 且帶模型名稱的條目的模型；沒有時回傳空字串。
-    /// </summary>
-    internal static string GetChosenModel(IRimLLMSettings settings, string providerId)
-    {
-        string prefix = providerId + ":";
-        foreach (string entry in settings?.FallbackChain ?? [])
-        {
-            if (entry != null && entry.Length > prefix.Length && entry.StartsWith(prefix, StringComparison.Ordinal))
-            {
-                return entry.Substring(prefix.Length);
-            }
-        }
-        return "";
-    }
-
     /// <summary>以指定模型送一則極短訊息測試連線；設定精靈在模型加入備援鏈之前用這個驗證玩家選的模型。</summary>
     public virtual async Task<TestResult> TestConnectionAsync(string model)
     {
@@ -817,6 +814,22 @@ public class OpenAIProvider : ILLMProvider
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 備援鏈中第一個屬於 <paramref name="providerId"/> 且帶模型名稱的條目的模型；沒有時回傳空字串。
+    /// </summary>
+    internal static string GetChosenModel(IRimLLMSettings settings, string providerId)
+    {
+        string prefix = providerId + ":";
+        foreach (string entry in settings?.FallbackChain ?? [])
+        {
+            if (entry != null && entry.Length > prefix.Length && entry.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return entry.Substring(prefix.Length);
+            }
+        }
+        return "";
     }
 
     /// <summary>

@@ -5,6 +5,7 @@ namespace RimLLM_Framework;
 /// <summary>
 /// RimLLM SDK 拋出的專屬例外。
 /// 包含統一錯誤碼，利於呼叫端 Mod 進行錯誤處理與 Fallback。
+/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlmException，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMException : Exception
 {

@@ -7,6 +7,10 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public class MarkdownTableTests
 {
+    private static readonly string[] expected = new[] { "殖民者", "工作" };
+    private static readonly string[] expectedBoldRow = new[] { "**Cole**", "建造、射擊 12**" };
+    private static readonly string[] expectedEscapedPipeRow = new[] { "Toon", "a | b" };
+
     [Test]
     public void TopLevelTableIsSplitIntoRawCells()
     {
@@ -16,9 +20,9 @@ public class MarkdownTableTests
         Assert.That(segments[0].IsTable, Is.False);
         Assert.That(segments[0].Markdown, Is.EqualTo("前言"));
         Assert.That(segments[1].Rows, Has.Count.EqualTo(3));
-        Assert.That(segments[1].Rows[0], Is.EqualTo(new[] { "殖民者", "工作" }));
-        Assert.That(segments[1].Rows[1], Is.EqualTo(new[] { "**Cole**", "建造、射擊 12**" }));
-        Assert.That(segments[1].Rows[2], Is.EqualTo(new[] { "Toon", "a | b" }));
+        Assert.That(segments[1].Rows[0], Is.EqualTo(expected));
+        Assert.That(segments[1].Rows[1], Is.EqualTo(expectedBoldRow));
+        Assert.That(segments[1].Rows[2], Is.EqualTo(expectedEscapedPipeRow));
         Assert.That(segments[2].Markdown, Is.EqualTo("結語"));
     }
 
@@ -46,11 +50,15 @@ public class MarkdownTableTests
         }
     }
 
+    private static readonly float[] expectedWidths = new[] { 50f, 100f };
+    private static readonly float[] expectedTwoColumnWidths = new[] { 120f, 480f };
+    private static readonly float[] expectedThreeColumnWidths = new[] { 60f, 270f, 270f };
+
     [Test]
     public void FitColumnsKeepsNarrowColumnsAndShrinksWideOnes()
     {
-        Assert.That(RimLLMMarkdownTable.FitColumns([50f, 100f], 300f), Is.EqualTo(new[] { 50f, 100f }));
-        Assert.That(RimLLMMarkdownTable.FitColumns([120f, 2000f], 600f), Is.EqualTo(new[] { 120f, 480f }));
-        Assert.That(RimLLMMarkdownTable.FitColumns([60f, 900f, 900f], 600f), Is.EqualTo(new[] { 60f, 270f, 270f }));
+        Assert.That(RimLLMMarkdownTable.FitColumns([50f, 100f], 300f), Is.EqualTo(expectedWidths));
+        Assert.That(RimLLMMarkdownTable.FitColumns([120f, 2000f], 600f), Is.EqualTo(expectedTwoColumnWidths));
+        Assert.That(RimLLMMarkdownTable.FitColumns([60f, 900f, 900f], 600f), Is.EqualTo(expectedThreeColumnWidths));
     }
 }

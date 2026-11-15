@@ -15,13 +15,14 @@ public static class LLMProviderExtensions
     /// <summary>
     /// 使用指定供應商與模型發送非同步生成請求並取得純文字結果。
     /// </summary>
+    #pragma warning disable S3267 // await foreach 迴圈內有 onChunkReceived 回呼副作用，無法以 LINQ 取代。
     public static async Task<string> GenerateAsync(
         this ILLMProvider provider,
         IEnumerable<ChatMessage> messages,
         ChatOptions options,
         string model)
     {
-        if (provider == null) throw new ArgumentNullException(nameof(provider));
+        ArgumentNullException.ThrowIfNull(provider);
         using IChatClient client = provider.CreateChatClient(model);
         ChatResponse response = await client.GetResponseAsync(messages, options).ConfigureAwait(false);
         if (response == null) return string.Empty;
@@ -36,6 +37,7 @@ public static class LLMProviderExtensions
         }
         return text;
     }
+    #pragma warning restore S3267
 
     private static string ExtractReasoning(ChatResponse response)
     {
@@ -54,6 +56,7 @@ public static class LLMProviderExtensions
     /// <summary>
     /// 使用指定供應商與模型發送非同步串流請求。
     /// </summary>
+    #pragma warning disable S3267 // await foreach 迴圈內有 onChunkReceived 回呼副作用，無法以 LINQ 取代。
     public static async Task StreamAsync(
         this ILLMProvider provider,
         IEnumerable<ChatMessage> messages,
@@ -61,7 +64,7 @@ public static class LLMProviderExtensions
         string model,
         Action<string> onChunkReceived)
     {
-        if (provider == null) throw new ArgumentNullException(nameof(provider));
+        ArgumentNullException.ThrowIfNull(provider);
         using IChatClient client = provider.CreateChatClient(model);
         await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync(messages, options))
         {
@@ -71,4 +74,5 @@ public static class LLMProviderExtensions
             }
         }
     }
+    #pragma warning restore S3267
 }

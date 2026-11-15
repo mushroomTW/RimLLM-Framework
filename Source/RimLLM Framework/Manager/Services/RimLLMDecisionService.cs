@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -97,13 +98,10 @@ public class RimLLMDecisionService
         string[] suffixes = GeminiDecisionsAdapterHandler.Targets(normalized)
             ? new[] { "/v1/systemone", "/v1beta/decisions", "/v1beta" }
             : new[] { "/v1/systemone" };
-        foreach (string suffix in suffixes)
+        string suffix = suffixes.FirstOrDefault(s => normalized.EndsWith(s, StringComparison.OrdinalIgnoreCase));
+        if (suffix != null)
         {
-            if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            {
-                normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd('/');
-                break;
-            }
+            normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd('/');
         }
         return normalized;
     }
@@ -137,9 +135,8 @@ public class RimLLMDecisionService
     internal static Func<HttpMessageHandler> MessageHandlerFactory { get; set; } =
         () => new SocketsHttpHandler { AllowAutoRedirect = false };
 
-    private JevClientOptions CreateOptions(string endpoint, string model, string apiKey, string providerId = null)
+    private JevClientOptions CreateOptions(string endpoint, string model, string apiKey)
     {
-        string effectiveProviderId = string.IsNullOrWhiteSpace(providerId) ? _settings.DecisionProvider : providerId;
         return new JevClientOptions
         {
             // SDK 只接受 https origin；明文本機端點在這裡先換成同 host／port 的 https，
@@ -306,7 +303,36 @@ public class RimLLMDecisionService
         {
             DecisionConnection connection = ResolveConnection(null);
             return await FetchModelsCoreAsync(
-                    connection.Endpoint, connection.Model, connection.ApiKey, connection.ProviderId, cancellationToken)
+                    connection.Endpoint, connection.Model, connection.ApiKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (RimLLMException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw TranslateDecisionError(ex);
+        }
+    }
+
+    /// <summary>以指定端點與金鑰抓取模型清單，供設定頁在尚未啟用時預覽。</summary>
+    public async Task<IReadOnlyList<JevModel>> FetchModelsAsync(
+        string endpoint,
+        string model,
+        string apiKey,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            string normalizedEndpoint = NormalizeBaseEndpoint(endpoint, _settings.DecisionProvider);
+            string usableKey = EnsureUsableKey(apiKey, normalizedEndpoint);
+            return await FetchModelsCoreAsync(
+                    normalizedEndpoint, model, usableKey, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -336,18 +362,15 @@ public class RimLLMDecisionService
         {
             DecisionConnection connection = ResolveConnection(providerId);
             IReadOnlyList<JevModel> models = await FetchModelsCoreAsync(
-                    connection.Endpoint, connection.Model, connection.ApiKey, connection.ProviderId, cancellationToken)
+                    connection.Endpoint, connection.Model, connection.ApiKey, cancellationToken)
                 .ConfigureAwait(false);
 
             List<string> names = new List<string>(models?.Count ?? 0);
             if (models != null)
             {
-                foreach (JevModel model in models)
+                foreach (string name in models.Where(m => m != null && !string.IsNullOrEmpty(m.Name)).Select(m => m.Name))
                 {
-                    if (model != null && !string.IsNullOrEmpty(model.Name))
-                    {
-                        names.Add(model.Name);
-                    }
+                    names.Add(name);
                 }
             }
             return names;
@@ -366,42 +389,13 @@ public class RimLLMDecisionService
         }
     }
 
-    /// <summary>以指定端點與金鑰抓取模型清單，供設定頁在尚未啟用時預覽。</summary>
-    public async Task<IReadOnlyList<JevModel>> FetchModelsAsync(
-        string endpoint,
-        string model,
-        string apiKey,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            string normalizedEndpoint = NormalizeBaseEndpoint(endpoint, _settings.DecisionProvider);
-            string usableKey = EnsureUsableKey(apiKey, normalizedEndpoint);
-            return await FetchModelsCoreAsync(
-                    normalizedEndpoint, model, usableKey, _settings.DecisionProvider, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (RimLLMException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw TranslateDecisionError(ex);
-        }
-    }
-
     private async Task<IReadOnlyList<JevModel>> FetchModelsCoreAsync(
-        string normalizedEndpoint, string model, string apiKey, string providerId, CancellationToken cancellationToken)
+        string normalizedEndpoint, string model, string apiKey, CancellationToken cancellationToken)
     {
         using HttpClient http = CreateHttpClient(normalizedEndpoint);
         // JevClientOptions 要求 DefaultModel 非空，但查清單不會送出它；玩家還沒選模型時填佔位名稱。
         string clientModel = string.IsNullOrWhiteSpace(model) ? ModelListPlaceholderModel : model;
-        var client = new JevClient(http, CreateOptions(normalizedEndpoint, clientModel, apiKey, providerId));
+        var client = new JevClient(http, CreateOptions(normalizedEndpoint, clientModel, apiKey));
         IReadOnlyList<JevModel> models =
             await client.GetModelsAsync(new JevRequestOptions(), cancellationToken).ConfigureAwait(false);
         return models ?? Array.Empty<JevModel>();
@@ -534,14 +528,14 @@ public class RimLLMDecisionService
         try
         {
             if (string.IsNullOrWhiteSpace(state)) throw new ArgumentNullException(nameof(state));
-            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            ArgumentNullException.ThrowIfNull(plan);
 
             DecisionConnection connection = ResolveConnection(providerId, model);
             string selectedModel = connection.Model;
             RequireModel(selectedModel);
 
             using HttpClient http = CreateHttpClient(connection.Endpoint);
-            var client = new JevClient(http, CreateOptions(connection.Endpoint, selectedModel, connection.ApiKey, connection.ProviderId));
+            var client = new JevClient(http, CreateOptions(connection.Endpoint, selectedModel, connection.ApiKey));
             var requestOptions = new JevRequestOptions { Model = selectedModel };
             JevResult result = await client
                 .EvaluateAsync(state, plan, requestOptions, cancellationToken)

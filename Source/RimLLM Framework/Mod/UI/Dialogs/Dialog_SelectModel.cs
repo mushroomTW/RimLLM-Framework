@@ -7,6 +7,7 @@ namespace RimLLM_Framework.Mod;
 
 /// <summary>
 /// 自訂模型選擇視窗，支援關鍵字過濾搜尋與滾動列表，以解決模型選項過多導致 UI 混亂的問題。
+/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class Dialog_SelectModel : Window
 {

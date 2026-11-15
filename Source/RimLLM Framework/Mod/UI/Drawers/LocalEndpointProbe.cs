@@ -12,6 +12,20 @@ namespace RimLLM_Framework.Mod;
 /// </summary>
 internal static class LocalEndpointProbe
 {
+    // 本地供應商的預設連接位址；供應商分頁與 Embedding 分頁共用，改版時只需改一處。
+#pragma warning disable S1075 // 本地服務的產品預設位址，不在執行期變動。
+    private const string ModelsSuffix = "/models";
+    internal const string OllamaBaseUrl = "http://localhost:11434/v1";
+    internal const string OllamaV1ModelsUrl = OllamaBaseUrl + ModelsSuffix;
+    internal const string OllamaApiTagsUrl = "http://localhost:11434/api/tags";
+    internal const string LmStudioBaseUrl = "http://localhost:1234/v1";
+    internal const string LmStudioV1ModelsUrl = LmStudioBaseUrl + ModelsSuffix;
+    internal const string LocalAI8080BaseUrl = "http://localhost:8080/v1";
+    internal const string LocalAI8080V1ModelsUrl = LocalAI8080BaseUrl + ModelsSuffix;
+    internal const string LocalAI8000BaseUrl = "http://localhost:8000/v1";
+    internal const string LocalAI8000V1ModelsUrl = LocalAI8000BaseUrl + ModelsSuffix;
+#pragma warning restore S1075
+
     internal sealed class Target
     {
         /// <summary>顯示名稱（探測成功訊息用）。</summary>

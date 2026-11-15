@@ -14,6 +14,7 @@ namespace RimLLM_Framework.Providers;
 ///
 /// 此擴充方法在對 Patch 進行自訂修改前，透過反射清空 _patch 的傳播委派，使其還原為直接寫入底層 JSON Patch 屬性字典的行為。
 /// </summary>
+#pragma warning disable S3011 // 需透過反射存取 OpenAI SDK 內部的 _patch、_propagatorSetter、_propagatorGetter 欄位，以避免 SDK 在子屬性為 null 時拋出 NullReferenceException；所有反射呼叫皆包在 try/catch 中，失敗不擋請求。
 internal static class OpenAIPatchExtensions
 {
     private static readonly FieldInfo PatchField =
@@ -98,6 +99,7 @@ internal static class OpenAIPatchExtensions
         };
     }
 }
+#pragma warning restore S3011
 
 /// <summary>
 /// Patch 常用的 JSON 路徑，預先編碼成 UTF-8。路徑字面值固定，每請求重新

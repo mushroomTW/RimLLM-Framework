@@ -26,6 +26,7 @@ public class GeminiDecisionTests
 
     private FakeGeminiHandler _handler;
     private Func<HttpMessageHandler> _originalMessageHandlerFactory;
+    private static readonly string[] expected = new[] { "gemini-decision-1" };
 
     [SetUp]
     public void SetUp()
@@ -208,7 +209,7 @@ public class GeminiDecisionTests
         CapturedRequest sent = _handler.Requests[0];
         ClassicAssert.AreEqual("/v1beta/models", sent.Uri.AbsolutePath);
         ClassicAssert.AreEqual("gemini-test-key", sent.GoogApiKey);
-        CollectionAssert.AreEqual(new[] { "gemini-decision-1" }, models);
+        CollectionAssert.AreEqual(expected, models);
     }
 
     [Test]

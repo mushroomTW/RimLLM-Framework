@@ -23,6 +23,8 @@ public class DecisionLocalEndpointTests
 
     private DecisionTestDoubles.FakeJevHandler _handler;
     private Func<HttpMessageHandler> _originalMessageHandlerFactory;
+    private static readonly string[] expected = new[] { "default", "laya" };
+    private static readonly string[] expectedSingleModelId = new[] { "a" };
 
     [SetUp]
     public void SetUp()
@@ -195,7 +197,7 @@ public class DecisionLocalEndpointTests
 
         IReadOnlyList<string> models = await client.FetchModelsAsync(RimLLMDecisionProviderCatalog.Unsloth);
 
-        CollectionAssert.AreEquivalent(new[] { "default", "laya" }, models);
+        CollectionAssert.AreEquivalent(expected, models);
         ClassicAssert.AreEqual(2, _handler.RequestUris.Count);
         ClassicAssert.AreEqual(
             "http://localhost:8888/v1/models?output_modalities=decisions",
@@ -208,7 +210,7 @@ public class DecisionLocalEndpointTests
     public void OpenAiModelIds_AreOnlyReadFromOpenAiShapedBodies()
     {
         CollectionAssert.AreEqual(
-            new[] { "a" },
+            expectedSingleModelId,
             OpenAiModelListAdapterHandler.TryReadOpenAiModelIds("{\"data\":[{\"id\":\"a\"},{\"id\":\"\"},{}]}"));
         ClassicAssert.IsNull(OpenAiModelListAdapterHandler.TryReadOpenAiModelIds(
             "{\"models\":[{\"name\":\"jev\",\"description\":\"\",\"release_date\":\"\"}]}"));

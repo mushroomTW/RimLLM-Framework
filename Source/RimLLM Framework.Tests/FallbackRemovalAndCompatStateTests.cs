@@ -10,6 +10,8 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public class FallbackRemovalAndCompatStateTests
 {
+    private static readonly string[] expectedSingleGeminiModel = new[] { "Gemini:bar" };
+
     // ---------- 備援鏈移除 ----------
 
     [Test]
@@ -21,7 +23,7 @@ public class FallbackRemovalAndCompatStateTests
 
         settings.RemoveFallbackEntry("OpenRouter:foo");
 
-        CollectionAssert.AreEqual(new[] { "Gemini:bar" }, settings.FallbackChain);
+        CollectionAssert.AreEqual(expectedSingleGeminiModel, settings.FallbackChain);
         ClassicAssert.AreEqual(0, settings.GetContextWindowOverride("OpenRouter:foo"));
     }
 
@@ -51,7 +53,7 @@ public class FallbackRemovalAndCompatStateTests
 
         settings.RemoveFallbackEntry("OpenRouter");
 
-        CollectionAssert.AreEqual(new[] { "Gemini:bar" }, settings.FallbackChain);
+        CollectionAssert.AreEqual(expectedSingleGeminiModel, settings.FallbackChain);
     }
 
     // ---------- 第三方整合狀態 ----------

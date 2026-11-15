@@ -27,7 +27,7 @@ internal class RimLLMRequestQueue
     /// <summary>
     /// 佇列實體定義。
     /// </summary>
-    private class QueueEntry : IComparable<QueueEntry>
+    private sealed class QueueEntry : IComparable<QueueEntry>
     {
         public int Priority { get; set; }
         public TaskCompletionSource<IDisposable> Tcs { get; set; }
@@ -135,7 +135,7 @@ internal class RimLLMRequestQueue
         }
         finally
         {
-            registration.Dispose();
+            await registration.DisposeAsync().ConfigureAwait(false);
         }
     }
 

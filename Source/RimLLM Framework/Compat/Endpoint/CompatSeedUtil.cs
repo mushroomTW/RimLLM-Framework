@@ -63,12 +63,9 @@ internal static class CompatSeedUtil
     internal static object FindModInstance(string typeName)
     {
         Type type = AccessTools.TypeByName(typeName);
-        if (type == null) return null;
-        foreach (Verse.Mod handle in LoadedModManager.ModHandles)
-        {
-            if (handle.GetType() == type) return handle;
-        }
-        return null;
+        return type == null
+            ? null
+            : System.Linq.Enumerable.FirstOrDefault(LoadedModManager.ModHandles, handle => handle.GetType() == type);
     }
 
     internal static object GetMember(object target, string name)

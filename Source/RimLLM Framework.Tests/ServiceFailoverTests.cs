@@ -26,22 +26,31 @@ public class ServiceFailoverTests
         "{\"object\":\"embedding\",\"index\":0,\"embedding\":[0.1,0.2]}]," +
         "\"usage\":{\"prompt_tokens\":10,\"total_tokens\":10}}";
 
+    // 重複出現於多個測試的常數輸入與主機清單，抽為靜態唯讀欄位避免重複建立陣列。
+    private static readonly string[] HelloInput = new[] { "hello" };
+    private static readonly string[] OpenAiHost = new[] { "api.openai.com" };
+    private static readonly string[] OpenAiAndGeminiHosts = new[] { "api.openai.com", "generativelanguage.googleapis.com" };
+    private static readonly string[] GoogleProviders = new[] { "Google", "Google" };
+    private static readonly string[] GoogleAndOpenAIProviders = new[] { "Google", "OpenAI" };
+    private static readonly string[] DecisionFallbackChainLiquid = new[] { RimLLMDecisionProviderCatalog.Liquid };
+    private static readonly string[] FallbackChainNames = new[] { "EmbeddingFallbackChain", "DecisionFallbackChain" };
+
     // ---------- 共用規則 ----------
 
     [Test]
     public void BuildCandidates_PutsActiveFirstAndDropsEmptyDuplicateAndActiveEntries()
     {
         List<string> candidates = ServiceProviderFailover.BuildCandidates(
-            "A", new[] { "B", "", "A", "C", "B", "Disabled" }, "Disabled");
+            "A", chain, "Disabled");
 
-        CollectionAssert.AreEqual(new[] { "A", "B", "C" }, candidates);
+        CollectionAssert.AreEqual(expected, candidates);
     }
 
     [Test]
     public void BuildCandidates_WhenActiveIsDisabled_ReturnsNothing()
     {
-        ClassicAssert.IsEmpty(ServiceProviderFailover.BuildCandidates("Disabled", new[] { "B" }, "Disabled"));
-        ClassicAssert.IsEmpty(ServiceProviderFailover.BuildCandidates("", new[] { "B" }, "Disabled"));
+        ClassicAssert.IsEmpty(ServiceProviderFailover.BuildCandidates("Disabled", chainArray, "Disabled"));
+        ClassicAssert.IsEmpty(ServiceProviderFailover.BuildCandidates("", chainArray, "Disabled"));
     }
 
     [TestCase(LLMError.Timeout, true)]
@@ -85,7 +94,7 @@ public class ServiceFailoverTests
         await WithTransportAsync(handler, async () =>
         {
             IReadOnlyList<RimLLMEmbeddingResult> results =
-                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(new[] { "hello" });
+                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput);
 
             ClassicAssert.AreEqual(1, results.Count);
             ClassicAssert.AreEqual("Google", results[0].ProviderId, "向量必須標上實際算出它的供應商。");
@@ -93,7 +102,7 @@ public class ServiceFailoverTests
         });
 
         CollectionAssert.AreEqual(
-            new[] { "api.openai.com", "generativelanguage.googleapis.com" }, hosts,
+            OpenAiAndGeminiHosts, hosts,
             "主供應商先試，失敗後才換備援。");
     }
 
@@ -108,11 +117,11 @@ public class ServiceFailoverTests
         await WithTransportAsync(handler, async () =>
         {
             RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
-                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(new[] { "hello" }));
+                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput));
             ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
         });
 
-        CollectionAssert.AreEqual(new[] { "api.openai.com" }, hosts);
+        CollectionAssert.AreEqual(OpenAiHost, hosts);
     }
 
     [Test]
@@ -126,11 +135,11 @@ public class ServiceFailoverTests
         await WithTransportAsync(handler, async () =>
         {
             RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
-                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(new[] { "hello" }));
+                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput));
             ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error, "沒設定的備援不該蓋掉主供應商真正的失敗原因。");
         });
 
-        CollectionAssert.AreEqual(new[] { "api.openai.com" }, hosts, "沒選模型的備援供應商不該被打。");
+        CollectionAssert.AreEqual(OpenAiHost, hosts, "沒選模型的備援供應商不該被打。");
     }
 
     [Test]
@@ -143,7 +152,7 @@ public class ServiceFailoverTests
         await WithTransportAsync(handler, async () =>
         {
             RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
-                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(new[] { "hello" }));
+                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput));
             ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
         });
 
@@ -162,7 +171,7 @@ public class ServiceFailoverTests
         await WithTransportAsync(handler, async () =>
         {
             await ClassicAssert.CatchAsync<OperationCanceledException>(async () =>
-                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(new[] { "hello" }, cancellation.Token));
+                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput, cancellation.Token));
         });
 
         ClassicAssert.IsEmpty(hosts);
@@ -179,10 +188,10 @@ public class ServiceFailoverTests
         await WithTransportAsync(handler, async () =>
         {
             await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
-                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(new[] { "hello" }));
+                await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput));
         });
 
-        CollectionAssert.AreEqual(new[] { "api.openai.com" }, hosts, "沒有金鑰的雲端備援不該被打。");
+        CollectionAssert.AreEqual(OpenAiHost, hosts, "沒有金鑰的雲端備援不該被打。");
     }
 
     [Test]
@@ -224,7 +233,7 @@ public class ServiceFailoverTests
         });
 
         // 主供應商第一批成功、第二批失敗：它的批次不能先回報用量，否則整次重算後會被重複計入。
-        CollectionAssert.AreEqual(new[] { "Google", "Google" }, reportedProviders);
+        CollectionAssert.AreEqual(GoogleProviders, reportedProviders);
     }
 
     private static MockSettings EmbeddingSettings()
@@ -304,8 +313,8 @@ public class ServiceFailoverTests
             DecisionFallbackChain = [RimLLMDecisionProviderCatalog.Liquid, null, RimLLMDecisionProviderCatalog.Liquid]
         };
 
-        CollectionAssert.AreEqual(new[] { "Google", "OpenAI" }, settings.EmbeddingFallbackChain);
-        CollectionAssert.AreEqual(new[] { RimLLMDecisionProviderCatalog.Liquid }, settings.DecisionFallbackChain);
+        CollectionAssert.AreEqual(GoogleAndOpenAIProviders, settings.EmbeddingFallbackChain);
+        CollectionAssert.AreEqual(DecisionFallbackChainLiquid, settings.DecisionFallbackChain);
     }
 
     [Test]
@@ -330,7 +339,7 @@ public class ServiceFailoverTests
         System.Type dto = typeof(RimLLMFrameworkSettings).GetNestedType(
             "SettingsDto", System.Reflection.BindingFlags.NonPublic);
         ClassicAssert.IsNotNull(dto);
-        foreach (string name in new[] { "EmbeddingFallbackChain", "DecisionFallbackChain" })
+        foreach (string name in FallbackChainNames)
         {
             System.Reflection.FieldInfo field = dto.GetField(name);
             ClassicAssert.IsNotNull(field, name);
@@ -343,8 +352,14 @@ public class ServiceFailoverTests
     private const string PrimaryHost = "primary.example.test";
     private const string BackupHost = "backup.example.test";
 
+    private static readonly string[] PrimaryHostArray = new[] { PrimaryHost };
+    private static readonly string[] PrimaryAndBackupHosts = new[] { PrimaryHost, BackupHost };
+
     private Func<HttpMessageHandler> _originalFactory;
     private List<string> _decisionHosts;
+    private static readonly string[] chain = new[] { "B", "", "A", "C", "B", "Disabled" };
+    private static readonly string[] expected = new[] { "A", "B", "C" };
+    private static readonly string[] chainArray = new[] { "B" };
 
     [SetUp]
     public void SetUp()
@@ -384,7 +399,7 @@ public class ServiceFailoverTests
 
         ClassicAssert.AreEqual(RimLLMDecisionProviderCatalog.Liquid, evaluation.ProviderId, "用量要記到實際回應的供應商。");
         ClassicAssert.AreEqual("backup-model", evaluation.ModelName, "逐次覆寫的模型只屬於主供應商。");
-        CollectionAssert.AreEqual(new[] { PrimaryHost, BackupHost }, _decisionHosts);
+        CollectionAssert.AreEqual(PrimaryAndBackupHosts, _decisionHosts);
     }
 
     [Test]
@@ -398,7 +413,7 @@ public class ServiceFailoverTests
                 .EvaluateDetailedAsync("state", DecisionTestDoubles.OneQuestionPlan()));
 
         ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
-        CollectionAssert.AreEqual(new[] { PrimaryHost }, _decisionHosts, "沒有金鑰的備援不該被打。");
+        CollectionAssert.AreEqual(PrimaryHostArray, _decisionHosts, "沒有金鑰的備援不該被打。");
     }
 
     [Test]
@@ -411,7 +426,7 @@ public class ServiceFailoverTests
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.TypeSafe));
 
         ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
-        CollectionAssert.AreEqual(new[] { PrimaryHost }, _decisionHosts, "呼叫端明確指定的供應商是它自己的選擇。");
+        CollectionAssert.AreEqual(PrimaryHostArray, _decisionHosts, "呼叫端明確指定的供應商是它自己的選擇。");
     }
 
     [Test]
@@ -425,7 +440,7 @@ public class ServiceFailoverTests
                 .EvaluateDetailedAsync("state", DecisionTestDoubles.OneQuestionPlan()));
 
         ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
-        CollectionAssert.AreEqual(new[] { PrimaryHost }, _decisionHosts);
+        CollectionAssert.AreEqual(PrimaryHostArray, _decisionHosts);
     }
 
     private static MockSettings DecisionSettings()

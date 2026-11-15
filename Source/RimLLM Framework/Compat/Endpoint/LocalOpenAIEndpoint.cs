@@ -139,21 +139,13 @@ internal static class LocalOpenAIEndpoint
             }
 
             // /m/{modId}/v1/{endpoint...}
-            string[] segments = context.Request.Url.AbsolutePath.Trim('/').Split('/');
-            if (segments.Length < 4 || segments[0] != "m" || segments[2] != "v1")
+            if (!TryParseRoute(context.Request.Url, out string modId, out string endpoint))
             {
                 await WriteJsonAsync(context, 404, ErrorBody("not_found", "Unknown path.")).ConfigureAwait(false);
                 return;
             }
 
-            string modId = Uri.UnescapeDataString(segments[1]);
-            string endpoint = string.Join("/", segments, 3, segments.Length - 3);
-
-            Handler handler;
-            lock (Gate)
-            {
-                Handlers.TryGetValue(modId, out handler);
-            }
+            Handler handler = FindHandler(modId);
             if (handler == null)
             {
                 await WriteJsonAsync(context, 404, ErrorBody("not_found", "No handler registered for this mod.")).ConfigureAwait(false);
@@ -181,25 +173,9 @@ internal static class LocalOpenAIEndpoint
                 return;
             }
 
-            string body;
-            using (var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8))
-            {
-                body = await reader.ReadToEndAsync().ConfigureAwait(false);
-            }
-
+            string body = await ReadBodyAsync(context.Request.InputStream).ConfigureAwait(false);
             string json = await handler(body, chat, CancellationToken.None).ConfigureAwait(false);
-            if (TryGetErrorStatus(json, out int status))
-            {
-                await WriteJsonAsync(context, status, json).ConfigureAwait(false);
-            }
-            else if (WantsStream(body))
-            {
-                await WriteSseAsync(context, json, chat).ConfigureAwait(false);
-            }
-            else
-            {
-                await WriteJsonAsync(context, 200, json).ConfigureAwait(false);
-            }
+            await WriteResultAsync(context, json, body, chat).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -211,6 +187,55 @@ internal static class LocalOpenAIEndpoint
             {
                 // 連線已斷，無法回覆
             }
+        }
+    }
+
+    /// <summary>解析 <c>/m/{modId}/v1/{endpoint...}</c>；路徑不符時回傳 false。</summary>
+    private static bool TryParseRoute(Uri url, out string modId, out string endpoint)
+    {
+        modId = null;
+        endpoint = null;
+        string[] segments = url.AbsolutePath.Trim('/').Split('/');
+        if (segments.Length < 4 || segments[0] != "m" || segments[2] != "v1")
+        {
+            return false;
+        }
+
+        modId = Uri.UnescapeDataString(segments[1]);
+        endpoint = string.Join("/", segments, 3, segments.Length - 3);
+        return true;
+    }
+
+    /// <summary>取得該 Mod 已登錄的處理器；未登錄回傳 null。</summary>
+    private static Handler FindHandler(string modId)
+    {
+        lock (Gate)
+        {
+            Handlers.TryGetValue(modId, out Handler handler);
+            return handler;
+        }
+    }
+
+    private static async Task<string> ReadBodyAsync(Stream input)
+    {
+        using var reader = new StreamReader(input, Encoding.UTF8);
+        return await reader.ReadToEndAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>依回應內容決定狀態碼與輸出方式：錯誤 JSON、SSE 串流或完整 JSON。</summary>
+    private static async Task WriteResultAsync(HttpListenerContext context, string json, string body, bool chat)
+    {
+        if (TryGetErrorStatus(json, out int status))
+        {
+            await WriteJsonAsync(context, status, json).ConfigureAwait(false);
+        }
+        else if (WantsStream(body))
+        {
+            await WriteSseAsync(context, json, chat).ConfigureAwait(false);
+        }
+        else
+        {
+            await WriteJsonAsync(context, 200, json).ConfigureAwait(false);
         }
     }
 
@@ -296,7 +321,7 @@ internal static class LocalOpenAIEndpoint
         context.Response.StatusCode = 200;
         context.Response.ContentType = "text/event-stream";
         context.Response.ContentLength64 = bytes.Length;
-        await context.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length).ConfigureAwait(false);
+        await context.Response.OutputStream.WriteAsync(bytes.AsMemory()).ConfigureAwait(false);
         context.Response.Close();
     }
 
@@ -331,7 +356,7 @@ internal static class LocalOpenAIEndpoint
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json";
         context.Response.ContentLength64 = bytes.Length;
-        await context.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length).ConfigureAwait(false);
+        await context.Response.OutputStream.WriteAsync(bytes.AsMemory()).ConfigureAwait(false);
         context.Response.Close();
     }
 }

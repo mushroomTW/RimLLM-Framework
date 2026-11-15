@@ -54,8 +54,9 @@ public class RimLLMChatClientExecutorTests
         var callerOptions = new ChatOptions { MaxOutputTokens = 256, Temperature = 0.2f };
 
         var result = RimLLMChatClientExecutor.GenerateAsync(
-            client, callerMessages, callerOptions, "gpt-test", useNativeSchema: false, "OpenAI", 30f,
-            CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client, callerMessages, callerOptions, "gpt-test", false, "OpenAI", 30f,
+                CancellationToken.None)).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual("hello", result.Text);
         ClassicAssert.AreEqual(1, client.ReceivedOptions.Count);
@@ -138,7 +139,8 @@ public class RimLLMChatClientExecutorTests
         var options = NewOptionsWithResponseType(typeof(TestDataStructure));
 
         RimLLMChatClientExecutor.GenerateAsync(
-            client, messages, options, "gpt-test", useNativeSchema: true, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client, messages, options, "gpt-test", true, "OpenAI", 30f, CancellationToken.None)).GetAwaiter().GetResult();
 
         ChatOptions sent = client.ReceivedOptions[0];
         ClassicAssert.IsNotNull(sent.ResponseFormat);
@@ -157,7 +159,8 @@ public class RimLLMChatClientExecutorTests
         var options = NewOptionsWithResponseType(typeof(Dictionary<string, string>));
 
         RimLLMChatClientExecutor.GenerateAsync(
-            client, messages, options, "gpt-test", useNativeSchema: true, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client, messages, options, "gpt-test", true, "OpenAI", 30f, CancellationToken.None)).GetAwaiter().GetResult();
 
         // 與 raw 路徑一致：含 Dictionary 的型別仍送出 response_format，
         // 但 strict 關閉，否則服務端會拒絕開放式 map。
@@ -186,7 +189,8 @@ public class RimLLMChatClientExecutorTests
         var messages = new List<ChatMessage> { new(ChatRole.User, "solve") };
 
         var result = RimLLMChatClientExecutor.GenerateAsync(
-            client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None)).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual("final answer", result.Text);
 
@@ -229,7 +233,8 @@ public class RimLLMChatClientExecutorTests
         var messages = new List<ChatMessage> { new(ChatRole.User, "hi") };
 
         var result = RimLLMChatClientExecutor.GenerateAsync(
-            client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None)).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual("resp-123", result.ResponseId);
         ClassicAssert.AreEqual("conv-456", result.ConversationId);
@@ -253,7 +258,8 @@ public class RimLLMChatClientExecutorTests
         bool invoked = false;
 
         RimLLMChatClientExecutor.GenerateAsync(
-            client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None,
+            new GenerationParams(
+                client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None),
             options =>
             {
                 invoked = true;
@@ -279,7 +285,8 @@ public class RimLLMChatClientExecutorTests
         int prompt = -1, completion = -1;
 
         RimLLMChatClientExecutor.GenerateAsync(
-            client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None,
+            new GenerationParams(
+                client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None),
             onUsage: tokens => { prompt = tokens.Prompt; completion = tokens.Completion; }).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual(100, prompt);
@@ -298,7 +305,8 @@ public class RimLLMChatClientExecutorTests
         bool fired = false;
 
         RimLLMChatClientExecutor.GenerateAsync(
-            client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None,
+            new GenerationParams(
+                client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None),
             onUsage: tokens => { fired = true; }).GetAwaiter().GetResult();
 
         // 供應商沒回報用量時只有估算值，不得交給請求日誌冒充實際值。
@@ -317,7 +325,8 @@ public class RimLLMChatClientExecutorTests
 
         RimLLMException ex = Assert.Throws<RimLLMException>(() =>
             RimLLMChatClientExecutor.GenerateAsync(
-                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult());
+                new GenerationParams(
+                    client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None)).GetAwaiter().GetResult());
 
         ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
     }
@@ -334,7 +343,8 @@ public class RimLLMChatClientExecutorTests
 
         RimLLMException ex = Assert.Throws<RimLLMException>(() =>
             RimLLMChatClientExecutor.GenerateAsync(
-                client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI", 30f, CancellationToken.None).GetAwaiter().GetResult());
+                new GenerationParams(
+                    client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None)).GetAwaiter().GetResult());
 
         ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error);
     }
@@ -370,8 +380,9 @@ public class RimLLMChatClientExecutorTests
         var received = new List<ChatResponseUpdate>();
 
         RimLLMChatClientExecutor.StreamAsync(
-            client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI",
-            async update => { received.Add(update); await Task.CompletedTask; }, 30f, CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None),
+            async update => { received.Add(update); await Task.CompletedTask; }).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual(3, received.Count, "每一個 provider update 都應原封不動轉發一次。");
         ClassicAssert.AreSame(client.StreamUpdates[0], received[0]);
@@ -437,8 +448,9 @@ public class RimLLMChatClientExecutorTests
         var received = new List<ChatResponseUpdate>();
 
         RimLLMChatClientExecutor.StreamAsync(
-            client, messages, null, "gpt-test", useNativeSchema: false, "OpenAI",
-            async update => { received.Add(update); await Task.CompletedTask; }, 30f, CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client, messages, null, "gpt-test", false, "OpenAI", 30f, CancellationToken.None),
+            async update => { received.Add(update); await Task.CompletedTask; }).GetAwaiter().GetResult();
 
         // UsageContent 也原樣轉發，不再被抽出來重組成收尾 update。
         ClassicAssert.AreEqual(2, received.Count);
@@ -569,5 +581,6 @@ public class CapturingChatClient : IChatClient
 
     public void Dispose()
     {
+        GC.SuppressFinalize(this);
     }
 }

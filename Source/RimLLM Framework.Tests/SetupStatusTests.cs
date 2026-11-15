@@ -78,6 +78,8 @@ public class SetupStatusTests
         ClassicAssert.AreEqual(expectedKey, SetupStatus.DescribeFailureKey(error));
     }
 
+    private static readonly string[] expected = new[] { "Gemini:keep-me" };
+
     [Test]
     public void ResetRequestSettingsRestoresFreshDefaults()
     {
@@ -103,6 +105,6 @@ public class SetupStatusTests
         ClassicAssert.AreEqual(fresh.EnableNativeSchema, settings.EnableNativeSchema);
         ClassicAssert.AreEqual(fresh.EnableJsonRepair, settings.EnableJsonRepair);
         ClassicAssert.AreEqual(fresh.DefaultReasoningEffort, settings.DefaultReasoningEffort);
-        CollectionAssert.AreEqual(new[] { "Gemini:keep-me" }, settings.FallbackChain, "恢復預設不能動到備援鏈。");
+        CollectionAssert.AreEqual(expected, settings.FallbackChain, "恢復預設不能動到備援鏈。");
     }
 }

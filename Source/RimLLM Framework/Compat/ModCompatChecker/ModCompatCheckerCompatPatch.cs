@@ -21,6 +21,10 @@ internal static class ModCompatCheckerCompatPatch
 
     private const string DisplayName = "Mod Compatibility Checker";
 
+    /// <summary>目標 Mod 設定類別中的成員名稱，以反射存取，避免編譯期相依於目標 Mod。</summary>
+    private const string ApiEndpointMember = "APIEndpoint";
+    private const string ApiKeyMember = "APIKey";
+
     /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply()
     {
@@ -57,15 +61,15 @@ internal static class ModCompatCheckerCompatPatch
             object mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
             object settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
             if (settings == null
-                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(settings, "APIEndpoint") as string, ModCompatCheckerCompatPatch.PackageId))
+                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(settings, ApiEndpointMember) as string, ModCompatCheckerCompatPatch.PackageId))
             {
                 return;
             }
 
-            CompatSeedUtil.SetMember(settings, "APIEndpoint", DefaultEndpoint);
-            if (CompatSeedUtil.GetMember(settings, "APIKey") as string == CompatSeedUtil.PlaceholderApiKey)
+            CompatSeedUtil.SetMember(settings, ApiEndpointMember, DefaultEndpoint);
+            if (CompatSeedUtil.GetMember(settings, ApiKeyMember) as string == CompatSeedUtil.PlaceholderApiKey)
             {
-                CompatSeedUtil.SetMember(settings, "APIKey", string.Empty);
+                CompatSeedUtil.SetMember(settings, ApiKeyMember, string.Empty);
             }
             CompatSeedUtil.SetMember(settings, "CustomModelId", string.Empty);
             CompatSeedUtil.SetMember(settings, "SelectedModelIndex", 0);

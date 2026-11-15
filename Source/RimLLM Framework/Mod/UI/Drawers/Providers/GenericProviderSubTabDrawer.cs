@@ -38,14 +38,7 @@ public static class GenericProviderSubTabDrawer
     /// </summary>
     private static void ResetRevealedKeys(string providerId)
     {
-        var stale = new List<string>();
-        foreach (var pair in RevealedKeys)
-        {
-            if (pair.Key.StartsWith(providerId + ":", StringComparison.Ordinal))
-            {
-                stale.Add(pair.Key);
-            }
-        }
+        var stale = RevealedKeys.Where(pair => pair.Key.StartsWith(providerId + ":", StringComparison.Ordinal)).Select(pair => pair.Key).ToList();
         foreach (string key in stale)
         {
             RevealedKeys.Remove(key);
@@ -69,7 +62,7 @@ public static class GenericProviderSubTabDrawer
         {
             string defaultEndpoint = providerId == ProviderIds.Player2
                 ? Player2Provider.LocalDefaultEndpoint
-                : "http://localhost:1234/v1";
+                : LocalEndpointProbe.LmStudioBaseUrl;
             string endpoint = Settings.GetEndpoint(providerId, defaultEndpoint);
             listing.Label("RimLLM_ApiEndpoint".Translate());
             endpoint = listing.TextEntry(endpoint);
@@ -227,11 +220,11 @@ public static class GenericProviderSubTabDrawer
         float viewHeight = Mathf.Max(220f, rows * (chipHeight + gap) + gap);
         Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
 
-        if (!ModelScrollPositions.ContainsKey(providerId))
+        if (!ModelScrollPositions.TryGetValue(providerId, out Vector2 scrollPos))
         {
-            ModelScrollPositions[providerId] = Vector2.zero;
+            scrollPos = Vector2.zero;
+            ModelScrollPositions[providerId] = scrollPos;
         }
-        Vector2 scrollPos = ModelScrollPositions[providerId];
 
         Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
         ModelScrollPositions[providerId] = scrollPos;
@@ -514,11 +507,11 @@ public static class GenericProviderSubTabDrawer
     /// <summary>OpenAI 相容本機服務的探測候選。供應商分頁與「連接 AI」精靈共用。</summary>
     internal static readonly LocalEndpointProbe.Target[] LocalTargets =
     [
-        new() { Name = "LM Studio", BaseUrl = "http://localhost:1234/v1", TestUrl = "http://localhost:1234/v1/models" },
-        new() { Name = "Ollama", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/v1/models" },
-        new() { Name = "Ollama (Raw)", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/api/tags" },
-        new() { Name = "LocalAI/vLLM (8080)", BaseUrl = "http://localhost:8080/v1", TestUrl = "http://localhost:8080/v1/models" },
-        new() { Name = "LocalAI/vLLM (8000)", BaseUrl = "http://localhost:8000/v1", TestUrl = "http://localhost:8000/v1/models" }
+        new() { Name = "LM Studio", BaseUrl = LocalEndpointProbe.LmStudioBaseUrl, TestUrl = LocalEndpointProbe.LmStudioV1ModelsUrl },
+        new() { Name = "Ollama", BaseUrl = LocalEndpointProbe.OllamaBaseUrl, TestUrl = LocalEndpointProbe.OllamaV1ModelsUrl },
+        new() { Name = "Ollama (Raw)", BaseUrl = LocalEndpointProbe.OllamaBaseUrl, TestUrl = LocalEndpointProbe.OllamaApiTagsUrl },
+        new() { Name = "LocalAI/vLLM (8080)", BaseUrl = LocalEndpointProbe.LocalAI8080BaseUrl, TestUrl = LocalEndpointProbe.LocalAI8080V1ModelsUrl },
+        new() { Name = "LocalAI/vLLM (8000)", BaseUrl = LocalEndpointProbe.LocalAI8000BaseUrl, TestUrl = LocalEndpointProbe.LocalAI8000V1ModelsUrl }
     ];
 
     private static bool IsDetectingLocal { get; set; } = false;

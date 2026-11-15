@@ -10,10 +10,8 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager;
 
-/// <summary>
-/// 以 models.dev 的公開模型資料庫補齊供應商 API 沒回報的上下文上限。
-/// 與 LiteLLM 的資料比對官方文件後，models.dev 在互相矛盾的項目上較常正確，因此選用它。
-/// </summary>
+/// <summary>models.dev 模型目錄下載器，將框架供應商對應到 models.dev 供應商鍵。</summary>
+#pragma warning disable S1075 // 本地／固定雲端端點的產品預設值，不在執行期變動。
 internal static class ModelsDevCatalog
 {
     private const string ApiUrl = "https://models.dev/api.json";
@@ -229,3 +227,4 @@ internal static class ModelsDevCatalog
             : 0;
     }
 }
+#pragma warning restore S1075

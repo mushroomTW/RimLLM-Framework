@@ -48,11 +48,13 @@ public class RimLLMEmbeddingClientTests
 
         // 空輸入不會碰到供應商，因此即使 Provider 停用也能走完整條組裝路徑。
         GeneratedEmbeddings<Embedding<float>> generated =
-            generator.GenerateAsync(new string[0]).GetAwaiter().GetResult();
+            generator.GenerateAsync(Array.Empty<string>()).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual(0, generated.Count);
         ClassicAssert.IsNull(generated.Usage);
     }
+
+    private static readonly string[] singleInput = new[] { "hello" };
 
     [Test]
     public async Task TestGenerateAsync_ReturnsEmbedding()
@@ -63,7 +65,7 @@ public class RimLLMEmbeddingClientTests
         var generator = manager.CreateEmbeddingGenerator("test.embed.mod");
         await Assert.ThrowsAsync<RimLLMException>(async () =>
         {
-            await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
+            await generator.GenerateAsync(singleInput).ConfigureAwait(false);
         });
     }
 
@@ -84,17 +86,20 @@ public class RimLLMEmbeddingClientTests
         // 第一次呼叫：因為未設定 Provider 拋出例外（說明已通過防濫用檢查）
         var ex1 = await Assert.ThrowsAsync<RimLLMException>(async () =>
         {
-            await generator.GenerateAsync(new[] { "hello" }).ConfigureAwait(false);
+            await generator.GenerateAsync(singleInput).ConfigureAwait(false);
         });
         ClassicAssert.IsTrue(ex1.Message.Contains("No embedding provider is configured"));
 
         // 第二次呼叫：超出 MaxRequestsPerWindow (1)，預期直接拋出 RateLimit 防濫用例外
         var ex2 = await Assert.ThrowsAsync<RimLLMException>(async () =>
         {
-            await generator.GenerateAsync(new[] { "hello 2" }).ConfigureAwait(false);
+            await generator.GenerateAsync(values).ConfigureAwait(false);
         });
         ClassicAssert.AreEqual(LLMError.RateLimit, ex2.Error);
     }
+
+    private static readonly string[] batchInputs = new[] { "a", "b", "c" };
+    private static readonly string[] values = new[] { "hello 2" };
 
     /// <summary>
     /// 一批文字必須合成一次 API 呼叫（先前逐筆序列呼叫，N 筆 = N 次來回），
@@ -127,7 +132,7 @@ public class RimLLMEmbeddingClientTests
         {
             var generator = manager.CreateEmbeddingGenerator("test.embed.batch.mod");
             GeneratedEmbeddings<Embedding<float>> generated =
-                generator.GenerateAsync(new[] { "a", "b", "c" }).GetAwaiter().GetResult();
+                generator.GenerateAsync(batchInputs).GetAwaiter().GetResult();
 
             ClassicAssert.AreEqual(1, handler.RequestBodies.Count, "三筆文字應合成一次請求");
             var input = System.Text.Json.Nodes.JsonNode.Parse(handler.RequestBodies[0]).AsObject()["input"].AsArray();

@@ -66,7 +66,7 @@ public static class ProviderIds
     public static bool IsPlayer2CloudEndpoint(string endpoint)
     {
         return !string.IsNullOrEmpty(endpoint)
-            && endpoint.IndexOf("api.player2.game", StringComparison.OrdinalIgnoreCase) >= 0;
+            && endpoint.Contains("api.player2.game", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

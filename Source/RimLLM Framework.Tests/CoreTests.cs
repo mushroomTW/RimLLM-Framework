@@ -129,7 +129,7 @@ public class CoreTests
     public void TestSanitizeForLogTruncatesAndEscapesNewlines()
     {
         string sanitized = RimLLMLog.SanitizeForLog("line1\r\nline2", 500);
-        ClassicAssert.IsFalse(sanitized.Contains("\n"), "換行必須被跳脫以防日誌注入");
+        ClassicAssert.IsFalse(sanitized.Contains('\n'), "換行必須被跳脫以防日誌注入");
         ClassicAssert.IsTrue(sanitized.Contains("\\r\\n"));
 
         string longText = new('x', 600);

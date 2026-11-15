@@ -63,7 +63,7 @@ public static class ServiceConsumersDrawer
             int callerCount = tracker != null ? tracker.CallerModIdCount : 0;
             if (_rows != null && _rowsCallerCount == callerCount) return _rows;
 
-            IEnumerable<string> callerModIds = tracker != null ? tracker.CallerModIds : (IEnumerable<string>)[];
+            IEnumerable<string> callerModIds = tracker != null ? tracker.GetCallerModIds() : (IEnumerable<string>)[];
             _rows = ServiceConsumerList.Build(DeclaredMods, callerModIds, ResolveActiveMod);
             _rowsCallerCount = callerCount;
             return _rows;
@@ -76,6 +76,10 @@ public static class ServiceConsumersDrawer
         return mod != null ? new KeyValuePair<string, string>(mod.PackageIdPlayerFacing, mod.Name) : (KeyValuePair<string, string>?)null;
     }
 
+    /// <summary>
+    /// 宣告相依於 RimLLM 的 Mod 清單。雙重迴圈帶 continue/break，無法以單一 LINQ 運算式替換。
+    /// </summary>
+    #pragma warning disable S3267 // 需跳過自身並找到第一個相依宣告，邏輯與 LINQ Where/Select 不易對應。
     private static List<KeyValuePair<string, string>> DeclaredMods
     {
         get
@@ -104,6 +108,7 @@ public static class ServiceConsumersDrawer
             return _declaredMods;
         }
     }
+    #pragma warning restore S3267
 
     private static void DrawRow(Rect rowRect, ServiceConsumerRow row)
     {

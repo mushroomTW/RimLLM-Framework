@@ -174,7 +174,7 @@ public static class RimLLMMarkdown
 
             sb.Append(trustedOpen || trustedClose
                 ? tag
-                : "＜" + tag.Substring(1, tag.Length - 2) + "＞");
+                : string.Concat("＜", tag.AsSpan(1, tag.Length - 2), "＞"));
             last = match.Index + match.Length;
         }
 
@@ -237,15 +237,6 @@ public static class RimLLMMarkdown
     /// 欄位裡的 <c>*</c> / <c>**</c> 可能是語意標記（<c>射擊 12**</c>），
     /// 讓 Markdig 解析會把相鄰的星號配成一組並套上粗體，因此改由 <see cref="RenderCellInlines"/> 保守轉換。
     /// </summary>
-    private static string CellText(TableCell cell, string source)
-    {
-        string raw = source.Substring(cell.Span.Start, cell.Span.Length).Trim();
-        // 取的是原始切片，因此 \| 要自己還原；跳脫直線若不還原會變成多餘的反斜線。
-        raw = raw.Replace("\\|", "|");
-        // 先跳脫角括號再轉換，否則轉換插入的標籤會被一併跳脫。
-        return RenderCellInlines(raw.Replace("<", "＜").Replace(">", "＞"));
-    }
-
     private static string RenderCellInlines(string text)
     {
         return CellInlinePattern.Replace(text, static match =>
@@ -279,6 +270,20 @@ public static class RimLLMMarkdown
         {
             _sb = sb;
             _source = source;
+        }
+
+        /// <summary>
+        /// 欄位文字取自原始 markdown 切片，而非解析後的 inline 樹。
+        /// 欄位裡的 <c>*</c> / <c>**</c> 可能是語意標記（<c>射擊 12**</c>），
+        /// 讓 Markdig 解析會把相鄰的星號配成一組並套上粗體，因此改由 <see cref="RenderCellInlines"/> 保守轉換。
+        /// </summary>
+        private string CellText(TableCell cell)
+        {
+            string raw = _source.Substring(cell.Span.Start, cell.Span.Length).Trim();
+            // 取的是原始切片，因此 \| 要自己還原；跳脫直線若不還原會變成多餘的反斜線。
+            raw = raw.Replace("\\|", "|");
+            // 先跳脫角括號再轉換，否則轉換插入的標籤會被一併跳脫。
+            return RenderCellInlines(raw.Replace("<", "＜").Replace(">", "＞"));
         }
 
         public void Render(MarkdownDocument document)
@@ -478,27 +483,35 @@ public static class RimLLMMarkdown
             }
 
             bool wroteAny = false;
-            foreach (TableRow row in table)
+            foreach (Block block in table)
             {
+                if (block is not TableRow row) continue;
                 var cells = new List<string>();
-                foreach (TableCell cell in row)
+                foreach (Block cellBlock in row)
                 {
-                    cells.Add(CellText(cell, _source));
+                    if (cellBlock is not TableCell cell) continue;
+                    cells.Add(CellText(cell));
                 }
                 if (cells.Count == 0) continue;
 
                 if (wroteAny) _sb.Append('\n');
-                if (row.IsHeader)
-                {
-                    _sb.Append(ColorTagOpen).Append(MutedColor).Append('>')
-                       .Append(string.Join(CellSeparator, cells))
-                       .Append(ColorTagClose);
-                }
-                else
-                {
-                    _sb.Append("• ").Append(string.Join(CellSeparator, cells));
-                }
+                AppendRow(row, cells);
                 wroteAny = true;
+            }
+        }
+
+        /// <summary>將單一表格列（標題或內容）寫入豐富文字輸出。</summary>
+        private void AppendRow(TableRow row, List<string> cells)
+        {
+            if (row.IsHeader)
+            {
+                _sb.Append(ColorTagOpen).Append(MutedColor).Append('>')
+                   .Append(string.Join(CellSeparator, cells))
+                   .Append(ColorTagClose);
+            }
+            else
+            {
+                _sb.Append("• ").Append(string.Join(CellSeparator, cells));
             }
         }
 
@@ -544,7 +557,7 @@ public static class RimLLMMarkdown
         // FencedCodeBlock 繼承 CodeBlock，共用同一份行繪製邏輯。
         private void RenderCodeLines(CodeBlock code)
         {
-            _sb.Append(ColorTagOpen).Append(CodeColor).Append(">");
+            _sb.Append(ColorTagOpen).Append(CodeColor).Append('>');
             for (int i = 0; i < code.Lines.Count; i++)
             {
                 if (i > 0) _sb.Append('\n');
@@ -577,7 +590,7 @@ public static class RimLLMMarkdown
                     return tag;
                 }
 
-                return "＜" + tag.Substring(1, tag.Length - 2) + "＞";
+                return string.Concat("＜", tag.AsSpan(1, tag.Length - 2), "＞");
             });
         }
 
@@ -606,7 +619,7 @@ public static class RimLLMMarkdown
                     RenderEmphasis(emphasis);
                     break;
                 case CodeInline code:
-                    _sb.Append(ColorTagOpen).Append(CodeColor).Append(">")
+                    _sb.Append(ColorTagOpen).Append(CodeColor).Append('>')
                        .Append(EscapeCode(code.Content))
                        .Append(ColorTagClose);
                     break;
@@ -624,7 +637,7 @@ public static class RimLLMMarkdown
                     _sb.Append(entity.Transcoded.ToString().Replace("<", "＜").Replace(">", "＞"));
                     break;
                 case AutolinkInline autolink:
-                    _sb.Append(ColorTagOpen).Append(LinkColor).Append(">")
+                    _sb.Append(ColorTagOpen).Append(LinkColor).Append('>')
                        .Append(EscapeCode(autolink.Url))
                        .Append(ColorTagClose);
                     break;
@@ -657,7 +670,7 @@ public static class RimLLMMarkdown
             if (emphasis.DelimiterChar == '~')
             {
                 // Unity rich text 沒有刪除線標籤，以灰字表示。
-                _sb.Append(ColorTagOpen).Append(MutedColor).Append(">");
+                _sb.Append(ColorTagOpen).Append(MutedColor).Append('>');
                 RenderInlines(emphasis);
                 _sb.Append(ColorTagClose);
                 return;
@@ -690,7 +703,7 @@ public static class RimLLMMarkdown
 
         private void RenderLink(LinkInline link)
         {
-            _sb.Append(ColorTagOpen).Append(LinkColor).Append(">");
+            _sb.Append(ColorTagOpen).Append(LinkColor).Append('>');
             if (link.FirstChild != null)
             {
                 foreach (Inline child in link)

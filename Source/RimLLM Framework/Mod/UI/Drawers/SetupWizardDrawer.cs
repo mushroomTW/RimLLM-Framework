@@ -35,27 +35,44 @@ public static class SetupWizardDrawer
         public string DisplayName => Name ?? NameKey.Translate().ToString();
     }
 
+    /// <summary>各供應商申請金鑰（或下載 App）的頁面；集中宣告，改版時只需改一處。</summary>
+    private static class Links
+    {
+        internal const string Gemini = "https://aistudio.google.com/api-keys";
+        internal const string DeepSeek = "https://platform.deepseek.com/api_keys";
+        internal const string OpenRouter = "https://openrouter.ai/keys";
+        internal const string OpenAI = "https://platform.openai.com/api-keys";
+        internal const string Player2 = "https://player2.game";
+        internal const string Groq = "https://console.groq.com/keys";
+        internal const string Grok = "https://console.x.ai";
+        internal const string Zai = "https://z.ai/manage-apikey/apikey-list";
+        internal const string Kimi = "https://platform.kimi.ai/console/api-keys";
+        internal const string MiniMax = "https://platform.minimax.io/console/keys";
+        internal const string Qwen = "https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key";
+        internal const string Nvidia = "https://build.nvidia.com/settings/api-keys";
+    }
+
     /// <summary>第一步的大卡片：常見、好上手的六家。</summary>
     private static readonly Choice[] Featured =
     [
-        new() { Id = ProviderIds.Gemini, Name = "Google Gemini", DescKey = "RimLLM_SetupDesc_Gemini", TagKey = "RimLLM_SetupTag_Recommended", Url = "https://aistudio.google.com/api-keys" },
-        new() { Id = ProviderIds.DeepSeek, Name = "DeepSeek", DescKey = "RimLLM_SetupDesc_DeepSeek", TagKey = "RimLLM_SetupTag_Cheap", Url = "https://platform.deepseek.com/api_keys" },
-        new() { Id = ProviderIds.OpenRouter, Name = "OpenRouter", DescKey = "RimLLM_SetupDesc_OpenRouter", TagKey = "RimLLM_SetupTag_FreeModels", Url = "https://openrouter.ai/keys" },
-        new() { Id = ProviderIds.OpenAI, Name = "OpenAI (ChatGPT)", DescKey = "RimLLM_SetupDesc_OpenAI", Url = "https://platform.openai.com/api-keys" },
-        new() { Id = ProviderIds.Player2, Name = "Player2", DescKey = "RimLLM_SetupDesc_Player2", TagKey = "RimLLM_SetupTag_NoKey", Url = "https://player2.game" },
+        new() { Id = ProviderIds.Gemini, Name = "Google Gemini", DescKey = "RimLLM_SetupDesc_Gemini", TagKey = "RimLLM_SetupTag_Recommended", Url = Links.Gemini },
+        new() { Id = ProviderIds.DeepSeek, Name = "DeepSeek", DescKey = "RimLLM_SetupDesc_DeepSeek", TagKey = "RimLLM_SetupTag_Cheap", Url = Links.DeepSeek },
+        new() { Id = ProviderIds.OpenRouter, Name = "OpenRouter", DescKey = "RimLLM_SetupDesc_OpenRouter", TagKey = "RimLLM_SetupTag_FreeModels", Url = Links.OpenRouter },
+        new() { Id = ProviderIds.OpenAI, Name = "OpenAI (ChatGPT)", DescKey = "RimLLM_SetupDesc_OpenAI", Url = Links.OpenAI },
+        new() { Id = ProviderIds.Player2, Name = "Player2", DescKey = "RimLLM_SetupDesc_Player2", TagKey = "RimLLM_SetupTag_NoKey", Url = Links.Player2 },
         new() { Id = ProviderIds.OpenAICompatible, NameKey = "RimLLM_SetupLocalName", DescKey = "RimLLM_SetupDesc_Local", TagKey = "RimLLM_SetupTag_NoKey" }
     ];
 
     /// <summary>收在「更多」選單裡的其餘內建供應商。</summary>
     private static readonly Choice[] More =
     [
-        new() { Id = ProviderIds.Groq, Name = "Groq", Url = "https://console.groq.com/keys" },
-        new() { Id = ProviderIds.Grok, Name = "Grok (xAI)", Url = "https://console.x.ai" },
-        new() { Id = ProviderIds.Zai, Name = "Z.ai", Url = "https://z.ai/manage-apikey/apikey-list" },
-        new() { Id = ProviderIds.Kimi, Name = "Kimi", Url = "https://platform.kimi.ai/console/api-keys" },
-        new() { Id = ProviderIds.MiniMax, Name = "MiniMax", Url = "https://platform.minimax.io/console/keys" },
-        new() { Id = ProviderIds.Qwen, Name = "Qwen", Url = "https://modelstudio.console.alibabacloud.com/?tab=playground#/api-key" },
-        new() { Id = ProviderIds.Nvidia, Name = "NVIDIA", Url = "https://build.nvidia.com/settings/api-keys" }
+        new() { Id = ProviderIds.Groq, Name = "Groq", Url = Links.Groq },
+        new() { Id = ProviderIds.Grok, Name = "Grok (xAI)", Url = Links.Grok },
+        new() { Id = ProviderIds.Zai, Name = "Z.ai", Url = Links.Zai },
+        new() { Id = ProviderIds.Kimi, Name = "Kimi", Url = Links.Kimi },
+        new() { Id = ProviderIds.MiniMax, Name = "MiniMax", Url = Links.MiniMax },
+        new() { Id = ProviderIds.Qwen, Name = "Qwen", Url = Links.Qwen },
+        new() { Id = ProviderIds.Nvidia, Name = "NVIDIA", Url = Links.Nvidia }
     ];
 
     private enum Outcome { None, Success, Failed }
@@ -102,6 +119,10 @@ public static class SetupWizardDrawer
     private const float CardHeight = 64f;
     private const float CardGap = 10f;
     private const float BigButtonHeight = 40f;
+
+    /// <summary>精靈頁用到的失敗訊息翻譯鍵，集中於此避免重複硬編碼。</summary>
+    private const string SetupFailDetailKey = "RimLLM_SetupFailDetail";
+    private const string SetupFailOtherKey = "RimLLM_SetupFail_Other";
 
     /// <summary>回到第一步，清掉上一次的結果。從首頁進來時呼叫。</summary>
     public static void Restart()
@@ -150,7 +171,13 @@ public static class SetupWizardDrawer
             bool now = i == _step;
             bool done = i < _step || (i == steps && _outcome == Outcome.Success);
             RimLLMUIStyle.DrawSelectableFrame(cell, now);
-            Color color = done ? RimLLMUIStyle.StatusGreen : now ? Color.white : RimLLMUIStyle.Muted;
+            Color color;
+            if (done)
+                color = RimLLMUIStyle.StatusGreen;
+            else if (now)
+                color = Color.white;
+            else
+                color = RimLLMUIStyle.Muted;
             using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
             {
                 Widgets.Label(cell, $"<color=#{ColorUtility.ToHtmlStringRGB(color)}>{$"RimLLM_SetupStep{i}".Translate()}</color>");
@@ -250,72 +277,28 @@ public static class SetupWizardDrawer
         return ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, null));
     }
 
+    /// <summary>繪製單一金鑰輸入欄位，回傳是否已輸入金鑰（決定「下一步」是否可用）。</summary>
+    private static bool DrawKeyField(Listing_Standard listing, string id, string raw)
+    {
+        listing.Label("RimLLM_SetupKeyFieldLabel".Translate());
+        Rect keyRow = listing.GetRect(30f);
+        Rect inputRect = new Rect(keyRow.x, keyRow.y, keyRow.width - 48f, keyRow.height);
+        Rect revealRect = new Rect(inputRect.xMax + 8f, keyRow.y, 40f, keyRow.height);
+        string edited = RimLLMUIStyle.DrawMaskableKeyField(inputRect, revealRect, raw ?? "", ref _revealKey);
+        if (edited != (raw ?? ""))
+        {
+            // 從網頁複製常會多帶空白或換行，直接去掉，免得第三步才失敗。
+            Settings.SetApiKey(id, edited.Trim());
+        }
+        return !string.IsNullOrEmpty(Settings.GetApiKey(id));
+    }
+
     private static void DrawStepKey(Listing_Standard listing)
     {
         string id = _pick.Id;
-        bool canNext = true;
-
-        if (NeedsKey(id))
-        {
-            DrawHeading(listing, "RimLLM_SetupKeyTitle".Translate());
-            listing.Label("RimLLM_SetupKeyHelp".Translate(_pick.DisplayName));
-            listing.Gap(6f);
-
-            Rect urlRow = listing.GetRect(32f);
-            if (Widgets.ButtonText(new Rect(urlRow.x, urlRow.y, 300f, urlRow.height), "RimLLM_SetupOpenSiteBtn".Translate(_pick.DisplayName)))
-            {
-                Application.OpenURL(_pick.Url);
-            }
-            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
-            {
-                GUI.color = RimLLMUIStyle.Muted;
-                Widgets.Label(new Rect(urlRow.x + 310f, urlRow.y, urlRow.width - 310f, urlRow.height), _pick.Url);
-                GUI.color = Color.white;
-            }
-            listing.Gap(10f);
-
-            string raw = Settings.GetApiKey(id);
-            int keyCount = string.IsNullOrEmpty(raw) ? 0 : raw.Split(RimLLMFrameworkSettings.ApiKeySeparators, StringSplitOptions.RemoveEmptyEntries).Length;
-            if (keyCount > 1)
-            {
-                // 多把金鑰只在進階的「語言模型」頁編輯，精靈裡改一把會把其他把一起覆蓋掉。
-                listing.Label("RimLLM_SetupKeysAlreadySet".Translate(keyCount));
-            }
-            else
-            {
-                listing.Label("RimLLM_SetupKeyFieldLabel".Translate());
-                Rect keyRow = listing.GetRect(30f);
-                Rect inputRect = new Rect(keyRow.x, keyRow.y, keyRow.width - 48f, keyRow.height);
-                Rect revealRect = new Rect(inputRect.xMax + 8f, keyRow.y, 40f, keyRow.height);
-                string edited = RimLLMUIStyle.DrawMaskableKeyField(inputRect, revealRect, raw ?? "", ref _revealKey);
-                if (edited != (raw ?? ""))
-                {
-                    // 從網頁複製常會多帶空白或換行，直接去掉，免得第三步才失敗。
-                    Settings.SetApiKey(id, edited.Trim());
-                }
-                canNext = !string.IsNullOrEmpty(Settings.GetApiKey(id));
-            }
-
-            if (ProviderIds.HasChinaEndpoint(id))
-            {
-                listing.Gap(6f);
-                RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupChinaHint".Translate());
-            }
-        }
-        else
-        {
-            DrawHeading(listing, "RimLLM_SetupNoKeyTitle".Translate());
-            listing.Label((id == ProviderIds.Player2 ? "RimLLM_SetupPlayer2Help" : "RimLLM_SetupLocalHelp").Translate());
-            if (_pick.Url != null)
-            {
-                listing.Gap(6f);
-                Rect urlRow = listing.GetRect(32f);
-                if (Widgets.ButtonText(new Rect(urlRow.x, urlRow.y, 300f, urlRow.height), "RimLLM_SetupOpenSiteBtn".Translate(_pick.DisplayName)))
-                {
-                    Application.OpenURL(_pick.Url);
-                }
-            }
-        }
+        bool canNext = NeedsKey(id)
+            ? DrawKeyStep(listing, id)
+            : DrawNoKeyStep(listing, id);
 
         listing.Gap(16f);
         DrawNavRow(listing, showBack: true, "RimLLM_SetupNextBtn".Translate(), canNext, () =>
@@ -325,6 +308,63 @@ public static class SetupWizardDrawer
             _step = 3;
             StartFetchModels(id);
         });
+    }
+
+    /// <summary>繪製「需要輸入 API 金鑰」的設定精靈步驟。</summary>
+    private static bool DrawKeyStep(Listing_Standard listing, string id)
+    {
+        DrawHeading(listing, "RimLLM_SetupKeyTitle".Translate());
+        listing.Label("RimLLM_SetupKeyHelp".Translate(_pick.DisplayName));
+        listing.Gap(6f);
+
+        Rect urlRow = listing.GetRect(32f);
+        if (Widgets.ButtonText(new Rect(urlRow.x, urlRow.y, 300f, urlRow.height), "RimLLM_SetupOpenSiteBtn".Translate(_pick.DisplayName)))
+        {
+            Application.OpenURL(_pick.Url);
+        }
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
+        {
+            GUI.color = RimLLMUIStyle.Muted;
+            Widgets.Label(new Rect(urlRow.x + 310f, urlRow.y, urlRow.width - 310f, urlRow.height), _pick.Url);
+            GUI.color = Color.white;
+        }
+        listing.Gap(10f);
+
+        string raw = Settings.GetApiKey(id);
+        int keyCount = string.IsNullOrEmpty(raw) ? 0 : raw.Split(RimLLMFrameworkSettings.ApiKeySeparators, StringSplitOptions.RemoveEmptyEntries).Length;
+        if (keyCount > 1)
+        {
+            // 多把金鑰只在進階的「語言模型」頁編輯，精靈裡改一把會把其他把一起覆蓋掉。
+            listing.Label("RimLLM_SetupKeysAlreadySet".Translate(keyCount));
+            return true;
+        }
+
+        bool canNext = DrawKeyField(listing, id, raw);
+
+        if (ProviderIds.HasChinaEndpoint(id))
+        {
+            listing.Gap(6f);
+            RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupChinaHint".Translate());
+        }
+
+        return canNext;
+    }
+
+    /// <summary>繪製「不需要 API 金鑰」的設定精靈步驟。</summary>
+    private static bool DrawNoKeyStep(Listing_Standard listing, string id)
+    {
+        DrawHeading(listing, "RimLLM_SetupNoKeyTitle".Translate());
+        listing.Label((id == ProviderIds.Player2 ? "RimLLM_SetupPlayer2Help" : "RimLLM_SetupLocalHelp").Translate());
+        if (_pick.Url != null)
+        {
+            listing.Gap(6f);
+            Rect urlRow = listing.GetRect(32f);
+            if (Widgets.ButtonText(new Rect(urlRow.x, urlRow.y, 300f, urlRow.height), "RimLLM_SetupOpenSiteBtn".Translate(_pick.DisplayName)))
+            {
+                Application.OpenURL(_pick.Url);
+            }
+        }
+        return true;
     }
 
     // ── 第 3 步：選模型 ──────────────────────────────────
@@ -346,7 +386,7 @@ public static class SetupWizardDrawer
                 RimLLMUIStyle.DrawHint(listing, _modelsFailKey.Translate());
                 if (!string.IsNullOrEmpty(_modelsFailDetail))
                 {
-                    RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_modelsFailDetail));
+                    RimLLMUIStyle.DrawHint(listing, SetupFailDetailKey.Translate(_modelsFailDetail));
                 }
                 Rect retryRow = listing.GetRect(30f);
                 if (Widgets.ButtonText(new Rect(retryRow.x, retryRow.y, 220f, retryRow.height), "RimLLM_SetupRetryFetchBtn".Translate()))
@@ -356,18 +396,7 @@ public static class SetupWizardDrawer
                 listing.Gap(6f);
             }
 
-            if (_chatModels.Count > 0)
-            {
-                DrawOptionalRow(listing, "RimLLM_SetupChatModel".Translate(), DescribePick(_chatModel, "RimLLM_SelectModelPlaceholder"),
-                    "RimLLM_SetupChooseModelBtn".Translate(),
-                    () => Find.WindowStack.Add(new Dialog_SelectModel(_chatModels, model => _chatModel = model)));
-            }
-            else
-            {
-                // 抓不到清單（或伺服器回傳空清單）時讓玩家手動輸入模型名稱。
-                listing.Label("RimLLM_SetupManualModelLabel".Translate());
-                _chatModel = listing.TextEntry(_chatModel ?? "").Trim();
-            }
+            DrawChatModelRow(listing);
 
             if (_embeddingPickProvider != null || _decisionPickProvider != null)
             {
@@ -398,6 +427,23 @@ public static class SetupWizardDrawer
         return string.IsNullOrEmpty(model)
             ? $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Muted)}>{emptyKey.Translate()}</color>"
             : model;
+    }
+
+    /// <summary>繪製聊天模型選擇列：有清單則顯示下拉選單，否則讓玩家手動輸入。</summary>
+    private static void DrawChatModelRow(Listing_Standard listing)
+    {
+        if (_chatModels.Count > 0)
+        {
+            DrawOptionalRow(listing, "RimLLM_SetupChatModel".Translate(), DescribePick(_chatModel, "RimLLM_SelectModelPlaceholder"),
+                "RimLLM_SetupChooseModelBtn".Translate(),
+                () => Find.WindowStack.Add(new Dialog_SelectModel(_chatModels, model => _chatModel = model)));
+        }
+        else
+        {
+            // 抓不到清單（或伺服器回傳空清單）時讓玩家手動輸入模型名稱。
+            listing.Label("RimLLM_SetupManualModelLabel".Translate());
+            _chatModel = listing.TextEntry(_chatModel ?? "").Trim();
+        }
     }
 
     /// <summary>選用服務的模型列：清單抓取中、抓不到、或「不使用＋各模型」的選單。</summary>
@@ -454,7 +500,7 @@ public static class SetupWizardDrawer
             {
                 if (!RimLLMProvider.TryGetManager(out var manager))
                 {
-                    await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_Other", "SDK not initialized")).ConfigureAwait(false);
+                    await FinishFetch(generation, () => FailFetch(SetupFailOtherKey, "SDK not initialized")).ConfigureAwait(false);
                     return;
                 }
 
@@ -495,7 +541,7 @@ public static class SetupWizardDrawer
             catch (Exception ex)
             {
                 RimLLMLog.Warning($"Setup wizard: fetching models for {providerId} failed: {RimLLMLog.SanitizeForLog(ex.Message, 220)}");
-                string key = ex is RimLLMException llm ? SetupStatus.DescribeFailureKey(llm.Error) : "RimLLM_SetupFail_Other";
+                string key = ex is RimLLMException llm ? SetupStatus.DescribeFailureKey(llm.Error) : SetupFailOtherKey;
                 await FinishFetch(generation, () => FailFetch(key, ex.Message)).ConfigureAwait(false);
             }
         });
@@ -512,9 +558,9 @@ public static class SetupWizardDrawer
     }
 
     /// <summary>回到主線程執行；這段期間玩家若回上一步重新抓取，就丟掉這次的結果。</summary>
-    private static Task FinishFetch(int generation, Action action)
+    private static async Task<bool> FinishFetch(int generation, Action action)
     {
-        return Finish(() =>
+        return await Finish(() =>
         {
             if (generation == _fetchGeneration) action();
         });
@@ -630,7 +676,7 @@ public static class SetupWizardDrawer
                 () => { _outcome = Outcome.None; _step = 3; });
             if (!string.IsNullOrEmpty(_failDetail))
             {
-                RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupFailDetail".Translate(_failDetail));
+                RimLLMUIStyle.DrawHint(listing, SetupFailDetailKey.Translate(_failDetail));
             }
         }
 
@@ -651,23 +697,16 @@ public static class SetupWizardDrawer
         listing.Gap(14f);
         listing.Label($"<b>{"RimLLM_SetupOptionalTitle".Translate()}</b>");
         bool choseOptional = !string.IsNullOrEmpty(_embeddingModel) || !string.IsNullOrEmpty(_decisionModel);
-        // 第三步選了模型的服務已在測試成功後自動開啟，提示要說明這一點，而不是叫玩家「需要時才設定」。
         RimLLMUIStyle.DrawHint(listing, (choseOptional
             ? "RimLLM_SetupOptionalAutoHint"
             : "RimLLM_SetupOptionalHint").Translate());
 
         // Embedding
         bool embeddingOn = Settings.EmbeddingProvider != RimLLMFrameworkSettings.DisabledProvider;
-
-        string embeddingStatus;
-        if (_embeddingBusy)
-            embeddingStatus = "RimLLM_SetupEmbeddingTesting".Translate();
-        else if (_embeddingOutcome == Outcome.Failed)
-            embeddingStatus = $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Danger)}>{"RimLLM_SetupEmbeddingFailed".Translate()}</color>";
-        else if (embeddingOn)
-            embeddingStatus = $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.StatusGreen)}>{"RimLLM_ServiceStatusOn".Translate(EmbeddingSettingsDrawer.GetProviderDisplayName(Settings.EmbeddingProvider))}</color>";
-        else
-            embeddingStatus = "RimLLM_ServiceStatusOff".Translate();
+        string embeddingStatus = GetServiceStatus(
+            _embeddingBusy, _embeddingOutcome, embeddingOn,
+            "RimLLM_SetupEmbeddingTesting", "RimLLM_SetupEmbeddingFailed", "RimLLM_ServiceStatusOn",
+            () => EmbeddingSettingsDrawer.GetProviderDisplayName(Settings.EmbeddingProvider));
 
         DrawOptionalRow(listing, "RimLLM_ServiceEmbedding".Translate(), embeddingStatus, "RimLLM_SetupOptionalOpenPage".Translate(), _embeddingBusy ? null : RimLLMSettingsUI.OpenEmbeddingPage);
         if (_embeddingOutcome == Outcome.Failed && !string.IsNullOrEmpty(_embeddingFailDetail))
@@ -677,16 +716,10 @@ public static class SetupWizardDrawer
 
         // 決策模型：Gemini 可沿用同一把金鑰（第三步選模型）；其他對話供應商要另外申請決策服務的金鑰，只能到進階頁設定。
         bool decisionOn = Settings.DecisionProvider != RimLLMDecisionProviderCatalog.Disabled;
-
-        string decisionStatus;
-        if (_decisionBusy)
-            decisionStatus = "RimLLM_SetupDecisionTesting".Translate();
-        else if (_decisionOutcome == Outcome.Failed)
-            decisionStatus = $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Danger)}>{"RimLLM_SetupDecisionFailed".Translate()}</color>";
-        else if (decisionOn)
-            decisionStatus = $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.StatusGreen)}>{"RimLLM_ServiceStatusOn".Translate(DecisionSettingsDrawer.GetProviderDisplayName(Settings.DecisionProvider))}</color>";
-        else
-            decisionStatus = "RimLLM_ServiceStatusOff".Translate();
+        string decisionStatus = GetServiceStatus(
+            _decisionBusy, _decisionOutcome, decisionOn,
+            "RimLLM_SetupDecisionTesting", "RimLLM_SetupDecisionFailed", "RimLLM_ServiceStatusOn",
+            () => DecisionSettingsDrawer.GetProviderDisplayName(Settings.DecisionProvider));
 
         DrawOptionalRow(listing, "RimLLM_ServiceDecision".Translate(), decisionStatus, "RimLLM_SetupOptionalOpenPage".Translate(), _decisionBusy ? null : RimLLMSettingsUI.OpenDecisionPage);
         if (_decisionOutcome == Outcome.Failed && !string.IsNullOrEmpty(_decisionFailDetail))
@@ -767,6 +800,23 @@ public static class SetupWizardDrawer
                 _decisionFailDetail = error;
             });
         });
+    }
+
+    /// <summary>
+    /// 決定某項選用服務的狀態文字。忙碌時顯示測試中、失敗時顯示錯誤、啟用時顯示已開啟，否則顯示關閉。
+    /// </summary>
+    private static string GetServiceStatus(
+        bool busy, Outcome outcome, bool isOn,
+        string testingKey, string failedKey, string onKey,
+        Func<string> getDisplayName)
+    {
+        if (busy)
+            return testingKey.Translate();
+        if (outcome == Outcome.Failed)
+            return $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Danger)}>{failedKey.Translate()}</color>";
+        if (isOn)
+            return $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.StatusGreen)}>{onKey.Translate(getDisplayName())}</color>";
+        return "RimLLM_ServiceStatusOff".Translate();
     }
 
     /// <summary>「名稱｜狀態｜按鈕」一列。首頁與成功頁共用，<paramref name="onClick"/> 為 null 時不畫按鈕。</summary>
@@ -870,7 +920,7 @@ public static class SetupWizardDrawer
             {
                 if (!RimLLMProvider.TryGetManager(out var manager))
                 {
-                    await Finish(() => Fail("RimLLM_SetupFail_Other", "SDK not initialized")).ConfigureAwait(false);
+                    await Finish(() => Fail(SetupFailOtherKey, "SDK not initialized")).ConfigureAwait(false);
                     return;
                 }
 
@@ -900,7 +950,7 @@ public static class SetupWizardDrawer
             catch (Exception ex)
             {
                 string message = RimLLMLog.SanitizeForLog(ex.Message, 220);
-                await Finish(() => Fail("RimLLM_SetupFail_Other", message)).ConfigureAwait(false);
+                await Finish(() => Fail(SetupFailOtherKey, message)).ConfigureAwait(false);
             }
         });
     }
@@ -917,7 +967,7 @@ public static class SetupWizardDrawer
     }
 
     /// <summary>把動作排到主線程執行，並等它跑完再繼續下一個階段。</summary>
-    private static Task Finish(Action action)
+    private static async Task<bool> Finish(Action action)
     {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         RimLLMDispatcher.EnqueueOnMainThread(() =>
@@ -933,7 +983,7 @@ public static class SetupWizardDrawer
                 tcs.SetException(ex);
             }
         });
-        return tcs.Task;
+        return await tcs.Task;
     }
 
     // ── 共用小元件 ──────────────────────────────────

@@ -95,6 +95,8 @@ public class ReviewFixesTests
         ];
     }
 
+    private static readonly string[] values = new[] { "hello" };
+
     // ---------- [P2] 快取深層快照：呼叫端修改不污染快取 ----------
 
     // ---------- [P2] Embedding：模型/供應商在請求開始時捕捉 ----------
@@ -124,7 +126,7 @@ public class ReviewFixesTests
         {
             var generator = manager.CreateEmbeddingGenerator("test.embed.capture.mod");
             GeneratedEmbeddings<Embedding<float>> generated =
-                generator.GenerateAsync(new[] { "hello" }).GetAwaiter().GetResult();
+                generator.GenerateAsync(values).GetAwaiter().GetResult();
 
             ClassicAssert.AreEqual(1, generated.Count);
             ClassicAssert.AreEqual("text-embedding-3-small", generated[0].ModelId, "向量應標上實際使用的模型");
@@ -157,15 +159,16 @@ public class ReviewFixesTests
 
         var received = new List<ChatResponseUpdate>();
         RimLLMChatClientExecutor.StreamAsync(
-            client,
-            new List<ChatMessage> { new(ChatRole.User, "hello") },
-            null,
-            "gpt-test",
-            useNativeSchema: false,
-            "OpenAI",
-            async update => { received.Add(update); await Task.CompletedTask; },
-            30f,
-            CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client,
+                new List<ChatMessage> { new(ChatRole.User, "hello") },
+                null,
+                "gpt-test",
+                false,
+                "OpenAI",
+                30f,
+                CancellationToken.None),
+            async update => { received.Add(update); await Task.CompletedTask; }).GetAwaiter().GetResult();
 
         // 不拋出、update 仍全部轉發；估算只累加數值，不保留文字。
         ClassicAssert.AreEqual(1, received.Count);
@@ -189,15 +192,16 @@ public class ReviewFixesTests
             }
 
             RimLLMChatClientExecutor.StreamAsync(
-                client,
-                new List<ChatMessage> { new(ChatRole.User, "hello") },
-                null,
-                "gpt-test",
-                useNativeSchema: false,
-                "OpenAI",
-                null,
-                30f,
-                CancellationToken.None).GetAwaiter().GetResult();
+                new GenerationParams(
+                    client,
+                    new List<ChatMessage> { new(ChatRole.User, "hello") },
+                    null,
+                    "gpt-test",
+                    false,
+                    "OpenAI",
+                    30f,
+                    CancellationToken.None),
+                null).GetAwaiter().GetResult();
 
             // 逐塊累加的估算必須等於對整段文字一次估算的結果，且不得封頂。
             ClassicAssert.AreEqual(
@@ -222,15 +226,16 @@ public class ReviewFixesTests
 
         var received = new List<ChatResponseUpdate>();
         RimLLMChatClientExecutor.StreamAsync(
-            client,
-            new List<ChatMessage> { new(ChatRole.User, "hello") },
-            null,
-            "gpt-test",
-            useNativeSchema: false,
-            "OpenAI",
-            async update => { received.Add(update); await Task.CompletedTask; },
-            30f,
-            CancellationToken.None).GetAwaiter().GetResult();
+            new GenerationParams(
+                client,
+                new List<ChatMessage> { new(ChatRole.User, "hello") },
+                null,
+                "gpt-test",
+                false,
+                "OpenAI",
+                30f,
+                CancellationToken.None),
+            async update => { received.Add(update); await Task.CompletedTask; }).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual(5000, received.Count, "所有 chunk 都必須原樣轉發");
     }

@@ -32,6 +32,8 @@ public class UiAndLogReviewRegressionTests
         Assert.That(RimLLMLog.SanitizeForLog(value), Is.EqualTo(value));
     }
 
+    private static readonly string[] expected = new[] { "new request placeholder" };
+
     [TestCase(false, false, false)]
     [TestCase(false, true, false)]
     [TestCase(true, false, false)]
@@ -83,7 +85,7 @@ public class UiAndLogReviewRegressionTests
             if (enqueueAfterCancel) EnqueueOldCallback();
             RimLLMDispatcher.DrainWithBudget(int.MaxValue, long.MaxValue);
 
-            Assert.That(history, Is.EqualTo(clearOnly ? Array.Empty<string>() : new[] { "new request placeholder" }),
+            Assert.That(history, Is.EqualTo(clearOnly ? Array.Empty<string>() : expected),
                 "已取消請求的延遲回覆不能寫進重建後的歷史。");
             Assert.That(loading.GetValue(null), Is.EqualTo(!clearOnly));
 

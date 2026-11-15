@@ -22,6 +22,9 @@ internal static class RimTalkCompatPatch
 
     private const string DisplayName = "RimTalk";
 
+    /// <summary>目標 Mod 設定類別中的成員名稱，以反射存取，避免編譯期相依於目標 Mod。</summary>
+    private const string BaseUrlMember = "BaseUrl";
+
     /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply()
     {
@@ -56,12 +59,12 @@ internal static class RimTalkCompatPatch
             object settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, null);
             object local = settings == null ? null : CompatSeedUtil.GetMember(settings, "LocalConfig");
             if (local == null
-                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(local, "BaseUrl") as string, RimTalkCompatPatch.PackageId))
+                || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(local, BaseUrlMember) as string, RimTalkCompatPatch.PackageId))
             {
                 return;
             }
 
-            CompatSeedUtil.SetMember(local, "BaseUrl", string.Empty);
+            CompatSeedUtil.SetMember(local, BaseUrlMember, string.Empty);
             CompatSeedUtil.SetMember(local, "CustomModelName", string.Empty);
             CompatSeedUtil.SetMember(settings, "UseSimpleConfig", true);
             CompatSeedUtil.SetMember(settings, "UseCloudProviders", true);

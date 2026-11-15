@@ -248,7 +248,9 @@ public sealed class ReviewFindingsRegressionTests
         var client = new ScriptedClient(new ScriptedProvider("P1") { StreamResponder = ReasoningOnlyStream });
 
         RimLLMException ex = await Assert.CatchAsync<RimLLMException>(() => RimLLMChatClientExecutor.StreamAsync(
-            client, [new ChatMessage(ChatRole.User, "hi")], null, "model", false, "P1", null, 30f, CancellationToken.None));
+            new GenerationParams(
+                client, [new ChatMessage(ChatRole.User, "hi")], null, "model", false, "P1", 30f, CancellationToken.None),
+            null));
 
         ClassicAssert.AreEqual(LLMError.InvalidResponse, ex!.Error);
         StringAssert.Contains("MaxOutputTokens", ex.Message);
@@ -265,19 +267,20 @@ public sealed class ReviewFindingsRegressionTests
         int received = 0;
 
         await RimLLMChatClientExecutor.StreamAsync(
-            client,
-            [new ChatMessage(ChatRole.User, "hi")],
-            null,
-            "model",
-            false,
-            "P1",
+            new GenerationParams(
+                client,
+                [new ChatMessage(ChatRole.User, "hi")],
+                null,
+                "model",
+                false,
+                "P1",
+                0.1f,
+                CancellationToken.None),
             async _ =>
             {
                 received++;
                 await Task.Delay(400);
-            },
-            0.1f,
-            CancellationToken.None);
+            });
 
         ClassicAssert.AreEqual(2, received);
     }
@@ -288,7 +291,9 @@ public sealed class ReviewFindingsRegressionTests
         var client = new ScriptedClient(new ScriptedProvider("P1") { StreamResponder = StallAfterFirstChunk });
 
         RimLLMException ex = await Assert.CatchAsync<RimLLMException>(() => RimLLMChatClientExecutor.StreamAsync(
-            client, [new ChatMessage(ChatRole.User, "hi")], null, "model", false, "P1", null, 0.1f, CancellationToken.None));
+            new GenerationParams(
+                client, [new ChatMessage(ChatRole.User, "hi")], null, "model", false, "P1", 0.1f, CancellationToken.None),
+            null));
 
         ClassicAssert.AreEqual(LLMError.Timeout, ex!.Error);
     }
@@ -500,8 +505,9 @@ public sealed class ReviewFindingsRegressionTests
         {
             store.CheckAntiAbuse("rotated." + i);
         }
-        Thread.Sleep(20);
+        // 輪替要落到下一個時間窗；等待過期 mod ID 被淘汰，計數低於上限即視為完成。
         store.CheckAntiAbuse("rotated.next");
+        SpinWait.SpinUntil(() => store.TrackedModCount < RimLLMThrottleStore.MaxTrackedModIds, TimeSpan.FromSeconds(5));
 
         ClassicAssert.Less(store.TrackedModCount, RimLLMThrottleStore.MaxTrackedModIds);
     }

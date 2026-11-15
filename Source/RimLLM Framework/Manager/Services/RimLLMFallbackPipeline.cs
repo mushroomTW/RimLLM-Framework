@@ -12,12 +12,12 @@ namespace RimLLM_Framework.Manager;
 /// <summary>
 /// 負責備用鏈（Fallback Chain）維護、Provider 失敗後自動嘗試下一個備用 Provider、
 /// 備用管道執行與健康帳本 (Health Ledger) 連動等邏輯的服務元件。
+/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMFallbackPipeline
 {
     private readonly IRimLLMSettings _settings;
     private readonly RimLLMHealthLedger _healthLedger;
-    private readonly RimLLMUsageTracker _usageTracker;
     private readonly Func<string, ILLMProvider> _providerResolver;
     private readonly Func<string, bool> _isProviderEnabledFunc;
     private int _roundRobinIndex;
@@ -39,7 +39,7 @@ public class RimLLMFallbackPipeline
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _healthLedger = healthLedger ?? throw new ArgumentNullException(nameof(healthLedger));
-        _usageTracker = usageTracker ?? throw new ArgumentNullException(nameof(usageTracker));
+        _ = usageTracker ?? throw new ArgumentNullException(nameof(usageTracker));
         _providerResolver = providerResolver ?? throw new ArgumentNullException(nameof(providerResolver));
         _isProviderEnabledFunc = isProviderEnabledFunc ?? throw new ArgumentNullException(nameof(isProviderEnabledFunc));
     }
@@ -324,7 +324,7 @@ public class RimLLMFallbackPipeline
     private List<string> GetFallbackChainSnapshot()
     {
         var chain = _settings.FallbackChain;
-        return chain != null ? new List<string>(chain) : null;
+        return chain != null ? new List<string>(chain) : [];
     }
 
     private bool IsProviderUsable(string providerId, ILLMProvider provider, Dictionary<string, string> apiKeyCache)
@@ -385,7 +385,7 @@ public class RimLLMFallbackPipeline
         }
 
         // 依據 UsageTracker 中的真實 API 費率客觀判定等級
-        return _usageTracker.GetModelLevel(providerId, modelName);
+        return RimLLMUsageTracker.GetModelLevel(providerId, modelName);
     }
 
     private static int ParseMinFallbackLevel(string levelStr)
@@ -423,7 +423,7 @@ public class RimLLMFallbackPipeline
         // 擲出 ArgumentOutOfRangeException。這不是呼叫參數有問題，同模型重試通常會成功，
         // 必須在下方的 ArgumentException 判定之前放行。
         if (ex is ArgumentOutOfRangeException &&
-            ex.Message.IndexOf("Unknown ChatFinishReason value", StringComparison.Ordinal) >= 0)
+            ex.Message.Contains("Unknown ChatFinishReason value"))
         {
             return true;
         }

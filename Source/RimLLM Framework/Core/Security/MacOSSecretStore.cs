@@ -7,7 +7,7 @@ namespace RimLLM_Framework.Core;
 
 /// <summary>以 SecItem API 存取 macOS Keychain，不呼叫會暴露秘密參數的 security CLI。</summary>
 [SupportedOSPlatform("macos")]
-internal sealed class MacOSSecretStore : ISecretStore
+internal sealed partial class MacOSSecretStore : ISecretStore
 {
     private const string Security = "/System/Library/Frameworks/Security.framework/Security";
     private const string CoreFoundation = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
@@ -23,7 +23,8 @@ internal sealed class MacOSSecretStore : ISecretStore
         CFDictionarySetValue(query.Handle, Constant(Security, "kSecMatchLimit"), Constant(Security, "kSecMatchLimitOne"));
         int status = SecItemCopyMatching(query.Handle, out IntPtr result);
         using var data = new CFHandle(result);
-        if (status == NotFound) return null;
+        // 項目不存在代表尚未建立金鑰；回傳空集合，讓上層以「金鑰無效」統一回報。
+        if (status == NotFound) return Array.Empty<byte>();
         CheckStatus(status);
         if (result == IntPtr.Zero || CFDataGetLength(result) != 32)
             throw new CryptographicException("The Keychain storage key has an invalid length.");
@@ -86,33 +87,35 @@ internal sealed class MacOSSecretStore : ISecretStore
             throw new CryptographicException($"Keychain access failed (OSStatus {status}). Ensure the login keychain is unlocked and RimWorld is allowed access.");
     }
 
-    private sealed class CFHandle(IntPtr handle) : IDisposable
+    private sealed partial class CFHandle(IntPtr handle) : IDisposable
     {
         public IntPtr Handle { get; private set; } = handle;
         public void Dispose()
         {
             if (Handle != IntPtr.Zero) { CFRelease(Handle); Handle = IntPtr.Zero; }
         }
+
+        [LibraryImport(CoreFoundation)]
+        private static partial void CFRelease(IntPtr value);
     }
 
-    [DllImport(Security)]
-    private static extern int SecItemCopyMatching(IntPtr query, out IntPtr result);
-    [DllImport(Security)]
-    private static extern int SecItemAdd(IntPtr attributes, IntPtr result);
-    [DllImport(Security)]
-    private static extern int SecItemDelete(IntPtr query);
-    [DllImport(CoreFoundation)]
-    private static extern IntPtr CFDictionaryCreateMutable(IntPtr allocator, nint capacity, IntPtr keyCallbacks, IntPtr valueCallbacks);
-    [DllImport(CoreFoundation)]
-    private static extern void CFDictionarySetValue(IntPtr dictionary, IntPtr key, IntPtr value);
-    [DllImport(CoreFoundation)]
-    private static extern IntPtr CFStringCreateWithCString(IntPtr allocator, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, uint encoding);
-    [DllImport(CoreFoundation)]
-    private static extern IntPtr CFDataCreate(IntPtr allocator, byte[] bytes, nint length);
-    [DllImport(CoreFoundation)]
-    private static extern nint CFDataGetLength(IntPtr data);
-    [DllImport(CoreFoundation)]
-    private static extern IntPtr CFDataGetBytePtr(IntPtr data);
-    [DllImport(CoreFoundation)]
-    private static extern void CFRelease(IntPtr value);
+    [LibraryImport(Security)]
+    private static partial int SecItemCopyMatching(IntPtr query, out IntPtr result);
+    [LibraryImport(Security)]
+    private static partial int SecItemAdd(IntPtr attributes, IntPtr result);
+    [LibraryImport(Security)]
+    private static partial int SecItemDelete(IntPtr query);
+    [LibraryImport(CoreFoundation)]
+    private static partial IntPtr CFDictionaryCreateMutable(IntPtr allocator, nint capacity, IntPtr keyCallbacks, IntPtr valueCallbacks);
+    [LibraryImport(CoreFoundation)]
+    private static partial void CFDictionarySetValue(IntPtr dictionary, IntPtr key, IntPtr value);
+    [LibraryImport(CoreFoundation, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr CFStringCreateWithCString(IntPtr allocator, string value, uint encoding);
+    [LibraryImport(CoreFoundation)]
+    private static partial IntPtr CFDataCreate(IntPtr allocator,
+        [In][MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 2)] byte[] bytes, nint length);
+    [LibraryImport(CoreFoundation)]
+    private static partial nint CFDataGetLength(IntPtr data);
+    [LibraryImport(CoreFoundation)]
+    private static partial IntPtr CFDataGetBytePtr(IntPtr data);
 }

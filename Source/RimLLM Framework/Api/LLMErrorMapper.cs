@@ -239,7 +239,7 @@ public static class LLMErrorMapper
     public static bool ContainsIgnoreCase(string haystack, string needle)
     {
         return !string.IsNullOrEmpty(haystack) &&
-               haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+               haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
     }
 
     private static RimLLMException Create(LLMError error, string message, TimeSpan? retryAfter, Exception innerException)

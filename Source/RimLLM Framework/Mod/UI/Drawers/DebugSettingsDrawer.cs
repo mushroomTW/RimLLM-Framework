@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
@@ -28,14 +29,17 @@ public static class DebugSettingsDrawer
     /// 結構化輸出自我檢查用的型別。
     /// 刻意包含 <c>Nullable&lt;T&gt;</c>、清單與列舉：這三者正是各供應商 schema 方言差異最大的地方，
     /// 只用純量成員的話兩種方言會產出相同的 schema，測不出方言接線是否正確。
+    /// 屬性透過系統文字 JSON 反序列化器賦值，靜態分析無法偵測。
     /// </summary>
+    #pragma warning disable S1144 // 透過 System.Text.Json 反序列化器賦值 init 存取子，靜態分析無法偵測，不可移除。
     private sealed class SchemaSelfTestPayload
     {
-        public string Summary { get; set; }
-        public int Score { get; set; }
-        public int? OptionalScore { get; set; }
-        public List<string> Tags { get; set; }
+        public string Summary { get; init; }
+        public int Score { get; init; }
+        public int? OptionalScore { get; init; }
+        public List<string> Tags { get; init; }
     }
+    #pragma warning restore S1144
 
     /// <summary>
     /// 獲取偵錯分頁詳細內容的滾動高度。
@@ -48,7 +52,7 @@ public static class DebugSettingsDrawer
         {
             statusHeight = 0f;
         }
-        else if (schemaSelfTestStatus.Contains("\n"))
+        else if (schemaSelfTestStatus.Contains('\n'))
         {
             statusHeight = 150f;
         }
@@ -67,36 +71,7 @@ public static class DebugSettingsDrawer
         listing.Label("RimLLM_TitleDebugExplanation".Translate());
         listing.Gap(8f);
 
-        // Token 與費用累計統計看板
-        listing.Label("<b>" + "RimLLM_UsageHeader".Translate() + "</b>");
-        Rect usageRect = listing.GetRect(50f);
-        Widgets.DrawMenuSection(usageRect);
-
-        Rect usageInfoRect = new Rect(usageRect.x + 8f, usageRect.y + 4f, usageRect.width - 160f, usageRect.height - 8f);
-        Rect resetUsageBtnRect = new Rect(usageRect.xMax - 150f, usageRect.y + 10f, 140f, 30f);
-
-        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-        {
-            string usageText = "RimLLM_UsageInfo".Translate(
-                Settings.TotalPromptTokens.ToString("N0"),
-                Settings.TotalCompletionTokens.ToString("N0"),
-                Settings.TotalEstimatedCost.ToString("F4")
-            );
-            Widgets.Label(usageInfoRect, usageText);
-        }
-
-        if (RimLLMProvider.TryGetManager(out var costManager) &&
-            costManager.UsageTracker.UnpricedUsageCount > 0)
-        {
-            listing.Label("RimLLM_UnpricedUsageNotice".Translate(costManager.UsageTracker.UnpricedUsageCount));
-        }
-
-        if (Widgets.ButtonText(resetUsageBtnRect, "RimLLM_ResetUsageBtn".Translate()) &&
-            RimLLMProvider.TryGetManager(out var usageManager))
-        {
-            usageManager.ResetUsage();
-            Messages.Message("RimLLM_MsgUsageReset".Translate(), MessageTypeDefOf.PositiveEvent, false);
-        }
+        DrawUsageStats(listing);
         listing.Gap(10f);
 
         // 詳細日誌
@@ -206,6 +181,41 @@ public static class DebugSettingsDrawer
         }
         Text.Font = GameFont.Small;
         Widgets.EndScrollView();
+    }
+
+    /// <summary>繪製 Token 與費用累計統計看板。</summary>
+    private static void DrawUsageStats(Listing_Standard listing)
+    {
+        // Token 與費用累計統計看板
+        listing.Label("<b>" + "RimLLM_UsageHeader".Translate() + "</b>");
+        Rect usageRect = listing.GetRect(50f);
+        Widgets.DrawMenuSection(usageRect);
+
+        Rect usageInfoRect = new Rect(usageRect.x + 8f, usageRect.y + 4f, usageRect.width - 160f, usageRect.height - 8f);
+        Rect resetUsageBtnRect = new Rect(usageRect.xMax - 150f, usageRect.y + 10f, 140f, 30f);
+
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            string usageText = "RimLLM_UsageInfo".Translate(
+                Settings.TotalPromptTokens.ToString("N0"),
+                Settings.TotalCompletionTokens.ToString("N0"),
+                Settings.TotalEstimatedCost.ToString("F4")
+            );
+            Widgets.Label(usageInfoRect, usageText);
+        }
+
+        if (RimLLMProvider.TryGetManager(out var costManager) &&
+            costManager.UsageTracker.UnpricedUsageCount > 0)
+        {
+            listing.Label("RimLLM_UnpricedUsageNotice".Translate(costManager.UsageTracker.UnpricedUsageCount));
+        }
+
+        if (Widgets.ButtonText(resetUsageBtnRect, "RimLLM_ResetUsageBtn".Translate()) &&
+            RimLLMProvider.TryGetManager(out var usageManager))
+        {
+            usageManager.ResetUsage();
+            Messages.Message("RimLLM_MsgUsageReset".Translate(), MessageTypeDefOf.PositiveEvent, false);
+        }
     }
 
     /// <summary>上一次格式化所依據的日誌快照，與格式化後的顯示列一一對應。</summary>
@@ -324,15 +334,7 @@ public static class DebugSettingsDrawer
             string maskedDeviceId;
             try
             {
-                string rawId = Environment.MachineName;
-                if (!string.IsNullOrEmpty(rawId) && rawId.Length > 8)
-                {
-                    maskedDeviceId = rawId.Substring(0, 4) + "****" + rawId.Substring(rawId.Length - 4);
-                }
-                else
-                {
-                    maskedDeviceId = rawId;
-                }
+                maskedDeviceId = MaskDeviceId(Environment.MachineName);
             }
             catch
             {
@@ -397,6 +399,13 @@ public static class DebugSettingsDrawer
         {
             Messages.Message("RimLLM_ExportDiagFailed".Translate(RimLLMLog.SanitizeForLog(ex.Message, 200)), MessageTypeDefOf.RejectInput, false);
         }
+    }
+
+    /// <summary>遮罩裝置識別碼，保留頭尾各 4 字元，中間以 **** 取代。</summary>
+    private static string MaskDeviceId(string rawId)
+    {
+        if (string.IsNullOrEmpty(rawId) || rawId.Length <= 8) return rawId;
+        return string.Concat(rawId.AsSpan(0, 4), "****", rawId.AsSpan(rawId.Length - 4));
     }
 
     private static string MaskEndpoint(string endpoint)

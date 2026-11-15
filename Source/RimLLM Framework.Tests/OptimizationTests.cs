@@ -303,9 +303,9 @@ public class OptimizationTests
         };
         var store = new RimLLMThrottleStore(settings);
 
-        IChatClient first = new RimLLMGuardChatClient(
+        RimLLMGuardChatClient first = new(
             new MockCustomChatClient(), settings, store, "same.mod", new RimLLMUsageTracker(settings));
-        IChatClient second = new RimLLMGuardChatClient(
+        RimLLMGuardChatClient second = new(
             new MockCustomChatClient(), settings, store, "same.mod", new RimLLMUsageTracker(settings));
 
         first.GetResponseAsync(NewMessages()).GetAwaiter().GetResult();
@@ -423,9 +423,9 @@ public class OptimizationTests
         var tracker = new RimLLMUsageTracker(settings);
 
         // 快取鍵大小寫不敏感：三次呼叫結果一致，且與覆寫查詢互不干擾。
-        ClassicAssert.AreEqual(tracker.GetModelLevel("openai", "gpt-4o"), tracker.GetModelLevel("OpenAI", "GPT-4o"));
-        ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelLow, tracker.GetModelLevel("local", "anything"));
-        ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelMedium, tracker.GetModelLevel("openai", "some-unknown-model-xyz"));
+        ClassicAssert.AreEqual(RimLLMUsageTracker.GetModelLevel("openai", "gpt-4o"), RimLLMUsageTracker.GetModelLevel("OpenAI", "GPT-4o"));
+        ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelLow, RimLLMUsageTracker.GetModelLevel("local", "anything"));
+        ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelMedium, RimLLMUsageTracker.GetModelLevel("openai", "some-unknown-model-xyz"));
     }
 
     [Test]

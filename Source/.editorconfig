@@ -1,0 +1,15 @@
+# RimLLM Framework — .editorconfig
+# S101 (Types should be named in PascalCase) 被關閉，因為 RimLLM 是品牌名稱，
+# 重新命名為 RimLlm* 會直接破壞公開 API 與下游 Mod 相容性。
+# 以 #pragma 證明品牌識別需保留，避免下游編譯失敗。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+dotnet_diagnostic.S101.severity = none

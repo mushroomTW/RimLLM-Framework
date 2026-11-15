@@ -45,15 +45,15 @@ public static class RimLLMLog
     /// </summary>
     private static bool HasPotentialSecret(string value)
     {
-        return value.IndexOf("api", StringComparison.OrdinalIgnoreCase) >= 0
-            || value.IndexOf("authorization", StringComparison.OrdinalIgnoreCase) >= 0
-            || value.IndexOf("key=", StringComparison.OrdinalIgnoreCase) >= 0
-            || value.IndexOf("bearer", StringComparison.OrdinalIgnoreCase) >= 0
-            || value.IndexOf("sk-", StringComparison.OrdinalIgnoreCase) >= 0
-            || value.IndexOf("AIza", StringComparison.OrdinalIgnoreCase) >= 0
-            || value.IndexOf("gsk_", StringComparison.OrdinalIgnoreCase) >= 0
-            || value.IndexOf("xai-", StringComparison.OrdinalIgnoreCase) >= 0
-            || value.IndexOf("nvapi-", StringComparison.OrdinalIgnoreCase) >= 0;
+        return value.Contains("api", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("authorization", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("key=", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("bearer", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("sk-", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("AIza", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("gsk_", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("xai-", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("nvapi-", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -74,7 +74,7 @@ public static class RimLLMLog
             if (idx < 0) idx = text.IndexOf(':');
             if (idx > 0)
             {
-                return text.Substring(0, idx + 1) + "[redacted]";
+                return string.Concat(text.AsSpan(0, idx + 1), "[redacted]");
             }
             return "[redacted-secret]";
         })
@@ -83,7 +83,7 @@ public static class RimLLMLog
         sanitized = sanitized.Replace("\r", "\\r").Replace("\n", "\\n");
         if (sanitized.Length > maxLength)
         {
-            sanitized = sanitized.Substring(0, maxLength) + "...";
+            sanitized = string.Concat(sanitized.AsSpan(0, maxLength), "...");
         }
         return sanitized;
     }

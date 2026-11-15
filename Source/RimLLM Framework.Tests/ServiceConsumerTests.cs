@@ -15,6 +15,8 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public class ServiceConsumerTests
 {
+    private static readonly string[] expected = new[] { "mod.a" };
+
     /// <summary>只建立 client 不算呼叫；真正送出請求（即使失敗）才記錄。</summary>
     [Test]
     public void TestCallerRecordedOnRequestNotOnClientCreation()
@@ -33,7 +35,7 @@ public class ServiceConsumerTests
             // 測試設定沒有可用供應商，請求本身會失敗；這裡只關心呼叫端是否被記錄。
         }
 
-        CollectionAssert.AreEquivalent(new[] { "mod.a" }, manager.UsageTracker.CallerModIds.ToArray());
+        CollectionAssert.AreEquivalent(expected, manager.UsageTracker.GetCallerModIds().ToArray());
     }
 
     [Test]
@@ -72,6 +74,10 @@ public class ServiceConsumerTests
         };
     }
 
+    private static readonly string[] callerModIds = new[] { "foo.bar_steam", "foo.bar", "taken.over", "custom-id" };
+    private static readonly string[] expectedArray = new[] { "foo.bar", "foo.bar_steam" };
+    private static readonly string[] expectedArray0 = new[] { "taken.over" };
+
     [Test]
     public void TestBuild_MergesDeclaredAndCalled()
     {
@@ -82,17 +88,17 @@ public class ServiceConsumerTests
         };
 
         List<ServiceConsumerRow> rows = ServiceConsumerList.Build(
-            declared, new[] { "foo.bar_steam", "foo.bar", "taken.over", "custom-id" }, Resolve);
+            declared, callerModIds, Resolve);
 
         ClassicAssert.AreEqual(4, rows.Count);
 
         ServiceConsumerRow foo = rows.Single(r => r.PackageId == "Foo.Bar");
         ClassicAssert.IsTrue(foo.Declared);
-        CollectionAssert.AreEqual(new[] { "foo.bar", "foo.bar_steam" }, foo.CalledModIds);
+        CollectionAssert.AreEqual(expectedArray, foo.CalledModIds);
 
         ServiceConsumerRow takenOver = rows.Single(r => r.PackageId == "Taken.Over");
         ClassicAssert.IsFalse(takenOver.Declared);
-        CollectionAssert.AreEqual(new[] { "taken.over" }, takenOver.CalledModIds);
+        CollectionAssert.AreEqual(expectedArray0, takenOver.CalledModIds);
 
         ServiceConsumerRow unresolved = rows.Single(r => r.Name == "custom-id");
         ClassicAssert.IsNull(unresolved.PackageId);
@@ -107,7 +113,7 @@ public class ServiceConsumerTests
     public void TestBuild_ExcludesOnlyInternalModIds()
     {
         List<ServiceConsumerRow> rows = ServiceConsumerList.Build(
-            new KeyValuePair<string, string>[0],
+            Array.Empty<KeyValuePair<string, string>>(),
             new[] { ServiceConsumerList.DebugChatModId, ServiceConsumerList.SchemaSelfTestModId, "RimLLM.VoiceAddon" },
             Resolve);
 

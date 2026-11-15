@@ -387,17 +387,17 @@ public static class EmbeddingSettingsDrawer
     /// </summary>
     private static LocalEndpointProbe.Target[] GetDetectTargets(string providerId)
     {
-        var ollama = new LocalEndpointProbe.Target { Name = "Ollama", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/v1/models" };
-        var ollamaRaw = new LocalEndpointProbe.Target { Name = "Ollama (Raw)", BaseUrl = "http://localhost:11434/v1", TestUrl = "http://localhost:11434/api/tags" };
+        var ollama = new LocalEndpointProbe.Target { Name = "Ollama", BaseUrl = LocalEndpointProbe.OllamaBaseUrl, TestUrl = LocalEndpointProbe.OllamaV1ModelsUrl };
+        var ollamaRaw = new LocalEndpointProbe.Target { Name = "Ollama (Raw)", BaseUrl = LocalEndpointProbe.OllamaBaseUrl, TestUrl = LocalEndpointProbe.OllamaApiTagsUrl };
         if (providerId == ProviderOllama)
         {
             return [ollama, ollamaRaw];
         }
         return
         [
-            new LocalEndpointProbe.Target { Name = "LM Studio", BaseUrl = "http://localhost:1234/v1", TestUrl = "http://localhost:1234/v1/models" },
-            new LocalEndpointProbe.Target { Name = "LocalAI/vLLM (8080)", BaseUrl = "http://localhost:8080/v1", TestUrl = "http://localhost:8080/v1/models" },
-            new LocalEndpointProbe.Target { Name = "LocalAI/vLLM (8000)", BaseUrl = "http://localhost:8000/v1", TestUrl = "http://localhost:8000/v1/models" },
+            new LocalEndpointProbe.Target { Name = "LM Studio", BaseUrl = LocalEndpointProbe.LmStudioBaseUrl, TestUrl = LocalEndpointProbe.LmStudioV1ModelsUrl },
+            new LocalEndpointProbe.Target { Name = "LocalAI/vLLM (8080)", BaseUrl = LocalEndpointProbe.LocalAI8080BaseUrl, TestUrl = LocalEndpointProbe.LocalAI8080V1ModelsUrl },
+            new LocalEndpointProbe.Target { Name = "LocalAI/vLLM (8000)", BaseUrl = LocalEndpointProbe.LocalAI8000BaseUrl, TestUrl = LocalEndpointProbe.LocalAI8000V1ModelsUrl },
             ollama,
             ollamaRaw
         ];
@@ -542,11 +542,11 @@ public static class EmbeddingSettingsDrawer
         float viewHeight = Mathf.Max(200f, rows * (chipHeight + gap) + gap);
         Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
 
-        if (!ModelScrollPositions.ContainsKey(providerId))
+        if (!ModelScrollPositions.TryGetValue(providerId, out Vector2 scrollPos))
         {
-            ModelScrollPositions[providerId] = Vector2.zero;
+            scrollPos = Vector2.zero;
+            ModelScrollPositions[providerId] = scrollPos;
         }
-        Vector2 scrollPos = ModelScrollPositions[providerId];
 
         Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
         ModelScrollPositions[providerId] = scrollPos;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -16,6 +17,8 @@ namespace RimLLM_Framework.Tests;
 public class SettingsAndTelemetryTests
 {
     private string _encryptionKeyDirectory;
+    private static readonly string[] expected = new[] { "hello" };
+    private static readonly string[] expectedArray = new[] { "Gemini:gemini-2.5-flash" };
 
     [SetUp]
     public void SetUpEncryptionKeyStore()
@@ -49,7 +52,7 @@ public class SettingsAndTelemetryTests
     [Test]
     public void DefaultReasoningEffort_RoundTripsThroughSettingsEncoding()
     {
-        foreach (ReasoningEffort effort in Enum.GetValues(typeof(ReasoningEffort)))
+        foreach (ReasoningEffort effort in Enum.GetValues<ReasoningEffort>())
         {
             int encoded = RimLLMFrameworkSettings.EncodeReasoningEffort(effort);
             ClassicAssert.AreEqual(effort, RimLLMFrameworkSettings.DecodeReasoningEffort(encoded),
@@ -129,7 +132,7 @@ public class SettingsAndTelemetryTests
             Success = true,
             LatencyMs = 150
         };
-        manager.RequestLogs.Enqueue(entry);
+        manager.UsageTracker.RecordLog(entry);
         ClassicAssert.AreEqual(1, manager.RequestLogs.Count);
 
         manager.ClearLogs();
@@ -612,7 +615,7 @@ public class SettingsAndTelemetryTests
         });
 
         ClassicAssert.AreEqual(1, tracker.RequestLogs.Count);
-        Assert.IsTrue(tracker.RequestLogs.TryPeek(out var entry));
+        var entry = tracker.RequestLogs.First();
         ClassicAssert.AreEqual(1200, entry.PromptTokens);
         ClassicAssert.AreEqual(300, entry.CompletionTokens);
 
@@ -627,7 +630,7 @@ public class SettingsAndTelemetryTests
             ErrorMessage = "Error",
             LatencyMs = 100
         });
-        Assert.IsTrue(tracker.RequestLogs.TryPeek(out _));
+        Assert.IsTrue(tracker.RequestLogs.Count > 0);
         var all = tracker.RequestLogs.ToArray();
         ClassicAssert.AreEqual(0, all[all.Length - 1].PromptTokens);
         ClassicAssert.AreEqual(0, all[all.Length - 1].CompletionTokens);
@@ -712,7 +715,7 @@ public class SettingsAndTelemetryTests
             reloaded.Load();
 
             ClassicAssert.IsTrue(reloaded.LoadedFromDisk, "舊格式檔案應成功載入");
-            CollectionAssert.AreEqual(new[] { "hello" }, reloaded.ChatHistory, "舊版明文歷史應讀回");
+            CollectionAssert.AreEqual(expected, reloaded.ChatHistory, "舊版明文歷史應讀回");
             ClassicAssert.IsTrue(reloaded.IsDirty, "讀到明文歷史應標記待重寫以完成加密遷移");
             ClassicAssert.AreEqual(100, reloaded.TotalPromptTokens);
             ClassicAssert.AreEqual(20, reloaded.TotalCompletionTokens);
@@ -759,7 +762,7 @@ public class SettingsAndTelemetryTests
         SettingsLikeDto dto = RimLLMJsonHelper.Deserialize<SettingsLikeDto>(NewtonsoftGolden);
 
         ClassicAssert.IsNotNull(dto);
-        CollectionAssert.AreEqual(new[] { "Gemini:gemini-2.5-flash" }, dto.FallbackChain);
+        CollectionAssert.AreEqual(expectedArray, dto.FallbackChain);
         ClassicAssert.AreEqual(2, dto.ModelLevelOverrides["Gemini:gemini-2.5-flash"]);
         ClassicAssert.AreEqual(30f, dto.ApiTimeout);
         ClassicAssert.AreEqual(3, dto.MaxRetries);
@@ -772,18 +775,16 @@ public class SettingsAndTelemetryTests
         ClassicAssert.AreEqual(7, dto.Count);
     }
 
-#pragma warning disable 0649 // 欄位僅由 JSON 反序列化賦值
     private class SettingsLikeDto
     {
-        public List<string> FallbackChain;
-        public Dictionary<string, int> ModelLevelOverrides;
-        public float ApiTimeout;
-        public int MaxRetries;
-        public bool DetailedLogging;
-        public string EmbeddingProvider;
-        public DateTime Stamp;
-        public int Count;
+        public List<string> FallbackChain = null!;
+        public Dictionary<string, int> ModelLevelOverrides = null!;
+        public float ApiTimeout = 0f;
+        public int MaxRetries = 0;
+        public bool DetailedLogging = false;
+        public string EmbeddingProvider = null!;
+        public DateTime Stamp = default;
+        public int Count = 0;
     }
-#pragma warning restore 0649
 
 }

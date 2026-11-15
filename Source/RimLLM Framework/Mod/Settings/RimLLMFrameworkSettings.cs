@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
@@ -24,13 +25,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
 
     public List<string> FallbackChain
     {
-        get
-        {
-            lock (_settingsLock)
-            {
-                return new List<string>(_fallbackChain);
-            }
-        }
+        get => SnapshotFallbackChain();
         set
         {
             lock (_settingsLock)
@@ -40,21 +35,50 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         }
     }
 
+    /// <summary>
+    /// 取得備援鏈的複本。屬性不直接複製集合，複製邏輯集中在這裡，行為與原本一致。
+    /// </summary>
+    private List<string> SnapshotFallbackChain()
+    {
+        lock (_settingsLock)
+        {
+            return new List<string>(_fallbackChain);
+        }
+    }
+
     private List<string> _embeddingFallbackChain = [];
     private List<string> _decisionFallbackChain = [];
 
     /// <summary>Embedding 備援鏈（供應商識別碼，不含啟用中那一家）。取得的是複本，改完要整份設回來。</summary>
     public List<string> EmbeddingFallbackChain
     {
-        get { lock (_settingsLock) { return new List<string>(_embeddingFallbackChain); } }
+        get => SnapshotEmbeddingFallbackChain();
         set { lock (_settingsLock) { _embeddingFallbackChain = SanitizeProviderChain(value); } }
     }
 
     /// <summary>決策備援鏈（供應商識別碼，不含啟用中那一家）。取得的是複本，改完要整份設回來。</summary>
     public List<string> DecisionFallbackChain
     {
-        get { lock (_settingsLock) { return new List<string>(_decisionFallbackChain); } }
+        get => SnapshotDecisionFallbackChain();
         set { lock (_settingsLock) { _decisionFallbackChain = SanitizeProviderChain(value); } }
+    }
+
+    /// <summary>取得 Embedding 備援鏈的複本。</summary>
+    private List<string> SnapshotEmbeddingFallbackChain()
+    {
+        lock (_settingsLock)
+        {
+            return new List<string>(_embeddingFallbackChain);
+        }
+    }
+
+    /// <summary>取得決策備援鏈的複本。</summary>
+    private List<string> SnapshotDecisionFallbackChain()
+    {
+        lock (_settingsLock)
+        {
+            return new List<string>(_decisionFallbackChain);
+        }
     }
 
     /// <summary>備援鏈去空去重；存檔裡手改出來的重複或空白條目不該讓同一家被嘗試兩次。</summary>
@@ -62,12 +86,9 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     {
         var result = new List<string>();
         if (chain == null) return result;
-        foreach (string entry in chain)
+        foreach (string entry in chain.Where(entry => !string.IsNullOrWhiteSpace(entry) && !result.Contains(entry)))
         {
-            if (!string.IsNullOrWhiteSpace(entry) && !result.Contains(entry))
-            {
-                result.Add(entry);
-            }
+            result.Add(entry);
         }
         return result;
     }
@@ -312,9 +333,9 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     private static Dictionary<string, bool> BuildChinaModeMap()
     {
         var map = new Dictionary<string, bool>();
-        foreach (string providerId in ProviderIds.BuiltIn)
+        foreach (string providerId in ProviderIds.BuiltIn.Where(ProviderIds.HasChinaEndpoint))
         {
-            if (ProviderIds.HasChinaEndpoint(providerId)) map[providerId] = false;
+            map[providerId] = false;
         }
         return map;
     }
@@ -363,8 +384,9 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     /// 用於 JSON 序列化與反序列化的 DTO 結構，避開 RimWorld Scribe 字典嵌套序列化的兼容問題。
     /// ChatHistory / RequestLogs / Total* 欄位僅保留供舊版設定遷移讀取，新版不再寫入。
     /// </summary>
-#pragma warning disable 0649 // 遷移用欄位僅由 JSON 反序列化賦值
-    private class SettingsDto
+    // 遷移用欄位僅由 JSON 反序列化賦值（CS0649 / S3459）。
+#pragma warning disable 0649, S3459
+    private sealed class SettingsDto
     {
         public List<string> FallbackChain;
         public Dictionary<string, string> EncryptedApiKeys;
@@ -388,6 +410,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         public long TotalCompletionTokens;
         public float TotalEstimatedCost;
         public long DailyTokenBudgetLimit;
+
         /// <summary>
         /// 舊版美元上限，只讀不寫：新版存檔寫出 null，因此有值即代表這是舊版存檔（見載入處的遷移）。
         /// </summary>
@@ -426,6 +449,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         /// <summary>設定格式版本，供一次性遷移判斷；舊檔沒有這個欄位，讀成 0。</summary>
         public int SettingsVersion;
     }
+#pragma warning restore 0649, S3459
 
     /// <summary>
     /// 目前的設定格式版本。
@@ -433,7 +457,125 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     /// 無法與玩家主動開啟區分，因此載入時一律重設為關閉一次。
     /// </summary>
     private const int CurrentSettingsVersion = 1;
-#pragma warning restore 0649
+
+    /// <summary>
+    /// 建立要寫入設定 XML 的 DTO。純加密與組裝，與 Scribe 的讀寫流程分離。
+    /// </summary>
+    private string BuildSettingsJson()
+    {
+        var encryptedKeys = EncryptKeys(_apiKeys, _undecryptableApiKeys);
+        var encryptedEmbeddingKeys = EncryptKeys(_embeddingApiKeys, _undecryptableEmbeddingApiKeys);
+        AddUndecryptableEmbeddingFallback(encryptedEmbeddingKeys);
+
+        bool preserveUndecryptableEmbeddingApiKey =
+            !string.IsNullOrEmpty(_undecryptableEmbeddingApiKey) &&
+            !string.IsNullOrEmpty(_undecryptableEmbeddingApiKeyProvider) &&
+            string.Equals(this.EmbeddingProvider, _undecryptableEmbeddingApiKeyProvider, StringComparison.Ordinal) &&
+            !string.IsNullOrEmpty(this.EmbeddingProvider) &&
+            !_embeddingApiKeys.ContainsKey(this.EmbeddingProvider);
+        string encryptedEmbeddingApiKey;
+        if (preserveUndecryptableEmbeddingApiKey)
+        {
+            encryptedEmbeddingApiKey = _undecryptableEmbeddingApiKey;
+        }
+        else if (!TryEncryptForSave(this.EmbeddingApiKey ?? "", out encryptedEmbeddingApiKey))
+        {
+            encryptedEmbeddingApiKey = null;
+        }
+
+        var encryptedDecisionKeys = EncryptKeys(_decisionApiKeys, _undecryptableDecisionApiKeys);
+
+        var dto = new SettingsDto
+        {
+            FallbackChain = this.FallbackChain,
+            EncryptedApiKeys = encryptedKeys,
+            Endpoints = this._endpoints,
+            EnabledProviders = this._enabledProviders,
+            ProviderModels = this._providerModels,
+            ApiTimeout = this.ApiTimeout,
+            MaxRetries = this.MaxRetries,
+            RetryDelay = this.RetryDelay,
+            ChinaModeProviders = this._chinaModeProviders,
+            ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
+            ProviderContextWindows = this._providerContextWindows,
+            ProviderVisionSupport = this._providerVisionSupport,
+            ContextWindowOverrides = new Dictionary<string, int>(this._contextWindowOverrides),
+            DetailedLogging = this.DetailedLogging,
+            MaxConcurrentRequests = this.MaxConcurrentRequests,
+            DefaultReasoningEffort = EncodeReasoningEffort(this.DefaultReasoningEffort),
+            DailyTokenBudgetLimit = this.DailyTokenBudgetLimit,
+            BudgetPolicy = this.BudgetPolicy,
+            EnableAntiAbuse = this.EnableAntiAbuse,
+            MaxRequestsPerWindow = this.MaxRequestsPerWindow,
+            ThrottlingWindowSeconds = this.ThrottlingWindowSeconds,
+            CoolDownDurationSeconds = this.CoolDownDurationSeconds,
+            RoutingStrategy = this.RoutingStrategy,
+            EnableNativeSchema = this.EnableNativeSchema,
+            EnableJsonRepair = this.EnableJsonRepair,
+            EmbeddingProvider = this.EmbeddingProvider,
+            EmbeddingModel = this.EmbeddingModel,
+            EmbeddingEndpoint = this.EmbeddingEndpoint,
+            // Embedding 金鑰與 provider 金鑰採同一套加密；明文欄位明確寫 null 以清除舊資料。
+            EncryptedEmbeddingApiKey = encryptedEmbeddingApiKey,
+            EmbeddingApiKey = null,
+            EmbeddingModels = new Dictionary<string, string>(this._embeddingModels),
+            EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
+            EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys,
+            CompatTakeovers = new Dictionary<string, bool>(this._compatTakeovers),
+            CompatModelPins = new Dictionary<string, string>(this._compatModelPins),
+            DecisionProvider = this.DecisionProvider,
+            DecisionModels = new Dictionary<string, string>(this._decisionModels),
+            DecisionEndpoints = new Dictionary<string, string>(this._decisionEndpoints),
+            EncryptedDecisionApiKeys = encryptedDecisionKeys,
+            EmbeddingFallbackChain = this.EmbeddingFallbackChain,
+            DecisionFallbackChain = this.DecisionFallbackChain,
+            DecisionModel = this.GetDecisionModelRaw(this.DecisionProvider),
+            DecisionEndpoint = this.GetDecisionEndpointRaw(this.DecisionProvider),
+            DecisionApiKey = null,
+            EncryptedDecisionApiKey = null,
+            SettingsVersion = CurrentSettingsVersion
+        };
+
+        return RimLLMJsonHelper.Serialize(dto);
+    }
+
+    /// <summary>
+    /// 將來源金鑰與無法解密的金鑰加密為可儲存的密文字典。無法解密的金鑰若尚未在密文中，
+    /// 會原樣寫回，避免換裝置後密文永久遺失。
+    /// </summary>
+    private static Dictionary<string, string> EncryptKeys(
+        Dictionary<string, string> sourceKeys,
+        Dictionary<string, string> undecryptableKeys)
+    {
+        var encryptedKeys = new Dictionary<string, string>();
+        foreach (var kvp in sourceKeys)
+        {
+            if (TryEncryptForSave(kvp.Value, out string cipher))
+            {
+                encryptedKeys[kvp.Key] = cipher;
+            }
+        }
+        foreach (var kvp in undecryptableKeys.Where(k => !encryptedKeys.ContainsKey(k.Key)))
+        {
+            encryptedKeys[kvp.Key] = kvp.Value;
+        }
+        return encryptedKeys;
+    }
+
+    /// <summary>
+    /// 將舊版單一 embedding 金鑰遷移進密文字典，避免切換 provider 後密文遺失。
+    /// </summary>
+    private void AddUndecryptableEmbeddingFallback(Dictionary<string, string> encryptedEmbeddingKeys)
+    {
+        if (!string.IsNullOrEmpty(_undecryptableEmbeddingApiKey) &&
+            !string.IsNullOrEmpty(_undecryptableEmbeddingApiKeyProvider) &&
+            !_embeddingApiKeys.ContainsKey(_undecryptableEmbeddingApiKeyProvider) &&
+            !encryptedEmbeddingKeys.ContainsKey(_undecryptableEmbeddingApiKeyProvider))
+        {
+            // 舊版只有一個 active provider 欄位；切換 provider 後改放入 map，避免密文遺失。
+            encryptedEmbeddingKeys[_undecryptableEmbeddingApiKeyProvider] = _undecryptableEmbeddingApiKey;
+        }
+    }
 
     public override void ExposeData()
     {
@@ -444,133 +586,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         {
             if (Scribe.mode == LoadSaveMode.Saving)
             {
-                var encryptedKeys = new Dictionary<string, string>();
-                foreach (var kvp in _apiKeys)
-                {
-                    if (TryEncryptForSave(kvp.Value, out string cipher))
-                    {
-                        encryptedKeys[kvp.Key] = cipher;
-                    }
-                }
-
-                // 載入時解不開的金鑰原樣寫回密文。若不這麼做，這些 provider 不在 _apiKeys 中，
-                // 存檔後其密文就永久消失（使用者換回原本裝置也救不回來）。
-                foreach (var kvp in _undecryptableApiKeys)
-                {
-                    if (!encryptedKeys.ContainsKey(kvp.Key))
-                    {
-                        encryptedKeys[kvp.Key] = kvp.Value;
-                    }
-                }
-
-                var encryptedEmbeddingKeys = new Dictionary<string, string>();
-                foreach (var kvp in _embeddingApiKeys)
-                {
-                    if (TryEncryptForSave(kvp.Value, out string cipher))
-                    {
-                        encryptedEmbeddingKeys[kvp.Key] = cipher;
-                    }
-                }
-                foreach (var kvp in _undecryptableEmbeddingApiKeys)
-                {
-                    if (!encryptedEmbeddingKeys.ContainsKey(kvp.Key))
-                    {
-                        encryptedEmbeddingKeys[kvp.Key] = kvp.Value;
-                    }
-                }
-                if (!string.IsNullOrEmpty(_undecryptableEmbeddingApiKey) &&
-                    !string.IsNullOrEmpty(_undecryptableEmbeddingApiKeyProvider) &&
-                    !_embeddingApiKeys.ContainsKey(_undecryptableEmbeddingApiKeyProvider) &&
-                    !encryptedEmbeddingKeys.ContainsKey(_undecryptableEmbeddingApiKeyProvider))
-                {
-                    // 舊版只有一個 active provider 欄位；切換 provider 後改放入 map，避免密文遺失。
-                    encryptedEmbeddingKeys[_undecryptableEmbeddingApiKeyProvider] = _undecryptableEmbeddingApiKey;
-                }
-
-                bool preserveUndecryptableEmbeddingApiKey =
-                    !string.IsNullOrEmpty(_undecryptableEmbeddingApiKey) &&
-                    !string.IsNullOrEmpty(_undecryptableEmbeddingApiKeyProvider) &&
-                    string.Equals(this.EmbeddingProvider, _undecryptableEmbeddingApiKeyProvider, StringComparison.Ordinal) &&
-                    !string.IsNullOrEmpty(this.EmbeddingProvider) &&
-                    !_embeddingApiKeys.ContainsKey(this.EmbeddingProvider);
-                string encryptedEmbeddingApiKey;
-                if (preserveUndecryptableEmbeddingApiKey)
-                {
-                    encryptedEmbeddingApiKey = _undecryptableEmbeddingApiKey;
-                }
-                else if (!TryEncryptForSave(this.EmbeddingApiKey ?? "", out encryptedEmbeddingApiKey))
-                {
-                    encryptedEmbeddingApiKey = null;
-                }
-
-                var encryptedDecisionKeys = new Dictionary<string, string>();
-                foreach (var kvp in _decisionApiKeys)
-                {
-                    if (TryEncryptForSave(kvp.Value, out string cipher))
-                    {
-                        encryptedDecisionKeys[kvp.Key] = cipher;
-                    }
-                }
-                foreach (var kvp in _undecryptableDecisionApiKeys)
-                {
-                    if (!encryptedDecisionKeys.ContainsKey(kvp.Key))
-                    {
-                        encryptedDecisionKeys[kvp.Key] = kvp.Value;
-                    }
-                }
-
-                var dto = new SettingsDto
-                {
-                    FallbackChain = this.FallbackChain,
-                    EncryptedApiKeys = encryptedKeys,
-                    Endpoints = this._endpoints,
-                    EnabledProviders = this._enabledProviders,
-                    ProviderModels = this._providerModels,
-                    ApiTimeout = this.ApiTimeout,
-                    MaxRetries = this.MaxRetries,
-                    RetryDelay = this.RetryDelay,
-                    ChinaModeProviders = this._chinaModeProviders,
-                    ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
-                    ProviderContextWindows = this._providerContextWindows,
-                    ProviderVisionSupport = this._providerVisionSupport,
-                    ContextWindowOverrides = new Dictionary<string, int>(this._contextWindowOverrides),
-                    DetailedLogging = this.DetailedLogging,
-                    MaxConcurrentRequests = this.MaxConcurrentRequests,
-                    DefaultReasoningEffort = EncodeReasoningEffort(this.DefaultReasoningEffort),
-                    DailyTokenBudgetLimit = this.DailyTokenBudgetLimit,
-                    BudgetPolicy = this.BudgetPolicy,
-                    EnableAntiAbuse = this.EnableAntiAbuse,
-                    MaxRequestsPerWindow = this.MaxRequestsPerWindow,
-                    ThrottlingWindowSeconds = this.ThrottlingWindowSeconds,
-                    CoolDownDurationSeconds = this.CoolDownDurationSeconds,
-                    RoutingStrategy = this.RoutingStrategy,
-                    EnableNativeSchema = this.EnableNativeSchema,
-                    EnableJsonRepair = this.EnableJsonRepair,
-                    EmbeddingProvider = this.EmbeddingProvider,
-                    EmbeddingModel = this.EmbeddingModel,
-                    EmbeddingEndpoint = this.EmbeddingEndpoint,
-                    // Embedding 金鑰與 provider 金鑰採同一套加密；明文欄位明確寫 null 以清除舊資料。
-                    EncryptedEmbeddingApiKey = encryptedEmbeddingApiKey,
-                    EmbeddingApiKey = null,
-                    EmbeddingModels = new Dictionary<string, string>(this._embeddingModels),
-                    EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
-                    EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys,
-                    CompatTakeovers = new Dictionary<string, bool>(this._compatTakeovers),
-                    CompatModelPins = new Dictionary<string, string>(this._compatModelPins),
-                    DecisionProvider = this.DecisionProvider,
-                    DecisionModels = new Dictionary<string, string>(this._decisionModels),
-                    DecisionEndpoints = new Dictionary<string, string>(this._decisionEndpoints),
-                    EncryptedDecisionApiKeys = encryptedDecisionKeys,
-                    EmbeddingFallbackChain = this.EmbeddingFallbackChain,
-                    DecisionFallbackChain = this.DecisionFallbackChain,
-                    DecisionModel = this.GetDecisionModelRaw(this.DecisionProvider),
-                    DecisionEndpoint = this.GetDecisionEndpointRaw(this.DecisionProvider),
-                    DecisionApiKey = null,
-                    EncryptedDecisionApiKey = null,
-                    SettingsVersion = CurrentSettingsVersion
-                };
-
-                jsonStr = RimLLMJsonHelper.Serialize(dto);
+                jsonStr = BuildSettingsJson();
                 Scribe_Values.Look(ref jsonStr, "SettingsData", "");
             }
             else if (Scribe.mode == LoadSaveMode.LoadingVars)
@@ -821,9 +837,9 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                             _compatModelPins.Clear();
                             if (dto.CompatModelPins != null)
                             {
-                                foreach (var kvp in dto.CompatModelPins)
+                                foreach (var kvp in dto.CompatModelPins.Where(kv => !string.IsNullOrEmpty(kv.Value)))
                                 {
-                                    if (!string.IsNullOrEmpty(kvp.Value)) _compatModelPins[kvp.Key] = kvp.Value;
+                                    _compatModelPins[kvp.Key] = kvp.Value;
                                 }
                             }
 
@@ -1116,6 +1132,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
     /// 外部持有的參考維持有效。遙測（用量統計、對話歷史、當日預算累計）不屬於設定，保留不動，
     /// 免得重設成為繞過每日預算的方法。呼叫端負責 <see cref="ModSettings.Write"/>。
     /// </summary>
+    #pragma warning disable S3011 // 「恢復預設」需透過反射遍歷類別所有欄位並重設，故意存取 private 欄位；僅限本類別內部使用，不外漏反射結果。
     public void ResetAllSettingsToDefaults()
     {
         var defaults = new RimLLMFrameworkSettings();
@@ -1124,26 +1141,35 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
             foreach (FieldInfo field in typeof(RimLLMFrameworkSettings).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
             {
                 if (field.Name is nameof(_settingsLock) or nameof(_telemetry) or nameof(_modelListVersion)) continue;
-
-                object fresh = field.GetValue(defaults);
-                object current = field.GetValue(this);
-                if (current is IDictionary dictionary && fresh is IDictionary freshDictionary)
-                {
-                    dictionary.Clear();
-                    foreach (DictionaryEntry entry in freshDictionary) dictionary[entry.Key] = entry.Value;
-                }
-                else if (current is IList list && fresh is IList freshList && field.IsInitOnly)
-                {
-                    list.Clear();
-                    foreach (object item in freshList) list.Add(item);
-                }
-                else if (!field.IsInitOnly)
-                {
-                    field.SetValue(this, fresh);
-                }
+                ResetField(field, defaults);
             }
             // 模型清單已清空：讓設定頁的過濾快取失效。
             _modelListVersion++;
+        }
+    }
+    #pragma warning restore S3011
+
+    /// <summary>
+    /// 將單一欄位重設為預設值。字典與清單就地覆寫（保留參考），其餘欄位直接賦值。
+    /// 僅限 <see cref="ResetAllSettingsToDefaults"/> 內部呼叫。
+    /// </summary>
+    private void ResetField(FieldInfo field, RimLLMFrameworkSettings defaults)
+    {
+        object fresh = field.GetValue(defaults);
+        object current = field.GetValue(this);
+        if (current is IDictionary dictionary && fresh is IDictionary freshDictionary)
+        {
+            dictionary.Clear();
+            foreach (DictionaryEntry entry in freshDictionary) dictionary[entry.Key] = entry.Value;
+        }
+        else if (current is IList list && fresh is IList freshList && field.IsInitOnly)
+        {
+            list.Clear();
+            foreach (object item in freshList) list.Add(item);
+        }
+        else if (!field.IsInitOnly)
+        {
+            field.SetValue(this, fresh);
         }
     }
 
@@ -1376,12 +1402,12 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         return RimLLMEmbeddingService.GetDefaultEndpointOrEmpty(provider);
     }
 
-    public string GetEmbeddingModel(string provider)
+    public string GetEmbeddingModel(string providerId)
     {
         lock (_settingsLock)
         {
             // 沒有預設模型：玩家沒選就回傳空字串，服務會拒絕送出並提示到設定頁選擇。
-            return !string.IsNullOrEmpty(provider) && _embeddingModels.TryGetValue(provider, out string val) ? val ?? "" : "";
+            return !string.IsNullOrEmpty(providerId) && _embeddingModels.TryGetValue(providerId, out string val) ? val ?? "" : "";
         }
     }
 
@@ -1403,13 +1429,13 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         }
     }
 
-    public string GetEmbeddingEndpoint(string provider)
+    public string GetEmbeddingEndpoint(string providerId)
     {
         lock (_settingsLock)
         {
-            if (!string.IsNullOrEmpty(provider) && _embeddingEndpoints.TryGetValue(provider, out string val) && !string.IsNullOrEmpty(val))
+            if (!string.IsNullOrEmpty(providerId) && _embeddingEndpoints.TryGetValue(providerId, out string val) && !string.IsNullOrEmpty(val))
                 return val;
-            return GetDefaultEmbeddingEndpoint(provider);
+            return GetDefaultEmbeddingEndpoint(providerId);
         }
     }
 
@@ -1431,11 +1457,11 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         }
     }
 
-    public string GetEmbeddingApiKey(string provider)
+    public string GetEmbeddingApiKey(string providerId)
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(provider) && _embeddingApiKeys.TryGetValue(provider, out string val) ? val : "";
+            return !string.IsNullOrEmpty(providerId) && _embeddingApiKeys.TryGetValue(providerId, out string val) ? val : "";
         }
     }
 
@@ -1453,12 +1479,12 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         return RimLLMDecisionProviderCatalog.GetDefaultEndpoint(provider);
     }
 
-    public string GetDecisionModel(string provider)
+    public string GetDecisionModel(string providerId)
     {
         lock (_settingsLock)
         {
             // 沒有預設模型：玩家沒選就回傳空字串，送決策前會被擋下。
-            return !string.IsNullOrEmpty(provider) && _decisionModels.TryGetValue(provider, out string value)
+            return !string.IsNullOrEmpty(providerId) && _decisionModels.TryGetValue(providerId, out string value)
                 ? value ?? ""
                 : "";
         }
@@ -1484,17 +1510,17 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         }
     }
 
-    public string GetDecisionEndpoint(string provider)
+    public string GetDecisionEndpoint(string providerId)
     {
         lock (_settingsLock)
         {
-            if (!string.IsNullOrEmpty(provider) &&
-                _decisionEndpoints.TryGetValue(provider, out string value) &&
+            if (!string.IsNullOrEmpty(providerId) &&
+                _decisionEndpoints.TryGetValue(providerId, out string value) &&
                 !string.IsNullOrEmpty(value))
             {
                 return value;
             }
-            return GetDefaultDecisionEndpoint(provider);
+            return GetDefaultDecisionEndpoint(providerId);
         }
     }
 
@@ -1518,11 +1544,11 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
         }
     }
 
-    public string GetDecisionApiKey(string provider)
+    public string GetDecisionApiKey(string providerId)
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(provider) && _decisionApiKeys.TryGetValue(provider, out string value)
+            return !string.IsNullOrEmpty(providerId) && _decisionApiKeys.TryGetValue(providerId, out string value)
                 ? value
                 : "";
         }

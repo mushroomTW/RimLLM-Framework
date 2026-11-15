@@ -23,7 +23,7 @@ public static class RimWorldFunctionInvoker
         this IChatClient innerClient,
         int maxIterations = 10)
     {
-        if (innerClient == null) throw new ArgumentNullException(nameof(innerClient));
+        ArgumentNullException.ThrowIfNull(innerClient);
 
         return new FunctionInvokingChatClient(innerClient)
         {

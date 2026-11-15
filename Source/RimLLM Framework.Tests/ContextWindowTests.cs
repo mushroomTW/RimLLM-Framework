@@ -157,6 +157,7 @@ public class ContextWindowTests
                 ""gpt-4o"": { ""id"": ""gpt-4o"", ""limit"": { ""context"": 128000, ""output"": 16384 } }
             } }
         }";
+    private static readonly string[] expected = new[] { "only-this" };
 
     [Test]
     public void ModelsDevPrefersInputLimitAndSkipsZero()
@@ -269,7 +270,7 @@ public class ContextWindowTests
         var catalog = manager.FetchProviderModelCatalogAsync("FilteringTest").GetAwaiter().GetResult();
 
         // 必須走子類別的覆寫（不連網），而不是基底的 /models 請求
-        CollectionAssert.AreEqual(new[] { "only-this" }, catalog.Models);
+        CollectionAssert.AreEqual(expected, catalog.Models);
     }
 
     [Test]

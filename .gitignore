@@ -46,6 +46,7 @@ TestResults/
 test_out*.txt
 diagnostic_output*.txt
 .scannerwork/
+.sonarqube/
 coverage/
 *.lcov
 coverage*.xml

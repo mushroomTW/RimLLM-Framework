@@ -74,7 +74,7 @@ internal sealed class OpenAICompatClient
         try
         {
             RequestSpec spec = ParsePayload(payloadJson, chatProtocol);
-            ChatOptions options = BuildOptions();
+            RimLLMChatOptions options = BuildOptions();
             if (spec.MaxOutputTokens.HasValue) options.MaxOutputTokens = spec.MaxOutputTokens;
             if (spec.Temperature.HasValue) options.Temperature = spec.Temperature;
             if (spec.TopP.HasValue) options.TopP = spec.TopP;
@@ -132,7 +132,7 @@ internal sealed class OpenAICompatClient
     /// 預設關閉思考鏈：接管的 Mod 都是翻譯、對話、衝突分析這類講求速度與成本的批量呼叫。
     /// 輸出上限與溫度用該 Mod 登錄時給的預設，請求內容有指定時再覆寫。
     /// </summary>
-    private ChatOptions BuildOptions()
+    private RimLLMChatOptions BuildOptions()
     {
         return new RimLLMChatOptions
         {
@@ -146,7 +146,7 @@ internal sealed class OpenAICompatClient
     /// 建立套用「相容 Mod 專用模型」的 client：玩家在模組相容頁為該 Mod 指定了模型時，
     /// 該模型固定排在備援鏈首位（失敗仍會退回整條鏈）；未指定則完全沿用預設路由。
     /// </summary>
-    private static IChatClient CreatePinnedChatClient(string packageId)
+    private static CompatPinnedChatClient CreatePinnedChatClient(string packageId)
     {
         return new CompatPinnedChatClient(RimLLMProvider.CreateChatClient(packageId), packageId);
     }
@@ -306,21 +306,10 @@ internal sealed class OpenAICompatClient
     /// </summary>
     private static void ReadResponseFormat(JsonElement root, bool chatProtocol, RequestSpec spec)
     {
-        JsonElement format;
-        if (chatProtocol)
-        {
-            if (!root.TryGetProperty("response_format", out format)) return;
-        }
-        else if (!root.TryGetProperty("text", out JsonElement text) ||
-                 text.ValueKind != JsonValueKind.Object ||
-                 !text.TryGetProperty("format", out format))
-        {
-            return;
-        }
-
-        if (format.ValueKind != JsonValueKind.Object ||
-            !format.TryGetProperty("type", out JsonElement type) ||
-            type.ValueKind != JsonValueKind.String)
+        if (!TryGetFormatElement(root, chatProtocol, out JsonElement format)
+            || format.ValueKind != JsonValueKind.Object
+            || !format.TryGetProperty("type", out JsonElement type)
+            || type.ValueKind != JsonValueKind.String)
         {
             return;
         }
@@ -332,21 +321,60 @@ internal sealed class OpenAICompatClient
                 break;
 
             case "json_schema":
-                JsonElement holder = chatProtocol && format.TryGetProperty("json_schema", out JsonElement inner) ? inner : format;
-                if (holder.ValueKind != JsonValueKind.Object ||
-                    !holder.TryGetProperty("schema", out JsonElement schema))
-                {
-                    spec.ResponseFormat = ChatResponseFormat.Json;
-                    break;
-                }
-                // JsonDocument 離開 using 就釋放，schema 要跟著 spec 活下去，必須 Clone。
-                spec.ResponseFormat = ChatResponseFormat.ForJsonSchema(
-                    schema.Clone(),
-                    holder.TryGetProperty("name", out JsonElement name) && name.ValueKind == JsonValueKind.String ? name.GetString() : null,
-                    holder.TryGetProperty("description", out JsonElement description) && description.ValueKind == JsonValueKind.String ? description.GetString() : null);
-                spec.StrictSchema = holder.TryGetProperty("strict", out JsonElement strict) && strict.ValueKind == JsonValueKind.True;
+                ApplyJsonSchemaFormat(format, chatProtocol, spec);
                 break;
         }
+    }
+
+    /// <summary>
+    /// 取出回應格式所在的物件：Chat 在 <c>response_format</c>，Responses 在 <c>text.format</c>。
+    /// </summary>
+    private static bool TryGetFormatElement(JsonElement root, bool chatProtocol, out JsonElement format)
+    {
+        if (chatProtocol)
+        {
+            return root.TryGetProperty("response_format", out format);
+        }
+
+        if (!root.TryGetProperty("text", out JsonElement text)
+            || text.ValueKind != JsonValueKind.Object
+            || !text.TryGetProperty("format", out format))
+        {
+            format = default;
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// 讀取 <c>json_schema</c> 格式：Chat 的 schema 包在 <c>json_schema</c> 內，Responses 直接在同一層。
+    /// schema 缺少時退回純 JSON 模式。
+    /// </summary>
+    private static void ApplyJsonSchemaFormat(JsonElement format, bool chatProtocol, RequestSpec spec)
+    {
+        JsonElement holder = chatProtocol && format.TryGetProperty("json_schema", out JsonElement inner) ? inner : format;
+        if (holder.ValueKind != JsonValueKind.Object ||
+            !holder.TryGetProperty("schema", out JsonElement schema))
+        {
+            spec.ResponseFormat = ChatResponseFormat.Json;
+            return;
+        }
+
+        // JsonDocument 離開 using 就釋放，schema 要跟著 spec 活下去，必須 Clone。
+        spec.ResponseFormat = ChatResponseFormat.ForJsonSchema(
+            schema.Clone(),
+            ReadOptionalString(holder, "name"),
+            ReadOptionalString(holder, "description"));
+        spec.StrictSchema = holder.TryGetProperty("strict", out JsonElement strict) && strict.ValueKind == JsonValueKind.True;
+    }
+
+    /// <summary>讀取可選的字串成員；不存在或型別不符時回傳 null。</summary>
+    private static string ReadOptionalString(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
     }
 
     private static void AppendItems(List<ChatMessage> target, JsonElement root, string property)
@@ -399,23 +427,38 @@ internal sealed class OpenAICompatClient
 
         foreach (JsonElement part in content.EnumerateArray())
         {
-            if (part.ValueKind != JsonValueKind.Object) continue;
-
-            if (part.TryGetProperty("text", out JsonElement text) && text.ValueKind == JsonValueKind.String)
-            {
-                parts.Add(new TextContent(text.GetString()));
-            }
-            else if (part.TryGetProperty("image_url", out JsonElement image))
-            {
-                // Chat 為 {"url": ...}，Responses 的 input_image 直接是字串。
-                string url = image.ValueKind == JsonValueKind.String
-                    ? image.GetString()
-                    : image.ValueKind == JsonValueKind.Object && image.TryGetProperty("url", out JsonElement urlElement) ? urlElement.GetString() : null;
-                DataContent data = ToDataContent(url);
-                if (data != null) parts.Add(data);
-            }
+            AppendContentPart(parts, part);
         }
         return parts;
+    }
+
+    /// <summary>把單一內容片段（文字或圖片）轉成 <see cref="AIContent"/> 並加入 <paramref name="parts"/>。</summary>
+    private static void AppendContentPart(List<AIContent> parts, JsonElement part)
+    {
+        if (part.ValueKind != JsonValueKind.Object) return;
+
+        if (part.TryGetProperty("text", out JsonElement text) && text.ValueKind == JsonValueKind.String)
+        {
+            parts.Add(new TextContent(text.GetString()));
+        }
+        else if (part.TryGetProperty("image_url", out JsonElement image))
+        {
+            DataContent data = ToDataContent(ReadImageUrl(image));
+            if (data != null) parts.Add(data);
+        }
+    }
+
+    /// <summary>讀出圖片的 URL：Chat 為 <c>{"url": ...}</c>，Responses 的 input_image 直接是字串。</summary>
+    private static string ReadImageUrl(JsonElement image)
+    {
+        if (image.ValueKind == JsonValueKind.String)
+        {
+            return image.GetString();
+        }
+
+        return image.ValueKind == JsonValueKind.Object && image.TryGetProperty("url", out JsonElement url)
+            ? url.GetString()
+            : null;
     }
 
     /// <summary>只處理 <c>data:&lt;mime&gt;;base64,&lt;payload&gt;</c>；該 Mod 的預覽圖一律是這種形式。</summary>

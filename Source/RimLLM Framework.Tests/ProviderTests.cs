@@ -90,8 +90,7 @@ public class ProviderTests
         // 測試 2：OpenAI 標準格式的 cached_tokens 位於 prompt_tokens_details
         mockSettings.TotalPromptTokens = 0;
         mockSettings.TotalCompletionTokens = 0;
-        stats.TotalPromptTokens = 0;
-        stats.CachedPromptTokens = 0;
+        stats.ResetTokenCounts();
 
         provider.MockResponse = "{" +
             "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"hello 2\"}}]," +
@@ -563,33 +562,29 @@ public class ProviderTests
     [Test]
     public void TestHttpStatusCodeMapping()
     {
-        var probe = new HttpErrorProbeProvider(new MockSettings());
-
         var notFound = Assert.Throws<RimLLMException>(() =>
-            probe.Probe(System.Net.HttpStatusCode.NotFound, "{\"error\":{\"message\":\"model does not exist\"}}"));
+            HttpErrorProbeProvider.Probe(System.Net.HttpStatusCode.NotFound, "{\"error\":{\"message\":\"model does not exist\"}}"));
         ClassicAssert.AreEqual(LLMError.ModelNotFound, notFound.Error, "404 應對應 ModelNotFound 而非可重試的 Unknown");
 
         var badRequest = Assert.Throws<RimLLMException>(() =>
-            probe.Probe(System.Net.HttpStatusCode.BadRequest, "{\"error\":{\"message\":\"bad input\"}}"));
+            HttpErrorProbeProvider.Probe(System.Net.HttpStatusCode.BadRequest, "{\"error\":{\"message\":\"bad input\"}}"));
         ClassicAssert.AreEqual(LLMError.InvalidResponse, badRequest.Error, "400 屬於請求本身的問題，應對應 InvalidResponse");
         ClassicAssert.IsFalse(badRequest.IsSchemaRejection, "與 schema 無關的 400 不應標記為 schema 拒絕");
 
         var timeout = Assert.Throws<RimLLMException>(() =>
-            probe.Probe(System.Net.HttpStatusCode.RequestTimeout, "timeout"));
+            HttpErrorProbeProvider.Probe(System.Net.HttpStatusCode.RequestTimeout, "timeout"));
         ClassicAssert.AreEqual(LLMError.Timeout, timeout.Error, "408 應對應 Timeout");
 
         var paymentRequired = Assert.Throws<RimLLMException>(() =>
-            probe.Probe((System.Net.HttpStatusCode)402, "payment required"));
+            HttpErrorProbeProvider.Probe((System.Net.HttpStatusCode)402, "payment required"));
         ClassicAssert.AreEqual(LLMError.QuotaExceeded, paymentRequired.Error, "402 應對應 QuotaExceeded");
     }
 
     [Test]
     public void TestSchemaRejectionIsMarkedOnRelevant400()
     {
-        var probe = new HttpErrorProbeProvider(new MockSettings());
-
         var ex = Assert.Throws<RimLLMException>(() =>
-            probe.Probe(System.Net.HttpStatusCode.BadRequest,
+            HttpErrorProbeProvider.Probe(System.Net.HttpStatusCode.BadRequest,
                 "{\"error\":{\"message\":\"response_format json_schema is not supported\"}}"));
 
         ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
@@ -599,10 +594,8 @@ public class ProviderTests
     [Test]
     public void TestQuotaDetectionIsCaseInsensitive()
     {
-        var probe = new HttpErrorProbeProvider(new MockSettings());
-
         var ex = Assert.Throws<RimLLMException>(() =>
-            probe.Probe((System.Net.HttpStatusCode)429, "Insufficient_Quota for this account"));
+            HttpErrorProbeProvider.Probe((System.Net.HttpStatusCode)429, "Insufficient_Quota for this account"));
 
         ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex.Error, "配額關鍵字比對必須大小寫不敏感");
     }
@@ -984,7 +977,7 @@ public class CapturingHttpMessageHandler : System.Net.Http.HttpMessageHandler
         System.Threading.CancellationToken cancellationToken)
     {
         string body = request.Content != null
-            ? request.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            ? request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult()
             : null;
         RequestBodies.Add(body ?? string.Empty);
         RequestUrls.Add(request.RequestUri != null ? request.RequestUri.ToString() : null);
@@ -1034,12 +1027,15 @@ public static class WireChatClientFactory
 
 public class MockCustomChatClient : IChatClient
 {
+    // 重用同一個中繼資料物件，避免每次讀取都建立新執行個體。
+    private readonly ChatClientMetadata _metadata = new("MockCustomClient");
+
     public Func<IEnumerable<ChatMessage>, ChatOptions, System.Threading.Tasks.Task<ChatResponse>> GetResponseHandler { get; set; }
     public Func<IEnumerable<ChatMessage>, ChatOptions, Action<string>, System.Threading.Tasks.Task> StreamHandler { get; set; }
 
-    public ChatClientMetadata Metadata => new("MockCustomClient");
+    public ChatClientMetadata Metadata => _metadata;
 
-    public void Dispose() { }
+    public void Dispose() => GC.SuppressFinalize(this);
 
     public System.Threading.Tasks.Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
@@ -1323,7 +1319,11 @@ public class HttpErrorProbeProvider : OpenAIProvider
 {
     public HttpErrorProbeProvider(IRimLLMSettings settings) : base(settings) { }
 
-    public void Probe(System.Net.HttpStatusCode statusCode, string responseBody)
+    /// <summary>
+    /// 直接把狀態碼交給共用的 LLMErrorMapper 以取得對應例外。
+    /// 不涉及執行個體狀態，因此維持靜態。
+    /// </summary>
+    public static void Probe(System.Net.HttpStatusCode statusCode, string responseBody)
     {
         using var response = new System.Net.Http.HttpResponseMessage(statusCode);
         throw LLMErrorMapper.CreateException(

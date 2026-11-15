@@ -26,28 +26,7 @@ public static class FallbackSettingsDrawer
     public static void DrawFallbackSettings(Listing_Standard listing)
     {
         // 3. 智慧路由設定
-        Rect routingRect = listing.GetRect(30f);
-        float routingLabelWidth = Text.CalcSize("RimLLM_RoutingStrategyLabel".Translate()).x;
-        Rect strategyLabelRect = new Rect(routingRect.x, routingRect.y, routingLabelWidth + 5f, routingRect.height);
-        Rect strategyBtnRect = new Rect(routingRect.x + routingLabelWidth + 15f, routingRect.y, 220f, routingRect.height);
-
-        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-        {
-            Widgets.Label(strategyLabelRect, "RimLLM_RoutingStrategyLabel".Translate());
-        }
-
-        if (Widgets.ButtonText(strategyBtnRect, StrategyLabelKey(Settings.RoutingStrategy).Translate()))
-        {
-            var options = new List<FloatMenuOption>();
-            for (int strategy = 0; strategy < StrategyNames.Length; strategy++)
-            {
-                int captured = strategy;
-                options.Add(new FloatMenuOption(
-                    StrategyLabelKey(captured).Translate(),
-                    () => { Settings.RoutingStrategy = captured; Settings.Write(); }));
-            }
-            Find.WindowStack.Add(new FloatMenu(options));
-        }
+        DrawRoutingStrategyButton(listing);
         listing.GapLine(10f);
 
         listing.Label("RimLLM_FallbackExplanation".Translate());
@@ -70,69 +49,108 @@ public static class FallbackSettingsDrawer
         {
             for (int i = 0; i < chain.Count; i++)
             {
-                string entry = chain[i];
-                Rect itemRect = listing.GetRect(30f);
-
-                // 左右劃分：本頁只管順序與增刪，模型級數值（分級、上下文上限）改在模型設置頁調整。
-                Rect labelRect = new Rect(itemRect.x, itemRect.y, itemRect.width - 120f, itemRect.height);
-                Rect upRect = new Rect(itemRect.x + itemRect.width - 110f, itemRect.y, 30f, itemRect.height);
-                Rect downRect = new Rect(itemRect.x + itemRect.width - 75f, itemRect.y, 30f, itemRect.height);
-                Rect deleteRect = new Rect(itemRect.x + itemRect.width - 40f, itemRect.y, 30f, itemRect.height);
-
-                // 繪製順序標記與名稱
-                Widgets.Label(labelRect, $" {i + 1}. <color=cyan>{entry}</color>");
-
-                // 上移按鈕
-                if (i > 0)
-                {
-                    if (Widgets.ButtonText(upRect, "▲"))
-                    {
-                        string temp = chain[i];
-                        chain[i] = chain[i - 1];
-                        chain[i - 1] = temp;
-                        Settings.FallbackChain = chain;
-                        Settings.Write();
-                        break;
-                    }
-                }
-                else
-                {
-                    GUI.color = Color.gray;
-                    Widgets.ButtonText(upRect, "▲");
-                    GUI.color = Color.white;
-                }
-
-                // 下移按鈕
-                if (i < chain.Count - 1)
-                {
-                    if (Widgets.ButtonText(downRect, "▼"))
-                    {
-                        string temp = chain[i];
-                        chain[i] = chain[i + 1];
-                        chain[i + 1] = temp;
-                        Settings.FallbackChain = chain;
-                        Settings.Write();
-                        break;
-                    }
-                }
-                else
-                {
-                    GUI.color = Color.gray;
-                    Widgets.ButtonText(downRect, "▼");
-                    GUI.color = Color.white;
-                }
-
-                // 刪除按鈕
-                if (Widgets.ButtonText(deleteRect, "X"))
-                {
-                    Settings.RemoveFallbackEntry(chain[i]);
-                    Settings.Write();
-                    break;
-                }
+                if (DrawFallbackEntry(listing, chain, i)) break;
             }
         }
         listing.GapLine(10f);
+    }
 
+    /// <summary>
+    /// 繪製單一 Fallback 鏈項目（順序標記、上移/下移、刪除）。
+    /// 回傳 true 表示已進行順序變更或刪除，呼叫端應中止迴圈避免索引失效。
+    /// </summary>
+    private static bool DrawFallbackEntry(Listing_Standard listing, List<string> chain, int i)
+    {
+        string entry = chain[i];
+        Rect itemRect = listing.GetRect(30f);
+
+        // 左右劃分：本頁只管順序與增刪，模型級數值（分級、上下文上限）改在模型設置頁調整。
+        Rect labelRect = new Rect(itemRect.x, itemRect.y, itemRect.width - 120f, itemRect.height);
+        Rect upRect = new Rect(itemRect.x + itemRect.width - 110f, itemRect.y, 30f, itemRect.height);
+        Rect downRect = new Rect(itemRect.x + itemRect.width - 75f, itemRect.y, 30f, itemRect.height);
+        Rect deleteRect = new Rect(itemRect.x + itemRect.width - 40f, itemRect.y, 30f, itemRect.height);
+
+        // 繪製順序標記與名稱
+        Widgets.Label(labelRect, $" {i + 1}. <color=cyan>{entry}</color>");
+
+        // 上移按鈕
+        if (i > 0)
+        {
+            if (Widgets.ButtonText(upRect, "▲"))
+            {
+                string temp = chain[i];
+                chain[i] = chain[i - 1];
+                chain[i - 1] = temp;
+                Settings.FallbackChain = chain;
+                Settings.Write();
+                return true;
+            }
+        }
+        else
+        {
+            GUI.color = Color.gray;
+            Widgets.ButtonText(upRect, "▲");
+            GUI.color = Color.white;
+        }
+
+        // 下移按鈕
+        if (i < chain.Count - 1)
+        {
+            if (Widgets.ButtonText(downRect, "▼"))
+            {
+                string temp = chain[i];
+                chain[i] = chain[i + 1];
+                chain[i + 1] = temp;
+                Settings.FallbackChain = chain;
+                Settings.Write();
+                return true;
+            }
+        }
+        else
+        {
+            GUI.color = Color.gray;
+            Widgets.ButtonText(downRect, "▼");
+            GUI.color = Color.white;
+        }
+
+        // 刪除按鈕
+        if (Widgets.ButtonText(deleteRect, "X"))
+        {
+            Settings.RemoveFallbackEntry(chain[i]);
+            Settings.Write();
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 繪製路由策略下拉按鈕。
+    /// </summary>
+    private static void DrawRoutingStrategyButton(Listing_Standard listing)
+    {
+        Rect routingRect = listing.GetRect(30f);
+        float routingLabelWidth = Text.CalcSize("RimLLM_RoutingStrategyLabel".Translate()).x;
+        Rect strategyLabelRect = new Rect(routingRect.x, routingRect.y, routingLabelWidth + 5f, routingRect.height);
+        Rect strategyBtnRect = new Rect(routingRect.x + routingLabelWidth + 15f, routingRect.y, 220f, routingRect.height);
+
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            Widgets.Label(strategyLabelRect, "RimLLM_RoutingStrategyLabel".Translate());
+        }
+
+        if (Widgets.ButtonText(strategyBtnRect, StrategyLabelKey(Settings.RoutingStrategy).Translate()))
+        {
+            var options = new List<FloatMenuOption>();
+            for (int strategy = 0; strategy < StrategyNames.Length; strategy++)
+            {
+                int captured = strategy;
+                options.Add(new FloatMenuOption(
+                    StrategyLabelKey(captured).Translate(),
+                    () => { Settings.RoutingStrategy = captured; Settings.Write(); }));
+            }
+            Find.WindowStack.Add(new FloatMenu(options));
+        }
     }
 
     /// <summary>

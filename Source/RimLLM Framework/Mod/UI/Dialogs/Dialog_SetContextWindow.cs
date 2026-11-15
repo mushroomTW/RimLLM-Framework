@@ -6,6 +6,7 @@ namespace RimLLM_Framework.Mod;
 
 /// <summary>
 /// 手動填寫模型上下文上限（token 數）的小視窗。填 0 代表清除手動值、改用 API 回報的值。
+/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class Dialog_SetContextWindow : Window
 {

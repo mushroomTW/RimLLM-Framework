@@ -203,12 +203,7 @@ public sealed class RimLLMMarkdownTable
         foreach (Block rowBlock in table)
         {
             if (rowBlock is not TableRow row) continue;
-            var cells = new List<string>();
-            foreach (Block cellBlock in row)
-            {
-                // 取原始切片而非 inline 樹；跳脫的直線要自己還原。
-                cells.Add(source.Substring(cellBlock.Span.Start, cellBlock.Span.Length).Trim().Replace("\\|", "|"));
-            }
+            var cells = row.Select(cellBlock => source.Substring(cellBlock.Span.Start, cellBlock.Span.Length).Trim().Replace("\\|", "|")).ToList();
             if (cells.Count > 0) rows.Add([.. cells]);
         }
         return rows;

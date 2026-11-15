@@ -95,7 +95,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
     /// <summary>System One 請求 → Gemini Decisions 請求。</summary>
     internal static string ToGeminiRequest(string jevBody, out string model)
     {
-        JsonObject source = JsonNode.Parse(jevBody)!.AsObject();
+        JsonObject source = JsonNode.Parse(jevBody).AsObject();
         model = source["model"] is JsonValue modelValue && modelValue.TryGetValue(out string m) ? m : "";
 
         var questions = new JsonObject();
@@ -183,7 +183,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
     /// </summary>
     internal static string ToJevResult(string geminiBody, string model)
     {
-        JsonObject root = JsonNode.Parse(geminiBody)!.AsObject();
+        JsonObject root = JsonNode.Parse(geminiBody).AsObject();
         if (root["model"] == null)
         {
             root["model"] = model;
@@ -216,31 +216,44 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
             {
                 foreach (JsonElement entry in list.EnumerateArray())
                 {
-                    if (entry.ValueKind != JsonValueKind.Object ||
-                        !entry.TryGetProperty("name", out JsonElement nameElement) ||
-                        nameElement.ValueKind != JsonValueKind.String)
+                    if (TryExtractDecisionModel(entry, out var model))
                     {
-                        continue;
+                        models.Add(model);
                     }
-
-                    string name = nameElement.GetString() ?? "";
-                    if (name.StartsWith("models/", StringComparison.Ordinal))
-                    {
-                        name = name.Substring("models/".Length);
-                    }
-                    if (name.IndexOf("decision", StringComparison.OrdinalIgnoreCase) < 0)
-                    {
-                        continue;
-                    }
-
-                    string description = entry.TryGetProperty("description", out JsonElement d) &&
-                                         d.ValueKind == JsonValueKind.String
-                        ? d.GetString()
-                        : "";
-                    models.Add((name, description));
                 }
             }
         }
         return JevWireFormat.ModelList(models);
+    }
+
+    /// <summary>
+    /// 從 Gemini 模型條目中解析出決策模型。名稱不含 "decision" 或格式不對時回傳 false。
+    /// </summary>
+    private static bool TryExtractDecisionModel(JsonElement entry, out (string Name, string Description) model)
+    {
+        model = ("", "");
+        if (entry.ValueKind != JsonValueKind.Object ||
+            !entry.TryGetProperty("name", out JsonElement nameElement) ||
+            nameElement.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        string name = nameElement.GetString() ?? "";
+        if (name.StartsWith("models/", StringComparison.Ordinal))
+        {
+            name = name.Substring("models/".Length);
+        }
+        if (name.IndexOf("decision", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            return false;
+        }
+
+        string description = entry.TryGetProperty("description", out JsonElement d) &&
+                             d.ValueKind == JsonValueKind.String
+            ? d.GetString()
+            : "";
+        model = (name, description);
+        return true;
     }
 }

@@ -106,7 +106,7 @@ public sealed class RimLLMDecisionClient
         return _manager.UsageTracker.ReserveBudgetOrThrow(estimate);
     }
 
-    private JevResult RecordUsage(DecisionEvaluation evaluation, RimLLMUsageTracker.BudgetReservation reservation)
+    private static JevResult RecordUsage(DecisionEvaluation evaluation, RimLLMUsageTracker.BudgetReservation reservation)
     {
         JevResult result = evaluation.Result;
         string modelId = result.ActualModel;

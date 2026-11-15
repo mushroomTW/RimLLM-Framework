@@ -83,12 +83,9 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
         long estimate = 0;
         if (messages != null)
         {
-            foreach (ChatMessage message in messages)
+            foreach (string text in messages.Where(m => !string.IsNullOrEmpty(m?.Text)).Select(m => m.Text))
             {
-                if (!string.IsNullOrEmpty(message?.Text))
-                {
-                    estimate = SaturatingAdd(estimate, RimLLMChatClientExecutor.EstimateTokens(message.Text));
-                }
+                estimate = SaturatingAdd(estimate, RimLLMChatClientExecutor.EstimateTokens(text));
             }
         }
 

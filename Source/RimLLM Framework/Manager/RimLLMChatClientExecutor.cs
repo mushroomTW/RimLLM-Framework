@@ -1,6 +1,7 @@
 using System;
 using System.ClientModel;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,29 +10,35 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager;
 
+/// <summary>封裝 GenerateAsync / StreamAsync 的核心請求參數，避免方法參數過多觸發 S107。</summary>
+internal record GenerationParams(
+    IChatClient Client,
+    IEnumerable<ChatMessage> Messages,
+    ChatOptions Options,
+    string Model,
+    bool UseNativeSchema,
+    string ProviderId,
+    float TimeoutSeconds,
+    CancellationToken CancellationToken);
+
 /// <summary>以逐候選的參數（模型、schema 方言、逾時）包裝一次 MEAI IChatClient 呼叫。</summary>
 internal static class RimLLMChatClientExecutor
 {
     /// <summary>
-    /// 非串流請求：以 <paramref name="timeoutSeconds"/> 建立整體逾時，並與呼叫端的取消 Token 連動。
+    /// 非串流請求：以 <see cref="GenerationParams.TimeoutSeconds"/> 建立整體逾時，並與呼叫端的取消 Token 連動。
     /// 官方 SDK 的 client 本身沒有套用使用者設定的 ApiTimeout，因此在此統一補上，
     /// 使 SDK 路徑與 raw HTTP 路徑的逾時語意一致。
     /// <paramref name="customizeOptions"/> 為供應商專屬的 options 客製化（如 reasoning、Patch 逃生門）。
     /// <paramref name="onUsage"/> 為本次請求結算的 token 回呼，供請求日誌附帶顯示；可為 null。
     /// </summary>
     public static async Task<ChatResponse> GenerateAsync(
-        IChatClient client,
-        IEnumerable<ChatMessage> messages,
-        ChatOptions options,
-        string model,
-        bool useNativeSchema,
-        string providerId,
-        float timeoutSeconds,
-        CancellationToken cancellationToken,
+        GenerationParams p,
         Action<ChatOptions> customizeOptions = null,
         Action<UsageTokens> onUsage = null)
     {
-        if (client == null) throw new ArgumentNullException(nameof(client));
+        var (client, messages, options, model, useNativeSchema, providerId, timeoutSeconds, cancellationToken) = p;
+
+        ArgumentNullException.ThrowIfNull(client);
 
         IList<ChatMessage> builtMessages = BuildMessages(messages, options);
 
@@ -99,19 +106,14 @@ internal static class RimLLMChatClientExecutor
     /// 等待消費端（<paramref name="onUpdateReceived"/>）的時間不計入：消費端卡住不是供應商斷線。
     /// </summary>
     public static async Task StreamAsync(
-        IChatClient client,
-        IEnumerable<ChatMessage> messages,
-        ChatOptions options,
-        string model,
-        bool useNativeSchema,
-        string providerId,
+        GenerationParams p,
         Func<ChatResponseUpdate, Task> onUpdateReceived,
-        float timeoutSeconds,
-        CancellationToken cancellationToken,
         Action<ChatOptions> customizeOptions = null,
         Action<UsageTokens> onUsage = null)
     {
-        if (client == null) throw new ArgumentNullException(nameof(client));
+        var (client, messages, options, model, useNativeSchema, providerId, timeoutSeconds, cancellationToken) = p;
+
+        ArgumentNullException.ThrowIfNull(client);
 
         IList<ChatMessage> builtMessages = BuildMessages(messages, options);
         TimeSpan idleTimeout = ResolveTimeout(timeoutSeconds);
@@ -416,11 +418,7 @@ internal static class RimLLMChatClientExecutor
         else
         {
             // messages 已經是 BuildMessages 的產物，系統提示詞與 CachedContext 都在裡面。
-            double promptEstimate = 0;
-            foreach (ChatMessage m in messages)
-            {
-                if (m != null && !string.IsNullOrEmpty(m.Text)) promptEstimate += EstimateTokensRaw(m.Text);
-            }
+            double promptEstimate = messages.Where(m => m != null && !string.IsNullOrEmpty(m.Text)).Sum(m => EstimateTokensRaw(m.Text));
             promptTokens = ToTokenCount(promptEstimate);
             completionTokens = ToTokenCount(completionEstimate);
         }
