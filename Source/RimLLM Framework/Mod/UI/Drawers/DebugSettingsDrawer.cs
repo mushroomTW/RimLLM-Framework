@@ -355,42 +355,10 @@ public static class DebugSettingsDrawer
                 sb.AppendLine($"  {i + 1}. {fallbackChain[i]}");
             }
             sb.AppendLine();
-            sb.AppendLine("=== Provider Setup ===");
-            List<string> providers = RimLLMProvider.TryGetManager(out var providerManager)
-                ? providerManager.GetRegisteredProviderIds()
-                : new List<string>(ProviderIds.BuiltIn);
-            foreach (var prov in providers)
-            {
-                bool enabled = Settings.IsProviderEnabled(prov);
-                bool hasKey = !string.IsNullOrEmpty(Settings.GetApiKey(prov));
-                string endpoint = Settings.GetEndpoint(prov, "default");
-                sb.AppendLine($"  {prov}: Enabled={enabled}, HasKey={hasKey}, Endpoint={MaskEndpoint(endpoint)}");
-                var models = Settings.GetModelList(prov);
-                string modelPreview = models.Count > 20
-                    ? string.Join(", ", models.GetRange(0, 20)) + $", ... ({models.Count - 20} more)"
-                    : string.Join(", ", models);
-                sb.AppendLine($"    Cached Models ({models.Count}): {RimLLMLog.SanitizeForLog(modelPreview, 1000)}");
-            }
-            sb.AppendLine();
-            sb.AppendLine("=== Recent Request Logs ===");
-            if (RimLLMProvider.TryGetManager(out var logManager))
-            {
-                var logs = logManager.RequestLogs.ToArray();
-                if (logs.Length == 0)
-                {
-                    sb.AppendLine("  No requests recorded in this session.");
-                }
-                else
-                {
-                    foreach (var log in logs)
-                    {
-                        string status = log.Success ? "SUCCESS" : $"FAILED ({RimLLMLog.SanitizeForLog(log.ErrorMessage, 200)})";
-                        int totalTokens = log.PromptTokens + log.CompletionTokens;
-                        string tokenInfo = totalTokens > 0 ? $" | Tokens: {totalTokens:N0} (prompt {log.PromptTokens:N0}, completion {log.CompletionTokens:N0})" : "";
-                        sb.AppendLine($"  [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Mod: {log.ModId} | Provider: {log.Provider} ({log.Model}) | {status} | Latency: {log.LatencyMs}ms{tokenInfo}");
-                    }
-                }
-            }
+
+            AppendProviderDiagnostics(sb);
+            AppendRequestLogsDiagnostics(sb);
+
             string path = Path.Combine(GenFilePaths.SaveDataFolderPath, "RimLLM_Diagnostic.txt");
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
             Messages.Message("RimLLM_ExportDiagSuccess".Translate(path), MessageTypeDefOf.PositiveEvent, false);
@@ -398,6 +366,50 @@ public static class DebugSettingsDrawer
         catch (Exception ex)
         {
             Messages.Message("RimLLM_ExportDiagFailed".Translate(RimLLMLog.SanitizeForLog(ex.Message, 200)), MessageTypeDefOf.RejectInput, false);
+        }
+    }
+
+    private static void AppendProviderDiagnostics(StringBuilder sb)
+    {
+        sb.AppendLine("=== Provider Setup ===");
+        List<string> providers = RimLLMProvider.TryGetManager(out var providerManager)
+            ? providerManager.GetRegisteredProviderIds()
+            : new List<string>(ProviderIds.BuiltIn);
+        foreach (var prov in providers)
+        {
+            bool enabled = Settings.IsProviderEnabled(prov);
+            bool hasKey = !string.IsNullOrEmpty(Settings.GetApiKey(prov));
+            string endpoint = Settings.GetEndpoint(prov, "default");
+            sb.AppendLine($"  {prov}: Enabled={enabled}, HasKey={hasKey}, Endpoint={MaskEndpoint(endpoint)}");
+            var models = Settings.GetModelList(prov);
+            string modelPreview = models.Count > 20
+                ? string.Join(", ", models.GetRange(0, 20)) + $", ... ({models.Count - 20} more)"
+                : string.Join(", ", models);
+            sb.AppendLine($"    Cached Models ({models.Count}): {RimLLMLog.SanitizeForLog(modelPreview, 1000)}");
+        }
+        sb.AppendLine();
+    }
+
+    private static void AppendRequestLogsDiagnostics(StringBuilder sb)
+    {
+        sb.AppendLine("=== Recent Request Logs ===");
+        if (RimLLMProvider.TryGetManager(out var logManager))
+        {
+            var logs = logManager.RequestLogs.ToArray();
+            if (logs.Length == 0)
+            {
+                sb.AppendLine("  No requests recorded in this session.");
+            }
+            else
+            {
+                foreach (var log in logs)
+                {
+                    string status = log.Success ? "SUCCESS" : $"FAILED ({RimLLMLog.SanitizeForLog(log.ErrorMessage, 200)})";
+                    int totalTokens = log.PromptTokens + log.CompletionTokens;
+                    string tokenInfo = totalTokens > 0 ? $" | Tokens: {totalTokens:N0} (prompt {log.PromptTokens:N0}, completion {log.CompletionTokens:N0})" : "";
+                    sb.AppendLine($"  [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Mod: {log.ModId} | Provider: {log.Provider} ({log.Model}) | {status} | Latency: {log.LatencyMs}ms{tokenInfo}");
+                }
+            }
         }
     }
 

@@ -599,290 +599,7 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                         var dto = RimLLMJsonHelper.Deserialize<SettingsDto>(jsonStr);
                         if (dto != null)
                         {
-                            if (dto.FallbackChain != null)
-                            {
-                                var fallbackChain = new List<string>(dto.FallbackChain);
-                                fallbackChain.RemoveAll(entry => string.IsNullOrEmpty(entry));
-                                this.FallbackChain = fallbackChain;
-                            }
-                            if (dto.Endpoints != null)
-                            {
-                                // 移除 Clear，直接覆寫，保留新版本預設值
-                                foreach (var kvp in dto.Endpoints) this._endpoints[kvp.Key] = kvp.Value;
-                            }
-                            if (dto.EnabledProviders != null)
-                            {
-                                // 移除 Clear，直接覆寫，保留新版本預設值
-                                foreach (var kvp in dto.EnabledProviders) this._enabledProviders[kvp.Key] = kvp.Value;
-                            }
-                            if (dto.ProviderModels != null)
-                            {
-                                // 移除 Clear，直接覆寫，保留新版本預設值
-                                foreach (var kvp in dto.ProviderModels) this._providerModels[kvp.Key] = kvp.Value;
-                                _modelListVersion++;
-                            }
-
-                            // _apiKeys 依然可以 Clear，因為這是完全由用戶配置決定
-                            _apiKeys.Clear();
-                            _undecryptableApiKeys.Clear();
-                            if (dto.EncryptedApiKeys != null)
-                            {
-                                foreach (var kvp in dto.EncryptedApiKeys)
-                                {
-                                    string plain = EncryptionUtility.Decrypt(kvp.Value);
-                                    if (plain == null)
-                                    {
-                                        // 解不開（通常是換了裝置）：保留原始密文，不要放進 _apiKeys，
-                                        // 以免下次存檔把它覆寫成空字串而永久遺失。
-                                        _undecryptableApiKeys[kvp.Key] = kvp.Value;
-                                        RimLLMStartupNotices.Post("RimLLM_MsgApiKeyDecryptFailed", kvp.Key);
-                                    }
-                                    else
-                                    {
-                                        _apiKeys[kvp.Key] = plain;
-                                    }
-                                }
-                            }
-
-                            if (dto.ChinaModeProviders != null)
-                            {
-                                // 移除 Clear，直接覆寫，保留新版本預設值
-                                foreach (var kvp in dto.ChinaModeProviders) this._chinaModeProviders[kvp.Key] = kvp.Value;
-                            }
-
-                            if (dto.ModelLevelOverrides != null)
-                            {
-                                _modelLevelOverrides.Clear();
-                                foreach (var kvp in dto.ModelLevelOverrides) _modelLevelOverrides[kvp.Key] = kvp.Value;
-                            }
-
-                            if (dto.ProviderContextWindows != null)
-                            {
-                                _providerContextWindows.Clear();
-                                foreach (var kvp in dto.ProviderContextWindows)
-                                {
-                                    if (kvp.Value != null) SetProviderContextWindows(kvp.Key, kvp.Value);
-                                }
-                            }
-
-                            if (dto.ProviderVisionSupport != null)
-                            {
-                                _providerVisionSupport.Clear();
-                                foreach (var kvp in dto.ProviderVisionSupport)
-                                {
-                                    if (kvp.Value != null) SetProviderVisionSupport(kvp.Key, kvp.Value);
-                                }
-                            }
-
-                            if (dto.ContextWindowOverrides != null)
-                            {
-                                _contextWindowOverrides.Clear();
-                                foreach (var kvp in dto.ContextWindowOverrides) SetContextWindowOverride(kvp.Key, kvp.Value);
-                            }
-
-                            this.DefaultReasoningEffort = DecodeReasoningEffort(dto.DefaultReasoningEffort);
-
-                            // 舊版設定 XML 內嵌的遙測資料：若獨立遙測檔尚不存在，執行一次性遷移
-                            if (!_telemetry.LoadedFromDisk &&
-                                (dto.ChatHistory != null || dto.RequestLogs != null ||
-                                 dto.TotalPromptTokens > 0 || dto.TotalCompletionTokens > 0 || dto.TotalEstimatedCost > 0f))
-                            {
-                                if (dto.ChatHistory != null) this.ChatHistory = dto.ChatHistory;
-                                if (dto.RequestLogs != null) this.RequestLogs = dto.RequestLogs;
-                                this.TotalPromptTokens = dto.TotalPromptTokens;
-                                this.TotalCompletionTokens = dto.TotalCompletionTokens;
-                                this.TotalEstimatedCost = dto.TotalEstimatedCost;
-                                SaveTelemetry();
-                                RimLLMLog.Message("[RimLLM] Migrated telemetry from the legacy settings XML to RimLLM_Telemetry.json.");
-                            }
-
-                            // 載入可調節項 (全域配置) 並防呆
-                            this.ApiTimeout = dto.ApiTimeout <= 0f ? 30f : dto.ApiTimeout;
-                            this.MaxRetries = dto.MaxRetries < 0 ? 3 : dto.MaxRetries;
-                            this.RetryDelay = dto.RetryDelay < 0f ? 3f : dto.RetryDelay;
-                            // 版本 0 的 true 來自舊預設值（見 CurrentSettingsVersion），重設為新預設一次。
-                            this.DetailedLogging = dto.SettingsVersion >= 1 && dto.DetailedLogging;
-                            this.MaxConcurrentRequests = dto.MaxConcurrentRequests <= 0 ? 2 : dto.MaxConcurrentRequests;
-                            RimLLMLog.Enabled = this.DetailedLogging;
-
-                            this.DailyTokenBudgetLimit = dto.DailyTokenBudgetLimit < 0 ? 0 : dto.DailyTokenBudgetLimit;
-                            // 舊版存檔（以美元計的每日預算）：美元無法換算成 token，上限無法沿用，
-                            // 必須明確告知玩家預算已失效，不能讓保護在升級後無聲消失。
-                            bool legacyBudgetSave = dto.DailyBudgetLimit.HasValue;
-                            if (legacyBudgetSave && dto.DailyBudgetLimit.Value > 0f)
-                            {
-                                RimLLMLog.Warning(
-                                    $"[RimLLM] The daily budget is now counted in tokens; the old USD limit ({dto.DailyBudgetLimit.Value:F2}) cannot be converted and was removed. Set a token budget under Budget & Safety.");
-                                RimLLMStartupNotices.Post("RimLLM_MsgLegacyBudgetLimitDropped");
-                            }
-
-                            int storedPolicy = dto.BudgetPolicy;
-                            // 舊版的 1 是 SilentMocking（超限不送出），與新版 1 = WarnOnly（照常送出）撞號，不得沿用成放行。
-                            bool legacySilentMocking = legacyBudgetSave && storedPolicy == 1;
-                            if (legacySilentMocking || SanitizeBudgetPolicy(storedPolicy) != storedPolicy)
-                            {
-                                // 這是行為變更：原本的軟性策略會變成硬性阻斷，必須讓使用者自己知道原因，
-                                // 否則他只會看到 AI 突然回報 QuotaExceeded 而找不到緣由。
-                                RimLLMLog.Warning(
-                                    $"[RimLLM] Unsupported budget policy {storedPolicy} in settings; reset to HardBlock (0).");
-                                RimLLMStartupNotices.Post("RimLLM_MsgBudgetPolicyReset");
-                            }
-                            this.BudgetPolicy = legacySilentMocking ? 0 : SanitizeBudgetPolicy(storedPolicy);
-                            this.EnableAntiAbuse = dto.EnableAntiAbuse;
-                            // Use 10 as default if the value is <= 0 for MaxRequestsPerWindow and ThrottlingWindowSeconds
-                            this.MaxRequestsPerWindow = dto.MaxRequestsPerWindow <= 0 ? 10 : dto.MaxRequestsPerWindow;
-                            this.ThrottlingWindowSeconds = dto.ThrottlingWindowSeconds <= 0 ? 10 : dto.ThrottlingWindowSeconds;
-                            this.CoolDownDurationSeconds = dto.CoolDownDurationSeconds < 0 ? 60 : dto.CoolDownDurationSeconds;
-                            // 超出範圍的策略值退回 PriorityFailover，避免未知值悄悄改變路由行為
-                            this.RoutingStrategy = dto.RoutingStrategy < 0 || dto.RoutingStrategy > MaxRoutingStrategy ? 0 : dto.RoutingStrategy;
-                            this.EnableNativeSchema = dto.EnableNativeSchema;
-                            this.EnableJsonRepair = dto.EnableJsonRepair;
-                            this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? DisabledProvider : dto.EmbeddingProvider;
-                            if (dto.EmbeddingModels != null)
-                            {
-                                foreach (var kvp in dto.EmbeddingModels) this._embeddingModels[kvp.Key] = kvp.Value;
-                            }
-                            else if (!string.IsNullOrEmpty(dto.EmbeddingModel) && this.EmbeddingProvider != DisabledProvider)
-                            {
-                                this._embeddingModels[this.EmbeddingProvider] = dto.EmbeddingModel;
-                            }
-
-                            if (dto.EmbeddingEndpoints != null)
-                            {
-                                foreach (var kvp in dto.EmbeddingEndpoints) this._embeddingEndpoints[kvp.Key] = kvp.Value;
-                            }
-                            else if (!string.IsNullOrEmpty(dto.EmbeddingEndpoint) && this.EmbeddingProvider != DisabledProvider)
-                            {
-                                this._embeddingEndpoints[this.EmbeddingProvider] = dto.EmbeddingEndpoint;
-                            }
-
-                            // 舊存檔沒有這兩個欄位：保留預設的空備援鏈。
-                            if (dto.EmbeddingFallbackChain != null) this.EmbeddingFallbackChain = dto.EmbeddingFallbackChain;
-                            if (dto.DecisionFallbackChain != null) this.DecisionFallbackChain = dto.DecisionFallbackChain;
-
-                            string decisionProvider = SanitizeDecisionProvider(dto.DecisionProvider);
-                            this.DecisionProvider = decisionProvider;
-
-                            _decisionModels.Clear();
-                            _decisionEndpoints.Clear();
-                            if (dto.DecisionModels != null)
-                            {
-                                foreach (var kvp in dto.DecisionModels) _decisionModels[kvp.Key] = kvp.Value;
-                            }
-                            else if (!string.IsNullOrEmpty(dto.DecisionModel) &&
-                                     decisionProvider != RimLLMDecisionProviderCatalog.Disabled)
-                            {
-                                _decisionModels[decisionProvider] = dto.DecisionModel;
-                            }
-
-                            if (dto.DecisionEndpoints != null)
-                            {
-                                foreach (var kvp in dto.DecisionEndpoints) _decisionEndpoints[kvp.Key] = kvp.Value;
-                            }
-                            else if (!string.IsNullOrEmpty(dto.DecisionEndpoint) &&
-                                     decisionProvider != RimLLMDecisionProviderCatalog.Disabled)
-                            {
-                                _decisionEndpoints[decisionProvider] = dto.DecisionEndpoint;
-                            }
-
-                            _decisionApiKeys.Clear();
-                            _undecryptableDecisionApiKeys.Clear();
-                            if (dto.EncryptedDecisionApiKeys != null)
-                            {
-                                foreach (var kvp in dto.EncryptedDecisionApiKeys)
-                                {
-                                    string plain = EncryptionUtility.Decrypt(kvp.Value);
-                                    if (plain != null)
-                                    {
-                                        _decisionApiKeys[kvp.Key] = plain;
-                                    }
-                                    else
-                                    {
-                                        // 解密失敗時保留密文，下次存檔才不會把玩家的金鑰清空。
-                                        _undecryptableDecisionApiKeys[kvp.Key] = kvp.Value;
-                                        RimLLMStartupNotices.Post("RimLLM_MsgApiKeyDecryptFailed", kvp.Key);
-                                    }
-                                }
-                            }
-
-                            if (decisionProvider != RimLLMDecisionProviderCatalog.Disabled &&
-                                !_decisionApiKeys.ContainsKey(decisionProvider) &&
-                                !_undecryptableDecisionApiKeys.ContainsKey(decisionProvider))
-                            {
-                                if (!string.IsNullOrEmpty(dto.EncryptedDecisionApiKey))
-                                {
-                                    string plain = EncryptionUtility.Decrypt(dto.EncryptedDecisionApiKey);
-                                    if (plain != null)
-                                    {
-                                        _decisionApiKeys[decisionProvider] = plain;
-                                    }
-                                    else
-                                    {
-                                        _undecryptableDecisionApiKeys[decisionProvider] = dto.EncryptedDecisionApiKey;
-                                    }
-                                }
-                                else if (!string.IsNullOrEmpty(dto.DecisionApiKey))
-                                {
-                                    // 更舊的明文格式：載入後立刻轉入加密 map，下次存檔即加密。
-                                    _decisionApiKeys[decisionProvider] = dto.DecisionApiKey;
-                                }
-                            }
-
-                            _compatTakeovers.Clear();
-                            if (dto.CompatTakeovers != null)
-                            {
-                                foreach (var kvp in dto.CompatTakeovers) _compatTakeovers[kvp.Key] = kvp.Value;
-                            }
-
-                            _compatModelPins.Clear();
-                            if (dto.CompatModelPins != null)
-                            {
-                                foreach (var kvp in dto.CompatModelPins.Where(kv => !string.IsNullOrEmpty(kv.Value)))
-                                {
-                                    _compatModelPins[kvp.Key] = kvp.Value;
-                                }
-                            }
-
-                            _embeddingApiKeys.Clear();
-                            _undecryptableEmbeddingApiKeys.Clear();
-                            _undecryptableEmbeddingApiKey = null;
-                            _undecryptableEmbeddingApiKeyProvider = null;
-                            if (dto.EncryptedEmbeddingApiKeys != null)
-                            {
-                                foreach (var kvp in dto.EncryptedEmbeddingApiKeys)
-                                {
-                                    string plain = EncryptionUtility.Decrypt(kvp.Value);
-                                    if (plain == null)
-                                    {
-                                        _undecryptableEmbeddingApiKeys[kvp.Key] = kvp.Value;
-                                        RimLLMStartupNotices.Post("RimLLM_MsgApiKeyDecryptFailed", kvp.Key);
-                                    }
-                                    else
-                                    {
-                                        _embeddingApiKeys[kvp.Key] = plain;
-                                    }
-                                }
-                            }
-                            else if (!string.IsNullOrEmpty(dto.EncryptedEmbeddingApiKey))
-                            {
-                                string embeddingProvider = this.EmbeddingProvider;
-                                string plain = EncryptionUtility.Decrypt(dto.EncryptedEmbeddingApiKey);
-                                if (plain != null && embeddingProvider != DisabledProvider)
-                                {
-                                    _embeddingApiKeys[embeddingProvider] = plain;
-                                }
-                                else if (plain == null &&
-                                         !string.IsNullOrEmpty(embeddingProvider) &&
-                                         embeddingProvider != DisabledProvider)
-                                {
-                                    _undecryptableEmbeddingApiKey = dto.EncryptedEmbeddingApiKey;
-                                    _undecryptableEmbeddingApiKeyProvider = embeddingProvider;
-                                }
-                            }
-                            else if (!string.IsNullOrEmpty(dto.EmbeddingApiKey) && this.EmbeddingProvider != DisabledProvider)
-                            {
-                                _embeddingApiKeys[this.EmbeddingProvider] = dto.EmbeddingApiKey;
-                            }
+                            ApplySettingsDto(dto);
                         }
                     }
                     catch (Exception ex)
@@ -890,6 +607,325 @@ public class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWin
                         RimLLMLog.Error($"[RimLLM] Failed to load settings: {ex.Message}");
                     }
                 }
+            }
+        }
+    }
+
+    private void ApplySettingsDto(SettingsDto dto)
+    {
+        ApplyProviderConfigurations(dto);
+        ApplyDecryptedApiKeys(dto);
+        ApplyTelemetryMigration(dto);
+        ApplyGlobalPolicies(dto);
+        ApplyEmbeddingConfigurations(dto);
+        ApplyDecisionConfigurations(dto);
+        ApplyCompatConfigurations(dto);
+    }
+
+    private void ApplyProviderConfigurations(SettingsDto dto)
+    {
+        if (dto.FallbackChain != null)
+        {
+            var fallbackChain = new List<string>(dto.FallbackChain);
+            fallbackChain.RemoveAll(entry => string.IsNullOrEmpty(entry));
+            this.FallbackChain = fallbackChain;
+        }
+        ApplyProviderMaps(dto);
+        ApplyModelOverrides(dto);
+        this.DefaultReasoningEffort = DecodeReasoningEffort(dto.DefaultReasoningEffort);
+    }
+
+    private void ApplyProviderMaps(SettingsDto dto)
+    {
+        if (dto.Endpoints != null)
+        {
+            foreach (var kvp in dto.Endpoints) this._endpoints[kvp.Key] = kvp.Value;
+        }
+        if (dto.EnabledProviders != null)
+        {
+            foreach (var kvp in dto.EnabledProviders) this._enabledProviders[kvp.Key] = kvp.Value;
+        }
+        if (dto.ProviderModels != null)
+        {
+            foreach (var kvp in dto.ProviderModels) this._providerModels[kvp.Key] = kvp.Value;
+            _modelListVersion++;
+        }
+        if (dto.ChinaModeProviders != null)
+        {
+            foreach (var kvp in dto.ChinaModeProviders) this._chinaModeProviders[kvp.Key] = kvp.Value;
+        }
+    }
+
+    private void ApplyModelOverrides(SettingsDto dto)
+    {
+        if (dto.ModelLevelOverrides != null)
+        {
+            _modelLevelOverrides.Clear();
+            foreach (var kvp in dto.ModelLevelOverrides) _modelLevelOverrides[kvp.Key] = kvp.Value;
+        }
+        ApplyContextWindowsAndVision(dto);
+        if (dto.ContextWindowOverrides != null)
+        {
+            _contextWindowOverrides.Clear();
+            foreach (var kvp in dto.ContextWindowOverrides) SetContextWindowOverride(kvp.Key, kvp.Value);
+        }
+    }
+
+    private void ApplyContextWindowsAndVision(SettingsDto dto)
+    {
+        if (dto.ProviderContextWindows != null)
+        {
+            _providerContextWindows.Clear();
+            foreach (var kvp in dto.ProviderContextWindows)
+            {
+                if (kvp.Value != null) SetProviderContextWindows(kvp.Key, kvp.Value);
+            }
+        }
+        if (dto.ProviderVisionSupport != null)
+        {
+            _providerVisionSupport.Clear();
+            foreach (var kvp in dto.ProviderVisionSupport)
+            {
+                if (kvp.Value != null) SetProviderVisionSupport(kvp.Key, kvp.Value);
+            }
+        }
+    }
+
+    private void ApplyDecryptedApiKeys(SettingsDto dto)
+    {
+        _apiKeys.Clear();
+        _undecryptableApiKeys.Clear();
+        DecryptApiKeyDictionary(dto.EncryptedApiKeys, _apiKeys, _undecryptableApiKeys);
+    }
+
+    private static void DecryptApiKeyDictionary(
+        Dictionary<string, string> encryptedKeys,
+        Dictionary<string, string> targetDecrypted,
+        Dictionary<string, string> targetUndecryptable)
+    {
+        if (encryptedKeys == null) return;
+        foreach (var kvp in encryptedKeys)
+        {
+            string plain = EncryptionUtility.Decrypt(kvp.Value);
+            if (plain != null)
+            {
+                targetDecrypted[kvp.Key] = plain;
+            }
+            else
+            {
+                targetUndecryptable[kvp.Key] = kvp.Value;
+                RimLLMStartupNotices.Post("RimLLM_MsgApiKeyDecryptFailed", kvp.Key);
+            }
+        }
+    }
+
+    private void ApplyTelemetryMigration(SettingsDto dto)
+    {
+        if (_telemetry.LoadedFromDisk ||
+            (dto.ChatHistory == null && dto.RequestLogs == null &&
+             dto.TotalPromptTokens <= 0 && dto.TotalCompletionTokens <= 0 && dto.TotalEstimatedCost <= 0f))
+        {
+            return;
+        }
+
+        if (dto.ChatHistory != null) this.ChatHistory = dto.ChatHistory;
+        if (dto.RequestLogs != null) this.RequestLogs = dto.RequestLogs;
+        this.TotalPromptTokens = dto.TotalPromptTokens;
+        this.TotalCompletionTokens = dto.TotalCompletionTokens;
+        this.TotalEstimatedCost = dto.TotalEstimatedCost;
+        SaveTelemetry();
+        RimLLMLog.Message("[RimLLM] Migrated telemetry from the legacy settings XML to RimLLM_Telemetry.json.");
+    }
+
+    private void ApplyGlobalPolicies(SettingsDto dto)
+    {
+        this.ApiTimeout = dto.ApiTimeout <= 0f ? 30f : dto.ApiTimeout;
+        this.MaxRetries = dto.MaxRetries < 0 ? 3 : dto.MaxRetries;
+        this.RetryDelay = dto.RetryDelay < 0f ? 3f : dto.RetryDelay;
+        this.DetailedLogging = dto.SettingsVersion >= 1 && dto.DetailedLogging;
+        this.MaxConcurrentRequests = dto.MaxConcurrentRequests <= 0 ? 2 : dto.MaxConcurrentRequests;
+        RimLLMLog.Enabled = this.DetailedLogging;
+
+        ApplyBudgetPolicies(dto);
+
+        this.EnableAntiAbuse = dto.EnableAntiAbuse;
+        this.MaxRequestsPerWindow = dto.MaxRequestsPerWindow <= 0 ? 10 : dto.MaxRequestsPerWindow;
+        this.ThrottlingWindowSeconds = dto.ThrottlingWindowSeconds <= 0 ? 10 : dto.ThrottlingWindowSeconds;
+        this.CoolDownDurationSeconds = dto.CoolDownDurationSeconds < 0 ? 60 : dto.CoolDownDurationSeconds;
+        this.RoutingStrategy = dto.RoutingStrategy < 0 || dto.RoutingStrategy > MaxRoutingStrategy ? 0 : dto.RoutingStrategy;
+        this.EnableNativeSchema = dto.EnableNativeSchema;
+        this.EnableJsonRepair = dto.EnableJsonRepair;
+    }
+
+    private void ApplyBudgetPolicies(SettingsDto dto)
+    {
+        this.DailyTokenBudgetLimit = dto.DailyTokenBudgetLimit < 0 ? 0 : dto.DailyTokenBudgetLimit;
+        bool legacyBudgetSave = dto.DailyBudgetLimit.HasValue;
+        if (legacyBudgetSave && dto.DailyBudgetLimit.Value > 0f)
+        {
+            RimLLMLog.Warning(
+                $"[RimLLM] The daily budget is now counted in tokens; the old USD limit ({dto.DailyBudgetLimit.Value:F2}) cannot be converted and was removed. Set a token budget under Budget & Safety.");
+            RimLLMStartupNotices.Post("RimLLM_MsgLegacyBudgetLimitDropped");
+        }
+
+        int storedPolicy = dto.BudgetPolicy;
+        bool legacySilentMocking = legacyBudgetSave && storedPolicy == 1;
+        if (legacySilentMocking || SanitizeBudgetPolicy(storedPolicy) != storedPolicy)
+        {
+            RimLLMLog.Warning(
+                $"[RimLLM] Unsupported budget policy {storedPolicy} in settings; reset to HardBlock (0).");
+            RimLLMStartupNotices.Post("RimLLM_MsgBudgetPolicyReset");
+        }
+        this.BudgetPolicy = legacySilentMocking ? 0 : SanitizeBudgetPolicy(storedPolicy);
+    }
+
+    private void ApplyEmbeddingConfigurations(SettingsDto dto)
+    {
+        ApplyEmbeddingModelsAndEndpoints(dto);
+        ApplyEmbeddingApiKeys(dto);
+    }
+
+    private void ApplyEmbeddingModelsAndEndpoints(SettingsDto dto)
+    {
+        this.EmbeddingProvider = string.IsNullOrEmpty(dto.EmbeddingProvider) ? DisabledProvider : dto.EmbeddingProvider;
+        if (dto.EmbeddingModels != null)
+        {
+            foreach (var kvp in dto.EmbeddingModels) this._embeddingModels[kvp.Key] = kvp.Value;
+        }
+        else if (!string.IsNullOrEmpty(dto.EmbeddingModel) && this.EmbeddingProvider != DisabledProvider)
+        {
+            this._embeddingModels[this.EmbeddingProvider] = dto.EmbeddingModel;
+        }
+
+        if (dto.EmbeddingEndpoints != null)
+        {
+            foreach (var kvp in dto.EmbeddingEndpoints) this._embeddingEndpoints[kvp.Key] = kvp.Value;
+        }
+        else if (!string.IsNullOrEmpty(dto.EmbeddingEndpoint) && this.EmbeddingProvider != DisabledProvider)
+        {
+            this._embeddingEndpoints[this.EmbeddingProvider] = dto.EmbeddingEndpoint;
+        }
+
+        if (dto.EmbeddingFallbackChain != null) this.EmbeddingFallbackChain = dto.EmbeddingFallbackChain;
+    }
+
+    private void ApplyEmbeddingApiKeys(SettingsDto dto)
+    {
+        _embeddingApiKeys.Clear();
+        _undecryptableEmbeddingApiKeys.Clear();
+        _undecryptableEmbeddingApiKey = null;
+        _undecryptableEmbeddingApiKeyProvider = null;
+        if (dto.EncryptedEmbeddingApiKeys != null)
+        {
+            DecryptApiKeyDictionary(dto.EncryptedEmbeddingApiKeys, _embeddingApiKeys, _undecryptableEmbeddingApiKeys);
+        }
+        else if (!string.IsNullOrEmpty(dto.EncryptedEmbeddingApiKey))
+        {
+            string embeddingProvider = this.EmbeddingProvider;
+            string plain = EncryptionUtility.Decrypt(dto.EncryptedEmbeddingApiKey);
+            if (plain != null && embeddingProvider != DisabledProvider)
+            {
+                _embeddingApiKeys[embeddingProvider] = plain;
+            }
+            else if (plain == null && !string.IsNullOrEmpty(embeddingProvider) && embeddingProvider != DisabledProvider)
+            {
+                _undecryptableEmbeddingApiKey = dto.EncryptedEmbeddingApiKey;
+                _undecryptableEmbeddingApiKeyProvider = embeddingProvider;
+            }
+        }
+        else if (!string.IsNullOrEmpty(dto.EmbeddingApiKey) && this.EmbeddingProvider != DisabledProvider)
+        {
+            _embeddingApiKeys[this.EmbeddingProvider] = dto.EmbeddingApiKey;
+        }
+    }
+
+    private void ApplyDecisionConfigurations(SettingsDto dto)
+    {
+        string decisionProvider = SanitizeDecisionProvider(dto.DecisionProvider);
+        ApplyDecisionModelsAndEndpoints(dto, decisionProvider);
+        ApplyDecisionApiKeys(dto, decisionProvider);
+    }
+
+    private void ApplyDecisionModelsAndEndpoints(SettingsDto dto, string decisionProvider)
+    {
+        if (dto.DecisionFallbackChain != null) this.DecisionFallbackChain = dto.DecisionFallbackChain;
+
+        this.DecisionProvider = decisionProvider;
+
+        _decisionModels.Clear();
+        _decisionEndpoints.Clear();
+        if (dto.DecisionModels != null)
+        {
+            foreach (var kvp in dto.DecisionModels) _decisionModels[kvp.Key] = kvp.Value;
+        }
+        else if (!string.IsNullOrEmpty(dto.DecisionModel) && decisionProvider != RimLLMDecisionProviderCatalog.Disabled)
+        {
+            _decisionModels[decisionProvider] = dto.DecisionModel;
+        }
+
+        if (dto.DecisionEndpoints != null)
+        {
+            foreach (var kvp in dto.DecisionEndpoints) _decisionEndpoints[kvp.Key] = kvp.Value;
+        }
+        else if (!string.IsNullOrEmpty(dto.DecisionEndpoint) && decisionProvider != RimLLMDecisionProviderCatalog.Disabled)
+        {
+            _decisionEndpoints[decisionProvider] = dto.DecisionEndpoint;
+        }
+    }
+
+    private void ApplyDecisionApiKeys(SettingsDto dto, string decisionProvider)
+    {
+        _decisionApiKeys.Clear();
+        _undecryptableDecisionApiKeys.Clear();
+        if (dto.EncryptedDecisionApiKeys != null)
+        {
+            DecryptApiKeyDictionary(dto.EncryptedDecisionApiKeys, _decisionApiKeys, _undecryptableDecisionApiKeys);
+        }
+
+        ApplyLegacyDecisionApiKey(dto, decisionProvider);
+    }
+
+    private void ApplyLegacyDecisionApiKey(SettingsDto dto, string decisionProvider)
+    {
+        if (decisionProvider == RimLLMDecisionProviderCatalog.Disabled ||
+            _decisionApiKeys.ContainsKey(decisionProvider) ||
+            _undecryptableDecisionApiKeys.ContainsKey(decisionProvider))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(dto.EncryptedDecisionApiKey))
+        {
+            string plain = EncryptionUtility.Decrypt(dto.EncryptedDecisionApiKey);
+            if (plain != null)
+            {
+                _decisionApiKeys[decisionProvider] = plain;
+            }
+            else
+            {
+                _undecryptableDecisionApiKeys[decisionProvider] = dto.EncryptedDecisionApiKey;
+            }
+        }
+        else if (!string.IsNullOrEmpty(dto.DecisionApiKey))
+        {
+            _decisionApiKeys[decisionProvider] = dto.DecisionApiKey;
+        }
+    }
+
+    private void ApplyCompatConfigurations(SettingsDto dto)
+    {
+        _compatTakeovers.Clear();
+        if (dto.CompatTakeovers != null)
+        {
+            foreach (var kvp in dto.CompatTakeovers) _compatTakeovers[kvp.Key] = kvp.Value;
+        }
+
+        _compatModelPins.Clear();
+        if (dto.CompatModelPins != null)
+        {
+            foreach (var kvp in dto.CompatModelPins.Where(kv => !string.IsNullOrEmpty(kv.Value)))
+            {
+                _compatModelPins[kvp.Key] = kvp.Value;
             }
         }
     }

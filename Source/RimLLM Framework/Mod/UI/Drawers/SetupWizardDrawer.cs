@@ -381,37 +381,9 @@ public static class SetupWizardDrawer
         }
         else
         {
-            if (_modelsFailKey != null)
-            {
-                RimLLMUIStyle.DrawHint(listing, _modelsFailKey.Translate());
-                if (!string.IsNullOrEmpty(_modelsFailDetail))
-                {
-                    RimLLMUIStyle.DrawHint(listing, SetupFailDetailKey.Translate(_modelsFailDetail));
-                }
-                Rect retryRow = listing.GetRect(30f);
-                if (Widgets.ButtonText(new Rect(retryRow.x, retryRow.y, 220f, retryRow.height), "RimLLM_SetupRetryFetchBtn".Translate()))
-                {
-                    StartFetchModels(_pick.Id);
-                }
-                listing.Gap(6f);
-            }
-
+            DrawModelsFailRetry(listing);
             DrawChatModelRow(listing);
-
-            if (_embeddingPickProvider != null || _decisionPickProvider != null)
-            {
-                listing.Gap(14f);
-                listing.Label($"<b>{"RimLLM_SetupOptionalTitle".Translate()}</b>");
-                RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupOptionalModelsHint".Translate(_pick.DisplayName));
-                if (_embeddingPickProvider != null)
-                {
-                    DrawOptionalModelRow(listing, "RimLLM_ServiceEmbedding".Translate(), _embeddingListBusy, _embeddingModels, _embeddingModel, model => _embeddingModel = model);
-                }
-                if (_decisionPickProvider != null)
-                {
-                    DrawOptionalModelRow(listing, "RimLLM_ServiceDecision".Translate(), _decisionListBusy, _decisionModels, _decisionModel, model => _decisionModel = model);
-                }
-            }
+            DrawOptionalModelsSection(listing);
         }
 
         listing.Gap(16f);
@@ -420,6 +392,40 @@ public static class SetupWizardDrawer
             _outcome = Outcome.None;
             _step = 4;
         });
+    }
+
+    private static void DrawModelsFailRetry(Listing_Standard listing)
+    {
+        if (_modelsFailKey == null) return;
+
+        RimLLMUIStyle.DrawHint(listing, _modelsFailKey.Translate());
+        if (!string.IsNullOrEmpty(_modelsFailDetail))
+        {
+            RimLLMUIStyle.DrawHint(listing, SetupFailDetailKey.Translate(_modelsFailDetail));
+        }
+        Rect retryRow = listing.GetRect(30f);
+        if (Widgets.ButtonText(new Rect(retryRow.x, retryRow.y, 220f, retryRow.height), "RimLLM_SetupRetryFetchBtn".Translate()))
+        {
+            StartFetchModels(_pick.Id);
+        }
+        listing.Gap(6f);
+    }
+
+    private static void DrawOptionalModelsSection(Listing_Standard listing)
+    {
+        if (_embeddingPickProvider == null && _decisionPickProvider == null) return;
+
+        listing.Gap(14f);
+        listing.Label($"<b>{"RimLLM_SetupOptionalTitle".Translate()}</b>");
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_SetupOptionalModelsHint".Translate(_pick.DisplayName));
+        if (_embeddingPickProvider != null)
+        {
+            DrawOptionalModelRow(listing, "RimLLM_ServiceEmbedding".Translate(), _embeddingListBusy, _embeddingModels, _embeddingModel, model => _embeddingModel = model);
+        }
+        if (_decisionPickProvider != null)
+        {
+            DrawOptionalModelRow(listing, "RimLLM_ServiceDecision".Translate(), _decisionListBusy, _decisionModels, _decisionModel, model => _decisionModel = model);
+        }
     }
 
     private static string DescribePick(string model, string emptyKey)
@@ -494,60 +500,62 @@ public static class SetupWizardDrawer
         _embeddingModels = [];
         _decisionModels = [];
 
-        Task.Run(async () =>
-        {
-            try
-            {
-                if (!RimLLMProvider.TryGetManager(out var manager))
-                {
-                    await FinishFetch(generation, () => FailFetch(SetupFailOtherKey, "SDK not initialized")).ConfigureAwait(false);
-                    return;
-                }
-
-                if (providerId == ProviderIds.OpenAICompatible)
-                {
-                    LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(GenericProviderSubTabDrawer.LocalTargets).ConfigureAwait(false);
-                    if (hit == null)
-                    {
-                        await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_LocalNotFound", null)).ConfigureAwait(false);
-                        return;
-                    }
-                    await FinishFetch(generation, () =>
-                    {
-                        Settings.SetEndpoint(providerId, hit.BaseUrl);
-                        Settings.Write();
-                        _progressKey = "RimLLM_SetupProgressFetch";
-                    }).ConfigureAwait(false);
-                }
-
-                var catalog = await manager.FetchProviderModelCatalogAsync(providerId).ConfigureAwait(false);
-                await FinishFetch(generation, () =>
-                {
-                    if (catalog.Models != null && catalog.Models.Count > 0)
-                    {
-                        Settings.SetModelList(providerId, catalog.Models);
-                        Settings.SetProviderContextWindows(providerId, catalog.ContextWindows);
-                        Settings.SetProviderVisionSupport(providerId, catalog.VisionSupport);
-                        Settings.Write();
-                        _chatModels = new List<string>(catalog.Models);
-                    }
-                    else
-                    {
-                        _modelsFailKey = "RimLLM_SetupModelsEmpty";
-                    }
-                    _modelsBusy = false;
-                }).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                RimLLMLog.Warning($"Setup wizard: fetching models for {providerId} failed: {RimLLMLog.SanitizeForLog(ex.Message, 220)}");
-                string key = ex is RimLLMException llm ? SetupStatus.DescribeFailureKey(llm.Error) : SetupFailOtherKey;
-                await FinishFetch(generation, () => FailFetch(key, ex.Message)).ConfigureAwait(false);
-            }
-        });
+        Task.Run(() => FetchChatModelsAsync(providerId, generation));
 
         if (_embeddingPickProvider != null) StartFetchEmbeddingList(_embeddingPickProvider, generation);
         if (_decisionPickProvider != null) StartFetchDecisionList(_decisionPickProvider, generation);
+    }
+
+    private static async Task FetchChatModelsAsync(string providerId, int generation)
+    {
+        try
+        {
+            if (!RimLLMProvider.TryGetManager(out var manager))
+            {
+                await FinishFetch(generation, () => FailFetch(SetupFailOtherKey, "SDK not initialized")).ConfigureAwait(false);
+                return;
+            }
+
+            if (providerId == ProviderIds.OpenAICompatible)
+            {
+                LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(GenericProviderSubTabDrawer.LocalTargets).ConfigureAwait(false);
+                if (hit == null)
+                {
+                    await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_LocalNotFound", null)).ConfigureAwait(false);
+                    return;
+                }
+                await FinishFetch(generation, () =>
+                {
+                    Settings.SetEndpoint(providerId, hit.BaseUrl);
+                    Settings.Write();
+                    _progressKey = "RimLLM_SetupProgressFetch";
+                }).ConfigureAwait(false);
+            }
+
+            var catalog = await manager.FetchProviderModelCatalogAsync(providerId).ConfigureAwait(false);
+            await FinishFetch(generation, () =>
+            {
+                if (catalog.Models != null && catalog.Models.Count > 0)
+                {
+                    Settings.SetModelList(providerId, catalog.Models);
+                    Settings.SetProviderContextWindows(providerId, catalog.ContextWindows);
+                    Settings.SetProviderVisionSupport(providerId, catalog.VisionSupport);
+                    Settings.Write();
+                    _chatModels = new List<string>(catalog.Models);
+                }
+                else
+                {
+                    _modelsFailKey = "RimLLM_SetupModelsEmpty";
+                }
+                _modelsBusy = false;
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            RimLLMLog.Warning($"Setup wizard: fetching models for {providerId} failed: {RimLLMLog.SanitizeForLog(ex.Message, 220)}");
+            string key = ex is RimLLMException llm ? SetupStatus.DescribeFailureKey(llm.Error) : SetupFailOtherKey;
+            await FinishFetch(generation, () => FailFetch(key, ex.Message)).ConfigureAwait(false);
+        }
     }
 
     private static void FailFetch(string key, string detail)

@@ -144,87 +144,112 @@ public static class RimLLMJsonHelper
             return json;
 
         json = json.Trim();
-
         // 0. 只移除 JSON 字串外的思考區塊，避免改寫模型真正輸出的文字。
         json = RemoveThinkBlocksOutsideStrings(json).Trim();
-
         // 1. 移除 Markdown 標記
+        json = StripMarkdownCodeBlocks(json);
+        // 2. 移除字串外的尾隨逗號。
+        json = RemoveTrailingCommasOutsideStrings(json);
+
+        // 3. 補齊缺失括號 (跳過雙引號字串內部的字元)。
+        if (!TryCollectExpectedClosers(json, out var expectedClosers, out bool inString, out bool escapeNext))
+        {
+            return json;
+        }
+
+        return CompleteTruncatedJson(json, expectedClosers, inString, escapeNext);
+    }
+
+    /// <summary>移除開頭與結尾的 Markdown 程式碼區塊標記。</summary>
+    private static string StripMarkdownCodeBlocks(string json)
+    {
         if (json.StartsWith("```"))
         {
             int startIndex = json.IndexOf('\n');
-            if (startIndex != -1)
-            {
-                json = json.Substring(startIndex + 1);
-            }
-            else
-            {
-                json = json.Substring(3);
-            }
+            json = startIndex != -1 ? json.Substring(startIndex + 1) : json.Substring(3);
         }
         if (json.EndsWith("```"))
         {
             json = json.Substring(0, json.Length - 3);
         }
-        json = json.Trim();
+        return json.Trim();
+    }
 
-        // 2. 移除字串外的尾隨逗號。
-        json = RemoveTrailingCommasOutsideStrings(json);
+    /// <summary>掃描 JSON 括號與引號狀態，回傳待閉合的右括號堆疊。若結構損毀（括號錯配）回傳 false。</summary>
+    private static bool TryCollectExpectedClosers(
+        string json,
+        out List<char> expectedClosers,
+        out bool inString,
+        out bool escapeNext)
+    {
+        expectedClosers = [];
+        inString = false;
+        escapeNext = false;
 
-        // 3. 補齊缺失括號 (跳過雙引號字串內部的字元)。
-        //    以堆疊記錄尚待閉合的符號，才能對交錯巢狀（如 {"a":[1) 產生正確的閉合順序；
-        //    僅用計數會固定先補 } 再補 ]，對巢狀結構會產生無法解析的結果。
-        //    以 List<char> 保存遇到的右括號，從尾端依巢狀順序補回。
-        var expectedClosers = new List<char>();
-        bool inString = false;
-        bool escapeNext = false;
         foreach (char c in json)
         {
             if (inString)
             {
-                if (escapeNext)
-                {
-                    escapeNext = false;
-                }
-                else if (c == '\\')
-                {
-                    escapeNext = true;
-                }
-                else if (c == '"')
-                {
-                    inString = false;
-                }
-                continue;
+                StepStringState(c, ref inString, ref escapeNext);
             }
-
-            if (c == '"')
+            else if (c == '"')
             {
                 inString = true;
-                continue;
             }
-
-            if (c == '{') expectedClosers.Add('}');
-            else if (c == '[') expectedClosers.Add(']');
-            else if (c == '}' || c == ']')
+            else if (!HandleCloserChar(c, expectedClosers))
             {
-                // 閉合符號與堆疊頂端不符，代表結構本身已損毀而非單純截斷。
-                // 此時任何補齊都只會讓結果更糟，直接交給 ExtractJsonBlock 的第二次解析處理。
-                if (expectedClosers.Count == 0 || expectedClosers[expectedClosers.Count - 1] != c)
-                {
-                    return json;
-                }
-                expectedClosers.RemoveAt(expectedClosers.Count - 1);
+                return false;
             }
         }
 
-        // 3a. 字串在結尾處未閉合時先補上引號，否則後續補的括號會落在字串內部。
+        return true;
+    }
+
+    private static void StepStringState(char c, ref bool inString, ref bool escapeNext)
+    {
+        if (escapeNext)
+        {
+            escapeNext = false;
+        }
+        else if (c == '\\')
+        {
+            escapeNext = true;
+        }
+        else if (c == '"')
+        {
+            inString = false;
+        }
+    }
+
+    private static bool HandleCloserChar(char c, List<char> expectedClosers)
+    {
+        if (c == '{') expectedClosers.Add('}');
+        else if (c == '[') expectedClosers.Add(']');
+        else if (c == '}' || c == ']')
+        {
+            if (expectedClosers.Count == 0 || expectedClosers[expectedClosers.Count - 1] != c)
+            {
+                return false;
+            }
+            expectedClosers.RemoveAt(expectedClosers.Count - 1);
+        }
+        return true;
+    }
+
+    /// <summary>補齊未閉合的字串引號、清理懸空 token 並按 LIFO 順序補齊右括號。</summary>
+    private static string CompleteTruncatedJson(
+        string json,
+        List<char> expectedClosers,
+        bool inString,
+        bool escapeNext)
+    {
         if (inString)
         {
             // 未配對的跳脫符號會吃掉新補的引號，先補一個反斜線讓字串正確閉合。
             json += escapeNext ? "\\\"" : "\"";
         }
 
-        // 3b. 清掉截斷造成的懸空 token，避免補完括號後仍無法解析。
-        //     只清除 JSON 允許的空白字元。
+        // 清掉截斷造成的懸空 token，避免補完括號後仍無法解析。
         json = json.TrimEnd(' ', '\t', '\r', '\n');
         if (json.EndsWith(':'))
         {
@@ -235,7 +260,6 @@ public static class RimLLMJsonHelper
             json = json.Substring(0, json.Length - 1);
         }
 
-        // 3c. 依 LIFO 順序補齊
         var sb = new StringBuilder(json);
         for (int i = expectedClosers.Count - 1; i >= 0; i--)
         {
@@ -324,30 +348,26 @@ public static class RimLLMJsonHelper
         return false;
     }
 
+    /// <summary>檢查指定索引的逗號後方是否緊接右括號（中間僅允許空白）。</summary>
+    private static bool IsTrailingComma(string json, int index)
+    {
+        int next = index + 1;
+        while (next < json.Length && char.IsWhiteSpace(json[next])) next++;
+        return next < json.Length && (json[next] == '}' || json[next] == ']');
+    }
+
     private static string RemoveTrailingCommasOutsideStrings(string json)
     {
         var result = new StringBuilder(json.Length);
         bool inString = false;
         bool escapeNext = false;
 
-        for (int index = 0; index < json.Length; index++)
+        for (int index = 0; index < json.Length;)
         {
             char current = json[index];
             if (inString)
             {
-                result.Append(current);
-                if (escapeNext)
-                {
-                    escapeNext = false;
-                }
-                else if (current == '\\')
-                {
-                    escapeNext = true;
-                }
-                else if (current == '"')
-                {
-                    inString = false;
-                }
+                index = AppendStringChar(result, index, current, ref escapeNext, ref inString);
                 continue;
             }
 
@@ -355,20 +375,18 @@ public static class RimLLMJsonHelper
             {
                 inString = true;
                 result.Append(current);
+                index++;
                 continue;
             }
 
-            if (current == ',')
+            if (current == ',' && IsTrailingComma(json, index))
             {
-                int next = index + 1;
-                while (next < json.Length && char.IsWhiteSpace(json[next])) next++;
-                if (next < json.Length && (json[next] == '}' || json[next] == ']'))
-                {
-                    continue;
-                }
+                index++;
+                continue;
             }
 
             result.Append(current);
+            index++;
         }
 
         return result.ToString();
@@ -390,15 +408,7 @@ public static class RimLLMJsonHelper
 
     private static object CreateDummyInstance(Type type, HashSet<Type> visitedTypes)
     {
-        if (type == typeof(string)) return "string";
-        if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte)) return 0;
-        if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) return 0.0;
-        if (type == typeof(bool)) return false;
-        if (type.IsEnum)
-        {
-            var values = Enum.GetValues(type);
-            return values.Length > 0 ? values.GetValue(0) : 0;
-        }
+        if (TryCreateScalarDummy(type, out object scalar)) return scalar;
 
         // 避免循環引用導致 StackOverflow
         if (visitedTypes.Contains(type))
@@ -409,43 +419,9 @@ public static class RimLLMJsonHelper
 
         try
         {
-            if (type.IsArray)
-            {
-                var elementType = type.GetElementType();
-                var array = Array.CreateInstance(elementType, 1);
-                array.SetValue(CreateDummyInstance(elementType, new HashSet<Type>(visitedTypes)), 0);
-                return array;
-            }
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
-            {
-                var elementType = type.GetGenericArguments()[0];
-                var listType = typeof(List<>).MakeGenericType(elementType);
-                var list = Activator.CreateInstance(listType) as System.Collections.IList;
-                if (list != null)
-                {
-                    list.Add(CreateDummyInstance(elementType, new HashSet<Type>(visitedTypes)));
-                }
-                return list;
-            }
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
-            {
-                var keyType = type.GetGenericArguments()[0];
-                var valueType = type.GetGenericArguments()[1];
-                var dictType = typeof(Dictionary<,>).MakeGenericType(keyType, valueType);
-                var dict = Activator.CreateInstance(dictType) as System.Collections.IDictionary;
-                if (dict != null)
-                {
-                    var dummyKey = CreateDummyInstance(keyType, new HashSet<Type>(visitedTypes));
-                    var dummyVal = CreateDummyInstance(valueType, new HashSet<Type>(visitedTypes));
-                    if (dummyKey != null)
-                    {
-                        dict.Add(dummyKey, dummyVal);
-                    }
-                }
-                return dict;
-            }
+            if (TryCreateCollectionDummy(type, visitedTypes, out object collection)) return collection;
 
-            object instance = null;
+            object instance;
             try
             {
                 instance = Activator.CreateInstance(type);
@@ -459,33 +435,96 @@ public static class RimLLMJsonHelper
             if (instance != null)
             {
                 // 遞迴填充公開欄位與屬性
-                foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    try
-                    {
-                        field.SetValue(instance, CreateDummyInstance(field.FieldType, new HashSet<Type>(visitedTypes)));
-                    }
-                    // 欄位由 JsonSerializer 已驗證，這裡僅建立 dummy 結構；失敗的欄位維持預設值不影響輸出。
-                    catch { RimLLMLog.Warning($"[RimLLM] Dummy instance field skipped: {field.Name}"); }
-                }
-                foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    if (prop.CanWrite)
-                    {
-                        try
-                        {
-                            prop.SetValue(instance, CreateDummyInstance(prop.PropertyType, new HashSet<Type>(visitedTypes)), null);
-                        }
-                        // 屬性可能有自訂 setter 邏輯，dummy 建構不保證成功；失敗的屬性維持預設值。
-                        catch { RimLLMLog.Warning($"[RimLLM] Dummy instance property skipped: {prop.Name}"); }
-                    }
-                }
+                PopulateDummyMembers(instance, type, visitedTypes);
             }
             return instance;
         }
         catch
         {
             return null;
+        }
+    }
+
+    private static bool TryCreateScalarDummy(Type type, out object dummy)
+    {
+        if (type == typeof(string)) { dummy = "string"; return true; }
+        if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte)) { dummy = 0; return true; }
+        if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) { dummy = 0.0; return true; }
+        if (type == typeof(bool)) { dummy = false; return true; }
+        if (type.IsEnum)
+        {
+            var values = Enum.GetValues(type);
+            dummy = values.Length > 0 ? values.GetValue(0) : 0;
+            return true;
+        }
+        dummy = null;
+        return false;
+    }
+
+    private static bool TryCreateCollectionDummy(Type type, HashSet<Type> visitedTypes, out object dummy)
+    {
+        if (type.IsArray)
+        {
+            var elementType = type.GetElementType();
+            var array = Array.CreateInstance(elementType, 1);
+            array.SetValue(CreateDummyInstance(elementType, new HashSet<Type>(visitedTypes)), 0);
+            dummy = array;
+            return true;
+        }
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+        {
+            var elementType = type.GetGenericArguments()[0];
+            var listType = typeof(List<>).MakeGenericType(elementType);
+            var list = Activator.CreateInstance(listType) as System.Collections.IList;
+            if (list != null)
+            {
+                list.Add(CreateDummyInstance(elementType, new HashSet<Type>(visitedTypes)));
+            }
+            dummy = list;
+            return true;
+        }
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+        {
+            var keyType = type.GetGenericArguments()[0];
+            var valueType = type.GetGenericArguments()[1];
+            var dictType = typeof(Dictionary<,>).MakeGenericType(keyType, valueType);
+            var dict = Activator.CreateInstance(dictType) as System.Collections.IDictionary;
+            if (dict != null)
+            {
+                var dummyKey = CreateDummyInstance(keyType, new HashSet<Type>(visitedTypes));
+                var dummyVal = CreateDummyInstance(valueType, new HashSet<Type>(visitedTypes));
+                if (dummyKey != null)
+                {
+                    dict.Add(dummyKey, dummyVal);
+                }
+            }
+            dummy = dict;
+            return true;
+        }
+        dummy = null;
+        return false;
+    }
+
+    private static void PopulateDummyMembers(object instance, Type type, HashSet<Type> visitedTypes)
+    {
+        foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.Instance))
+        {
+            try
+            {
+                field.SetValue(instance, CreateDummyInstance(field.FieldType, new HashSet<Type>(visitedTypes)));
+            }
+            catch { RimLLMLog.Warning($"[RimLLM] Dummy instance field skipped: {field.Name}"); }
+        }
+        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (prop.CanWrite)
+            {
+                try
+                {
+                    prop.SetValue(instance, CreateDummyInstance(prop.PropertyType, new HashSet<Type>(visitedTypes)), null);
+                }
+                catch { RimLLMLog.Warning($"[RimLLM] Dummy instance property skipped: {prop.Name}"); }
+            }
         }
     }
 
@@ -543,47 +582,66 @@ public static class RimLLMJsonHelper
             JsonTypeInfo typeInfo = SharedTypeInfoResolver.GetTypeInfo(type, SharedOptions);
             if (typeInfo.Kind == JsonTypeInfoKind.Dictionary)
             {
-                foreach (object item in EnumerateDictionaryValues(value))
-                {
-                    ValidateRuntimeMember(
-                        item,
-                        typeInfo.ElementType,
-                        visitedTypes,
-                        $"Required structured response dictionary value is null (dictionary type '{type.Name}').");
-                }
+                ValidateDictionaryMembers(value, typeInfo, visitedTypes, type);
                 return;
             }
 
-            if (typeInfo.Kind == JsonTypeInfoKind.Enumerable && value is IEnumerable collection)
+            if (typeInfo.Kind == JsonTypeInfoKind.Enumerable)
             {
-                foreach (object item in collection)
-                {
-                    ValidateRuntimeMember(
-                        item,
-                        typeInfo.ElementType,
-                        visitedTypes,
-                        $"Required structured response collection element is null (collection type '{type.Name}').");
-                }
+                ValidateEnumerableMembers(value, typeInfo, visitedTypes, type);
                 return;
             }
 
-            if (typeInfo.Kind != JsonTypeInfoKind.Object) return;
-
-            foreach (JsonPropertyInfo property in typeInfo.Properties)
+            if (typeInfo.Kind == JsonTypeInfoKind.Object)
             {
-                if (property.IsExtensionData || property.Set == null || property.Get == null) continue;
-                if (property.AttributeProvider is FieldInfo field && field.IsInitOnly) continue;
-
-                ValidateRuntimeMember(
-                    property.Get(value),
-                    property.PropertyType,
-                    visitedTypes,
-                    $"Required structured response member '{property.Name}' is null.");
+                ValidateObjectProperties(value, typeInfo, visitedTypes);
             }
         }
         finally
         {
             visitedTypes.Remove(type);
+        }
+    }
+
+    private static void ValidateDictionaryMembers(object value, JsonTypeInfo typeInfo, HashSet<Type> visitedTypes, Type type)
+    {
+        foreach (object item in EnumerateDictionaryValues(value))
+        {
+            ValidateRuntimeMember(
+                item,
+                typeInfo.ElementType,
+                visitedTypes,
+                $"Required structured response dictionary value is null (dictionary type '{type.Name}').");
+        }
+    }
+
+    private static void ValidateEnumerableMembers(object value, JsonTypeInfo typeInfo, HashSet<Type> visitedTypes, Type type)
+    {
+        if (value is IEnumerable collection)
+        {
+            foreach (object item in collection)
+            {
+                ValidateRuntimeMember(
+                    item,
+                    typeInfo.ElementType,
+                    visitedTypes,
+                    $"Required structured response collection element is null (collection type '{type.Name}').");
+            }
+        }
+    }
+
+    private static void ValidateObjectProperties(object value, JsonTypeInfo typeInfo, HashSet<Type> visitedTypes)
+    {
+        foreach (JsonPropertyInfo property in typeInfo.Properties)
+        {
+            if (property.IsExtensionData || property.Set == null || property.Get == null) continue;
+            if (property.AttributeProvider is FieldInfo field && field.IsInitOnly) continue;
+
+            ValidateRuntimeMember(
+                property.Get(value),
+                property.PropertyType,
+                visitedTypes,
+                $"Required structured response member '{property.Name}' is null.");
         }
     }
 
@@ -601,64 +659,102 @@ public static class RimLLMJsonHelper
         }
         if (schema.ValueKind != JsonValueKind.Object) return;
 
-        if (schema.TryGetProperty("properties", out JsonElement properties) &&
-            properties.ValueKind == JsonValueKind.Object && value.ValueKind == JsonValueKind.Object)
+        if (ValidateObjectSchema(value, schema)) return;
+        if (ValidateArraySchema(value, schema)) return;
+        ValidateDictionarySchema(value, schema);
+    }
+
+    private static bool ValidateObjectSchema(JsonElement value, JsonElement schema)
+    {
+        if (!schema.TryGetProperty("properties", out JsonElement properties) ||
+            properties.ValueKind != JsonValueKind.Object ||
+            value.ValueKind != JsonValueKind.Object)
         {
-            if (schema.TryGetProperty("required", out JsonElement required) && required.ValueKind == JsonValueKind.Array)
-            {
-                foreach (JsonElement requiredName in required.EnumerateArray())
-                {
-                    string name = requiredName.GetString();
-                    bool found = false;
-                    JsonElement memberValue = default;
-                    foreach (JsonProperty inputProperty in value.EnumerateObject())
-                    {
-                        if (string.Equals(inputProperty.Name, name, StringComparison.OrdinalIgnoreCase))
-                        {
-                            found = true;
-                            memberValue = inputProperty.Value;
-                        }
-                    }
+            return false;
+        }
 
-                    if (!found)
-                    {
-                        throw new InvalidOperationException(
-                            $"Required structured response member '{name}' is missing.");
-                    }
+        if (schema.TryGetProperty("required", out JsonElement required) && required.ValueKind == JsonValueKind.Array)
+        {
+            ValidateRequiredObjectProperties(value, properties, required);
+        }
 
-                    if (properties.TryGetProperty(name, out JsonElement memberSchema))
-                    {
-                        ValidateRequiredJsonMembers(memberValue, memberSchema);
-                    }
-                }
-            }
+        if (schema.TryGetProperty("additionalProperties", out JsonElement additionalProperties) &&
+            additionalProperties.ValueKind == JsonValueKind.Object)
+        {
+            ValidateAdditionalProperties(value, properties, additionalProperties);
+        }
+        return true;
+    }
 
-            if (schema.TryGetProperty("additionalProperties", out JsonElement additionalProperties) &&
-                additionalProperties.ValueKind == JsonValueKind.Object)
-            {
-                foreach (JsonProperty inputProperty in value.EnumerateObject())
-                {
-                    if (!properties.TryGetProperty(inputProperty.Name, out _))
-                    {
-                        ValidateRequiredJsonMembers(inputProperty.Value, additionalProperties);
-                    }
-                }
-            }
+    private static bool ValidateArraySchema(JsonElement value, JsonElement schema)
+    {
+        if (!schema.TryGetProperty("items", out JsonElement items) || value.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (JsonElement item in value.EnumerateArray())
+        {
+            ValidateRequiredJsonMembers(item, items);
+        }
+        return true;
+    }
+
+    private static void ValidateDictionarySchema(JsonElement value, JsonElement schema)
+    {
+        if (!schema.TryGetProperty("additionalProperties", out JsonElement valueSchema) ||
+            valueSchema.ValueKind != JsonValueKind.Object ||
+            value.ValueKind != JsonValueKind.Object)
+        {
             return;
         }
 
-        if (schema.TryGetProperty("items", out JsonElement items) && value.ValueKind == JsonValueKind.Array)
+        foreach (JsonProperty entry in value.EnumerateObject())
         {
-            foreach (JsonElement item in value.EnumerateArray()) ValidateRequiredJsonMembers(item, items);
-            return;
+            ValidateRequiredJsonMembers(entry.Value, valueSchema);
         }
+    }
 
-        if (schema.TryGetProperty("additionalProperties", out JsonElement valueSchema) &&
-            valueSchema.ValueKind == JsonValueKind.Object && value.ValueKind == JsonValueKind.Object)
+    private static bool TryFindProperty(JsonElement value, string name, out JsonElement memberValue)
+    {
+        bool found = false;
+        memberValue = default;
+        foreach (JsonProperty inputProperty in value.EnumerateObject())
         {
-            foreach (JsonProperty entry in value.EnumerateObject())
+            if (string.Equals(inputProperty.Name, name, StringComparison.OrdinalIgnoreCase))
             {
-                ValidateRequiredJsonMembers(entry.Value, valueSchema);
+                found = true;
+                memberValue = inputProperty.Value;
+            }
+        }
+        return found;
+    }
+
+    private static void ValidateRequiredObjectProperties(JsonElement value, JsonElement properties, JsonElement required)
+    {
+        foreach (JsonElement requiredName in required.EnumerateArray())
+        {
+            string name = requiredName.GetString();
+            if (!TryFindProperty(value, name, out JsonElement memberValue))
+            {
+                throw new InvalidOperationException(
+                    $"Required structured response member '{name}' is missing.");
+            }
+
+            if (properties.TryGetProperty(name, out JsonElement memberSchema))
+            {
+                ValidateRequiredJsonMembers(memberValue, memberSchema);
+            }
+        }
+    }
+
+    private static void ValidateAdditionalProperties(JsonElement value, JsonElement properties, JsonElement additionalProperties)
+    {
+        foreach (JsonProperty inputProperty in value.EnumerateObject())
+        {
+            if (!properties.TryGetProperty(inputProperty.Name, out _))
+            {
+                ValidateRequiredJsonMembers(inputProperty.Value, additionalProperties);
             }
         }
     }

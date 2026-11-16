@@ -119,10 +119,7 @@ internal static class RimLLMChatClientExecutor
         TimeSpan idleTimeout = ResolveTimeout(timeoutSeconds);
         // provider 沒回報用量時才會用到的 completion token 估算。逐塊累加估算值，
         // 不保留文字本身：先前為此累積最多 4MB 的 StringBuilder，而多數 provider 都會回報用量。
-        double completionEstimate = 0;
-        bool anyOutput = false;
-        bool anyAnswer = false;
-        UsageDetails lastUsage = null;
+        var streamState = new StreamTrackingState();
 
         using (var timeoutCts = new CancellationTokenSource(idleTimeout))
         using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
@@ -147,29 +144,7 @@ internal static class RimLLMChatClientExecutor
                     // 只做記帳，不改寫內容：判斷這次串流是否真的產出過東西，
                     // 並收集用量。推理內容維持 MEAI 原生的 TextReasoningContent，
                     // 不再被合成成 <think> 文字——那是呈現層的事。
-                    foreach (AIContent part in update.Contents)
-                    {
-                        if (part is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
-                        {
-                            anyOutput = true;
-                            anyAnswer = true;
-                            completionEstimate += EstimateTokensRaw(textContent.Text);
-                        }
-                        else if (part is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
-                        {
-                            anyOutput = true;
-                        }
-                        else if (part is FunctionCallContent)
-                        {
-                            // 工具呼叫沒有可顯示的文字，但仍然算是產出。
-                            anyOutput = true;
-                            anyAnswer = true;
-                        }
-                        else if (part is UsageContent usageContent && usageContent.Details != null)
-                        {
-                            lastUsage = usageContent.Details;
-                        }
-                    }
+                    streamState.Inspect(update.Contents);
 
                     // 原樣轉發：呼叫端收到的就是 provider 產生的那個 update，
                     // ResponseId、FinishReason、UsageContent 一律不經改寫。
@@ -198,23 +173,58 @@ internal static class RimLLMChatClientExecutor
             {
                 // 串流中斷不會撤銷已收到的用量；只要有內容或 provider 用量，就在所有結束路徑結算一次。
                 // 沒有 provider 用量時 RecordUsage 會沿用已累計的 completionEstimate。
-                if (anyOutput || lastUsage != null)
+                if (streamState.AnyOutput || streamState.LastUsage != null)
                 {
-                    RecordUsage(providerId, model, builtMessages, lastUsage, completionEstimate, onUsage);
+                    RecordUsage(providerId, model, builtMessages, streamState.LastUsage, streamState.CompletionEstimate, onUsage);
                 }
             }
         }
 
-        if (!anyOutput)
+        if (!streamState.AnyOutput)
         {
             // 空串流幾乎都是連線被中斷，屬可重試錯誤；用 InvalidResponse 會讓 fallback 失效。
             throw new RimLLMException(LLMError.NetworkError, $"{providerId} returned an empty stream.");
         }
 
-        if (!anyAnswer)
+        if (!streamState.AnyAnswer)
         {
             // 推理內容已交給呼叫端，備援不會再接手，但至少要讓呼叫端知道沒有答案。
             throw new RimLLMException(LLMError.InvalidResponse, ReasoningOnlyMessage(providerId));
+        }
+    }
+
+    private sealed class StreamTrackingState
+    {
+        public bool AnyOutput;
+        public bool AnyAnswer;
+        public double CompletionEstimate;
+        public UsageDetails LastUsage;
+
+        public void Inspect(IList<AIContent> contents)
+        {
+            if (contents == null) return;
+            foreach (AIContent part in contents)
+            {
+                if (part is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
+                {
+                    AnyOutput = true;
+                    AnyAnswer = true;
+                    CompletionEstimate += EstimateTokensRaw(textContent.Text);
+                }
+                else if (part is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
+                {
+                    AnyOutput = true;
+                }
+                else if (part is FunctionCallContent)
+                {
+                    AnyOutput = true;
+                    AnyAnswer = true;
+                }
+                else if (part is UsageContent usageContent && usageContent.Details != null)
+                {
+                    LastUsage = usageContent.Details;
+                }
+            }
         }
     }
 

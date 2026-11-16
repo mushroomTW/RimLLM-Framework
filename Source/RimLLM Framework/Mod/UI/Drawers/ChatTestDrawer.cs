@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -244,14 +245,21 @@ public static class ChatTestDrawer
             chatReasoningInitialized = true;
         }
 
-        // 滾動顯示對話歷史
+        DrawChatHistoryScrollView(listing, ResolveRichLabelStyle());
+        listing.Gap(6f);
+        DrawModelSelectorRow(listing);
+        listing.Gap(6f);
+        DrawReasoningEffortRow(listing);
+        listing.Gap(6f);
+        DrawChatInputRow(listing);
+    }
+
+    private static void DrawChatHistoryScrollView(Listing_Standard listing, GUIStyle richLabelStyle)
+    {
         Rect chatRect = listing.GetRect(480f);
         Widgets.DrawMenuSection(chatRect);
 
         float chatContentWidth = chatRect.width - 16f;
-
-        GUIStyle richLabelStyle = ResolveRichLabelStyle();
-
         float bubbleWidth = chatContentWidth - 8f;
         float bubbleInnerWidth = bubbleWidth - 16f;
         List<BubbleLayout> bubbleLayouts = ResolveBubbleLayouts(richLabelStyle, bubbleInnerWidth);
@@ -276,9 +284,6 @@ public static class ChatTestDrawer
         else
         {
             float curY = 8f;
-            // 捲出可視範圍的氣泡完全跳過：長對話下每幀真正需要畫的只有幾張卡片。
-            // 捲動位置自行夾住：串流時每個更新都把 y 設成 999999 捲到底，
-            // Unity 要到下一幀才會夾回合法值，不夾的話那一幀會判定所有卡片都在視野外。
             float visibleTop = Mathf.Clamp(chatScrollPosition.y, 0f, Mathf.Max(0f, chatViewHeight - chatRect.height));
             float visibleBottom = visibleTop + chatRect.height;
             string copyLabel = "RimLLM_ChatCopyMessage".Translate();
@@ -294,79 +299,85 @@ public static class ChatTestDrawer
                 }
 
                 Rect bubbleRect = new Rect(4f, cardTop, bubbleWidth, layout.Height);
-
-                Color bgColor = layout.IsUser ? RimLLMUIStyle.BubbleUserFill : RimLLMUIStyle.BubbleAiFill;
-
-                Widgets.DrawBoxSolid(bubbleRect, bgColor);
-                Widgets.DrawBox(bubbleRect, 1);
-
-                // 標題列
-                Rect headerRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 4f, bubbleRect.width - 16f, 20f);
-                using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
-                {
-                    Widgets.Label(headerRect, layout.HeaderText);
-                }
-
-                // 內文
-                if (layout.Parts == null)
-                {
-                    Rect bodyRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.TextHeight + 2f);
-                    GUI.Label(bodyRect, layout.Body, richLabelStyle);
-                }
-                else
-                {
-                    float partY = bubbleRect.y + 24f;
-                    foreach (BubblePart part in layout.Parts)
-                    {
-                        Rect partRect = new Rect(bubbleRect.x + 8f, partY, bubbleInnerWidth, part.Height + 2f);
-                        if (part.Table != null) part.Table.Draw(partRect);
-                        else GUI.Label(partRect, part.Rich, richLabelStyle);
-                        partY += part.Height + PartGap;
-                    }
-                }
-
-                // AI 訊息底部工具列（微型標籤與一鍵複製）
-                if (!layout.IsUser)
-                {
-                    float btnWidth = 80f;
-                    float btnHeight = 22f;
-                    float bottomY = bubbleRect.yMax - 27f;
-                    Rect copyBtnRect = new Rect(bubbleRect.xMax - 8f - btnWidth, bottomY, btnWidth, btnHeight);
-
-                    if (!chatLoading && Widgets.ButtonText(copyBtnRect, copyLabel))
-                    {
-                        GUIUtility.systemCopyBuffer = StripRichTextForClipboard(layout.Body);
-                        Messages.Message("RimLLM_CopiedToClipboard".Translate("AI"), MessageTypeDefOf.TaskCompletion, false);
-                    }
-
-                    // 繪製應答模型、耗時與 Token 數微型標籤
-                    if (layout.Meta != null)
-                    {
-                        Rect badgesArea = new Rect(bubbleRect.x + 8f, bottomY, copyBtnRect.x - 8f - (bubbleRect.x + 8f), btnHeight);
-                        DrawAiMetaBadges(badgesArea, layout);
-                    }
-                }
+                DrawChatBubble(bubbleRect, layout, richLabelStyle, bubbleInnerWidth, copyLabel);
             }
         }
 
         Widgets.EndScrollView();
+    }
 
-        listing.Gap(6f);
+    private static void DrawChatBubble(
+        Rect bubbleRect,
+        BubbleLayout layout,
+        GUIStyle richLabelStyle,
+        float bubbleInnerWidth,
+        string copyLabel)
+    {
+        Color bgColor = layout.IsUser ? RimLLMUIStyle.BubbleUserFill : RimLLMUIStyle.BubbleAiFill;
+        Widgets.DrawBoxSolid(bubbleRect, bgColor);
+        Widgets.DrawBox(bubbleRect, 1);
 
-        // 測試模型選擇列：釘選後本次對話走該模型優先（備援鏈首），失敗仍可沿鏈降級。
-        DrawModelSelectorRow(listing);
-        listing.Gap(6f);
+        // 標題列
+        Rect headerRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 4f, bubbleRect.width - 16f, 20f);
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
+        {
+            Widgets.Label(headerRect, layout.HeaderText);
+        }
 
-        // 思考強度設定列
-        DrawReasoningEffortRow(listing);
-        listing.Gap(6f);
+        // 內文
+        if (layout.Parts == null)
+        {
+            Rect bodyRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.TextHeight + 2f);
+            GUI.Label(bodyRect, layout.Body, richLabelStyle);
+        }
+        else
+        {
+            float partY = bubbleRect.y + 24f;
+            foreach (BubblePart part in layout.Parts)
+            {
+                Rect partRect = new Rect(bubbleRect.x + 8f, partY, bubbleInnerWidth, part.Height + 2f);
+                if (part.Table != null) part.Table.Draw(partRect);
+                else GUI.Label(partRect, part.Rich, richLabelStyle);
+                partY += part.Height + PartGap;
+            }
+        }
 
-        // 輸入框、清空按鈕與發送/停止按鈕
+        // AI 訊息底部工具列（微型標籤與一鍵複製）
+        if (!layout.IsUser)
+        {
+            float btnWidth = 80f;
+            float btnHeight = 22f;
+            float bottomY = bubbleRect.yMax - 27f;
+            Rect copyBtnRect = new Rect(bubbleRect.xMax - 8f - btnWidth, bottomY, btnWidth, btnHeight);
+
+            if (!chatLoading && Widgets.ButtonText(copyBtnRect, copyLabel))
+            {
+                GUIUtility.systemCopyBuffer = StripRichTextForClipboard(layout.Body);
+                Messages.Message("RimLLM_CopiedToClipboard".Translate("AI"), MessageTypeDefOf.TaskCompletion, false);
+            }
+
+            if (layout.Meta != null)
+            {
+                Rect badgesArea = new Rect(bubbleRect.x + 8f, bottomY, copyBtnRect.x - 8f - (bubbleRect.x + 8f), btnHeight);
+                DrawAiMetaBadges(badgesArea, layout);
+            }
+        }
+    }
+
+    private static void DrawChatInputRow(Listing_Standard listing)
+    {
         Rect inputRowRect = listing.GetRect(30f);
         Rect textInputRect = new Rect(inputRowRect.x, inputRowRect.y, inputRowRect.width - 180f, inputRowRect.height);
         Rect clearBtnRect = new Rect(inputRowRect.x + inputRowRect.width - 170f, inputRowRect.y, 80f, inputRowRect.height);
         Rect sendBtnRect = new Rect(inputRowRect.x + inputRowRect.width - 80f, inputRowRect.y, 80f, inputRowRect.height);
 
+        DrawChatInputField(textInputRect);
+        HandleClearButton(clearBtnRect);
+        HandleSendOrStopButton(sendBtnRect);
+    }
+
+    private static void DrawChatInputField(Rect textInputRect)
+    {
         if (chatLoading)
         {
             int dotCount = 1 + (int)(Time.realtimeSinceStartup * 2.5) % 3;
@@ -378,19 +389,22 @@ public static class ChatTestDrawer
             GUI.SetNextControlName(ChatInputControlName);
             chatInput = Widgets.TextField(textInputRect, chatInput);
         }
+    }
 
-        // 點擊清空按鈕邏輯
+    private static void HandleClearButton(Rect clearBtnRect)
+    {
         if (!chatLoading && Widgets.ButtonText(clearBtnRect, "RimLLM_ClearBtn".Translate()))
         {
             CancelActiveChatRequest();
             chatHistory.Clear();
             Settings.ClearChatHistory();
-            // 清空是少見的明確操作，歷史可能含敏感內容：同步寫檔，不留給背景寫入的時間窗。
             Settings.SaveTelemetry();
             chatInput = "";
         }
+    }
 
-        // Enter 僅在聊天輸入框取得焦點時才觸發送出。
+    private static void HandleSendOrStopButton(Rect sendBtnRect)
+    {
         bool pressEnter = Event.current.type == EventType.KeyDown &&
                           Event.current.keyCode == KeyCode.Return &&
                           GUI.GetNameOfFocusedControl() == ChatInputControlName;
@@ -408,225 +422,240 @@ public static class ChatTestDrawer
         }
         else if (Widgets.ButtonText(sendBtnRect, "RimLLM_Send".Translate()) || pressEnter)
         {
-            // 消耗事件，避免同一個 Enter 被 RimWorld 視窗系統重複處理（重複送出或誤關視窗）。
             if (pressEnter) Event.current.Use();
 
             if (ShouldSendChatInput(chatInput))
             {
-                // 先中止前一輪尚未完成的請求（此呼叫會把 chatLoading 歸零），再開始新一輪。
-                CancelActiveChatRequest();
-                long requestGeneration = Interlocked.Read(ref chatRequestGeneration);
-
-                string userPrompt = chatInput.Trim();
-                string pinnedModel = chatModelId;
-                chatHistory.Add(EntryPrefix(ChatUserPrefixKey) + userPrompt);
-
-                // 先新增一個 AI 回覆的佔位項目，以利後續串流更新
-                chatHistory.Add(EntryPrefix(ChatAiTag));
-                int aiHistoryIndex = chatHistory.Count - 1;
-
-                PersistChatHistory();
-                chatInput = "";
-                chatLoading = true;
-
-                object replyLock = new();
-                var accumulatedReply = new System.Text.StringBuilder();
-
-                // 串流渲染節流狀態（都在 replyLock 底下讀寫）：
-                // 每個 chunk 都對累積全文重跑一次 Markdown 與四段 Regex 是 O(n²)，
-                // 快供應商一秒上百個 chunk 時背景執行緒與主執行緒都在白忙。
-                long lastRenderTimestamp = 0;
-                bool trailingRenderScheduled = false;
-                bool streamCompleted = false;
-
-                var requestCts = new System.Threading.CancellationTokenSource();
-                chatCts = requestCts;
-                CancellationToken requestToken = requestCts.Token;
-
-                Task.Run(async () =>
-                {
-                    try
-                    {
-                        using var client = RimLLMProvider.CreateChatClient(ServiceConsumerList.DebugChatModId);
-                        var messages = new List<ChatMessage> { new(ChatRole.User, userPrompt) };
-                        var options = new RimLLMChatOptions
-                        {
-                            MaxOutputTokens = 4096,
-                            Temperature = 0.7f,
-                            DisableReasoning = false,
-                            Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null
-                        };
-                        // 釘選測試模型：路由層會把它移到備援鏈首優先嘗試；null 則沿用鏈順序。
-                        options.ModelId = pinnedModel;
-                        // 框架的串流只傳遞 MEAI 原生的 TextReasoningContent，
-                        // <think> 標記由這裡自己組——顯示成灰色的邏輯需要它。
-                        var thinkFormatter = new RimLLMThinkTagFormatter();
-                        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                        string actualModelId = null;
-                        int promptTokens = 0;
-                        int completionTokens = 0;
-                        int totalTokens = 0;
-                        bool hasExactTokens = false;
-
-                        var enumerator = client.GetStreamingResponseAsync(messages, options, requestToken).GetAsyncEnumerator(requestToken);
-                        try
-                        {
-                            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
-                            {
-                                var update = enumerator.Current;
-                                if (update != null)
-                                {
-                                    if (string.IsNullOrEmpty(actualModelId) && !string.IsNullOrEmpty(update.ModelId))
-                                    {
-                                        actualModelId = update.ModelId;
-                                    }
-                                    if (update.Contents != null)
-                                    {
-                                        foreach (var part in update.Contents)
-                                        {
-                                            if (part is UsageContent usage && usage.Details != null)
-                                            {
-                                                if (usage.Details.TotalTokenCount.HasValue && usage.Details.TotalTokenCount.Value > 0)
-                                                {
-                                                    totalTokens = (int)usage.Details.TotalTokenCount.Value;
-                                                    hasExactTokens = true;
-                                                }
-                                                if (usage.Details.InputTokenCount.HasValue) promptTokens = (int)usage.Details.InputTokenCount.Value;
-                                                if (usage.Details.OutputTokenCount.HasValue) completionTokens = (int)usage.Details.OutputTokenCount.Value;
-                                            }
-                                        }
-                                    }
-                                }
-                                AppendToReply(thinkFormatter.Append(update));
-                            }
-                        }
-                        finally
-                        {
-                            await enumerator.DisposeAsync().ConfigureAwait(false);
-                        }
-
-                        // 整段都是推理內容時，收尾標籤只能在串流結束後補。
-                        // 直接附加不觸發即時渲染：最終渲染緊接在後，多一次只是浪費。
-                        string tail = thinkFormatter.Complete();
-                        string fullReply;
-                        lock (replyLock)
-                        {
-                            if (!string.IsNullOrEmpty(tail)) accumulatedReply.Append(tail);
-                            // 先標記完成，讓排程中的尾端渲染看到後直接放棄，不會覆蓋最終結果。
-                            streamCompleted = true;
-                            fullReply = accumulatedReply.ToString();
-                        }
-
-                        stopwatch.Stop();
-                        long finalElapsed = stopwatch.ElapsedMilliseconds;
-                        if (!hasExactTokens || totalTokens <= 0)
-                        {
-                            // 與用量帳本用同一套估算，顯示的數字才會和統計頁一致。
-                            promptTokens = RimLLMChatClientExecutor.EstimateTokens(userPrompt);
-                            completionTokens = RimLLMChatClientExecutor.EstimateTokens(fullReply);
-                            totalTokens = promptTokens + completionTokens;
-                            hasExactTokens = false;
-                        }
-
-                        var finalMeta = new ChatEntryMeta
-                        {
-                            ModelId = actualModelId,
-                            ElapsedMs = finalElapsed,
-                            TotalTokens = totalTokens,
-                            PromptTokens = promptTokens,
-                            CompletionTokens = completionTokens,
-                            IsEstimatedTokens = !hasExactTokens
-                        };
-
-                        void AppendToReply(string text)
-                        {
-                            if (string.IsNullOrEmpty(text)) return;
-
-                            bool renderNow;
-                            bool scheduleTrailing = false;
-                            lock (replyLock)
-                            {
-                                accumulatedReply.Append(text);
-                                long now = System.Diagnostics.Stopwatch.GetTimestamp();
-                                renderNow = now - lastRenderTimestamp >= StreamRenderIntervalTicks;
-                                if (renderNow)
-                                {
-                                    lastRenderTimestamp = now;
-                                }
-                                else if (!trailingRenderScheduled)
-                                {
-                                    // 節流窗內的 chunk 先累積；排一次尾端渲染，
-                                    // 讓串流中途停頓時最後幾個 chunk 也不會卡在畫面外。
-                                    trailingRenderScheduled = true;
-                                    scheduleTrailing = true;
-                                }
-                            }
-
-                            if (renderNow)
-                            {
-                                RenderLive();
-                            }
-                            else if (scheduleTrailing)
-                            {
-                                Task.Delay(StreamRenderIntervalMs, requestToken).ContinueWith(_ =>
-                                {
-                                    lock (replyLock)
-                                    {
-                                        trailingRenderScheduled = false;
-                                        if (streamCompleted) return;
-                                        lastRenderTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
-                                    }
-                                    RenderLive();
-                                }, TaskScheduler.Default);
-                            }
-                        }
-
-                        void RenderLive()
-                        {
-                            // 「檢查 completed → 渲染 → 入列」必須在同一個鎖內完成：
-                            // 入列若放在鎖外，較舊的快照可能在最終渲染（或錯誤訊息）之後才入列，
-                            // 派遣器依入列順序執行，畫面就會被截斷版蓋掉且不再被修正。
-                            lock (replyLock)
-                            {
-                                if (streamCompleted) return;
-                                string localReply = MarkdownBodyMarker + accumulatedReply;
-                                var liveMeta = new ChatEntryMeta
-                                {
-                                    ModelId = actualModelId,
-                                    ElapsedMs = stopwatch.ElapsedMilliseconds,
-                                    TotalTokens = totalTokens,
-                                    PromptTokens = promptTokens,
-                                    CompletionTokens = completionTokens,
-                                    IsEstimatedTokens = !hasExactTokens
-                                };
-                                UpdateAiHistoryEntry(requestGeneration, aiHistoryIndex, localReply, meta: liveMeta);
-                            }
-                        }
-
-                        string formattedFinal = MarkdownBodyMarker + fullReply;
-                        UpdateAiHistoryEntry(requestGeneration, aiHistoryIndex, formattedFinal, meta: finalMeta, persist: true);
-                    }
-                    catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
-                    {
-                        // 使用者停止是正常收尾；主執行緒已保留當時可見內容，不新增錯誤訊息。
-                    }
-                    catch (Exception ex)
-                    {
-                        // 排程中的尾端渲染不得在錯誤訊息寫入後又把它蓋掉。
-                        lock (replyLock) { streamCompleted = true; }
-
-                        UpdateChatError(requestGeneration, aiHistoryIndex, RimLLMLog.SanitizeForLog(ex.Message, 240));
-                    }
-                    finally
-                    {
-                        lock (replyLock) { streamCompleted = true; }
-                        requestCts.Dispose();
-                    }
-                // 刻意不傳 requestToken：開始前就取消的話工作不會執行，finally 的收尾（釋放 CTS、標記完成）就會被跳過。
-                // 取消改由工作內部的 requestToken 處理。
-                }, CancellationToken.None);
+                StartChatStreaming(chatInput.Trim(), chatModelId);
             }
         }
+    }
+
+    private sealed class StreamRenderState
+    {
+        public readonly object ReplyLock = new();
+        public readonly StringBuilder AccumulatedReply = new();
+        public long LastRenderTimestamp;
+        public bool TrailingRenderScheduled;
+        public bool StreamCompleted;
+        public string ActualModelId;
+        public int PromptTokens;
+        public int CompletionTokens;
+        public int TotalTokens;
+        public bool HasExactTokens;
+        public System.Diagnostics.Stopwatch Stopwatch;
+        public long RequestGeneration;
+        public int AiHistoryIndex;
+        public CancellationToken RequestToken;
+
+        public void RecordUsage(ChatResponseUpdate update)
+        {
+            if (update == null) return;
+            if (string.IsNullOrEmpty(ActualModelId) && !string.IsNullOrEmpty(update.ModelId))
+            {
+                ActualModelId = update.ModelId;
+            }
+            if (update.Contents == null) return;
+
+            foreach (var part in update.Contents)
+            {
+                if (part is UsageContent { Details: not null } usage)
+                {
+                    ApplyUsageDetails(usage.Details);
+                }
+            }
+        }
+
+        private void ApplyUsageDetails(UsageDetails details)
+        {
+            if (details.TotalTokenCount is > 0)
+            {
+                TotalTokens = (int)details.TotalTokenCount.Value;
+                HasExactTokens = true;
+            }
+            if (details.InputTokenCount.HasValue) PromptTokens = (int)details.InputTokenCount.Value;
+            if (details.OutputTokenCount.HasValue) CompletionTokens = (int)details.OutputTokenCount.Value;
+        }
+
+        public void Append(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+
+            bool renderNow;
+            bool scheduleTrailing = false;
+            lock (ReplyLock)
+            {
+                AccumulatedReply.Append(text);
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                renderNow = now - LastRenderTimestamp >= StreamRenderIntervalTicks;
+                if (renderNow)
+                {
+                    LastRenderTimestamp = now;
+                }
+                else if (!TrailingRenderScheduled)
+                {
+                    TrailingRenderScheduled = true;
+                    scheduleTrailing = true;
+                }
+            }
+
+            if (renderNow)
+            {
+                RenderLive();
+            }
+            else if (scheduleTrailing)
+            {
+                Task.Delay(StreamRenderIntervalMs, RequestToken).ContinueWith(_ =>
+                {
+                    lock (ReplyLock)
+                    {
+                        TrailingRenderScheduled = false;
+                        if (StreamCompleted) return;
+                        LastRenderTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                    }
+                    RenderLive();
+                }, TaskScheduler.Default);
+            }
+        }
+
+        public void RenderLive()
+        {
+            lock (ReplyLock)
+            {
+                if (StreamCompleted) return;
+                string localReply = MarkdownBodyMarker + AccumulatedReply;
+                var liveMeta = new ChatEntryMeta
+                {
+                    ModelId = ActualModelId,
+                    ElapsedMs = Stopwatch.ElapsedMilliseconds,
+                    TotalTokens = TotalTokens,
+                    PromptTokens = PromptTokens,
+                    CompletionTokens = CompletionTokens,
+                    IsEstimatedTokens = !HasExactTokens
+                };
+                UpdateAiHistoryEntry(RequestGeneration, AiHistoryIndex, localReply, meta: liveMeta);
+            }
+        }
+    }
+
+    private static void StartChatStreaming(string userPrompt, string pinnedModel)
+    {
+        CancelActiveChatRequest();
+        long requestGeneration = Interlocked.Read(ref chatRequestGeneration);
+
+        chatHistory.Add(EntryPrefix(ChatUserPrefixKey) + userPrompt);
+        chatHistory.Add(EntryPrefix(ChatAiTag));
+        int aiHistoryIndex = chatHistory.Count - 1;
+
+        PersistChatHistory();
+        chatInput = "";
+        chatLoading = true;
+
+        var requestCts = new System.Threading.CancellationTokenSource();
+        chatCts = requestCts;
+        CancellationToken requestToken = requestCts.Token;
+
+        Task.Run(() => ExecuteChatStreamingAsync(userPrompt, pinnedModel, requestGeneration, aiHistoryIndex, requestCts, requestToken), CancellationToken.None);
+    }
+
+    private static async Task ExecuteChatStreamingAsync(
+        string userPrompt,
+        string pinnedModel,
+        long requestGeneration,
+        int aiHistoryIndex,
+        CancellationTokenSource requestCts,
+        CancellationToken requestToken)
+    {
+        var renderState = new StreamRenderState
+        {
+            RequestGeneration = requestGeneration,
+            AiHistoryIndex = aiHistoryIndex,
+            RequestToken = requestToken,
+            Stopwatch = System.Diagnostics.Stopwatch.StartNew()
+        };
+
+        try
+        {
+            using var client = RimLLMProvider.CreateChatClient(ServiceConsumerList.DebugChatModId);
+            var messages = new List<ChatMessage> { new(ChatRole.User, userPrompt) };
+            var options = new RimLLMChatOptions
+            {
+                MaxOutputTokens = 4096,
+                Temperature = 0.7f,
+                DisableReasoning = false,
+                Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null,
+                ModelId = pinnedModel
+            };
+
+            var thinkFormatter = new RimLLMThinkTagFormatter();
+            var enumerator = client.GetStreamingResponseAsync(messages, options, requestToken).GetAsyncEnumerator(requestToken);
+            try
+            {
+                while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+                {
+                    var update = enumerator.Current;
+                    renderState.RecordUsage(update);
+                    renderState.Append(thinkFormatter.Append(update));
+                }
+            }
+            finally
+            {
+                await enumerator.DisposeAsync().ConfigureAwait(false);
+            }
+
+            string tail = thinkFormatter.Complete();
+            string fullReply;
+            lock (renderState.ReplyLock)
+            {
+                if (!string.IsNullOrEmpty(tail)) renderState.AccumulatedReply.Append(tail);
+                renderState.StreamCompleted = true;
+                fullReply = renderState.AccumulatedReply.ToString();
+            }
+
+            renderState.Stopwatch.Stop();
+            var finalMeta = BuildFinalChatMeta(userPrompt, fullReply, renderState);
+            UpdateAiHistoryEntry(requestGeneration, aiHistoryIndex, MarkdownBodyMarker + fullReply, meta: finalMeta, persist: true);
+        }
+        catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
+        {
+            // 使用者停止為正常收尾，主執行緒已保留當時可見內容，不需額外處置。
+        }
+        catch (Exception ex)
+        {
+            lock (renderState.ReplyLock) { renderState.StreamCompleted = true; }
+            UpdateChatError(requestGeneration, aiHistoryIndex, RimLLMLog.SanitizeForLog(ex.Message, 240));
+        }
+        finally
+        {
+            lock (renderState.ReplyLock) { renderState.StreamCompleted = true; }
+            requestCts.Dispose();
+        }
+    }
+
+    private static ChatEntryMeta BuildFinalChatMeta(string userPrompt, string fullReply, StreamRenderState state)
+    {
+        int totalTokens = state.TotalTokens;
+        int promptTokens = state.PromptTokens;
+        int completionTokens = state.CompletionTokens;
+        bool hasExact = state.HasExactTokens;
+
+        if (!hasExact || totalTokens <= 0)
+        {
+            promptTokens = RimLLMChatClientExecutor.EstimateTokens(userPrompt);
+            completionTokens = RimLLMChatClientExecutor.EstimateTokens(fullReply);
+            totalTokens = promptTokens + completionTokens;
+            hasExact = false;
+        }
+
+        return new ChatEntryMeta
+        {
+            ModelId = state.ActualModelId,
+            ElapsedMs = state.Stopwatch.ElapsedMilliseconds,
+            TotalTokens = totalTokens,
+            PromptTokens = promptTokens,
+            CompletionTokens = completionTokens,
+            IsEstimatedTokens = !hasExact
+        };
     }
 
     /// <summary>
