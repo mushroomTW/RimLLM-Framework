@@ -9,19 +9,18 @@ using System.Threading.Tasks;
 namespace RimLLM_Framework.Manager.Services;
 
 /// <summary>
-/// 決策端點的傳輸層路由。
+/// 決策端點的規則。
 ///
-/// Jev SDK 只接受 HTTPS origin（<c>ClientSettings.ValidateBaseAddress</c> 會拒絕其他 scheme），
-/// 但本機架設的決策服務（Ollama、Unsloth 等）只提供明文 HTTP。這個類別把兩件事分開處理：
-/// 給 SDK 一個通過驗證的 https origin，並在請求真正送上線前把 URI 改寫回玩家設定的實際端點。
+/// 本機架設的決策服務（Ollama、Unsloth 等）只提供明文 HTTP；TypeSafeAI SDK 直接接受 http base URL，
+/// 所以明文與 HTTPS 端點都原樣交給 SDK，不需要任何傳輸層改寫。
 ///
 /// 框架的對話與 embedding 供應商本來就允許明文本機端點（Ollama、LM Studio），
-/// 決策這裡沿用同一套規則：玩家自己填的端點就是權威，框架只負責讓 SDK 能跟它說話。
+/// 決策這裡沿用同一套規則：玩家自己填的端點就是權威。
 /// </summary>
 internal static class DecisionEndpointRouting
 {
     /// <summary>
-    /// 明文端點沒有金鑰時送出的佔位值。SDK 拒絕空金鑰（<c>TextRules.IsUsableApiKey</c>），
+    /// 明文端點沒有金鑰時送出的佔位值。SDK 拒絕空金鑰（<c>TypeSafeClientOptions.ApiKey</c> 必填），
     /// 但本機服務多半不驗證金鑰，所以送一個固定的佔位字串過去。
     /// </summary>
     public const string PlaintextPlaceholderKey = "local";
@@ -34,10 +33,10 @@ internal static class DecisionEndpointRouting
     }
 
     /// <summary>
-    /// 給 SDK 的 base address。明文端點換成同 host／port 的 https origin，
-    /// 這樣 SDK 的驗證會通過；實際連線仍由 <see cref="PlaintextEndpointRewriteHandler"/> 改寫回明文。
+    /// 給 SDK 的 base URL：玩家設定的端點原樣使用，只檢查它是 http 或 https 的絕對 URI。
+    /// SDK 會在既有路徑之後接上 <c>v1/systemone</c> 與 <c>v1/models</c>。
     /// </summary>
-    public static Uri GetSdkBaseAddress(string endpoint)
+    public static Uri GetBaseUrl(string endpoint)
     {
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out Uri uri))
         {
@@ -51,60 +50,14 @@ internal static class DecisionEndpointRouting
                 $"The decision endpoint '{endpoint}' must use http:// or https://.");
         }
 
-        if (!IsPlaintext(endpoint))
-        {
-            return uri;
-        }
-
-        // SDK 要求 base address 是沒有路徑的 origin；路徑交給 SDK 自己去接 /v1/systemone。
-        return new UriBuilder(Uri.UriSchemeHttps, uri.Host, uri.IsDefaultPort ? -1 : uri.Port).Uri;
-    }
-
-    /// <summary>實際要連的 origin（明文端點保留原本的 http scheme 與 host／port）。</summary>
-    public static Uri GetTransportOrigin(string endpoint)
-    {
-        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out Uri uri))
-        {
-            throw new UriFormatException($"The decision endpoint '{endpoint}' is not an absolute URI.");
-        }
-
-        return new UriBuilder(uri.Scheme, uri.Host, uri.IsDefaultPort ? -1 : uri.Port).Uri;
+        return uri;
     }
 }
 
 /// <summary>
-/// 把 SDK 產生的 https 請求改寫成玩家設定的明文端點。
+/// 把 OpenAI 格式的模型清單轉成 TypeSafeAI SDK 能解析的格式。
 ///
-/// SDK 只會用自己的 base address 組出 <c>/v1/systemone</c> 與 <c>/v1/models</c> 兩個路徑，
-/// 因此改寫只需要換掉 scheme 與 host／port，路徑原封不動。
-/// </summary>
-internal sealed class PlaintextEndpointRewriteHandler : DelegatingHandler
-{
-    private readonly Uri _transportOrigin;
-
-    public PlaintextEndpointRewriteHandler(Uri transportOrigin)
-    {
-        _transportOrigin = transportOrigin ?? throw new ArgumentNullException(nameof(transportOrigin));
-    }
-
-    protected override Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        if (request?.RequestUri != null)
-        {
-            request.RequestUri = new Uri(
-                $"{_transportOrigin.Scheme}://{_transportOrigin.Authority}{request.RequestUri.PathAndQuery}",
-                UriKind.Absolute);
-        }
-
-        return base.SendAsync(request, cancellationToken);
-    }
-}
-
-/// <summary>
-/// 把 OpenAI 格式的模型清單轉成 Jev SDK 能解析的格式。
-///
-/// Jev SDK 只接受 <c>{"models":[{"name","description","release_date"}]}</c>，
+/// TypeSafeAI SDK 只接受 <c>{"models":[{"name","description","release_date"}]}</c>，
 /// 但 Unsloth、Ollama 等本機服務的 <c>/v1/models</c> 回的是 OpenAI 的 <c>{"data":[{"id"}]}</c>，
 /// SDK 會判定為「不是合法 JSON」。另外 Unsloth 只有帶上 <c>output_modalities=decisions</c>
 /// 才會列出決策模型，所以遇到 OpenAI 格式時先帶參數重查一次，再轉換格式。
@@ -221,7 +174,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
 /// </summary>
 internal static class JevWireFormat
 {
-    /// <summary>Jev SDK 的模型清單：<c>{"models":[{"name","description","release_date"}]}</c>。</summary>
+    /// <summary>TypeSafeAI SDK 的模型清單：<c>{"models":[{"name","description","release_date"}]}</c>。</summary>
     public static string ModelList(IEnumerable<(string Name, string Description)> models)
     {
         var entries = new List<Dictionary<string, string>>();

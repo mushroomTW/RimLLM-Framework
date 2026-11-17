@@ -1,164 +1,96 @@
 using System;
-using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Reflection;
+using System.Net;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager.Services;
+using TypeSafeAI;
 
 namespace RimLLM_Framework.Tests;
 
 /// <summary>
-/// 決策服務的錯誤契約測試：所有從 Jev SDK / HTTP 層冒出的例外都必須收斂成
+/// 決策服務的錯誤契約測試：所有從 TypeSafeAI SDK / HTTP 層冒出的例外都必須收斂成
 /// RimLLMException（並帶 LLMError 代碼），呼叫端取消才維持 OperationCanceledException。
-/// Jev 例外型別的建構子是 internal，因此以反射建立實例來覆蓋每一個映射分支。
 /// </summary>
 [TestFixture]
 public class DecisionServiceErrorTests
 {
-    private static readonly Assembly JevAssembly = ResolveJevAssembly();
-
-    private static Assembly ResolveJevAssembly()
-    {
-        try
-        {
-            return Assembly.Load("Kkdev92.Jev");
-        }
-        catch (System.IO.FileNotFoundException)
-        {
-            // 測試 bin 沒帶到套件 DLL 時，直接從 mod 的出貨目錄載入。
-            string binRoot = AppContext.BaseDirectory;
-            string candidate = System.IO.Path.Combine(binRoot, "..", "..", "..", "..", "Assemblies", "Kkdev92.Jev.dll");
-            return Assembly.LoadFrom(System.IO.Path.GetFullPath(candidate));
-        }
-    }
-
-    private static object EnumOf(string typeName, string value)
-    {
-        Type type = JevAssembly.GetType($"Kkdev92.Jev.{typeName}", throwOnError: true)!;
-        return Enum.Parse(type, value);
-    }
-
-    private static Exception BuildJev(string typeName, params object[] args)
-    {
-        Type type = JevAssembly.GetType($"Kkdev92.Jev.{typeName}", throwOnError: true)!;
-        foreach (var ctor in type.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-        {
-            ParameterInfo[] parameters = ctor.GetParameters();
-            if (parameters.Length != args.Length) continue;
-
-            bool matches = true;
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                if (args[i] == null)
-                {
-                    if (parameters[i].ParameterType.IsValueType &&
-                        Nullable.GetUnderlyingType(parameters[i].ParameterType) == null)
-                    {
-                        matches = false;
-                        break;
-                    }
-                    continue;
-                }
-                if (!parameters[i].ParameterType.IsInstanceOfType(args[i]))
-                {
-                    matches = false;
-                    break;
-                }
-            }
-            if (matches)
-            {
-                return (Exception)ctor.Invoke(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
-                    null, args, null);
-            }
-        }
-        throw new MissingMethodException($"Kkdev92.Jev.{typeName} 沒有符合參數數量的建構子");
-    }
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> NoHeaders =
+        new Dictionary<string, IReadOnlyList<string>>();
 
     private static Exception Translate(Exception ex)
     {
         return RimLLMDecisionService.TranslateDecisionError(ex);
     }
 
-    private static object EmptyValidationErrorList()
+    private static TypeSafeApiException ApiError(HttpStatusCode status, TimeSpan? retryAfter = null)
     {
-        Type errorType = JevAssembly.GetType("Kkdev92.Jev.JevValidationError", throwOnError: true)!;
-        return Activator.CreateInstance(typeof(List<>).MakeGenericType(errorType))!;
+        return TypeSafeApiException.Create(status, null, NoHeaders, "req-1", retryAfter);
     }
 
     /// <summary>反覆建立含一題 Noul 的決策計畫；空計畫會被 SDK 拒收，不是要測的路徑。</summary>
-    private static Kkdev92.Jev.JevDecisionPlan OneQuestionPlan()
+    private static QuestionSet OneQuestionPlan()
     {
-        var builder = new Kkdev92.Jev.JevDecisionPlanBuilder();
-        builder.AddNoul("q", "question?", default);
-        return builder.Build();
+        var plan = new QuestionSet();
+        plan.Noul("question?", id: "q");
+        return plan;
     }
 
     [Test]
-    public void JevHttpException_IsMappedByStatusCode_ThroughLlmErrorMapper()
+    public void ApiException_IsMappedByStatusCode_ThroughLlmErrorMapper()
     {
         // 401 → InvalidKey
-        var unauthorized = (RimLLMException)Translate(BuildJev("JevHttpException",
-            EnumOf("JevOperation", "Evaluate"), 401, "req-1", null, null, EmptyValidationErrorList(), null));
+        var unauthorized = (RimLLMException)Translate(ApiError(HttpStatusCode.Unauthorized));
         ClassicAssert.AreEqual(LLMError.InvalidKey, unauthorized.Error);
         ClassicAssert.AreEqual(401, unauthorized.HttpStatusCode);
 
         // 429 → RateLimit；Retry-After 必須保留，讓呼叫端的重試邏輯能運作
-        var rateLimit = (RimLLMException)Translate(BuildJev("JevHttpException",
-            EnumOf("JevOperation", "Evaluate"), 429, "req-2", null, TimeSpan.FromSeconds(7), EmptyValidationErrorList(), null));
+        var rateLimit = (RimLLMException)Translate(ApiError(HttpStatusCode.TooManyRequests, TimeSpan.FromSeconds(7)));
         ClassicAssert.AreEqual(LLMError.RateLimit, rateLimit.Error);
         ClassicAssert.AreEqual(429, rateLimit.HttpStatusCode);
         ClassicAssert.AreEqual(TimeSpan.FromSeconds(7), rateLimit.RetryAfter);
         ClassicAssert.IsNotNull(rateLimit.InnerException);
 
         // 404 → ModelNotFound
-        var notFound = (RimLLMException)Translate(BuildJev("JevHttpException",
-            EnumOf("JevOperation", "Evaluate"), 404, null, null, null, EmptyValidationErrorList(), null));
+        var notFound = (RimLLMException)Translate(ApiError(HttpStatusCode.NotFound));
         ClassicAssert.AreEqual(LLMError.ModelNotFound, notFound.Error);
 
         // 500 → ProviderOffline
-        var offline = (RimLLMException)Translate(BuildJev("JevHttpException",
-            EnumOf("JevOperation", "Evaluate"), 500, null, null, null, EmptyValidationErrorList(), null));
+        var offline = (RimLLMException)Translate(ApiError(HttpStatusCode.InternalServerError));
         ClassicAssert.AreEqual(LLMError.ProviderOffline, offline.Error);
     }
 
     [Test]
-    public void JevTimeoutException_MapsToTimeout()
+    public void TimeoutException_MapsToTimeout()
     {
-        var timeout = (RimLLMException)Translate(BuildJev("JevTimeoutException",
-            EnumOf("JevOperation", "Evaluate"), TimeSpan.FromSeconds(30),
-            Enum.Parse(JevAssembly.GetType("Kkdev92.Jev.JevRequestTransmission", true)!, "Started"),
-            null));
+        // TypeSafeTimeoutException 繼承 TypeSafeConnectionException，不能被當成網路錯誤。
+        var timeout = (RimLLMException)Translate(new TypeSafeTimeoutException("deadline", null));
         ClassicAssert.AreEqual(LLMError.Timeout, timeout.Error);
         ClassicAssert.IsNotNull(timeout.InnerException);
     }
 
     [Test]
-    public void JevTransportException_MapsToNetworkError()
+    public void ConnectionException_MapsToNetworkError()
     {
-        var transport = (RimLLMException)Translate(BuildJev("JevTransportException",
-            EnumOf("JevOperation", "Evaluate"), EnumOf("JevTransportFailure", "Connect"),
-            Enum.Parse(JevAssembly.GetType("Kkdev92.Jev.JevRequestTransmission", true)!, "NotStarted"),
-            new System.Net.Http.HttpRequestException("connection refused")));
+        var transport = (RimLLMException)Translate(new TypeSafeConnectionException(
+            "connection refused", new System.Net.Http.HttpRequestException("connection refused")));
         ClassicAssert.AreEqual(LLMError.NetworkError, transport.Error);
         ClassicAssert.IsNotNull(transport.InnerException);
     }
 
     [Test]
-    public void JevProtocolException_MapsToInvalidResponse()
+    public void ResponseValidationException_MapsToInvalidResponse()
     {
-        var protocol = (RimLLMException)Translate(BuildJev("JevProtocolException",
-            EnumOf("JevOperation", "Evaluate"), EnumOf("JevProtocolError", "MalformedJson"), "req-3"));
+        var protocol = (RimLLMException)Translate(new TypeSafeResponseValidationException("malformed json"));
         ClassicAssert.AreEqual(LLMError.InvalidResponse, protocol.Error);
     }
 
     [Test]
-    public void JevLimitException_MapsToUnknown()
+    public void OtherSdkException_MapsToUnknown()
     {
-        var limit = (RimLLMException)Translate(BuildJev("JevLimitException",
-            EnumOf("JevOperation", "Evaluate"), EnumOf("JevLimit", "Queue"), (long?)3,
-            Enum.Parse(JevAssembly.GetType("Kkdev92.Jev.JevRequestTransmission", true)!, "NotStarted")));
-        ClassicAssert.AreEqual(LLMError.Unknown, limit.Error);
+        var other = (RimLLMException)Translate(new TypeSafeException("BaseUrl must be an absolute URI."));
+        ClassicAssert.AreEqual(LLMError.Unknown, other.Error);
     }
 
     [Test]
@@ -169,15 +101,15 @@ public class DecisionServiceErrorTests
     }
 
     [Test]
-    public void InvalidOperationExceptionFromSdkCredential_MapsToInvalidKey_WithoutLeakingTheKey()
+    public void MissingKeyFromSdkOptions_MapsToInvalidKey_WithoutLeakingTheKey()
     {
-        // JevClient 在金鑰不可用時丟出這則訊息的 InvalidOperationException（屬 SDK 的內部檢查）。
-        var invalidKey = (RimLLMException)Translate(new InvalidOperationException(
-            "The credential returned an API key that is empty or contains whitespace, control or non-ASCII characters."));
+        // TypeSafeClient 建立時發現沒有金鑰，會丟出這則訊息的 TypeSafeException（屬 SDK 的內部檢查）。
+        var invalidKey = (RimLLMException)Translate(new TypeSafeException(
+            "No API key configured. Set TypeSafeClientOptions.ApiKey."));
         ClassicAssert.AreEqual(LLMError.InvalidKey, invalidKey.Error);
         StringAssert.DoesNotContain("Bearer", invalidKey.Message, "錯誤訊息不得包含推測的金鑰內容");
 
-        // 其餘 InvalidOperationException 與契約無關，退回 Unknown 即可。
+        // 與 SDK 無關的 InvalidOperationException 退回 Unknown 即可。
         var unknown = (RimLLMException)Translate(new InvalidOperationException("unrelated"));
         ClassicAssert.AreEqual(LLMError.Unknown, unknown.Error);
     }

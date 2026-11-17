@@ -4,9 +4,9 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Kkdev92.Jev;
 using RimLLM_Framework;
 using RimLLM_Framework.Core;
+using TypeSafeAI;
 
 namespace RimLLM_Framework.Manager.Services;
 
@@ -15,7 +15,7 @@ namespace RimLLM_Framework.Manager.Services;
 /// await 之後不得重讀設定：請求途中玩家切換啟用供應商時，用量才不會記到新供應商
 /// （與 RimLLMEmbeddingClient 對 RimLLMEmbeddingResult 的同一個考量）。
 /// </summary>
-internal sealed record DecisionEvaluation(JevResult Result, string ProviderId, string ModelName);
+internal sealed record DecisionEvaluation(QuestionSetResult Result, string ProviderId, string ModelName);
 
 /// <summary>
 /// 設定頁預覽某個決策供應商時要送出的參數。抓模型清單與連線測試共用同一組參數來源，
@@ -24,7 +24,7 @@ internal sealed record DecisionEvaluation(JevResult Result, string ProviderId, s
 internal sealed record DecisionPreviewArguments(string Endpoint, string Model, string ApiKey);
 
 /// <summary>
-/// 以 Kkdev92.Jev（TypeSafe System One / Jev）為後端的決策服務。
+/// 以 TypeSafeAI SDK（TypeSafe System One / Jev）為後端的決策服務。
 /// 僅提供通用的 EvaluateAsync 與模型清單查詢；不內建任何情境判斷、分流或安全閘門。
 /// 所有失敗都收斂為 <see cref="RimLLMException"/>（對話與 embedding 的同一份契約），
 /// 只有呼叫端取消維持 <see cref="OperationCanceledException"/>。
@@ -84,7 +84,7 @@ public class RimLLMDecisionService
 
     /// <summary>
     /// 把使用者貼上的完整 API 位址（/v1/systemone，或 Gemini 的 /v1beta/decisions、/v1beta）
-    /// 縮回 JevClient 需要的 origin。
+    /// 縮回 TypeSafeClient 需要的 origin。
     /// </summary>
     internal static string NormalizeBaseEndpoint(string endpoint, string providerId)
     {
@@ -108,16 +108,8 @@ public class RimLLMDecisionService
 
     private static HttpClient CreateHttpClient(string endpoint)
     {
-        // JevClient 自己管理 deadline；HttpClient 的逾時必須關掉，否則會比 SDK 先中斷。
+        // TypeSafeClient 自己管理逾時；HttpClient 的逾時必須關掉，否則會比 SDK 先中斷。
         HttpMessageHandler handler = MessageHandlerFactory();
-        if (DecisionEndpointRouting.IsPlaintext(endpoint))
-        {
-            // SDK 組出的是 https URI，這裡在送上線前改寫回玩家設定的明文端點。
-            handler = new PlaintextEndpointRewriteHandler(DecisionEndpointRouting.GetTransportOrigin(endpoint))
-            {
-                InnerHandler = handler
-            };
-        }
         if (GeminiDecisionsAdapterHandler.Targets(endpoint))
         {
             // Gemini Decisions API 的路徑、金鑰標頭與欄位名稱和 System One 不同，在傳輸層互轉。
@@ -135,17 +127,18 @@ public class RimLLMDecisionService
     internal static Func<HttpMessageHandler> MessageHandlerFactory { get; set; } =
         () => new SocketsHttpHandler { AllowAutoRedirect = false };
 
-    private JevClientOptions CreateOptions(string endpoint, string model, string apiKey)
+    private TypeSafeClientOptions CreateOptions(string endpoint, string model, string apiKey)
     {
-        return new JevClientOptions
+        return new TypeSafeClientOptions
         {
-            // SDK 只接受 https origin；明文本機端點在這裡先換成同 host／port 的 https，
-            // 實際連線由 CreateHttpClient 的改寫處理器接回明文。
-            BaseAddress = DecisionEndpointRouting.GetSdkBaseAddress(endpoint),
+            // 明文本機端點與 HTTPS 端點都原樣交給 SDK。
+            BaseUrl = DecisionEndpointRouting.GetBaseUrl(endpoint),
             // 沒有預設模型：只抓模型清單時模型可以是空的，送決策前由 RequireModel 擋下。
             DefaultModel = model ?? "",
-            Credential = new SettingsCredential(() => apiKey ?? ""),
-            Timeout = TimeSpan.FromSeconds(_settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30)
+            ApiKey = apiKey ?? "",
+            Timeout = TimeSpan.FromSeconds(_settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30),
+            // SDK 預設會重試 2 次；框架自己有備援鏈，重試交給它，否則一次失敗會被放大成三倍等待。
+            MaxRetries = 0
         };
     }
 
@@ -161,7 +154,7 @@ public class RimLLMDecisionService
         return string.IsNullOrWhiteSpace(model) ? "" : model.Trim();
     }
 
-    /// <summary>只用來建立查模型清單的 JevClient；清單請求不帶模型名稱，這個值不會送出。</summary>
+    /// <summary>只用來建立查模型清單的 TypeSafeClient；清單請求不帶模型名稱，這個值不會送出。</summary>
     private const string ModelListPlaceholderModel = "model-list";
 
     /// <summary>送出決策前確認已選模型；沒有預設模型可退，未選就不送出請求。</summary>
@@ -297,7 +290,7 @@ public class RimLLMDecisionService
     }
 
     /// <summary>抓取目前啟用供應商的可用模型；模型清單查詢不消耗推論額度。</summary>
-    public async Task<IReadOnlyList<JevModel>> FetchModelsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ModelInfo>> FetchModelsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -321,7 +314,7 @@ public class RimLLMDecisionService
     }
 
     /// <summary>以指定端點與金鑰抓取模型清單，供設定頁在尚未啟用時預覽。</summary>
-    public async Task<IReadOnlyList<JevModel>> FetchModelsAsync(
+    public async Task<IReadOnlyList<ModelInfo>> FetchModelsAsync(
         string endpoint,
         string model,
         string apiKey,
@@ -361,7 +354,7 @@ public class RimLLMDecisionService
         try
         {
             DecisionConnection connection = ResolveConnection(providerId);
-            IReadOnlyList<JevModel> models = await FetchModelsCoreAsync(
+            IReadOnlyList<ModelInfo> models = await FetchModelsCoreAsync(
                     connection.Endpoint, connection.Model, connection.ApiKey, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -389,16 +382,16 @@ public class RimLLMDecisionService
         }
     }
 
-    private async Task<IReadOnlyList<JevModel>> FetchModelsCoreAsync(
+    private async Task<IReadOnlyList<ModelInfo>> FetchModelsCoreAsync(
         string normalizedEndpoint, string model, string apiKey, CancellationToken cancellationToken)
     {
         using HttpClient http = CreateHttpClient(normalizedEndpoint);
-        // JevClientOptions 要求 DefaultModel 非空，但查清單不會送出它；玩家還沒選模型時填佔位名稱。
+        // TypeSafeClientOptions 要求 DefaultModel 非空，但查清單不會送出它；玩家還沒選模型時填佔位名稱。
         string clientModel = string.IsNullOrWhiteSpace(model) ? ModelListPlaceholderModel : model;
-        var client = new JevClient(http, CreateOptions(normalizedEndpoint, clientModel, apiKey));
-        IReadOnlyList<JevModel> models =
-            await client.GetModelsAsync(new JevRequestOptions(), cancellationToken).ConfigureAwait(false);
-        return models ?? Array.Empty<JevModel>();
+        using var client = new TypeSafeClient(http, CreateOptions(normalizedEndpoint, clientModel, apiKey));
+        ModelsResponse response =
+            await client.Models.ListAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        return response?.Models ?? Array.Empty<ModelInfo>();
     }
 
     /// <summary>
@@ -414,17 +407,16 @@ public class RimLLMDecisionService
         try
         {
             RequireModel(model);
-            var builder = new JevDecisionPlanBuilder();
-            builder.AddNoul("reachable", "Is this request reachable?", default);
-            JevDecisionPlan plan = builder.Build();
+            var plan = new QuestionSet();
+            plan.Noul("Is this request reachable?", id: "reachable");
 
             string normalizedEndpoint = NormalizeBaseEndpoint(endpoint, _settings.DecisionProvider);
             string usableKey = EnsureUsableKey(apiKey, normalizedEndpoint);
             using HttpClient http = CreateHttpClient(normalizedEndpoint);
-            var client = new JevClient(http, CreateOptions(normalizedEndpoint, model, usableKey));
-            var requestOptions = new JevRequestOptions { Model = model };
+            using var client = new TypeSafeClient(http, CreateOptions(normalizedEndpoint, model, usableKey));
+            var requestOptions = new RequestOptions { Model = model };
             await client
-                .EvaluateAsync("RimLLM decision connection test", plan, requestOptions, cancellationToken)
+                .SystemOneAsync("RimLLM decision connection test", plan, requestOptions, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -442,9 +434,9 @@ public class RimLLMDecisionService
     }
 
     /// <summary>執行一次決策請求。</summary>
-    public async Task<JevResult> EvaluateAsync(
+    public async Task<QuestionSetResult> EvaluateAsync(
         string state,
-        JevDecisionPlan plan,
+        QuestionSet plan,
         string model = null,
         CancellationToken cancellationToken = default)
     {
@@ -454,7 +446,7 @@ public class RimLLMDecisionService
     /// <summary>執行一次決策請求，並帶回在請求開始時捕捉的供應商／模型歸屬資訊。</summary>
     internal async Task<DecisionEvaluation> EvaluateDetailedAsync(
         string state,
-        JevDecisionPlan plan,
+        QuestionSet plan,
         string model = null,
         CancellationToken cancellationToken = default)
     {
@@ -520,7 +512,7 @@ public class RimLLMDecisionService
     /// </summary>
     internal async Task<DecisionEvaluation> EvaluateWithProviderDetailedAsync(
         string state,
-        JevDecisionPlan plan,
+        QuestionSet plan,
         string providerId,
         string model = null,
         CancellationToken cancellationToken = default)
@@ -535,10 +527,10 @@ public class RimLLMDecisionService
             RequireModel(selectedModel);
 
             using HttpClient http = CreateHttpClient(connection.Endpoint);
-            var client = new JevClient(http, CreateOptions(connection.Endpoint, selectedModel, connection.ApiKey));
-            var requestOptions = new JevRequestOptions { Model = selectedModel };
-            JevResult result = await client
-                .EvaluateAsync(state, plan, requestOptions, cancellationToken)
+            using var client = new TypeSafeClient(http, CreateOptions(connection.Endpoint, selectedModel, connection.ApiKey));
+            var requestOptions = new RequestOptions { Model = selectedModel };
+            QuestionSetResult result = await client
+                .SystemOneAsync(state, plan, requestOptions, cancellationToken)
                 .ConfigureAwait(false);
             return new DecisionEvaluation(result, connection.ProviderId, selectedModel);
         }
@@ -557,7 +549,7 @@ public class RimLLMDecisionService
     }
 
     /// <summary>
-    /// 把 Jev SDK 與 HTTP 層的例外收斂成 <see cref="RimLLMException"/>，與對話、embedding 的錯誤契約一致：
+    /// 把 TypeSafeAI SDK 與 HTTP 層的例外收斂成 <see cref="RimLLMException"/>，與對話、embedding 的錯誤契約一致：
     /// 呼叫端 mod 依 README 以 <see cref="RimLLMException"/> + <see cref="LLMError"/> 分流，而不是按 SDK 的型別。
     /// 呼叫端取消（OperationCanceledException）與已是 RimLLMException 的例外由呼叫端的 catch 過濾器先行放行，
     /// 不會進到這裡。
@@ -567,59 +559,53 @@ public class RimLLMDecisionService
         switch (ex)
         {
             // HTTP 狀態碼 → LLMError 的對照由既有 LLMErrorMapper 單一來源處理；
-            // JevHttpException 帶 StatusCode 與 Retry-After，正好可以完整重用。
-            case JevHttpException jevHttp:
+            // TypeSafeApiException 帶 StatusCode 與 Retry-After，正好可以完整重用。
+            case TypeSafeApiException apiError:
                 return LLMErrorMapper.CreateException(
-                    jevHttp.StatusCode,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(jevHttp.Message, 300)}",
-                    retryAfter: jevHttp.RetryAfter,
-                    innerException: jevHttp);
+                    (int)apiError.StatusCode,
+                    $"Decision API: {RimLLMLog.SanitizeForLog(apiError.Message, 300)}",
+                    retryAfter: apiError.RetryAfter,
+                    innerException: apiError);
 
-            case JevTimeoutException jevTimeout:
+            // TypeSafeTimeoutException 繼承 TypeSafeConnectionException，必須排在前面。
+            case TypeSafeTimeoutException timeout:
                 return new RimLLMException(
                     LLMError.Timeout,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(jevTimeout.Message, 300)}",
-                    innerException: jevTimeout);
+                    $"Decision API: {RimLLMLog.SanitizeForLog(timeout.Message, 300)}",
+                    innerException: timeout);
 
-            case JevTransportException jevTransport:
+            case TypeSafeConnectionException connection:
                 return new RimLLMException(
                     LLMError.NetworkError,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(jevTransport.Message, 300)}",
-                    innerException: jevTransport);
+                    $"Decision API: {RimLLMLog.SanitizeForLog(connection.Message, 300)}",
+                    innerException: connection);
 
-            case JevProtocolException jevProtocol:
+            case TypeSafeResponseValidationException invalidResponse:
                 return new RimLLMException(
                     LLMError.InvalidResponse,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(jevProtocol.Message, 300)}",
-                    innerException: jevProtocol);
+                    $"Decision API: {RimLLMLog.SanitizeForLog(invalidResponse.Message, 300)}",
+                    innerException: invalidResponse);
 
-            // 本機限制（body 上限、佇列額度）不是伺服器限流也不是回應問題，不硬套其他代碼。
-            case JevLimitException jevLimit:
+            // TypeSafeClient 建立時的金鑰檢查：與 ResolveActiveConnection 的前置檢查同一語意，
+            // 但 SDK 訊息是英文原文，統一成 InvalidKey 並保留原文供除錯。
+            case TypeSafeException missingKey when missingKey.Message != null &&
+                                                   missingKey.Message.Contains("API key", StringComparison.Ordinal):
+                return new RimLLMException(
+                    LLMError.InvalidKey,
+                    $"Decision API: {RimLLMLog.SanitizeForLog(missingKey.Message, 300)}",
+                    innerException: missingKey);
+
+            case TypeSafeException sdkError:
                 return new RimLLMException(
                     LLMError.Unknown,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(jevLimit.Message, 300)}",
-                    innerException: jevLimit);
-
-            case JevException jevBase:
-                return new RimLLMException(
-                    LLMError.Unknown,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(jevBase.Message, 300)}",
-                    innerException: jevBase);
+                    $"Decision API: {RimLLMLog.SanitizeForLog(sdkError.Message, 300)}",
+                    innerException: sdkError);
 
             case TimeoutException:
                 return new RimLLMException(
                     LLMError.Timeout,
                     $"Decision API: {RimLLMLog.SanitizeForLog(ex.Message, 300)}",
                     innerException: ex);
-
-            // JevClient 內部的金鑰可用性檢查：與 ResolveActiveConnection 的前置檢查同一語意，
-            // 但 SDK 訊息是英文原文，統一成 InvalidKey 並保留原文供除錯。
-            case InvalidOperationException invalid when invalid.Message != null &&
-                                                        invalid.Message.Contains("API key", StringComparison.Ordinal):
-                return new RimLLMException(
-                    LLMError.InvalidKey,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(invalid.Message, 300)}",
-                    innerException: invalid);
 
             case UriFormatException badUri:
                 return new RimLLMException(
@@ -637,19 +623,4 @@ public class RimLLMDecisionService
     }
 
     private sealed record DecisionConnection(string ProviderId, string Endpoint, string Model, string ApiKey);
-
-    private sealed class SettingsCredential : IJevCredential
-    {
-        private readonly Func<string> _getKey;
-
-        public SettingsCredential(Func<string> getKey)
-        {
-            _getKey = getKey;
-        }
-
-        public ValueTask<string> GetApiKeyAsync(CancellationToken cancellationToken)
-        {
-            return new ValueTask<string>(_getKey() ?? "");
-        }
-    }
 }

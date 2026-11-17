@@ -18,7 +18,7 @@ public sealed class RimLLMDecisionProvider
     /// <summary>穩定的內部識別碼，也是設定檔與語系鍵的一部分。</summary>
     public string Id { get; }
 
-    /// <summary>JevClient 的 BaseAddress；必須是沒有路徑的 HTTPS origin。</summary>
+    /// <summary>TypeSafeClient 的 BaseUrl；沒有路徑的 origin。</summary>
     public string DefaultEndpoint { get; }
 
     /// <summary>
@@ -78,7 +78,7 @@ public static class RimLLMDecisionProviderCatalog
 
     /// <summary>
     /// decisions-api.dev 把多個供應商統一在 /v1/systemone 之下，因此非 TypeSafe 的原生服務
-    /// 也能用同一個 JevClient。端點固定，UI 只對本機服務開放修改。
+    /// 也能用同一個 TypeSafeClient。端點固定，UI 只對本機服務開放修改。
     /// </summary>
     private const string AggregatorEndpoint = "https://decisions-api.dev";
 
@@ -124,8 +124,7 @@ public static class RimLLMDecisionProviderCatalog
             OpenAI,
             AggregatorEndpoint),
 
-        // 本機架設：走明文 HTTP，Jev SDK 只接受 HTTPS origin，
-        // 由 DecisionEndpointRouting 在傳輸層把兩者接起來。
+        // 本機架設：走明文 HTTP，端點原樣交給 SDK。
         new RimLLMDecisionProvider(
             Ollama,
             "http://localhost:11434")

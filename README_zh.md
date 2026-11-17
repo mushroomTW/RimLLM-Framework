@@ -230,12 +230,11 @@ IEmbeddingGenerator<string, Embedding<float>> generator =
 需要「有型別的答案」而不是文章時，框架提供決策服務，後端走 TypeSafe 的 System One 協議。計畫建一次就能重複使用：
 
 ```csharp
-var builder = new JevDecisionPlanBuilder();
-JevNoulHandle hostile = builder.AddNoul("hostile", "Is the speaker hostile?");
-JevDecisionPlan plan = builder.Build();
+var plan = new QuestionSet();
+NoulHandle hostile = plan.Noul("Is the speaker hostile?", id: "hostile");
 
 RimLLMDecisionClient decisions = RimLLMProvider.CreateDecisionService("myai.mod");
-JevResult result = await decisions.EvaluateAsync(speakerText, plan);
+QuestionSetResult result = await decisions.EvaluateAsync(speakerText, plan);
 double hostileProbability = result.Get(hostile).Probability;
 ```
 
@@ -252,7 +251,7 @@ DecisionAvailability availability = RimLLMProvider.GetDecisionAvailability();
 
 // 2) 用自己選的供應商做決策
 RimLLMDecisionClient decisions = RimLLMProvider.CreateDecisionService("myai.mod");
-JevResult result = await decisions.EvaluateWithProviderAsync(
+QuestionSetResult result = await decisions.EvaluateWithProviderAsync(
     speakerText, plan, providerId: "TypeSafe", model: "jev-1.13", cancellationToken);
 double hostileProbability = result.Get(hostile).Probability;
 
@@ -260,7 +259,7 @@ double hostileProbability = result.Get(hostile).Probability;
 IReadOnlyList<string> models = await decisions.FetchModelsAsync("TypeSafe", cancellationToken);
 ```
 
-`GetDecisionAvailability` 是純查詢：不發任何網路請求、絕不外洩金鑰本身（只回報「有沒有金鑰」），沒有啟用決策供應商時回報 `Enabled = false` 而不擲例外。`EvaluateWithProviderAsync` 的端點、金鑰與模型都取自該供應商自己的設定，因此完全不會動到玩家的設定；供應商 id 不存在或是 `Disabled` 標記，都會在送出任何請求之前就以 `RimLLMException`（`Unknown`）拒絕，`https://` 端點缺金鑰則以 `InvalidKey` 拒絕（明文 `http://` 端點可以沒有金鑰，見下文）。用量則記到實際服務該次請求的供應商帳上，而不是啟用中的那一家。`FetchModelsAsync` 回傳的是純字串的模型名稱（第三方 Mod 不必依賴 `Kkdev92.Jev` 的型別），且模型清單查詢不消耗推論額度。
+`GetDecisionAvailability` 是純查詢：不發任何網路請求、絕不外洩金鑰本身（只回報「有沒有金鑰」），沒有啟用決策供應商時回報 `Enabled = false` 而不擲例外。`EvaluateWithProviderAsync` 的端點、金鑰與模型都取自該供應商自己的設定，因此完全不會動到玩家的設定；供應商 id 不存在或是 `Disabled` 標記，都會在送出任何請求之前就以 `RimLLMException`（`Unknown`）拒絕，`https://` 端點缺金鑰則以 `InvalidKey` 拒絕（明文 `http://` 端點可以沒有金鑰，見下文）。用量則記到實際服務該次請求的供應商帳上，而不是啟用中的那一家。`FetchModelsAsync` 回傳的是純字串的模型名稱（第三方 Mod 不必依賴 TypeSafeAI SDK 的型別），且模型清單查詢不消耗推論額度。
 
 #### 在自己的機器上跑決策模型
 
@@ -271,7 +270,7 @@ IReadOnlyList<string> models = await decisions.FetchModelsAsync("TypeSafe", canc
 本機端點有兩點要注意：
 
 * **不需要 API 金鑰。** 本機服務多半不驗證憑證，金鑰欄位可以留白，框架會送出佔位值。`https://` 端點仍然一定要有真金鑰，缺金鑰的呼叫會在送出前就以 `InvalidKey` 拒絕。
-* **Jev SDK 只接受 HTTPS origin**，但本機服務講的是明文 HTTP。框架把兩者接起來：交給 SDK 一個同 host 與 port 的 HTTPS origin，等請求真正送上線前再改寫回你的明文端點——本機服務收到的就是一般的明文 HTTP，不需要任何代理或憑證。
+* **明文 HTTP 直接可用。** 決策 SDK 直接接受 `http://` 端點，本機服務收到的就是一般的明文 HTTP，不需要任何代理或憑證。
 
 明文 HTTP 代表請求（以及其中的遊戲文字）在送往服務的途中沒有加密。請只把它用在自己架設的服務；跨到你不掌控的網路時，請維持 `https://`。
 

@@ -481,7 +481,7 @@ public static class DecisionSettingsDrawer
             Func<string> applyResult;
             try
             {
-                IReadOnlyList<Kkdev92.Jev.JevModel> models = await new RimLLMDecisionService(Settings)
+                IReadOnlyList<TypeSafeAI.ModelInfo> models = await new RimLLMDecisionService(Settings)
                     .FetchModelsAsync(args.Endpoint, args.Model, args.ApiKey)
                     .ConfigureAwait(false);
 

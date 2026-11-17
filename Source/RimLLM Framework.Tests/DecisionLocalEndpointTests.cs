@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
-using Kkdev92.Jev;
+using TypeSafeAI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager;
@@ -12,8 +12,8 @@ namespace RimLLM_Framework.Tests;
 
 /// <summary>
 /// 本機架設決策服務的測試：Ollama、Unsloth 等自架服務只提供明文 HTTP，
-/// 而 Jev SDK 只接受 HTTPS origin。框架在傳輸層把兩者接起來，
-/// 這裡驗證改寫確實發生、明文端點不要求金鑰，而且遠端供應商的行為完全沒變。
+/// 框架把明文端點原樣交給 SDK，不做任何傳輸層改寫。
+/// 這裡驗證請求確實走 http、明文端點不要求金鑰，而且遠端供應商的行為完全沒變。
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -54,66 +54,45 @@ public class DecisionLocalEndpointTests
     }
 
     [Test]
-    public void SdkBaseAddress_ForPlaintextEndpoint_IsAnHttpsOriginTheSdkAccepts()
+    public void BaseUrl_ForPlaintextEndpoint_KeepsHttpAndPort()
     {
-        Uri sdkBase = DecisionEndpointRouting.GetSdkBaseAddress("http://localhost:11434");
+        Uri baseUrl = DecisionEndpointRouting.GetBaseUrl("http://localhost:11434");
 
-        // SDK 的驗證：絕對 URI、https、沒有 userinfo／query／fragment、路徑是 origin。
-        ClassicAssert.AreEqual(Uri.UriSchemeHttps, sdkBase.Scheme);
-        ClassicAssert.AreEqual("localhost", sdkBase.Host);
-        ClassicAssert.AreEqual(11434, sdkBase.Port);
-        ClassicAssert.AreEqual("/", sdkBase.AbsolutePath);
-        ClassicAssert.IsEmpty(sdkBase.UserInfo);
-        ClassicAssert.IsEmpty(sdkBase.Query);
-        ClassicAssert.IsEmpty(sdkBase.Fragment);
+        ClassicAssert.AreEqual(Uri.UriSchemeHttp, baseUrl.Scheme);
+        ClassicAssert.AreEqual("localhost", baseUrl.Host);
+        ClassicAssert.AreEqual(11434, baseUrl.Port);
     }
 
     [Test]
-    public void SdkBaseAddress_ForHttpsEndpoint_IsUnchanged()
+    public void BaseUrl_ForHttpsEndpoint_IsUnchanged()
     {
-        Uri sdkBase = DecisionEndpointRouting.GetSdkBaseAddress("https://api.typesafe.ai");
+        Uri baseUrl = DecisionEndpointRouting.GetBaseUrl("https://api.typesafe.ai");
 
-        ClassicAssert.AreEqual("https://api.typesafe.ai/", sdkBase.ToString());
+        ClassicAssert.AreEqual("https://api.typesafe.ai/", baseUrl.ToString());
     }
 
     [Test]
-    public void SdkBaseAddress_ForAnUnsupportedScheme_IsRejected()
+    public void BaseUrl_ForAnUnsupportedScheme_IsRejected()
     {
         ClassicAssert.Throws<UriFormatException>(() =>
-            DecisionEndpointRouting.GetSdkBaseAddress("ftp://example.com"));
+            DecisionEndpointRouting.GetBaseUrl("ftp://example.com"));
         ClassicAssert.Throws<UriFormatException>(() =>
-            DecisionEndpointRouting.GetSdkBaseAddress("not a uri"));
+            DecisionEndpointRouting.GetBaseUrl("not a uri"));
     }
 
     [Test]
-    public void TransportOrigin_KeepsThePlaintextSchemeAndPort()
-    {
-        Uri origin = DecisionEndpointRouting.GetTransportOrigin("http://localhost:8888");
-
-        ClassicAssert.AreEqual(Uri.UriSchemeHttp, origin.Scheme);
-        ClassicAssert.AreEqual("localhost", origin.Host);
-        ClassicAssert.AreEqual(8888, origin.Port);
-    }
-
-    [Test]
-    public void EndpointRouting_HandlesDefaultPortsIpv6AndLanHosts()
+    public void BaseUrl_HandlesDefaultPortsIpv6AndLanHosts()
     {
         // 沒寫 port 的端點要落在 scheme 的預設埠。
-        Uri defaultPort = DecisionEndpointRouting.GetTransportOrigin("http://localhost");
-        ClassicAssert.AreEqual(Uri.UriSchemeHttp, defaultPort.Scheme);
+        Uri defaultPort = DecisionEndpointRouting.GetBaseUrl("http://localhost");
         ClassicAssert.AreEqual(80, defaultPort.Port);
         ClassicAssert.AreEqual("localhost", defaultPort.Authority);
 
         // IPv6：主機名稱自帶方括號，不能被重複包一次。
-        Uri ipv6 = DecisionEndpointRouting.GetTransportOrigin("http://[::1]:8888");
-        ClassicAssert.AreEqual("[::1]:8888", ipv6.Authority);
-        ClassicAssert.AreEqual(
-            "https://[::1]:8888/",
-            DecisionEndpointRouting.GetSdkBaseAddress("http://[::1]:8888").ToString());
+        ClassicAssert.AreEqual("[::1]:8888", DecisionEndpointRouting.GetBaseUrl("http://[::1]:8888").Authority);
 
         // 區網主機：玩家自己架在別台機器上，同樣照明文送。
-        Uri lan = DecisionEndpointRouting.GetTransportOrigin("http://192.168.1.5:11434");
-        ClassicAssert.AreEqual("192.168.1.5:11434", lan.Authority);
+        ClassicAssert.AreEqual("192.168.1.5:11434", DecisionEndpointRouting.GetBaseUrl("http://192.168.1.5:11434").Authority);
     }
 
     // ---------- 明文端點的實際請求 ----------
@@ -130,13 +109,13 @@ public class DecisionLocalEndpointTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, TestModId);
 
-        (JevDecisionPlan plan, JevNoulHandle handle) = DecisionTestDoubles.OneQuestion();
-        JevResult result = await client.EvaluateWithProviderAsync(
+        (QuestionSet plan, NoulHandle handle) = DecisionTestDoubles.OneQuestion();
+        QuestionSetResult result = await client.EvaluateWithProviderAsync(
             "state", plan, RimLLMDecisionProviderCatalog.Ollama);
 
         ClassicAssert.AreEqual(0.75, result.Get(handle).Probability, 1e-9);
         ClassicAssert.AreEqual(1, _handler.RequestUris.Count);
-        // 送出的必須是明文 http，而不是 SDK 組出來的 https。
+        // 送出的必須是玩家設定的明文 http。
         ClassicAssert.AreEqual("http://localhost:11434/v1/systemone", _handler.RequestUris[0].ToString());
         ClassicAssert.AreEqual(Uri.UriSchemeHttp, _handler.RequestUris[0].Scheme);
     }
@@ -228,7 +207,7 @@ public class DecisionLocalEndpointTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, TestModId);
 
-        JevResult result = await client.EvaluateWithProviderAsync(
+        QuestionSetResult result = await client.EvaluateWithProviderAsync(
             "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.Local);
 
         ClassicAssert.IsNotNull(result);

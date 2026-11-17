@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Kkdev92.Jev;
+using TypeSafeAI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager.Services;
@@ -14,7 +14,7 @@ using RimLLM_Framework.Manager.Services;
 namespace RimLLM_Framework.Tests;
 
 /// <summary>
-/// Gemini Decision 的轉接測試：JevClient 送出的 System One 請求必須被換成
+/// Gemini Decision 的轉接測試：TypeSafeClient 送出的 System One 請求必須被換成
 /// Gemini Decisions API 的路徑、標頭與欄位，Gemini 的回應也要能被 SDK 解析成型別化結果。
 /// 請求與回應格式依 Google 官方 Decisions API 文件。
 /// </summary>
@@ -56,7 +56,7 @@ public class GeminiDecisionTests
     /// 只檢查送出的請求：假端點的固定回答不一定對得上這份計畫，SDK 因此拒收回應是預期的，不影響請求斷言。
     /// </summary>
     private static async Task SendIgnoringAnswersAsync(
-        string state, JevDecisionPlan plan, RimLLMDecisionService service = null)
+        string state, QuestionSet plan, RimLLMDecisionService service = null)
     {
         try
         {
@@ -94,17 +94,17 @@ public class GeminiDecisionTests
     [Test]
     public async Task Evaluate_SendsTheGeminiWireFormat()
     {
-        var builder = new JevDecisionPlanBuilder();
-        builder.AddNoul("is_damaged", "Did the item arrive damaged?",
-            new JevNoulCriteria("The product is broken.", "Preference complaint."));
-        builder.AddChoice<string>("queue", "Which queue?", new[]
+        var builder = new QuestionSet();
+        builder.Noul("Did the item arrive damaged?",
+            "The product is broken.", "Preference complaint.", "is_damaged");
+        builder.Choice("Which queue?", new Dictionary<string, TypeSafeContent?>
         {
-            new JevChoiceOption<string>("billing", "billing", "Payment questions."),
-            new JevChoiceOption<string>("general", "general")
-        });
-        builder.AddScore("severity", "How severe?", new JevContent[] { "Cosmetic", "Blocked" });
+            ["billing"] = "Payment questions.",
+            ["general"] = null
+        }, "queue");
+        builder.Score("How severe?", new[] { "Cosmetic", "Blocked" }, "severity");
 
-        await SendIgnoringAnswersAsync("The mug arrived cracked.", builder.Build());
+        await SendIgnoringAnswersAsync("The mug arrived cracked.", builder);
 
         ClassicAssert.AreEqual(1, _handler.Requests.Count);
         CapturedRequest sent = _handler.Requests[0];
@@ -164,11 +164,11 @@ public class GeminiDecisionTests
     public async Task MalformedSuccessBody_MapsToInvalidResponse()
     {
         _handler.EvaluateBody = "<html>captive portal</html>";
-        var builder = new JevDecisionPlanBuilder();
-        builder.AddNoul("q", "Is it?", default);
+        var builder = new QuestionSet();
+        builder.Noul("Is it?", id: "q");
 
         var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
-            NewGeminiService().EvaluateAsync("state", builder.Build()));
+            NewGeminiService().EvaluateAsync("state", builder));
         ClassicAssert.AreEqual(LLMError.InvalidResponse, ex!.Error);
     }
 
@@ -182,20 +182,16 @@ public class GeminiDecisionTests
     [Test]
     public async Task Evaluate_ParsesGeminiAnswersAndUsage()
     {
-        var builder = new JevDecisionPlanBuilder();
-        JevNoulHandle damaged = builder.AddNoul("is_damaged", "Did the item arrive damaged?", default);
-        JevChoiceHandle<string> queue = builder.AddChoice<string>("queue", "Which queue?", new[]
-        {
-            new JevChoiceOption<string>("billing", "billing"),
-            new JevChoiceOption<string>("replacements", "replacements")
-        });
-        JevScoreHandle severity = builder.AddScore("severity", "How severe?", new JevContent[] { "Low", "High" });
+        var builder = new QuestionSet();
+        NoulHandle damaged = builder.Noul("Did the item arrive damaged?", id: "is_damaged");
+        ChoiceHandle queue = builder.Choice("Which queue?", new[] { "billing", "replacements" }, "queue");
+        ScoreHandle severity = builder.Score("How severe?", new[] { "Low", "High" }, "severity");
 
-        JevResult result = await NewGeminiService().EvaluateAsync("The mug arrived cracked.", builder.Build());
+        QuestionSetResult result = await NewGeminiService().EvaluateAsync("The mug arrived cracked.", builder);
 
         ClassicAssert.AreEqual(0.99, result.Get(damaged).Probability, 1e-9);
-        ClassicAssert.AreEqual("replacements", result.Get(queue).Value);
-        ClassicAssert.AreEqual(0.3, result.Get(severity).Value, 1e-9);
+        ClassicAssert.AreEqual("replacements", result.Get(queue).Choice);
+        ClassicAssert.AreEqual(0.3, result.Get(severity).Score, 1e-9);
         ClassicAssert.AreEqual(100, result.Usage.InputTokens);
         ClassicAssert.AreEqual(0, result.Usage.OutputTokens);
     }
@@ -217,11 +213,11 @@ public class GeminiDecisionTests
     {
         _handler.StatusCode = HttpStatusCode.Unauthorized;
         _handler.EvaluateBody = "{\"error\":{\"code\":401,\"message\":\"API key not valid.\"}}";
-        var builder = new JevDecisionPlanBuilder();
-        builder.AddNoul("q", "Is it?", default);
+        var builder = new QuestionSet();
+        builder.Noul("Is it?", id: "q");
 
         var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
-            NewGeminiService().EvaluateAsync("state", builder.Build()));
+            NewGeminiService().EvaluateAsync("state", builder));
         ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
     }
 
@@ -239,10 +235,10 @@ public class GeminiDecisionTests
     [Test]
     public async Task EmptyDecisionKey_ReusesTheChatGeminiKey()
     {
-        var builder = new JevDecisionPlanBuilder();
-        builder.AddNoul("q", "Is it?", default);
+        var builder = new QuestionSet();
+        builder.Noul("Is it?", id: "q");
 
-        await SendIgnoringAnswersAsync("state", builder.Build(), new RimLLMDecisionService(NewSettingsWithOnlyChatKey()));
+        await SendIgnoringAnswersAsync("state", builder, new RimLLMDecisionService(NewSettingsWithOnlyChatKey()));
 
         ClassicAssert.AreEqual("chat-gemini-key", _handler.Requests[0].GoogApiKey);
     }

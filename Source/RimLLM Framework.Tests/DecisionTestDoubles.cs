@@ -4,7 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Kkdev92.Jev;
+using TypeSafeAI;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Manager.Services;
 
@@ -18,7 +18,7 @@ namespace RimLLM_Framework.Tests;
 internal static class DecisionTestDoubles
 {
     /// <summary>
-    /// 攔截 Jev SDK 送出的請求並回應 System One wire format 的假端點。
+    /// 攔截 TypeSafeAI SDK 送出的請求並回應 System One wire format 的假端點。
     /// 回應內容依路徑切換：/v1/systemone 回一題 Noul，/v1/models 回模型清單。
     /// </summary>
     internal sealed class FakeJevHandler : HttpMessageHandler
@@ -69,14 +69,14 @@ internal static class DecisionTestDoubles
     }
 
     /// <summary>只有一題 Noul 的決策計畫；回傳 handle 以便讀回機率。</summary>
-    internal static (JevDecisionPlan Plan, JevNoulHandle Handle) OneQuestion()
+    internal static (QuestionSet Plan, NoulHandle Handle) OneQuestion()
     {
-        var builder = new JevDecisionPlanBuilder();
-        JevNoulHandle handle = builder.AddNoul("hostile", "Is the speaker hostile?", default);
-        return (builder.Build(), handle);
+        var builder = new QuestionSet();
+        NoulHandle handle = builder.Noul("Is the speaker hostile?", id: "hostile");
+        return (builder, handle);
     }
 
-    internal static JevDecisionPlan OneQuestionPlan()
+    internal static QuestionSet OneQuestionPlan()
     {
         return OneQuestion().Plan;
     }

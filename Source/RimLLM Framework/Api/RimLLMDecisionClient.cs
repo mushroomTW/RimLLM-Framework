@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Text.Json;
 using System.Threading.Tasks;
-using Kkdev92.Jev;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Manager.Services;
+using TypeSafeAI;
+using TypeSafeAI.Json;
 
 namespace RimLLM_Framework;
 
@@ -30,9 +32,9 @@ public sealed class RimLLMDecisionClient
     /// 供應端失敗一律以 <see cref="RimLLMException"/>（含 <see cref="LLMError"/> 代碼）呈現；
     /// 呼叫端取消維持 <see cref="OperationCanceledException"/>。
     /// </summary>
-    public async Task<JevResult> EvaluateAsync(
+    public async Task<QuestionSetResult> EvaluateAsync(
         string state,
-        JevDecisionPlan plan,
+        QuestionSet plan,
         string model = null,
         CancellationToken cancellationToken = default)
     {
@@ -55,9 +57,9 @@ public sealed class RimLLMDecisionClient
     /// 缺金鑰、供應商不存在，或玩家已在 Decision 分頁全域停用決策服務時，會在送出任何網路請求之前就擲出
     /// <see cref="RimLLMException"/>（<see cref="LLMError.InvalidKey"/> 或 <see cref="LLMError.Unknown"/>）。
     /// </remarks>
-    public async Task<JevResult> EvaluateWithProviderAsync(
+    public async Task<QuestionSetResult> EvaluateWithProviderAsync(
         string state,
-        JevDecisionPlan plan,
+        QuestionSet plan,
         string providerId,
         string model = null,
         CancellationToken cancellationToken = default)
@@ -73,7 +75,7 @@ public sealed class RimLLMDecisionClient
     }
 
     /// <summary>
-    /// 取得指定供應商可用的決策模型清單（型別為模型名稱字串，避免第三方 Mod 依賴 Kkdev92.Jev）。
+    /// 取得指定供應商可用的決策模型清單（型別為模型名稱字串，避免第三方 Mod 依賴 SDK 的模型型別）。
     /// 端點與金鑰取自該供應商在設定中保存的值；<paramref name="providerId"/> 為空時用啟用中的供應商。
     /// 模型清單查詢不消耗推論額度，也不計入每日預算。
     /// </summary>
@@ -94,22 +96,32 @@ public sealed class RimLLMDecisionClient
     /// 歸屬資訊來自請求開始時的快照（DecisionEvaluation），await 之後不得重讀設定：
     /// 請求途中玩家切換啟用供應商，token 若記到新供應商就會污染帳本（與 RimLLMEmbeddingClient 同一考量）。
     /// </summary>
-    private RimLLMUsageTracker.BudgetReservation ReserveBudget(string state, JevDecisionPlan plan)
+    private RimLLMUsageTracker.BudgetReservation ReserveBudget(string state, QuestionSet plan)
     {
         long estimate = RimLLMChatClientExecutor.EstimateTokens(state ?? string.Empty);
         if (plan != null)
         {
-            long planEstimate = Math.Max(0L, plan.EncodedQuestionsLength);
+            long planEstimate = EncodedQuestionsLength(plan);
             estimate = estimate > long.MaxValue - planEstimate ? long.MaxValue : estimate + planEstimate;
         }
 
         return _manager.UsageTracker.ReserveBudgetOrThrow(estimate);
     }
 
-    private static JevResult RecordUsage(DecisionEvaluation evaluation, RimLLMUsageTracker.BudgetReservation reservation)
+    /// <summary>
+    /// 問題集合編碼後的位元組數：每次請求除了模型與 state 之外都會送出這段內容。
+    /// 沿用舊 SDK 以位元組數當作 token 上限估計的保守作法。
+    /// </summary>
+    internal static long EncodedQuestionsLength(QuestionSet plan)
     {
-        JevResult result = evaluation.Result;
-        string modelId = result.ActualModel;
+        return JsonSerializer.SerializeToUtf8Bytes<IReadOnlyDictionary<string, Question>>(
+            plan, TypeSafeJsonDefaults.ContentSerializerOptions).LongLength;
+    }
+
+    private static QuestionSetResult RecordUsage(DecisionEvaluation evaluation, RimLLMUsageTracker.BudgetReservation reservation)
+    {
+        QuestionSetResult result = evaluation.Result;
+        string modelId = result.Model;
         if (string.IsNullOrEmpty(modelId))
         {
             modelId = evaluation.ModelName;

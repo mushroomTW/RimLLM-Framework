@@ -232,12 +232,11 @@ The inputs of one `GenerateAsync` call go out as a single batch request (split i
 When you need a typed answer instead of prose, the framework exposes a decision service backed by TypeSafe's System One protocol. A plan is built once and reused:
 
 ```csharp
-var builder = new JevDecisionPlanBuilder();
-JevNoulHandle hostile = builder.AddNoul("hostile", "Is the speaker hostile?");
-JevDecisionPlan plan = builder.Build();
+var plan = new QuestionSet();
+NoulHandle hostile = plan.Noul("Is the speaker hostile?", id: "hostile");
 
 RimLLMDecisionClient decisions = RimLLMProvider.CreateDecisionService("myai.mod");
-JevResult result = await decisions.EvaluateAsync(speakerText, plan);
+QuestionSetResult result = await decisions.EvaluateAsync(speakerText, plan);
 double hostileProbability = result.Get(hostile).Probability;
 ```
 
@@ -254,7 +253,7 @@ DecisionAvailability availability = RimLLMProvider.GetDecisionAvailability();
 
 // 2) Decide with a provider of the mod's own choosing
 RimLLMDecisionClient decisions = RimLLMProvider.CreateDecisionService("myai.mod");
-JevResult result = await decisions.EvaluateWithProviderAsync(
+QuestionSetResult result = await decisions.EvaluateWithProviderAsync(
     speakerText, plan, providerId: "TypeSafe", model: "jev-1.13", cancellationToken);
 double hostileProbability = result.Get(hostile).Probability;
 
@@ -262,7 +261,7 @@ double hostileProbability = result.Get(hostile).Probability;
 IReadOnlyList<string> models = await decisions.FetchModelsAsync("TypeSafe", cancellationToken);
 ```
 
-`GetDecisionAvailability` is a pure query: it sends nothing over the network, it never exposes the key itself (only whether one is stored), and it reports `Enabled = false` instead of throwing when no decision provider is enabled. `EvaluateWithProviderAsync` resolves the endpoint, key and model from that provider's own settings, so the call never touches the player's settings; an unknown provider id or the `Disabled` marker is refused with a `RimLLMException` (`Unknown`) before anything is sent, and a missing key is refused with `InvalidKey` on an `https://` endpoint (a plaintext `http://` endpoint may go without one — see below). The usage is charged to the provider that actually served the request rather than to the enabled one. `FetchModelsAsync` returns model names as plain strings — no dependency on the `Kkdev92.Jev` types — and a model list query costs no inference budget.
+`GetDecisionAvailability` is a pure query: it sends nothing over the network, it never exposes the key itself (only whether one is stored), and it reports `Enabled = false` instead of throwing when no decision provider is enabled. `EvaluateWithProviderAsync` resolves the endpoint, key and model from that provider's own settings, so the call never touches the player's settings; an unknown provider id or the `Disabled` marker is refused with a `RimLLMException` (`Unknown`) before anything is sent, and a missing key is refused with `InvalidKey` on an `https://` endpoint (a plaintext `http://` endpoint may go without one — see below). The usage is charged to the provider that actually served the request rather than to the enabled one. `FetchModelsAsync` returns model names as plain strings — no dependency on the TypeSafeAI SDK types — and a model list query costs no inference budget.
 
 #### Running the decision model on your own machine
 
@@ -273,7 +272,7 @@ The settings page lists three local entries — *Ollama* (`http://localhost:1143
 Two things are worth knowing about local endpoints:
 
 * **No API key is needed.** Local servers usually do not check credentials, so the key field may be left blank; the framework sends a placeholder instead. An `https://` endpoint still requires a real key, and a call without one is refused with `InvalidKey` before anything is sent.
-* **The Jev SDK only accepts HTTPS origins**, but a local server speaks plain HTTP. The framework bridges the two: it hands the SDK an HTTPS origin of the same host and port, then rewrites the request back to your plaintext endpoint before it goes on the wire — your local server sees ordinary plain HTTP, and no proxy or certificate is needed.
+* **Plain HTTP works as-is.** The decision SDK accepts an `http://` endpoint directly, so your local server sees ordinary plain HTTP — no proxy or certificate is needed.
 
 Plain HTTP means the request (and the game text in it) is not encrypted on its way to the server. Use it for a server you run yourself; for anything that crosses a network you do not control, keep `https://`.
 

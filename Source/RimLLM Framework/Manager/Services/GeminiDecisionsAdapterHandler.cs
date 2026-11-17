@@ -9,8 +9,8 @@ using System.Threading.Tasks;
 namespace RimLLM_Framework.Manager.Services;
 
 /// <summary>
-/// 把 Jev SDK 的 System One 請求轉成 Google Gemini Decisions API（<c>/v1beta/decisions</c>），
-/// 回應再轉回 Jev 格式，讓 Gemini Decision 走同一個 JevClient 與型別化結果。
+/// 把 TypeSafeAI SDK 的 System One 請求轉成 Google Gemini Decisions API（<c>/v1beta/decisions</c>），
+/// 回應再轉回 Jev 格式，讓 Gemini Decision 走同一個 TypeSafeClient 與型別化結果。
 ///
 /// 兩者的問題型別（noul／choice／score）與答案形狀相同，差異只在：
 /// 路徑、金鑰標頭（<c>x-goog-api-key</c>）、<c>state</c> 改名 <c>input</c>、

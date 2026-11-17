@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Kkdev92.Jev;
+using TypeSafeAI;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -27,7 +27,7 @@ public class DecisionProviderSelectionTests
     private const string TestModId = "rimllm.tests.decision";
     private const string OtherModId = "rimllm.tests.decision.other";
 
-    /// <summary>假的供應商端點；SDK 只要求它是 HTTPS origin，不會真的送出請求。</summary>
+    /// <summary>假的供應商端點；SDK 只要求它是絕對 URI，不會真的送出請求。</summary>
     private const string FakeEndpoint = "https://decision.example.test";
 
     private DecisionTestDoubles.FakeJevHandler _handler;
@@ -131,8 +131,8 @@ public class DecisionProviderSelectionTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, TestModId);
 
-        (JevDecisionPlan plan, JevNoulHandle handle) = DecisionTestDoubles.OneQuestion();
-        JevResult result = await client.EvaluateWithProviderAsync("state", plan, RimLLMDecisionProviderCatalog.Liquid);
+        (QuestionSet plan, NoulHandle handle) = DecisionTestDoubles.OneQuestion();
+        QuestionSetResult result = await client.EvaluateWithProviderAsync("state", plan, RimLLMDecisionProviderCatalog.Liquid);
 
         ClassicAssert.AreEqual(0.75, result.Get(handle).Probability, 1e-9);
         ClassicAssert.AreEqual(1, _handler.RequestUris.Count);
@@ -284,8 +284,8 @@ public class DecisionProviderSelectionTests
         RimLLMManager manager = new(settings);
         RimLLMDecisionClient client = new(manager, OtherModId);
 
-        (JevDecisionPlan plan, JevNoulHandle handle) = DecisionTestDoubles.OneQuestion();
-        JevResult result = await client.EvaluateWithProviderAsync("state", plan, "");
+        (QuestionSet plan, NoulHandle handle) = DecisionTestDoubles.OneQuestion();
+        QuestionSetResult result = await client.EvaluateWithProviderAsync("state", plan, "");
 
         ClassicAssert.AreEqual(0.75, result.Get(handle).Probability, 1e-9);
         ClassicAssert.AreEqual("Bearer type-safe-key", _handler.AuthorizationHeaders[0]);
@@ -398,7 +398,7 @@ public class DecisionProviderSelectionTests
         settings.DecisionEndpoints[RimLLMDecisionProviderCatalog.TypeSafe] = FakeEndpoint;
 
         var service = new RimLLMDecisionService(settings);
-        IReadOnlyList<JevModel> models = await service.FetchModelsAsync();
+        IReadOnlyList<ModelInfo> models = await service.FetchModelsAsync();
 
         ClassicAssert.AreEqual(2, models.Count);
         ClassicAssert.AreEqual("jev-latest", models[0].Name);
@@ -415,7 +415,7 @@ public class DecisionProviderSelectionTests
         settings.DecisionModels[RimLLMDecisionProviderCatalog.Disabled] = "test-model";
 
         var service = new RimLLMDecisionService(settings);
-        IReadOnlyList<JevModel> models = await service.FetchModelsAsync(FakeEndpoint, "jev-latest", "preview-key");
+        IReadOnlyList<ModelInfo> models = await service.FetchModelsAsync(FakeEndpoint, "jev-latest", "preview-key");
 
         ClassicAssert.AreEqual(2, models.Count);
         ClassicAssert.AreEqual("/v1/models", _handler.RequestUris[0].AbsolutePath);
