@@ -84,13 +84,6 @@ public sealed class ReviewFindingsRegressionTests
         ClassicAssert.Less((DateTime.UtcNow - started).TotalSeconds, 10);
     }
 
-    [Test]
-    public void SdkStillHasPatchFieldsUsedByReflection()
-    {
-        ClassicAssert.IsTrue(OpenAIPatchExtensions.CanDisablePropagators,
-            "升級 OpenAI SDK 後私有欄位若改名，這段反射會失效，必須重新檢查");
-    }
-
     #endregion
 
     #region 備援與錯誤碼

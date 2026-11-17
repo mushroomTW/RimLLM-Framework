@@ -1,85 +1,25 @@
 using System;
-using System.Reflection;
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
-using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Providers;
 
 /// <summary>
-/// OpenAI SDK 的 <see cref="ChatCompletionOptions.Patch"/>
-/// 內部註冊了未對 null 做防護的 PropagateSet/PropagateGet 委派。
-/// 當對根屬性（如 $.response_format、$.stream_options）操作 Patch 時，SDK 會直接對為 null 的子屬性調用
-/// 其 .Patch 屬性而擲出 <see cref="NullReferenceException"/>。
+/// 串接 <see cref="ChatOptions.RawRepresentationFactory"/> 的 <see cref="ChatCompletionOptions.Patch"/> 修改。
 ///
-/// 此擴充方法在對 Patch 進行自訂修改前，透過反射清空 _patch 的傳播委派，使其還原為直接寫入底層 JSON Patch 屬性字典的行為。
+/// 早期 OpenAI SDK（2.13）在 Patch 操作根屬性時會對 null 子屬性傳播而擲 NRE，當時以反射清空私有傳播委派繞過；
+/// 2.15 起已不再發生，反射已移除。本專案用到的 Patch 操作由 OpenAIPatchCompatibilityTests 釘住，升級 SDK 時把關。
 /// </summary>
-#pragma warning disable S3011 // 需透過反射存取 OpenAI SDK 內部的 _patch、_propagatorSetter、_propagatorGetter 欄位，以避免 SDK 在子屬性為 null 時拋出 NullReferenceException；所有反射呼叫皆包在 try/catch 中，失敗不擋請求。
 internal static class OpenAIPatchExtensions
 {
-    private static readonly FieldInfo PatchField =
-        typeof(ChatCompletionOptions).GetField("_patch", BindingFlags.NonPublic | BindingFlags.Instance);
-
-    private static readonly FieldInfo PropagatorSetterField =
-        PatchField?.FieldType.GetField("_propagatorSetter", BindingFlags.NonPublic | BindingFlags.Instance);
-
-    private static readonly FieldInfo PropagatorGetterField =
-        PatchField?.FieldType.GetField("_propagatorGetter", BindingFlags.NonPublic | BindingFlags.Instance);
-
     /// <summary>
-    /// 停用 <see cref="ChatCompletionOptions"/> 內部 <see cref="System.ClientModel.Primitives.JsonPatch"/> 的屬性傳播器，
-    /// 避免 OpenAI SDK 在子屬性為 null 時拋出 NullReferenceException。
+    /// 取得基礎工廠產生的 <see cref="ChatCompletionOptions"/>；工廠不存在或型別不符時建立新實例。
     /// </summary>
-    public static ChatCompletionOptions DisablePatchPropagators(this ChatCompletionOptions options)
-    {
-        if (options == null) return options;
-
-        if (!CanDisablePropagators)
-        {
-            WarnOnce("private JsonPatch fields were not found");
-            return options;
-        }
-
-        try
-        {
-            object patchObj = PatchField.GetValue(options);
-            if (patchObj != null)
-            {
-                PropagatorSetterField.SetValue(patchObj, null);
-                PropagatorGetterField?.SetValue(patchObj, null);
-                PatchField.SetValue(options, patchObj);
-            }
-        }
-        catch (Exception ex)
-        {
-            // 反射失敗不擋請求：SDK 可能已修掉這個問題，但要留下線索，否則之後的 NRE 無從追查。
-            WarnOnce(ex.Message);
-        }
-
-        return options;
-    }
-
-    /// <summary>目前的 SDK 版本是否還有這段反射依賴的私有欄位。升級 SDK 時由測試把關。</summary>
-    internal static bool CanDisablePropagators => PatchField != null && PropagatorSetterField != null;
-
-    private static int _warned;
-
-    private static void WarnOnce(string reason)
-    {
-        if (System.Threading.Interlocked.Exchange(ref _warned, 1) == 0)
-        {
-            RimLLMLog.Warning($"[RimLLM] Could not disable OpenAI SDK patch propagators ({reason}); requests may fail if the SDK still has the null-propagation bug.");
-        }
-    }
-
-    /// <summary>
-    /// 從基礎工廠或新建實例中取得已停用傳播器的 <see cref="ChatCompletionOptions"/>。
-    /// </summary>
-    public static ChatCompletionOptions GetOrCreateSanitizedOptions(
+    public static ChatCompletionOptions GetOrCreateOptions(
         Func<IChatClient, object> baseFactory,
         IChatClient client)
     {
-        return (baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions()).DisablePatchPropagators();
+        return baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
     }
 
     /// <summary>
@@ -93,13 +33,12 @@ internal static class OpenAIPatchExtensions
     {
         return client =>
         {
-            ChatCompletionOptions sanitized = GetOrCreateSanitizedOptions(baseFactory, client);
-            mutate?.Invoke(sanitized);
-            return sanitized;
+            ChatCompletionOptions options = GetOrCreateOptions(baseFactory, client);
+            mutate?.Invoke(options);
+            return options;
         };
     }
 }
-#pragma warning restore S3011
 
 /// <summary>
 /// Patch 常用的 JSON 路徑，預先編碼成 UTF-8。路徑字面值固定，每請求重新

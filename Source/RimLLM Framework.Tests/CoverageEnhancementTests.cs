@@ -276,26 +276,6 @@ public class CoverageEnhancementTests
     }
 
     [Test]
-    public async Task TestLLMProviderExtensions()
-    {
-        await Assert.ThrowsAsync<ArgumentNullException>(async () => await LLMProviderExtensions.GenerateAsync(null, new List<ChatMessage>(), null, "m"));
-        await Assert.ThrowsAsync<ArgumentNullException>(async () => await LLMProviderExtensions.StreamAsync(null, new List<ChatMessage>(), null, "m", _ => { }));
-
-        var mock = new MockTestProvider
-        {
-            ProviderId = "ExtMock",
-            GenerateHandler = (msgs, opts, m) => Task.FromResult("generated result")
-        };
-
-        string res = await mock.GenerateAsync(new List<ChatMessage> { new(ChatRole.User, "hi") }, null, "m1");
-        ClassicAssert.AreEqual("generated result", res);
-
-        var chunks = new List<string>();
-        await mock.StreamAsync(new List<ChatMessage> { new(ChatRole.User, "hi") }, null, "m1", c => chunks.Add(c));
-        ClassicAssert.IsTrue(chunks.Count > 0);
-    }
-
-    [Test]
     public async Task TestGeminiChatClientCoverage()
     {
         var settings = new MockSettings();

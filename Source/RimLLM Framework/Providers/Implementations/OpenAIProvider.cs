@@ -84,48 +84,6 @@ public class OpenAIProvider : ILLMProvider
         return new OpenAIChatClientAdapter(rawClient, this, model);
     }
 
-    private static RimLLMException MapClientResultException(ClientResultException exception)
-    {
-        TimeSpan? retryAfter = null;
-        try
-        {
-            if (exception.GetRawResponse()?.Headers.TryGetValue("Retry-After", out string value) == true)
-            {
-                retryAfter = LLMErrorMapper.ParseRetryAfter(value);
-            }
-        }
-        catch
-        {
-            // 無法讀取或解析 Retry-After 時，沿用一般重試延遲。
-        }
-
-        // SDK 的 Message 只有狀態碼，服務端說明拒絕原因的內文在原始回應裡；
-        // 不附上的話，使用者看不到原因，依錯誤內文判斷的降級重試（思考、Schema 等）也永遠不會觸發。
-        string body = ReadResponseBody(exception);
-        string fullMessage = string.IsNullOrEmpty(body) ? exception.Message : $"{exception.Message} {body}";
-
-        // 顯示用訊息要淨化與截斷（會進連線測試結果與相容層日誌）；關鍵字偵測仍看完整內容。
-        return LLMErrorMapper.CreateException(
-            exception.Status,
-            RimLLMLog.SanitizeForLog(fullMessage, 300),
-            retryAfter,
-            exception,
-            detectionText: fullMessage);
-    }
-
-    /// <summary>讀出錯誤回應的內文；無法讀取時回傳空字串。</summary>
-    private static string ReadResponseBody(ClientResultException exception)
-    {
-        try
-        {
-            return exception.GetRawResponse()?.Content?.ToString() ?? string.Empty;
-        }
-        catch
-        {
-            return string.Empty;
-        }
-    }
-
     /// <summary>
     /// SDK 的單次請求網路逾時。實際逾時由 ApiTimeout 掌控（設定上限 120 秒），
     /// 這裡只是略高於該上限的安全網；SDK 預設的 100 秒會讓 100～120 秒的設定失效。
@@ -307,7 +265,7 @@ public class OpenAIProvider : ILLMProvider
         Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
         options.RawRepresentationFactory = client =>
         {
-            var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(baseFactory, client);
+            var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateOptions(baseFactory, client);
 
             if (responseFormatJson != null)
             {
@@ -459,7 +417,7 @@ public class OpenAIProvider : ILLMProvider
             }
             catch (ClientResultException ex)
             {
-                var mapped = MapClientResultException(ex);
+                var mapped = LLMErrorMapper.FromClientResultException(ex);
                 if (_provider.MarkUnsupportedParameters(_model, mapped, targetOptions))
                 {
                     var retryOptions = options?.Clone() ?? new ChatOptions();
@@ -470,7 +428,7 @@ public class OpenAIProvider : ILLMProvider
                     }
                     catch (ClientResultException retryException)
                     {
-                        throw MapClientResultException(retryException);
+                        throw LLMErrorMapper.FromClientResultException(retryException);
                     }
                 }
                 else
@@ -603,7 +561,7 @@ public class OpenAIProvider : ILLMProvider
                     }
                     catch (ClientResultException ex)
                     {
-                        var mapped = MapClientResultException(ex);
+                        var mapped = LLMErrorMapper.FromClientResultException(ex);
                         if (!_hasYieldedAny && _provider.MarkUnsupportedParameters(_model, mapped, _sentOptions))
                         {
                             // 尚未產出任何分塊且為可自癒參數（如思考強度/格式），在此請求中就地重試

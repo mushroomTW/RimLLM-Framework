@@ -315,28 +315,6 @@ public class OptimizationTests
         await Assert.ThrowsAsync<RimLLMException>(async () => await second.GetResponseAsync(NewMessages()));
     }
 
-    // ---------- OpenAI Patch 傳播器停用與工廠輔助測試 ----------
-
-    [Test]
-    public void DisablePatchPropagatorsHandlesNullGracefully()
-    {
-        OpenAI.Chat.ChatCompletionOptions nullOptions = null;
-        var result = nullOptions.DisablePatchPropagators();
-        ClassicAssert.IsNull(result);
-    }
-
-    [Test]
-    public void DisablePatchPropagatorsClearsPropagatorsAndAllowsPatching()
-    {
-        var options = new OpenAI.Chat.ChatCompletionOptions();
-        var sanitized = options.DisablePatchPropagators();
-        ClassicAssert.AreSame(options, sanitized);
-
-        // 驗證清空後直接操作 Patch 不會引發 NullReferenceException
-        sanitized.Patch.Set(System.Text.Encoding.UTF8.GetBytes("$.response_format"), "json_object");
-        sanitized.Patch.Set(System.Text.Encoding.UTF8.GetBytes("$.max_tokens"), 100);
-    }
-
     // ---------- TPS 優化：非拋版判定、日誌快徑、派遣器、分級快取 ----------
 
     [Test]
@@ -470,19 +448,19 @@ public class OptimizationTests
     }
 
     [Test]
-    public void GetOrCreateSanitizedOptionsCreatesOrSanitizesOptions()
+    public void GetOrCreateOptionsReusesOrCreatesOptions()
     {
         // Case 1: baseFactory 為 null
-        var opts1 = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(null, null);
+        var opts1 = OpenAIPatchExtensions.GetOrCreateOptions(null, null);
         ClassicAssert.IsNotNull(opts1);
 
         // Case 2: baseFactory 回傳現有 options
         var existing = new OpenAI.Chat.ChatCompletionOptions();
-        var opts2 = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(client => existing, null);
+        var opts2 = OpenAIPatchExtensions.GetOrCreateOptions(client => existing, null);
         ClassicAssert.AreSame(existing, opts2);
 
         // Case 3: baseFactory 回傳非 ChatCompletionOptions 物件
-        var opts3 = OpenAIPatchExtensions.GetOrCreateSanitizedOptions(client => "not-options", null);
+        var opts3 = OpenAIPatchExtensions.GetOrCreateOptions(client => "not-options", null);
         ClassicAssert.IsNotNull(opts3);
     }
 }

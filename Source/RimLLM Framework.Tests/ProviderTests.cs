@@ -2,6 +2,7 @@ using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
@@ -513,25 +514,31 @@ public class ProviderTests
             provider.WireHandler.ResponseBody = "{" +
                 "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"Hello, user!\", " +
                 "\"reasoning_content\": \"Assessing the situation...\"}}]}";
-            string result = provider.GenerateAsync(userMsgs, null, "deepseek-reasoning").GetAwaiter().GetResult();
-            ClassicAssert.IsTrue(result.Contains("<think>"));
-            ClassicAssert.IsTrue(result.Contains("</think>"));
-            ClassicAssert.IsTrue(result.Contains("Assessing the situation..."));
-            ClassicAssert.IsTrue(result.Contains("Hello, user!"));
+            AssertReasoningSeparated(provider, userMsgs, "deepseek-reasoning", "Assessing the situation...", "Hello, user!");
         }
 
-        // 2. Gemini 經 OpenAI 相容端點：reasoning_content 同樣包裝成 <think>
+        // 2. Gemini 經 OpenAI 相容端點：reasoning_content 同樣解析為 TextReasoningContent
         {
             var provider = new TestGeminiProvider(mockSettings);
             provider.WireHandler.ResponseBody = "{" +
                 "\"choices\": [{\"message\": {\"role\": \"assistant\", \"content\": \"Response from Gemini\", " +
                 "\"reasoning_content\": \"Thinking deeply...\"}}]}";
-            string result = provider.GenerateAsync(userMsgs, null, "gemini-2.5-flash").GetAwaiter().GetResult();
-            ClassicAssert.IsTrue(result.Contains("<think>"));
-            ClassicAssert.IsTrue(result.Contains("</think>"));
-            ClassicAssert.IsTrue(result.Contains("Thinking deeply..."));
-            ClassicAssert.IsTrue(result.Contains("Response from Gemini"));
+            AssertReasoningSeparated(provider, userMsgs, "gemini-2.5-flash", "Thinking deeply...", "Response from Gemini");
         }
+    }
+
+    /// <summary>思考內容必須以 TextReasoningContent 呈現，且不得混入正文。</summary>
+    private static void AssertReasoningSeparated(
+        ILLMProvider provider, List<ChatMessage> messages, string model, string expectedReasoning, string expectedText)
+    {
+        using IChatClient client = provider.CreateChatClient(model);
+        ChatResponse response = client.GetResponseAsync(messages).GetAwaiter().GetResult();
+        string reasoning = string.Concat(response.Messages
+            .SelectMany(m => m.Contents)
+            .OfType<TextReasoningContent>()
+            .Select(c => c.Text));
+        ClassicAssert.AreEqual(expectedReasoning, reasoning);
+        ClassicAssert.AreEqual(expectedText, response.Text);
     }
 
     [Test]

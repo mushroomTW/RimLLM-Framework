@@ -1,4 +1,5 @@
 using System;
+using System.ClientModel;
 using System.Net.Http;
 using System.Net.Http.Headers;
 
@@ -62,6 +63,56 @@ public static class LLMErrorMapper
         RimLLMException exception = MapStatusCode(statusCode, friendlyMessage, retryAfter, innerException, detectionText);
         exception.HttpStatusCode = statusCode;
         return exception;
+    }
+
+    /// <summary>
+    /// 將官方 SDK 的 <see cref="ClientResultException"/> 對照為 <see cref="RimLLMException"/>。
+    /// SDK 的 Message 只有狀態碼，服務端說明原因的內文與 Retry-After 都在原始回應裡，
+    /// 因此一併讀出：內文供顯示與關鍵字偵測（配額、Schema、思考參數降級），Retry-After 供重試排程。
+    /// </summary>
+    /// <param name="exception">SDK 拋出的例外。</param>
+    /// <param name="messagePrefix">附加在顯示訊息前的來源說明（例如 "Embedding API: "）。</param>
+    internal static RimLLMException FromClientResultException(ClientResultException exception, string messagePrefix = null)
+    {
+        string body = ReadResponseBody(exception);
+        string fullMessage = string.IsNullOrEmpty(body) ? exception.Message : $"{exception.Message} {body}";
+
+        // 顯示用訊息要淨化與截斷；關鍵字偵測仍看完整內容，避免關鍵字被切掉。
+        return CreateException(
+            exception.Status,
+            messagePrefix + Core.RimLLMLog.SanitizeForLog(fullMessage, 300),
+            ReadRetryAfter(exception),
+            exception,
+            detectionText: fullMessage);
+    }
+
+    /// <summary>讀出錯誤回應的內文；無法讀取時回傳空字串。</summary>
+    private static string ReadResponseBody(ClientResultException exception)
+    {
+        try
+        {
+            string body = exception.GetRawResponse()?.Content?.ToString();
+            return string.IsNullOrWhiteSpace(body) ? string.Empty : body;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>讀出 Retry-After 標頭；無法讀取或解析時回傳 null，重試沿用使用者設定的延遲。</summary>
+    private static TimeSpan? ReadRetryAfter(ClientResultException exception)
+    {
+        try
+        {
+            return exception.GetRawResponse()?.Headers.TryGetValue("Retry-After", out string value) == true
+                ? ParseRetryAfter(value)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static RimLLMException MapStatusCode(

@@ -497,10 +497,10 @@ public class ToolCallingTests
             Tools = [addFunc]
         };
 
-        string result = provider.GenerateAsync(
+        using IChatClient client = provider.CreateChatClient("gemini-2.5-flash");
+        string result = client.GetResponseAsync(
             new List<ChatMessage> { new(ChatRole.User, "Calculate 10 + 32") },
-            options,
-            "gemini-2.5-flash").GetAwaiter().GetResult();
+            options).GetAwaiter().GetResult().Text;
 
         ClassicAssert.AreEqual("ok", result);
         var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();

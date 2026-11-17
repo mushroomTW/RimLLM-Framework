@@ -77,7 +77,7 @@ public class RimLLMEmbeddingService
 
     /// <summary>
     /// 把 SDK 與 HTTP 層之外的未預期例外收斂為 Unknown。
-    /// ClientResultException（帶狀態碼）由呼叫端先行以 CreateException 精細映射，
+    /// ClientResultException（帶狀態碼）由呼叫端先行以 FromClientResultException 精細映射，
     /// 落到這裡的代表真的無從分類。
     /// </summary>
     private static RimLLMException WrapUnknownEmbeddingError(string operation, Exception ex)
@@ -355,10 +355,7 @@ public class RimLLMEmbeddingService
         }
         catch (ClientResultException ex)
         {
-            throw LLMErrorMapper.CreateException(
-                ex.Status,
-                $"Embedding API: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
-                innerException: ex);
+            throw LLMErrorMapper.FromClientResultException(ex, "Embedding API: ");
         }
         catch (RimLLMException)
         {
@@ -432,10 +429,7 @@ public class RimLLMEmbeddingService
         }
         catch (ClientResultException ex)
         {
-            throw LLMErrorMapper.CreateException(
-                ex.Status,
-                $"Embedding model list: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
-                innerException: ex);
+            throw LLMErrorMapper.FromClientResultException(ex, "Embedding model list: ");
         }
         catch (HttpRequestException ex)
         {
@@ -776,10 +770,7 @@ public class RimLLMEmbeddingService
         }
         catch (ClientResultException ex)
         {
-            throw LLMErrorMapper.CreateException(
-                ex.Status,
-                $"Embedding test failed: {Core.RimLLMLog.SanitizeForLog(ex.Message, 300)}",
-                innerException: ex);
+            throw LLMErrorMapper.FromClientResultException(ex, "Embedding test failed: ");
         }
         catch (RimLLMException)
         {

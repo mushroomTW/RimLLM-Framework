@@ -54,7 +54,7 @@ internal static class RimLLMChatClientExecutor
         }
         catch (ClientResultException ex)
         {
-            throw MapChatClientException(ex);
+            throw LLMErrorMapper.FromClientResultException(ex);
         }
         catch (HttpRequestException ex)
         {
@@ -159,7 +159,7 @@ internal static class RimLLMChatClientExecutor
             }
             catch (ClientResultException ex)
             {
-                throw MapChatClientException(ex);
+                throw LLMErrorMapper.FromClientResultException(ex);
             }
             catch (HttpRequestException ex)
             {
@@ -346,58 +346,6 @@ internal static class RimLLMChatClientExecutor
         // 供應商專屬客製化最後套用，可覆寫上述基礎選項（如 reasoning 模型的 temperature/reasoning）。
         customizeOptions?.Invoke(options);
         return options;
-    }
-
-    /// <summary>
-    /// 將官方 SDK 拋出的 ClientResultException 對照為 LLMError 語意
-    /// （與 LLMErrorMapper 的狀態碼對照一致）。
-    /// </summary>
-    private static RimLLMException MapChatClientException(ClientResultException ex)
-    {
-        string rawBody = SafeGetRawBody(ex);
-        string message = !string.IsNullOrEmpty(rawBody) ? rawBody : ex.Message;
-
-        // 顯示用訊息經過淨化與截斷；關鍵字偵測則沿用未截斷的原始內容，避免關鍵字被切掉。
-        return LLMErrorMapper.CreateException(
-            ex.Status,
-            RimLLMLog.SanitizeForLog(message, 300),
-            ParseRetryAfter(ex),
-            ex,
-            detectionText: message);
-    }
-
-    private static string SafeGetRawBody(ClientResultException ex)
-    {
-        try
-        {
-            BinaryData content = ex.GetRawResponse()?.Content;
-            if (content == null)
-            {
-                return null;
-            }
-            string body = content.ToString();
-            return string.IsNullOrWhiteSpace(body) ? null : body;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static TimeSpan? ParseRetryAfter(ClientResultException ex)
-    {
-        try
-        {
-            // 交給 LLMErrorMapper 統一解析：秒數與 HTTP 日期兩種格式都吃。
-            return ex.GetRawResponse()?.Headers.TryGetValue("Retry-After", out string value) == true
-                ? LLMErrorMapper.ParseRetryAfter(value)
-                : null;
-        }
-        catch
-        {
-            // 無法解析 Retry-After 時忽略，重試仍會採用使用者設定的延遲。
-            return null;
-        }
     }
 
     /// <summary>
