@@ -80,10 +80,10 @@ internal static class RimLLMChatClientExecutor
         // 記成成功就不會備援，呼叫端也無從察覺。
         if (string.IsNullOrWhiteSpace(response?.Text) && !hasToolCalls)
         {
-            // 服務端已經計費，用量要照記；沒有回報時不估算，因為沒有產出可估。
-            if (response?.Usage != null)
+            // 服務端已經計費，用量要照記。沒有回報時只有推理內容可估；什麼都沒有就不記。
+            if (response?.Usage != null || hasReasoning)
             {
-                RecordUsage(providerId, model, builtMessages, response.Usage, 0, onUsage);
+                RecordUsage(providerId, model, builtMessages, response?.Usage, EstimateCompletionRaw(contents), onUsage);
             }
             throw new RimLLMException(LLMError.InvalidResponse, hasReasoning
                 ? ReasoningOnlyMessage(providerId)
@@ -91,8 +91,30 @@ internal static class RimLLMChatClientExecutor
         }
 
         // 要不要用估算值只由 RecordUsage 決定；逐字元估算相較網路往返可忽略。
-        RecordUsage(providerId, model, builtMessages, response.Usage, EstimateTokensRaw(response.Text), onUsage);
+        RecordUsage(providerId, model, builtMessages, response.Usage, EstimateCompletionRaw(contents), onUsage);
         return response;
+    }
+
+    /// <summary>
+    /// 供應商沒回報用量時的 completion 估算：答案文字與推理文字都算。
+    /// 推理 token 同樣計費，只算答案會讓本機相容端點上的推理模型被低估數倍。
+    /// </summary>
+    private static double EstimateCompletionRaw(IList<AIContent> contents)
+    {
+        double estimate = 0;
+        if (contents == null) return estimate;
+        foreach (AIContent part in contents)
+        {
+            if (part is TextContent text)
+            {
+                estimate += EstimateTokensRaw(text.Text);
+            }
+            else if (part is TextReasoningContent reasoning)
+            {
+                estimate += EstimateTokensRaw(reasoning.Text);
+            }
+        }
+        return estimate;
     }
 
     private static string ReasoningOnlyMessage(string providerId)
@@ -214,6 +236,8 @@ internal static class RimLLMChatClientExecutor
                 else if (part is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
                 {
                     AnyOutput = true;
+                    // 推理 token 同樣計費，沒回報用量時也要算進估算。
+                    CompletionEstimate += EstimateTokensRaw(reasoningContent.Text);
                 }
                 else if (part is FunctionCallContent)
                 {

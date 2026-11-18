@@ -8,6 +8,7 @@ using Microsoft.Extensions.AI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager;
+using RimLLM_Framework.Mod;
 
 namespace RimLLM_Framework.Tests;
 
@@ -291,6 +292,86 @@ public class RimLLMChatClientExecutorTests
 
         ClassicAssert.AreEqual(100, prompt);
         ClassicAssert.AreEqual(50, completion);
+    }
+
+    /// <summary>
+    /// 供應商沒回報用量時，推理文字也要算進 completion 估算：推理 token 同樣計費，
+    /// 只算答案會讓本機推理模型被低估數倍。40 個拉丁字元約 10 token，"ok" 約 0.5。
+    /// </summary>
+    [Test]
+    public void TestGenerateAsync_EstimateIncludesReasoningWhenUsageUnreported()
+    {
+        var client = new CapturingChatClient
+        {
+            ResponseFactory = () => new ChatResponse(new ChatMessage(
+                ChatRole.Assistant, [new TextReasoningContent(new string('a', 40)), new TextContent("ok")]))
+        };
+
+        long completion = RunWithFreshManager(settings =>
+        {
+            RimLLMChatClientExecutor.GenerateAsync(new GenerationParams(
+                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None))
+                .GetAwaiter().GetResult();
+            return settings.TotalCompletionTokens;
+        });
+
+        ClassicAssert.AreEqual(11, completion);
+    }
+
+    /// <summary>只有推理內容、沒回報用量時仍擲 InvalidResponse，但已計費的推理 token 要照記。</summary>
+    [Test]
+    public void TestGenerateAsync_ReasoningOnlyStillRecordsEstimate()
+    {
+        var client = new CapturingChatClient
+        {
+            ResponseFactory = () => new ChatResponse(new ChatMessage(
+                ChatRole.Assistant, [new TextReasoningContent(new string('a', 40))]))
+        };
+
+        long completion = RunWithFreshManager(settings =>
+        {
+            var ex = Assert.Throws<RimLLMException>(() => RimLLMChatClientExecutor.GenerateAsync(new GenerationParams(
+                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None)).GetAwaiter().GetResult());
+            ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
+            return settings.TotalCompletionTokens;
+        });
+
+        ClassicAssert.AreEqual(10, completion);
+    }
+
+    /// <summary>串流路徑同一規則：推理 update 的文字也計入估算。</summary>
+    [Test]
+    public void TestStreamAsync_EstimateIncludesReasoningWhenUsageUnreported()
+    {
+        var client = new CapturingChatClient();
+        client.StreamUpdates.Add(new ChatResponseUpdate(ChatRole.Assistant, [new TextReasoningContent(new string('a', 40))]));
+        client.StreamUpdates.Add(new ChatResponseUpdate(ChatRole.Assistant, [new TextContent("ok")]));
+
+        long completion = RunWithFreshManager(settings =>
+        {
+            RimLLMChatClientExecutor.StreamAsync(new GenerationParams(
+                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None),
+                _ => Task.CompletedTask).GetAwaiter().GetResult();
+            return settings.TotalCompletionTokens;
+        });
+
+        ClassicAssert.AreEqual(11, completion);
+    }
+
+    /// <summary>以全新的 manager 執行，結束後還原原本的 manager，避免影響其他測試的用量帳本。</summary>
+    private static long RunWithFreshManager(Func<RimLLMFrameworkSettings, long> body)
+    {
+        RimLLMProvider.TryGetManager(out RimLLMManager previous);
+        var settings = new RimLLMFrameworkSettings();
+        RimLLMProvider.Initialize(new RimLLMManager(settings));
+        try
+        {
+            return body(settings);
+        }
+        finally
+        {
+            RimLLMProvider.Initialize(previous);
+        }
     }
 
     [Test]
