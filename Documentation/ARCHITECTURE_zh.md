@@ -162,6 +162,28 @@ flowchart TD
 * **結構化輸出的 schema** 由 `System.Text.Json` 的 `JsonSchemaExporter` 產生，再由 `RimLLMSchemaBuilder` 正規化成每家供應商都接受的子集：`$ref` 展開成內嵌（循環在 CLR 型別層級截斷）、巢狀最多 5 層（OpenAI strict 模式的上限；總共 100 個屬性的上限尚未檢查）、所有成員都列入 `required`，選填性以 `["type","null"]` 聯集表達，並保留 `[Description]`。Nullable 值型別作為集合元素或字典值時，也會保留相同的可空聯集。
 * **結構化輸出型別的規則**：schema 產生與反序列化共用同一份 System.Text.Json 契約，因此不要在這些型別上掛自訂 `JsonConverter`。從 Newtonsoft 遷移的 Mod 必須把 `[JsonProperty("x")]` 改成 `[JsonPropertyName("x")]`，並改用 System.Text.Json 的 `[JsonIgnore]`；舊屬性會被無聲忽略。
 
+#### 自製元件與 SDK 的分工
+
+下列元件都是刻意保留的設計，並非重複實作 SDK。新增或移除自製元件時一併更新此表。
+
+| 自製元件 | 建構在哪個 SDK 功能上 | 為什麼需要自製部分 |
+| --- | --- | --- |
+| `RimLLMFailoverChatClient` | MEAI `FailoverChatClient` | 基底類別負責呼叫、串流承諾與嘗試上限，本類別只決定下一個候選，並記錄健康帳本與用量 |
+| `RimLLMGuardChatClient` | MEAI `DelegatingChatClient` | 防濫用節流與每日預算，SDK 無對應功能 |
+| `RimLLMRequestQueueChatClient` | MEAI `DelegatingChatClient` | 優先權佇列與並行限流，SDK 無對應功能 |
+| `RimLLMOptionsNormalizingChatClient` | MEAI `DelegatingChatClient` | 套用玩家設定的預設思考強度 |
+| `OpenAIProvider.CreateOpenAiChatClient` | OpenAI `ChatClient`、`AsIChatClient()` | 唯一的 `ChatClient` 建立點：重試交給備援層（`RetryPolicy` 為 0），網路逾時放寬到 180 秒 |
+| `RimLLMSchemaBuilder` | BCL `JsonSchemaExporter` | 刻意不用 MEAI `AIJsonUtilities.CreateJsonSchema`，要正規化成各供應商都接受的 schema 子集 |
+| 思考強度方言（`ApplyReasoningPatch`） | OpenAI SDK `Patch` | MEAI 的 `Reasoning` 只會序列化成 OpenAI 的 `reasoning_effort`，表達不了其他家的方言 |
+| `LLMErrorMapper.FromClientResultException` | System.ClientModel `ClientResultException` | 把 SDK 例外對照成框架的錯誤分類，所有 SDK 錯誤只在這裡轉換 |
+
+評估過、決定**不**改用的 SDK 功能：
+
+* **MEAI `LoggingChatClient`**：`RimLLMLog` 記的是框架內部事件（換候選、重試延遲、工具剝除、節流），從 IChatClient 外層看不到；完整提示詞日誌也違背預設關閉詳細日誌的決定。
+* **`DistributedCachingChatClient`**：對話回應刻意不快取。
+
+直接使用 `HttpClient` 的地方，由 `BannedSymbols.txt`（RS0030）把關，每處都以 `// SDK 豁免：` 註明理由。
+
 ---
 
 ## 🔐 安全性說明

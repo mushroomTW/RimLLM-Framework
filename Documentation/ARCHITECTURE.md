@@ -162,6 +162,28 @@ flowchart TD
 * **Structured-output schemas** come from `System.Text.Json`'s `JsonSchemaExporter`, then `RimLLMSchemaBuilder` normalizes them into a subset every provider accepts: `$ref` pointers are inlined (cycles are cut at the CLR type), nesting is capped at 5 levels (OpenAI strict mode's limit; its 100-property total is not enforced yet), every member is listed in `required` with optionality expressed as a `["type","null"]` union, and `[Description]` is carried over. Nullable value types keep that union when used as collection elements or dictionary values as well as object members.
 * **Rules for structured-output types**: schema generation and deserialization share one System.Text.Json contract, so don't put a custom `JsonConverter` on them. Mods migrating from Newtonsoft must switch `[JsonProperty("x")]` to `[JsonPropertyName("x")]` and use System.Text.Json's `[JsonIgnore]`; the old attributes are silently ignored.
 
+#### Custom components vs. the SDK
+
+Each component below is a deliberate design, not a re-implementation of the SDK. Update this table when adding or removing a custom component.
+
+| Custom component | Built on | Why the custom part exists |
+| --- | --- | --- |
+| `RimLLMFailoverChatClient` | MEAI `FailoverChatClient` | The base class handles calls, streaming commitment and attempt limits; this class only picks the next candidate and records health and usage |
+| `RimLLMGuardChatClient` | MEAI `DelegatingChatClient` | Anti-abuse throttling and daily budget; no SDK equivalent |
+| `RimLLMRequestQueueChatClient` | MEAI `DelegatingChatClient` | Priority queue and concurrency limit; no SDK equivalent |
+| `RimLLMOptionsNormalizingChatClient` | MEAI `DelegatingChatClient` | Applies the player's default reasoning effort |
+| `OpenAIProvider.CreateOpenAiChatClient` | OpenAI `ChatClient`, `AsIChatClient()` | The only place a `ChatClient` is created: retries belong to the failover layer (`RetryPolicy` 0), network timeout raised to 180 s |
+| `RimLLMSchemaBuilder` | BCL `JsonSchemaExporter` | Deliberately bypasses MEAI `AIJsonUtilities.CreateJsonSchema` to normalise to a schema subset every provider accepts |
+| Reasoning dialects (`ApplyReasoningPatch`) | OpenAI SDK `Patch` | MEAI `Reasoning` only serialises to OpenAI's `reasoning_effort` and cannot express other providers' dialects |
+| `LLMErrorMapper.FromClientResultException` | System.ClientModel `ClientResultException` | Maps SDK exceptions to the framework's error categories; the only place SDK errors are translated |
+
+SDK features evaluated and **not** adopted:
+
+* **MEAI `LoggingChatClient`**: `RimLLMLog` records framework-internal events (candidate switches, retry delays, tool stripping, throttling) that are invisible from outside the IChatClient; full prompt logging would also contradict detailed logging being off by default.
+* **`DistributedCachingChatClient`**: chat responses are intentionally not cached.
+
+Direct `HttpClient` use is gated by `BannedSymbols.txt` (RS0030); every exemption states its reason in a `// SDK 豁免：` comment.
+
 ---
 
 ## 🔐 Security notes
