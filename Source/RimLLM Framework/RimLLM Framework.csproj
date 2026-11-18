@@ -28,6 +28,8 @@
          MEAI001: FailoverChatClient / RoutingContext / FailoverChatClientAttempt 被 Microsoft 標記為評估用途。
          -->
     <NoWarn>$(NoWarn);SCME0001;NU1608;MEAI001</NoWarn>
+    <!-- 使用 BannedSymbols.txt 禁用的 API 直接編譯失敗。 -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0030</WarningsAsErrors>
     <!-- 直接 Reference 的組件預設會連 .xml 文件檔一起複製到 Assemblies/，出貨不需要。 -->
     <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
     <Authors>mushroomTW</Authors>
@@ -52,5 +54,14 @@
     <PackageReference Include="OpenAI" Version="2.15.0" />
     <PackageReference Include="System.ClientModel" Version="1.17.0" />
     <PackageReference Include="TypeSafeAI" Version="1.0.0" />
+  </ItemGroup>
+
+  <!-- SDK 優先的編譯期守門：禁止繞過 SDK 的底層 API，清單與理由見 BannedSymbols.txt。僅建置時使用，不隨 Mod 出貨。 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="BannedSymbols.txt" />
   </ItemGroup>
 </Project>

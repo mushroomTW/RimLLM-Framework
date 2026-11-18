@@ -117,7 +117,10 @@ public class RimLLMDecisionService
         }
         // 本機服務的 /v1/models 多為 OpenAI 格式，轉成 SDK 能解析的形狀。
         handler = new OpenAiModelListAdapterHandler { InnerHandler = handler };
+        // SDK 豁免：要注入上面的傳輸層 handler，只能用 TypeSafeClient 接收 HttpClient 的建構子；請求本身仍由 SDK 發出。
+#pragma warning disable RS0030
         return new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+#pragma warning restore RS0030
     }
 
     /// <summary>

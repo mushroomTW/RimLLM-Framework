@@ -156,7 +156,7 @@ flowchart TD
 
 ### 6. 官方 SDK 與供應商職責
 
-* **所有供應商共用一套 SDK。** 內建供應商全都走 `OpenAI` SDK `2.14.0` 與 Microsoft.Extensions.AI `10.10.0` 的 `IChatClient`，沒有直接打 HTTP 的對話路徑，也沒有第二套 SDK。Gemini 走 Google 官方的 OpenAI 相容端點。共用層只依賴 `IChatClient`、`LLMProviderCapabilities` 與 `ILLMProvider`。
+* **所有供應商共用一套 SDK。** 內建供應商全都走 `OpenAI` SDK `2.15.0` 與 Microsoft.Extensions.AI `11.0.0` 的 `IChatClient`，沒有直接打 HTTP 的對話路徑，也沒有第二套 SDK。Gemini 走 Google 官方的 OpenAI 相容端點。共用層只依賴 `IChatClient`、`LLMProviderCapabilities` 與 `ILLMProvider`。
 * **僅支援 RimWorld 1.7／.NET 10。** 三個專案統一使用 `net10.0`，SDK 與 MEAI 透過正常 NuGet 資產選擇載入。
 * **MEAI.Abstractions 使用 .NET 10 資產。** 不再強制 netstandard 資產或隨包附帶舊 BCL；`ShippedAssembliesTargetNet10` 驗證正式產物。
 * **結構化輸出的 schema** 由 `System.Text.Json` 的 `JsonSchemaExporter` 產生，再由 `RimLLMSchemaBuilder` 正規化成每家供應商都接受的子集：`$ref` 展開成內嵌（循環在 CLR 型別層級截斷）、巢狀最多 5 層（OpenAI strict 模式的上限；總共 100 個屬性的上限尚未檢查）、所有成員都列入 `required`，選填性以 `["type","null"]` 聯集表達，並保留 `[Description]`。Nullable 值型別作為集合元素或字典值時，也會保留相同的可空聯集。

@@ -1,0 +1,7 @@
+M:System.Net.Http.HttpClient.#ctor;對話與嵌入請走 OpenAI SDK／TypeSafeAI。SDK 確實不涵蓋的端點才以 #pragma warning disable RS0030 豁免，並註明理由（見 AGENTS.md「SDK 優先」）
+M:System.Net.Http.HttpClient.#ctor(System.Net.Http.HttpMessageHandler);同上：請先確認 SDK 沒有對應功能，豁免時註明理由
+M:System.Net.Http.HttpClient.#ctor(System.Net.Http.HttpMessageHandler,System.Boolean);同上：請先確認 SDK 沒有對應功能，豁免時註明理由
+M:OpenAI.Chat.ChatClient.#ctor(System.String,System.ClientModel.ApiKeyCredential);請透過 OpenAIProvider.CreateOpenAiChatClient 建立，以確保 RetryPolicy=0 與網路逾時設定一致
+M:OpenAI.Chat.ChatClient.#ctor(System.String,System.ClientModel.ApiKeyCredential,OpenAI.OpenAIClientOptions);請透過 OpenAIProvider.CreateOpenAiChatClient 建立，以確保 RetryPolicy=0 與網路逾時設定一致
+M:OpenAI.Chat.ChatClient.#ctor(System.String,System.String);請透過 OpenAIProvider.CreateOpenAiChatClient 建立，以確保 RetryPolicy=0 與網路逾時設定一致
+N:Newtonsoft.Json;schema 產生與反序列化共用 System.Text.Json 契約，請勿引入 Newtonsoft.Json

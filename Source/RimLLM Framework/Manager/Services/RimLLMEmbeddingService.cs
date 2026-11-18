@@ -451,7 +451,10 @@ public class RimLLMEmbeddingService
     /// <summary>
     /// 原生清單端點共用的 HttpClient。逾時由呼叫端的 CancellationToken 控制。
     /// </summary>
+    // SDK 豁免：Ollama／LM Studio 的原生 /api/... 端點不屬於 OpenAI 相容 API，OpenAI SDK 無法呼叫。
+#pragma warning disable RS0030
     private static readonly HttpClient ModelListHttp = new() { Timeout = Timeout.InfiniteTimeSpan };
+#pragma warning restore RS0030
 
     /// <summary>
     /// Google 原生 <c>/models</c> 端點回報每個模型支援的方法，只留下支援 <c>embedContent</c> 的。

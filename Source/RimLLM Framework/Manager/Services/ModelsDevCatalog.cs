@@ -35,8 +35,11 @@ internal static class ModelsDevCatalog
     };
 
     /// <summary>資料庫未壓縮約 5 MB，開啟 gzip 傳輸。逾時由呼叫端的 CancellationToken 控制。</summary>
+    // SDK 豁免：models.dev 是公開的 JSON 目錄，不屬於任何 LLM API，沒有 SDK 可用。
+#pragma warning disable RS0030
     private static readonly HttpClient Http = new(
         new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })
+#pragma warning restore RS0030
     {
         Timeout = Timeout.InfiniteTimeSpan
     };

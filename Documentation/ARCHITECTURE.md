@@ -156,7 +156,7 @@ flowchart TD
 
 ### 6. Official SDKs and provider responsibilities
 
-* **One SDK for every provider.** All built-in providers go through the `OpenAI` SDK `2.14.0` and the `IChatClient` of Microsoft.Extensions.AI `10.10.0`; there is no raw HTTP chat path and no second SDK. Gemini uses Google's official OpenAI-compatible endpoint. The shared layer depends only on `IChatClient`, `LLMProviderCapabilities` and `ILLMProvider`.
+* **One SDK for every provider.** All built-in providers go through the `OpenAI` SDK `2.15.0` and the `IChatClient` of Microsoft.Extensions.AI `11.0.0`; there is no raw HTTP chat path and no second SDK. Gemini uses Google's official OpenAI-compatible endpoint. The shared layer depends only on `IChatClient`, `LLMProviderCapabilities` and `ILLMProvider`.
 * **RimWorld 1.7 / .NET 10 only.** All three projects target `net10.0`, with SDK and MEAI assets selected normally by NuGet.
 * **MEAI.Abstractions uses its .NET 10 asset.** There is no forced netstandard asset or bundled legacy BCL; `ShippedAssembliesTargetNet10` verifies the release artifacts.
 * **Structured-output schemas** come from `System.Text.Json`'s `JsonSchemaExporter`, then `RimLLMSchemaBuilder` normalizes them into a subset every provider accepts: `$ref` pointers are inlined (cycles are cut at the CLR type), nesting is capped at 5 levels (OpenAI strict mode's limit; its 100-property total is not enforced yet), every member is listed in `required` with optionality expressed as a `["type","null"]` union, and `[Description]` is carried over. Nullable value types keep that union when used as collection elements or dictionary values as well as object members.

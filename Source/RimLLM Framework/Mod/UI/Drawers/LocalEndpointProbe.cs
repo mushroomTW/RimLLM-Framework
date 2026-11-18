@@ -37,10 +37,13 @@ internal static class LocalEndpointProbe
         public string TestUrl;
     }
 
+    // SDK 豁免：只探測本機服務是否在線（含 Ollama 原生 /api/tags），不是 LLM 請求。
+#pragma warning disable RS0030
     private static readonly HttpClient SharedClient = new()
     {
         Timeout = TimeSpan.FromMilliseconds(600)
     };
+#pragma warning restore RS0030
 
     /// <summary>回傳第一個可連通的候選（原樣回傳，不改寫任何欄位），全部失敗則回傳 null。</summary>
     /// <param name="targets">候選端點。</param>
