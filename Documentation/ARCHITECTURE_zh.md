@@ -224,7 +224,7 @@ Gemini Decision 另有專屬測試（`GeminiDecisionTests`），走同一個接�
 
 ### 建置與執行環境
 
-使用 .NET 10 SDK。`global.json` 選擇相容的 10.0 SDK，`Source/Directory.Build.props` 統一三個專案的 `net10.0` 與 C# 14 設定。RimWorld 1.7 API 參考組件改由 `Krafs.Rimworld.Ref` NuGet 套件（版本 `1.7.4982-unstable`）提供，因此 Mod 可在無本機遊戲安裝的情況下建置；Harmony 3.0 與測試執行期所需遊戲 DLL 仍取自本機遊戲／工作坊。遊戲組件不隨框架散布。
+使用 .NET 10 SDK。`global.json` 選擇相容的 10.0 SDK，`Source/Directory.Build.props` 統一三個專案的 `net10.0` 與 C# 14 設定。RimWorld 1.7 API 參考組件改由 `Krafs.Rimworld.Ref` NuGet 套件（版本 `1.7.5013-unstable`）提供，因此 Mod 可在無本機遊戲安裝的情況下建置；Harmony 3.0 與測試執行期所需遊戲 DLL 仍取自本機遊戲／工作坊。遊戲組件不隨框架散布。
 
 預設路徑適用於放在 `RimWorld/Mods` 裡的工作樹。其他位置請設定 `-p:RimWorldDir="<遊戲根目錄>"` 或 `RIMWORLD_DIR`。Harmony 預設取自工作坊 2009463077 的 `1.7/Assemblies/0Harmony.dll`；可覆寫 `HarmonyDll`，或 `WorkshopDir`／`WORKSHOP_DIR`。參考組件缺少時，建置會提供明確錯誤。
 
