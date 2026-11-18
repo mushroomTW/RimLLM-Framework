@@ -47,7 +47,7 @@ public class RimLLMDispatcher : MonoBehaviour
             GameObject go = new GameObject("RimLLMDispatcher");
             _instance = go.AddComponent<RimLLMDispatcher>();
             DontDestroyOnLoad(go);
-            go.hideFlags = HideFlags.HideAndDontSave;
+            // 不設 hideFlags：RimWorld 1.7（Waylith）的 UnityStubs 只實作空殼，每次啟動都會記一筆 Stub 警告。
         }
     }
 

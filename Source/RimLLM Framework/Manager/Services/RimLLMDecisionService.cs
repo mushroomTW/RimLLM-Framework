@@ -106,11 +106,41 @@ public class RimLLMDecisionService
         return normalized;
     }
 
-    private static HttpClient CreateHttpClient(string endpoint)
+    private static readonly object HttpClientLock = new();
+    private static Func<HttpMessageHandler> _httpClientFactoryKey;
+    private static HttpClient _defaultHttpClient;
+    private static HttpClient _geminiHttpClient;
+
+    /// <summary>
+    /// 取得共用的 HttpClient。TypeSafeClient 不會釋放外部傳入的 HttpClient（見其建構子文件），
+    /// 因此可以跨請求重用；每次新建 handler 會讓每個決策請求都重做 TCP／TLS 握手。
+    /// 依端點是否為 Gemini 分成兩條固定的 handler 鏈；兩個轉接 handler 都沒有逐請求狀態，可安全共用。
+    /// <see cref="MessageHandlerFactory"/> 被換掉時（測試接縫）重建，舊的 client 不主動釋放，
+    /// 避免打斷其他執行緒上仍在進行的請求。
+    /// </summary>
+    private static HttpClient GetHttpClient(string endpoint)
+    {
+        bool gemini = GeminiDecisionsAdapterHandler.Targets(endpoint);
+        lock (HttpClientLock)
+        {
+            if (!ReferenceEquals(_httpClientFactoryKey, MessageHandlerFactory))
+            {
+                _httpClientFactoryKey = MessageHandlerFactory;
+                _defaultHttpClient = null;
+                _geminiHttpClient = null;
+            }
+
+            return gemini
+                ? _geminiHttpClient ??= CreateHttpClient(gemini: true)
+                : _defaultHttpClient ??= CreateHttpClient(gemini: false);
+        }
+    }
+
+    private static HttpClient CreateHttpClient(bool gemini)
     {
         // TypeSafeClient 自己管理逾時；HttpClient 的逾時必須關掉，否則會比 SDK 先中斷。
         HttpMessageHandler handler = MessageHandlerFactory();
-        if (GeminiDecisionsAdapterHandler.Targets(endpoint))
+        if (gemini)
         {
             // Gemini Decisions API 的路徑、金鑰標頭與欄位名稱和 System One 不同，在傳輸層互轉。
             handler = new GeminiDecisionsAdapterHandler { InnerHandler = handler };
@@ -126,9 +156,14 @@ public class RimLLMDecisionService
     /// <summary>
     /// 建立送出決策請求的底層 HTTP 處理器。預設走真實網路；
     /// 測試以這個內部接縫換掉它，讓假端點不必連網就能攔截請求並回應。
+    /// 連線會被共用的 HttpClient 長期持有，因此設定連線壽命，讓遊戲長時間執行時仍會重新解析 DNS。
     /// </summary>
     internal static Func<HttpMessageHandler> MessageHandlerFactory { get; set; } =
-        () => new SocketsHttpHandler { AllowAutoRedirect = false };
+        () => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+        };
 
     private TypeSafeClientOptions CreateOptions(string endpoint, string model, string apiKey)
     {
@@ -388,7 +423,7 @@ public class RimLLMDecisionService
     private async Task<IReadOnlyList<ModelInfo>> FetchModelsCoreAsync(
         string normalizedEndpoint, string model, string apiKey, CancellationToken cancellationToken)
     {
-        using HttpClient http = CreateHttpClient(normalizedEndpoint);
+        HttpClient http = GetHttpClient(normalizedEndpoint);
         // TypeSafeClientOptions 要求 DefaultModel 非空，但查清單不會送出它；玩家還沒選模型時填佔位名稱。
         string clientModel = string.IsNullOrWhiteSpace(model) ? ModelListPlaceholderModel : model;
         using var client = new TypeSafeClient(http, CreateOptions(normalizedEndpoint, clientModel, apiKey));
@@ -415,7 +450,7 @@ public class RimLLMDecisionService
 
             string normalizedEndpoint = NormalizeBaseEndpoint(endpoint, _settings.DecisionProvider);
             string usableKey = EnsureUsableKey(apiKey, normalizedEndpoint);
-            using HttpClient http = CreateHttpClient(normalizedEndpoint);
+            HttpClient http = GetHttpClient(normalizedEndpoint);
             using var client = new TypeSafeClient(http, CreateOptions(normalizedEndpoint, model, usableKey));
             var requestOptions = new RequestOptions { Model = model };
             await client
@@ -529,7 +564,7 @@ public class RimLLMDecisionService
             string selectedModel = connection.Model;
             RequireModel(selectedModel);
 
-            using HttpClient http = CreateHttpClient(connection.Endpoint);
+            HttpClient http = GetHttpClient(connection.Endpoint);
             using var client = new TypeSafeClient(http, CreateOptions(connection.Endpoint, selectedModel, connection.ApiKey));
             var requestOptions = new RequestOptions { Model = selectedModel };
             QuestionSetResult result = await client

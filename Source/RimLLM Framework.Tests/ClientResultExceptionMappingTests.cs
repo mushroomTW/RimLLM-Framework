@@ -46,6 +46,37 @@ public sealed class ClientResultExceptionMappingTests
         ClassicAssert.IsTrue(mapped.IsBalanceExhausted);
     }
 
+    /// <summary>
+    /// 連線被拒時，真實的 SDK 擲出的是 Status 為 0 的 <see cref="ClientResultException"/>（內層才是
+    /// HttpRequestException），不是裸的 HttpRequestException。這裡走真實管線而不是手造例外，
+    /// 才能在 SDK 改變行為時察覺。127.0.0.1:1 在本機沒有服務監聽，連線會立即被拒。
+    /// </summary>
+    [Test]
+    public async Task ConnectionRefusedFromRealSdkMapsToNetworkError()
+    {
+        Microsoft.Extensions.AI.IChatClient client =
+            RimLLM_Framework.Providers.OpenAIProvider.CreateOpenAiChatClient("test-key", "test-model", "http://127.0.0.1:1/v1");
+
+        ClientResultException captured = null;
+        try
+        {
+            await client.GetResponseAsync(
+                [new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.User, "ping")]);
+        }
+        catch (ClientResultException ex)
+        {
+            captured = ex;
+        }
+
+        ClassicAssert.IsNotNull(captured, "The SDK no longer surfaces connection failures as ClientResultException.");
+        ClassicAssert.AreEqual(0, captured.Status);
+
+        RimLLMException mapped = LLMErrorMapper.FromClientResultException(captured, "Embedding API: ");
+        ClassicAssert.AreEqual(LLMError.NetworkError, mapped.Error);
+        // 主供應商連不上正是備援鏈存在的理由，必須換下一家。
+        ClassicAssert.IsTrue(RimLLM_Framework.Manager.ServiceProviderFailover.ShouldFailOver(mapped));
+    }
+
     /// <summary>只提供 <see cref="ClientResultException"/> 讀取所需成員的假回應。</summary>
     private sealed class FakePipelineResponse : PipelineResponse
     {

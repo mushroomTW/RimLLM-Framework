@@ -812,7 +812,8 @@ public class OpenAIProvider : ILLMProvider
         float timeoutSeconds = Settings.ApiTimeout > 0 ? Settings.ApiTimeout : 30f;
         using var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
 
-        var options = new OpenAIClientOptions();
+        // 模型清單是玩家在設定頁手動觸發，失敗直接回報比在逾時內默默重試三次清楚。
+        var options = new OpenAIClientOptions { RetryPolicy = new ClientRetryPolicy(0) };
         if (!string.IsNullOrEmpty(endpoint))
         {
             options.Endpoint = new Uri(endpoint, UriKind.Absolute);

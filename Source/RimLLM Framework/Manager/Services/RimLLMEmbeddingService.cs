@@ -1,5 +1,6 @@
 using System;
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -803,7 +804,11 @@ public class RimLLMEmbeddingService
     {
         options = new OpenAIClientOptions
         {
-            Endpoint = new Uri(NormalizeEmbeddingEndpoint(endpoint) ?? defaultEndpoint, UriKind.Absolute)
+            Endpoint = new Uri(NormalizeEmbeddingEndpoint(endpoint) ?? defaultEndpoint, UriKind.Absolute),
+            // 與對話路徑（OpenAIProvider.CreateOpenAiChatClient）同一理由：換家由備援鏈負責。
+            // SDK 預設的 3 次重試會在 ApiTimeout 內退避等待，429 可能被耗到逾時而回報成 Timeout，
+            // 也延後切換到備援供應商。
+            RetryPolicy = new ClientRetryPolicy(0)
         };
         if (TransportOverride != null)
         {
@@ -823,7 +828,12 @@ public class RimLLMEmbeddingService
     /// </summary>
     private static async Task<List<string>> FetchOpenAiCompatibleModelsAsync(string apiKey, string root, CancellationToken cancellationToken)
     {
-        var options = new OpenAIClientOptions { Endpoint = new Uri(root, UriKind.Absolute) };
+        // 模型清單是玩家在設定頁手動觸發，失敗直接回報比在逾時內默默重試三次清楚。
+        var options = new OpenAIClientOptions
+        {
+            Endpoint = new Uri(root, UriKind.Absolute),
+            RetryPolicy = new ClientRetryPolicy(0)
+        };
         var credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
 
         OpenAIModelCollection models = await new OpenAIClient(credential, options)

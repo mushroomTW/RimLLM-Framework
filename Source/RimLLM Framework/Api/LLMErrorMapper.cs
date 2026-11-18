@@ -126,6 +126,13 @@ public static class LLMErrorMapper
 
         switch (statusCode)
         {
+            case 0:
+                // System.ClientModel 在沒收到任何回應時（連線被拒、DNS 失敗、連線中斷）
+                // 擲出 Status 為 0 的 ClientResultException，內層才是 HttpRequestException。
+                // 這是網路層失敗，歸成 Unknown 會讓 Embedding／決策備援不換家、設定精靈也顯示不出「離線」。
+                return Create(LLMError.NetworkError,
+                    $"Could not reach the provider: {friendlyMessage}", null, innerException);
+
             case 401:
             case 403:
                 return Create(LLMError.InvalidKey,
