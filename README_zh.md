@@ -47,17 +47,19 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 <ItemGroup>
   <!-- IChatClient / ChatMessage / ChatResponse / IEmbeddingGenerator。
        ExcludeAssets="runtime" 保留參考但不把 DLL 複製到你的 Assemblies 資料夾。 -->
-  <PackageReference Include="Microsoft.Extensions.AI" Version="11.0.0" ExcludeAssets="runtime" />
+  <PackageReference Include="Microsoft.Extensions.AI" Version="10.11.0" ExcludeAssets="runtime" />
 </ItemGroup>
 ```
 
-* [`Microsoft.Extensions.AI` 11.0.0](https://www.nuget.org/packages/Microsoft.Extensions.AI/11.0.0) —— 使用端 Mod 只需要這一個。它會帶進 `Microsoft.Extensions.AI.Abstractions`，`IChatClient` 就在裡面。
-* [`Microsoft.Extensions.AI.OpenAI` 11.0.0](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/11.0.0) —— 框架另外會一併發佈這一顆。只有在你要自己建構 OpenAI SDK 用戶端時才需要參考；單純呼叫 `RimLLMProvider.CreateChatClient` 的 Mod 不需要。
+* [`Microsoft.Extensions.AI` 10.11.0](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.11.0) —— 使用端 Mod 只需要這一個。它會帶進 `Microsoft.Extensions.AI.Abstractions`，`IChatClient` 就在裡面。
+* [`Microsoft.Extensions.AI.OpenAI` 10.11.0](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.11.0) —— 框架另外會一併發佈這一顆。只有在你要自己建構 OpenAI SDK 用戶端時才需要參考；單純呼叫 `RimLLMProvider.CreateChatClient` 的 Mod 不需要。
 
 > [!IMPORTANT]
-> **版本必須釘死在 `11.0.0`。** 組件識別必須與框架載入的那一份完全一致。使用端 Mod 也不要把 `CopyLocalLockFileAssemblies` 設成 `true` —— 那正是造成上述 DLL 重複問題的原因。
+> **版本必須釘死在 `10.11.0`。** 組件識別必須與框架載入的那一份完全一致。使用端 Mod 也不要把 `CopyLocalLockFileAssemblies` 設成 `true` —— 那正是造成上述 DLL 重複問題的原因。
 >
-> **從舊版框架升上來要注意：**MEAI 的組件版本是跟著 `major.minor` 走的，`10.10.0` 產生的是 `10.10.0.0`，`11.0.0` 產生的是 `11.0.0.0`。因此對著舊版 MEAI 編譯的使用端 Mod 必須把這行的版本改掉並重新編譯 —— 這不是原始碼層的破壞性變更，但舊的二進位已經對不上框架載入的那一份。
+> **從舊版框架升上來要注意：**MEAI 的組件版本是跟著 `major.minor` 走的，`10.11.0` 產生的是 `10.11.0.0`，先前版本使用的 `11.0.0` 產生的是 `11.0.0.0`。因此對著其他版本 MEAI 編譯的使用端 Mod 必須把這行的版本改掉並重新編譯 —— 這不是原始碼層的破壞性變更，但舊的二進位已經對不上框架載入的那一份。
+>
+> **為什麼不用 MEAI 11：**RimWorld 本體附帶了一部分 `Microsoft.Extensions.*`（DependencyInjection、Logging、Options、Configuration、Primitives）與 `System.Diagnostics.DiagnosticSource`，組件版本都是 `10.0.0.0`。MEAI 10.x 只需要這些組件的 `10.0.0.0`，框架因此不出貨它們、直接沿用遊戲那份；MEAI 11 要求 `11.0.0.0`，會迫使 Mod 另外出貨一份互相衝突的新版。
 
 框架本身的組件不在 NuGet 上，那部分請看方案 B。
 
@@ -105,7 +107,7 @@ Log.Message((await client.GetResponseAsync("What is AI?")).Text);
 <details>
 <summary><b>點擊展開 SDK 使用方式</b></summary>
 
-**如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/11.0.0)，你就已經會用這套 API。**
+**如果你已經會用 [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.11.0)，你就已經會用這套 API。**
 
 RimLLM Framework 的全部工作，就是交給你一個標準的 MEAI `IChatClient`。從那一行之後全是純 Microsoft.Extensions.AI，因此本文件只寫本框架專屬的部分；MEAI 本身的語法請看 [Microsoft 官方文件](https://learn.microsoft.com/zh-tw/dotnet/ai/microsoft-extensions-ai)。
 

@@ -399,7 +399,7 @@ public class OpenAIProvider : ILLMProvider
     /// 把 <c>reasoning</c> 欄位補成 <see cref="TextReasoningContent"/>（串流 update）。
     /// </summary>
     /// <remarks>
-    /// SDK 補救：Microsoft.Extensions.AI.OpenAI 11.0.0 只解析 DeepSeek 式的 <c>reasoning_content</c>，
+    /// SDK 補救：Microsoft.Extensions.AI.OpenAI 10.11.0（11.0.0 亦同）只解析 DeepSeek 式的 <c>reasoning_content</c>，
     /// OpenRouter、Groq、Ollama、vLLM 回傳的 <c>reasoning</c> 欄位會被丟棄（僅留在 SDK 物件的 Patch 裡）。
     /// 重現：OpenRouter 串流送出 <c>delta.reasoning</c>，update.Contents 只有空的 TextContent。
     /// 已有推理內容時不再補，避免同時回傳兩個欄位的服務重複顯示。SDK 升級後需重新驗證是否仍需要。

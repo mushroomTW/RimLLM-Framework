@@ -46,11 +46,42 @@
     </Reference>
   </ItemGroup>
 
+  <!--
+    遊戲本體已附帶的組件不隨 Mod 出貨，執行期直接使用遊戲那份。
+    Krafs.Rimworld.Ref 收錄的就是遊戲根目錄的組件，所以只要 Krafs 有同名檔案，就從複製清單移除；
+    遊戲日後多附帶的組件也會自動排除，建置不需要讀本機遊戲目錄。
+    NuGet 的 ExcludeAssets 只能套在直接引用的套件上，管不到 MEAI、TypeSafeAI 等套件間接帶進來的相依，所以改用 target 過濾。
+    Krafs 的清單要在 ResolvePackageFileConflicts 之前取得：衝突解析會把 Krafs 與套件重複的參考從 Reference 移除。
+  -->
+  <Target Name="CollectGameProvidedAssemblies" AfterTargets="ResolveLockFileReferences">
+    <ItemGroup>
+      <_GameProvidedAssembly Include="@(Reference)" Condition="'%(Reference.NuGetPackageId)' == 'Krafs.Rimworld.Ref'">
+        <AssemblyFileName>%(Filename)</AssemblyFileName>
+      </_GameProvidedAssembly>
+    </ItemGroup>
+  </Target>
+
+  <!-- MatchOnMetadata 比對自訂中繼資料：兩邊路徑不同，只能以檔名對應。 -->
+  <Target Name="ExcludeGameProvidedAssemblies" AfterTargets="ResolveReferences">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths>
+        <AssemblyFileName>%(Filename)</AssemblyFileName>
+      </ReferenceCopyLocalPaths>
+      <ReferenceCopyLocalPaths Remove="@(_GameProvidedAssembly)" MatchOnMetadata="AssemblyFileName" />
+    </ItemGroup>
+  </Target>
+
+  <!-- System.Security.Cryptography.ProtectedData 不另外引用：遊戲本體已附 10.0 版，編譯期由 Krafs.Rimworld.Ref 提供參考組件，不隨 Mod 出貨。 -->
   <ItemGroup>
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
     <PackageReference Include="Markdig" Version="1.6.0" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="11.0.0" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="11.0.0" />
+    <!--
+      MEAI 刻意停在 10.x：遊戲本體附帶的 Microsoft.Extensions.*（DI、Logging、Options、Configuration、Primitives）
+      與 System.Diagnostics.DiagnosticSource 組件版本都是 10.0.0.0。MEAI 10.x 只相依 10.0.x 套件（組件版本固定 10.0.0.0），
+      與遊戲那份一致；MEAI 11 則要求 11.0.0.0，會讓 Mod 另外出貨一份新版並與遊戲的版本衝突（MSB3277）。
+      遊戲本體升級到 .NET 11 的 Extensions 之前不要升 MEAI 11；升級時一併更新 README 的版本釘選。
+    -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.11.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.11.0" />
     <PackageReference Include="OpenAI" Version="2.15.0" />
     <PackageReference Include="System.ClientModel" Version="1.17.0" />
     <PackageReference Include="TypeSafeAI" Version="1.0.0" />

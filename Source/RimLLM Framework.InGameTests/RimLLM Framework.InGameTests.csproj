@@ -45,26 +45,6 @@
     </Reference>
   </ItemGroup>
 
-  <!--
-    Krafs.Rimworld.Ref 附帶這些組件的 10.0 版，出貨的 RimLLM Framework.dll 則相依 11.0 版（MSB3277）。
-    主專案以 PackageReference 交給 NuGet 統一版本；這裡直接參考出貨 DLL，所以改用出貨目錄的版本，
-    並移除 Krafs 帶進來的舊版。
-  -->
-  <ItemGroup>
-    <ShippedDependency Include="Microsoft.Extensions.DependencyInjection.Abstractions;Microsoft.Extensions.Logging.Abstractions;Microsoft.Extensions.Primitives;System.Diagnostics.DiagnosticSource;System.Security.Cryptography.ProtectedData" />
-  </ItemGroup>
-
-  <Target Name="UseShippedDependencyVersions" AfterTargets="ResolveLockFileReferences" BeforeTargets="ResolveAssemblyReferences">
-    <ItemGroup>
-      <_KrafsDependency Include="@(Reference)" Condition="'%(Reference.NuGetPackageId)' == 'Krafs.Rimworld.Ref' and '@(ShippedDependency->AnyHaveMetadataValue('Identity', '%(Reference.Filename)'))' == 'true'" />
-      <Reference Remove="@(_KrafsDependency)" />
-      <Reference Include="@(ShippedDependency)">
-        <HintPath>..\..\Assemblies\%(Identity).dll</HintPath>
-        <Private>false</Private>
-      </Reference>
-    </ItemGroup>
-  </Target>
-
   <Target Name="CheckDevTools" BeforeTargets="ResolveReferences">
     <Error Condition="!Exists('$(DevToolsDll)')"
            Text="DevTools 1.7 DLL not found at '$(DevToolsDll)'. Pass -p:DevToolsDll=&lt;path to DevTools.dll&gt;" />

@@ -48,17 +48,19 @@ The rule is the same for both options below: **reference, don't copy.**
   <!-- IChatClient / ChatMessage / ChatResponse / IEmbeddingGenerator.
        ExcludeAssets="runtime" keeps the reference but stops the DLLs
        being copied into your mod's Assemblies folder. -->
-  <PackageReference Include="Microsoft.Extensions.AI" Version="11.0.0" ExcludeAssets="runtime" />
+  <PackageReference Include="Microsoft.Extensions.AI" Version="10.11.0" ExcludeAssets="runtime" />
 </ItemGroup>
 ```
 
-* [`Microsoft.Extensions.AI` 11.0.0](https://www.nuget.org/packages/Microsoft.Extensions.AI/11.0.0) — this is all a consuming mod needs. It brings in `Microsoft.Extensions.AI.Abstractions`, where `IChatClient` lives.
-* [`Microsoft.Extensions.AI.OpenAI` 11.0.0](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/11.0.0) — additionally shipped by the framework. You only need to reference it if you construct OpenAI SDK clients yourself; a mod that just calls `RimLLMProvider.CreateChatClient` does not.
+* [`Microsoft.Extensions.AI` 10.11.0](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.11.0) — this is all a consuming mod needs. It brings in `Microsoft.Extensions.AI.Abstractions`, where `IChatClient` lives.
+* [`Microsoft.Extensions.AI.OpenAI` 10.11.0](https://www.nuget.org/packages/Microsoft.Extensions.AI.OpenAI/10.11.0) — additionally shipped by the framework. You only need to reference it if you construct OpenAI SDK clients yourself; a mod that just calls `RimLLMProvider.CreateChatClient` does not.
 
 > [!IMPORTANT]
-> **Pin the version to exactly `11.0.0`.** Assembly identity must match what the framework loaded. Do not set `CopyLocalLockFileAssemblies` to `true` in a consuming mod — that is what causes the duplicate-DLL problem above.
+> **Pin the version to exactly `10.11.0`.** Assembly identity must match what the framework loaded. Do not set `CopyLocalLockFileAssemblies` to `true` in a consuming mod — that is what causes the duplicate-DLL problem above.
 >
-> **Upgrading from an earlier framework release:** MEAI's assembly version tracks `major.minor`, so `10.10.0` produced `10.10.0.0` while `11.0.0` produces `11.0.0.0`. A consuming mod compiled against an older MEAI release therefore has to bump this reference and rebuild — it is not a source-level break, but the old binary no longer matches what the framework loads.
+> **Upgrading from an earlier framework release:** MEAI's assembly version tracks `major.minor`, so `10.11.0` produces `10.11.0.0` while the `11.0.0` used by an earlier release produced `11.0.0.0`. A consuming mod compiled against any other MEAI release therefore has to change this reference and rebuild — it is not a source-level break, but the old binary no longer matches what the framework loads.
+>
+> **Why not MEAI 11:** RimWorld ships part of `Microsoft.Extensions.*` (DependencyInjection, Logging, Options, Configuration, Primitives) and `System.Diagnostics.DiagnosticSource` at assembly version `10.0.0.0`. MEAI 10.x only needs version `10.0.0.0` of these, so the framework does not ship them and uses the game's copies; MEAI 11 requires `11.0.0.0` and would force a second, conflicting copy.
 
 You still need a reference to the framework assembly itself, which is not on NuGet — see Option B for that part.
 
@@ -107,7 +109,7 @@ The framework itself requires [Harmony](https://steamcommunity.com/sharedfiles/f
 <details>
 <summary><b>Click to expand the SDK usage guide</b></summary>
 
-**If you already know [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/11.0.0), you already know this API.**
+**If you already know [`Microsoft.Extensions.AI`](https://www.nuget.org/packages/Microsoft.Extensions.AI/10.11.0), you already know this API.**
 
 RimLLM Framework's entire job is to hand you a standard MEAI `IChatClient`. Everything after that one line is plain Microsoft.Extensions.AI, so this page documents only what is specific to this framework — for the MEAI calls themselves, read [Microsoft's own docs](https://learn.microsoft.com/dotnet/ai/microsoft-extensions-ai).
 
