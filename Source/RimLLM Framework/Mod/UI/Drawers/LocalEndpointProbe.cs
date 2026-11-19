@@ -2,13 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
+using RimLLM_Framework.Core;
+using RimWorld;
+using Verse;
 
 namespace RimLLM_Framework.Mod;
 
 /// <summary>
 /// 本地模型端點探測的共用核心：依序 GET 各候選的測試 URL，回傳第一個成功的項目。
 /// 供應商分頁與 Embedding 分頁的按鈕狀態與成功回寫各不相同，因此 UI 狀態仍留在各 drawer，
-/// 這裡只收斂「逐一探測」的迴圈與 HttpClient。
+/// 這裡收斂「逐一探測」的迴圈、HttpClient，以及背景探測後回主線程回報的流程。
 /// </summary>
 internal static class LocalEndpointProbe
 {
@@ -66,5 +69,32 @@ internal static class LocalEndpointProbe
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// 在背景探測，結果回到主線程後先交給呼叫端回寫設定與 UI 狀態，再彈出成功或失敗訊息。
+    /// </summary>
+    /// <param name="targets">候選端點。</param>
+    /// <param name="onFound">探測成功時在主線程執行：寫入端點、更新該頁的狀態文字。</param>
+    /// <param name="onMissing">全部失敗時在主線程執行：更新該頁的狀態文字。</param>
+    internal static void StartDetect(IEnumerable<Target> targets, Action<Target> onFound, Action onMissing)
+    {
+        Task.Run(async () =>
+        {
+            Target hit = await FindReachableAsync(targets).ConfigureAwait(false);
+            RimLLMDispatcher.EnqueueOnMainThread(() =>
+            {
+                if (hit != null)
+                {
+                    onFound(hit);
+                    Messages.Message("RimLLM_MsgDetectSuccess".Translate(hit.Name), MessageTypeDefOf.PositiveEvent, false);
+                }
+                else
+                {
+                    onMissing();
+                    Messages.Message("RimLLM_MsgDetectFailed".Translate(), MessageTypeDefOf.RejectInput, false);
+                }
+            });
+        });
     }
 }

@@ -69,8 +69,7 @@ public static class ModelSettingsDrawer
                     entryToRemove = entry;
                 }
 
-                int colonIndex = entry.IndexOf(':');
-                bool hasModelName = colonIndex >= 0;
+                bool hasModelName = ProviderIds.TrySplitModelId(entry, out string providerId, out string modelName);
                 float labelWidth = hasModelName ? (itemRect.width - 200f) : (itemRect.width - 50f);
                 Rect labelRect = new Rect(itemRect.x, itemRect.y, labelWidth, itemRect.height);
                 Widgets.Label(labelRect, $" <color=cyan>{entry}</color>");
@@ -78,13 +77,12 @@ public static class ModelSettingsDrawer
                 // 純供應商條目沒有可調的模型級數值，只顯示名稱。
                 if (!hasModelName) continue;
 
-                string modelName = entry.Substring(colonIndex + 1);
                 DrawLevelButton(
                     new Rect(itemRect.x + itemRect.width - 115f, itemRect.y, 70f, itemRect.height),
                     modelName);
                 DrawContextWindowButton(
                     new Rect(itemRect.x + itemRect.width - 190f, itemRect.y, 70f, itemRect.height),
-                    entry, entry.Substring(0, colonIndex), modelName);
+                    entry, providerId, modelName);
             }
 
             if (entryToRemove != null)

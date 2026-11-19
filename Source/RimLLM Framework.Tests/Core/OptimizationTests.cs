@@ -401,9 +401,9 @@ public class OptimizationTests
         var tracker = new RimLLMUsageTracker(settings);
 
         // 快取鍵大小寫不敏感：三次呼叫結果一致，且與覆寫查詢互不干擾。
-        ClassicAssert.AreEqual(RimLLMUsageTracker.GetModelLevel("openai", "gpt-4o"), RimLLMUsageTracker.GetModelLevel("OpenAI", "GPT-4o"));
-        ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelLow, RimLLMUsageTracker.GetModelLevel("local", "anything"));
-        ClassicAssert.AreEqual(RimLLMUsageTracker.ModelLevelMedium, RimLLMUsageTracker.GetModelLevel("openai", "some-unknown-model-xyz"));
+        ClassicAssert.AreEqual(ModelPricing.GetModelLevel("openai", "gpt-4o"), ModelPricing.GetModelLevel("OpenAI", "GPT-4o"));
+        ClassicAssert.AreEqual(ModelPricing.ModelLevelLow, ModelPricing.GetModelLevel(ProviderIds.OpenAICompatible, "anything"));
+        ClassicAssert.AreEqual(ModelPricing.ModelLevelMedium, ModelPricing.GetModelLevel("openai", "some-unknown-model-xyz"));
     }
 
     [Test]

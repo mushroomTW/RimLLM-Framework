@@ -486,28 +486,7 @@ public class OpenAIProvider : ILLMProvider
 
             PromoteReasoningField(response);
 
-            // 若由管線層 RimLLMChatClientExecutor 調度，由管線層集中記帳；
-            // 若為外部直接透過 CreateChatClient / GenerateAsync 調用，則在此處記錄用量。
-            bool isExecutorManaged = RimLLMChatOptions.ReadAdditional(options, RimLLMChatOptions.ExecutorManagedKey, false);
-            if (!isExecutorManaged && response?.Usage != null)
-            {
-                try
-                {
-                    var manager = RimLLMProvider.Manager;
-                    if (manager != null)
-                    {
-                        int promptTokens = (int)(response.Usage.InputTokenCount ?? 0);
-                        int completionTokens = (int)(response.Usage.OutputTokenCount ?? 0);
-                        int cachedTokens = (int)(response.Usage.CachedInputTokenCount ?? 0);
-                        manager.RecordUsage(_provider.ProviderId, _model, promptTokens, completionTokens, cachedTokens);
-                    }
-                }
-                catch (InvalidOperationException)
-                {
-                    // Manager not initialized
-                }
-            }
-
+            // 用量一律由 RimLLMChatClientExecutor 集中記帳，adapter 不另外記。
             return response;
         }
 
@@ -563,10 +542,7 @@ public class OpenAIProvider : ILLMProvider
         private readonly OpenAIProvider _provider;
         private readonly string _model;
         private readonly System.Threading.CancellationToken _cancellationToken;
-        private readonly bool _isExecutorManaged;
         private bool _hasYieldedAny;
-        private UsageDetails _lastUsage;
-        private bool _usageRecorded;
 
         public OpenAiStreamEnumerator(
             Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> streamFactory,
@@ -584,100 +560,40 @@ public class OpenAIProvider : ILLMProvider
             _provider = provider;
             _model = model;
             _cancellationToken = cancellationToken;
-            _isExecutorManaged = RimLLMChatOptions.ReadAdditional(
-                originalOptions,
-                RimLLMChatOptions.ExecutorManagedKey,
-                false);
         }
 
         public ChatResponseUpdate Current => _inner.Current;
 
         public async ValueTask<bool> MoveNextAsync()
         {
-            try
+            while (true)
             {
-                while (true)
+                try
                 {
-                    try
+                    bool hasNext = await _inner.MoveNextAsync().ConfigureAwait(false);
+                    if (hasNext)
                     {
-                        bool hasNext = await _inner.MoveNextAsync().ConfigureAwait(false);
-                        if (hasNext)
-                        {
-                            _hasYieldedAny = true;
-                            CaptureUsage(_inner.Current);
-                            PromoteReasoningField(_inner.Current);
-                        }
-                        return hasNext;
+                        _hasYieldedAny = true;
+                        PromoteReasoningField(_inner.Current);
                     }
-                    catch (ClientResultException ex)
+                    return hasNext;
+                }
+                catch (ClientResultException ex)
+                {
+                    var mapped = LLMErrorMapper.FromClientResultException(ex);
+                    if (!_hasYieldedAny && _provider.MarkUnsupportedParameters(_model, mapped, _sentOptions))
                     {
-                        var mapped = LLMErrorMapper.FromClientResultException(ex);
-                        if (!_hasYieldedAny && _provider.MarkUnsupportedParameters(_model, mapped, _sentOptions))
-                        {
-                            // 尚未產出任何分塊且為可自癒參數（如思考強度/格式），在此請求中就地重試
-                            await _inner.DisposeAsync().ConfigureAwait(false);
-                            var retryOptions = _originalOptions?.Clone() ?? new ChatOptions();
-                            _provider.BuildChatOptions(_originalOptions, _model, retryOptions);
-                            _sentOptions = retryOptions;
-                            _inner = _streamFactory(retryOptions, _cancellationToken).GetAsyncEnumerator(_cancellationToken);
-                            continue;
-                        }
-                        throw mapped;
+                        // 尚未產出任何分塊且為可自癒參數（如思考強度/格式），在此請求中就地重試
+                        await _inner.DisposeAsync().ConfigureAwait(false);
+                        var retryOptions = _originalOptions?.Clone() ?? new ChatOptions();
+                        _provider.BuildChatOptions(_originalOptions, _model, retryOptions);
+                        _sentOptions = retryOptions;
+                        _inner = _streamFactory(retryOptions, _cancellationToken).GetAsyncEnumerator(_cancellationToken);
+                        continue;
                     }
+                    throw mapped;
                 }
             }
-            finally
-            {
-                // 若 provider 在正常結束、中斷或取消前已回報用量，皆只結算一次。
-                RecordUsageIfNeeded();
-            }
-        }
-
-        private void CaptureUsage(ChatResponseUpdate update)
-        {
-            if (update?.Contents == null) return;
-
-            foreach (AIContent content in update.Contents)
-            {
-                if (content is UsageContent usage && usage.Details != null)
-                {
-                    _lastUsage = usage.Details;
-                }
-            }
-        }
-
-        private void RecordUsageIfNeeded()
-        {
-            if (_usageRecorded || _isExecutorManaged || _lastUsage == null ||
-                (!_lastUsage.InputTokenCount.HasValue && !_lastUsage.OutputTokenCount.HasValue))
-            {
-                return;
-            }
-
-            _usageRecorded = true;
-            try
-            {
-                var manager = RimLLMProvider.Manager;
-                if (manager != null)
-                {
-                    manager.RecordUsage(
-                        _provider.ProviderId,
-                        _model,
-                        ToTokenCount(_lastUsage.InputTokenCount),
-                        ToTokenCount(_lastUsage.OutputTokenCount),
-                        ToTokenCount(_lastUsage.CachedInputTokenCount));
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                // Manager 尚未初始化時，串流回應仍照常交給呼叫端。
-            }
-        }
-
-        private static int ToTokenCount(long? count)
-        {
-            if (!count.HasValue || count.Value <= 0) return 0;
-            return count.Value >= int.MaxValue ? int.MaxValue : (int)count.Value;
         }
 
         public ValueTask DisposeAsync()

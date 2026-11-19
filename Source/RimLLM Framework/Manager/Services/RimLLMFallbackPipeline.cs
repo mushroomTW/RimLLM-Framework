@@ -307,10 +307,9 @@ public class RimLLMFallbackPipeline
             return false;
         }
 
-        int colonIndex = entry.IndexOf(':');
-        modelName = colonIndex > 0
-            ? entry.Substring(colonIndex + 1)
-            // 純供應商：取該供應商的預設模型
+        // 純供應商（含結尾冒號 "Provider:"）：取該供應商的預設模型
+        modelName = ProviderIds.TrySplitModelId(entry, out _, out string explicitModel)
+            ? explicitModel
             : _settings.GetDefaultModel(providerId, "default");
 
         return true;
@@ -379,13 +378,13 @@ public class RimLLMFallbackPipeline
 
         // 使用者明確設定的分級覆寫優先於 API 費率判定
         int overrideLevel = _settings.GetModelLevelOverride(entry ?? modelName);
-        if (overrideLevel >= RimLLMUsageTracker.ModelLevelLow && overrideLevel <= RimLLMUsageTracker.ModelLevelHigh)
+        if (overrideLevel >= ModelPricing.ModelLevelLow && overrideLevel <= ModelPricing.ModelLevelHigh)
         {
             return overrideLevel;
         }
 
-        // 依據 UsageTracker 中的真實 API 費率客觀判定等級
-        return RimLLMUsageTracker.GetModelLevel(providerId, modelName);
+        // 依據模型的 API 費率客觀判定等級
+        return ModelPricing.GetModelLevel(providerId, modelName);
     }
 
     private static int ParseMinFallbackLevel(string levelStr)

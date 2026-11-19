@@ -124,7 +124,6 @@
   <RimLLM_BudgetPolicy_WarnOnly>只警告並照常送出</RimLLM_BudgetPolicy_WarnOnly>
   <RimLLM_BudgetWarnOnlyExceeded>當日 Token 預算已超限。因為超限應對策略設為「只警告並照常送出」，請求仍會繼續送出。請提高預算上限，或在 RimLLM 設定（預算與防護）改為「直接阻斷並警告」。</RimLLM_BudgetWarnOnlyExceeded>
   <RimLLM_BudgetHardBlockExceeded>當日 Token 預算已超限，RimLLM 將阻斷 AI 請求直到明日重置。請提高預算上限，或在 RimLLM 設定（預算與防護）改為「只警告並照常送出」。</RimLLM_BudgetHardBlockExceeded>
-  <RimLLM_MsgLegacyBudgetLimitDropped>每日預算已改以 Token 計，舊版的美元上限無法換算、已被移除，目前沒有每日上限。請到「預算與防護」分頁重新設定 Token 預算。</RimLLM_MsgLegacyBudgetLimitDropped>
   <RimLLM_MsgBudgetPolicyReset>設定中已儲存的預算超限應對策略不再支援，已重設為「直接阻斷並警告」。可在「預算與防護」分頁更換。</RimLLM_MsgBudgetPolicyReset>
   <RimLLM_EnableAntiAbuseLabel>啟用防爆限制 (防止 Mod Bug 死循環)</RimLLM_EnableAntiAbuseLabel>
   <RimLLM_MaxRequestsPerWindowLabel>時間窗口內最大請求次數: {0} 次</RimLLM_MaxRequestsPerWindowLabel>

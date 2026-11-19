@@ -10,7 +10,10 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager;
 
-/// <summary>models.dev 模型目錄下載器，將框架供應商對應到 models.dev 供應商鍵。</summary>
+/// <summary>
+/// models.dev 模型目錄下載器，將框架供應商對應到 models.dev 供應商鍵。
+/// 每次下載成功都會把費率交給 <see cref="ModelPricing"/>，讓費用估算與模型分級以目錄為準。
+/// </summary>
 #pragma warning disable S1075 // 本地／固定雲端端點的產品預設值，不在執行期變動。
 internal static class ModelsDevCatalog
 {
@@ -58,7 +61,7 @@ internal static class ModelsDevCatalog
     }
 
     /// <summary>
-    /// 取得所有已對照供應商的上限（框架供應商 → 模型名稱 → token 數）。
+    /// 取得所有已對照供應商的上限、圖片支援與費率（框架供應商 → 模型名稱 → 值）。
     /// 同時進行的呼叫共用同一次下載；成功結果快取 <see cref="CacheDuration"/>，失敗則下次重試。
     /// 失敗只記警告並回傳 null，上限只是附帶資訊，不讓模型清單的重新整理失敗。
     /// </summary>
@@ -87,13 +90,66 @@ internal static class ModelsDevCatalog
             response.EnsureSuccessStatusCode();
             string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             using JsonDocument doc = JsonDocument.Parse(body);
+            ModelPricing.SetCatalogRates(ReadAllRates(doc.RootElement));
             return new ModelsDevData(ReadAll(doc.RootElement), ReadAllVision(doc.RootElement));
         }
         catch (Exception ex)
         {
-            RimLLMLog.Warning($"[RimLLM] Could not read context window sizes from models.dev: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
+            RimLLMLog.Warning($"[RimLLM] Could not read the model catalog from models.dev: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// 讀出各供應商每個模型的費率（美元／每百萬 token）：<c>cost.input</c>、<c>cost.output</c>，
+    /// 有 <c>cost.cache_read</c> 時一併採用。缺少輸入或輸出價的模型不收錄，查詢時退回內建費率表。
+    /// </summary>
+    internal static Dictionary<string, Dictionary<string, ModelPricing.CostRate>> ReadAllRates(JsonElement root)
+    {
+        var all = new Dictionary<string, Dictionary<string, ModelPricing.CostRate>>(StringComparer.OrdinalIgnoreCase);
+        if (root.ValueKind != JsonValueKind.Object) return all;
+
+        foreach (var mapping in ProviderKeys)
+        {
+            if (!root.TryGetProperty(mapping.Value, out JsonElement provider)
+                || provider.ValueKind != JsonValueKind.Object
+                || !provider.TryGetProperty("models", out JsonElement models)
+                || models.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var rates = new Dictionary<string, ModelPricing.CostRate>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty model in models.EnumerateObject())
+            {
+                if (model.Value.ValueKind == JsonValueKind.Object
+                    && model.Value.TryGetProperty("cost", out JsonElement cost)
+                    && cost.ValueKind == JsonValueKind.Object
+                    && TryReadNonNegative(cost, "input", out float input)
+                    && TryReadNonNegative(cost, "output", out float output))
+                {
+                    float? cacheRead = TryReadNonNegative(cost, "cache_read", out float cached) ? cached : null;
+                    rates[model.Name] = new ModelPricing.CostRate(input, output, cacheRead);
+                }
+            }
+            all[mapping.Key] = rates;
+        }
+        return all;
+    }
+
+    private static bool TryReadNonNegative(JsonElement obj, string name, out float value)
+    {
+        if (obj.TryGetProperty(name, out JsonElement element)
+            && element.ValueKind == JsonValueKind.Number
+            && element.TryGetDouble(out double number)
+            && number >= 0)
+        {
+            value = (float)number;
+            return true;
+        }
+
+        value = 0f;
+        return false;
     }
 
     /// <summary>

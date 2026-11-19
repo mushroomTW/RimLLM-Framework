@@ -167,7 +167,8 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
 
         IChatClient candidateClient = new RimLLMProviderChatClient(
             candidate.Provider, candidate.ModelName, _settings,
-            tokens => { state.LastUsage = tokens; });
+            tokens => { state.LastUsage = tokens; },
+            _usageTracker);
         // 新嘗試先歸零：失敗的嘗試不會觸發回呼，殘留值會誤植到下一次成功的日誌。
         state.LastUsage = default;
         // 名額包在單一嘗試外面：嘗試結束（成功、失敗或串流列舉完）即歸還，退避等待不占名額。

@@ -64,14 +64,14 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
     }
 
     /// <summary>
-    /// 估算整批輸入的 token 數，總和以 <see cref="SaturatingAdd"/> 夾在 <see cref="long.MaxValue"/> 以下。
+    /// 估算整批輸入的 token 數，總和以 <see cref="SaturatingMath.Add"/> 夾在 <see cref="long.MaxValue"/> 以下。
     /// </summary>
     private static long EstimateTotalTokens(IReadOnlyList<string> values)
     {
         long estimatedTokens = 0;
         foreach (string value in values)
         {
-            estimatedTokens = SaturatingAdd(estimatedTokens, RimLLMChatClientExecutor.EstimateTokens(value));
+            estimatedTokens = SaturatingMath.Add(estimatedTokens, RimLLMChatClientExecutor.EstimateTokens(value));
         }
         return estimatedTokens;
     }
@@ -131,7 +131,7 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
             embeddings.Add(new Embedding<float>(result.Vector) { ModelId = result.ModelId ?? modelId });
             if (result.InputTokenCount.HasValue)
             {
-                inputTokens = SaturatingAdd(inputTokens ?? 0L, result.InputTokenCount.Value);
+                inputTokens = SaturatingMath.Add(inputTokens ?? 0L, result.InputTokenCount.Value);
             }
         }
 
@@ -157,14 +157,9 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
                      .Where(result => result.InputTokenCount.HasValue)
                      .Select(result => result.InputTokenCount.Value))
         {
-            total = SaturatingAdd(total ?? 0L, tokenCount);
+            total = SaturatingMath.Add(total ?? 0L, tokenCount);
         }
         return total;
-    }
-
-    private static long SaturatingAdd(long left, long right)
-    {
-        return right > 0 && left > long.MaxValue - right ? long.MaxValue : left + right;
     }
 
     public object GetService(Type serviceType, object serviceKey = null)

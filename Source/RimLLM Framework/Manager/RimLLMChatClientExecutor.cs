@@ -19,7 +19,14 @@ internal record GenerationParams(
     bool UseNativeSchema,
     string ProviderId,
     float TimeoutSeconds,
-    CancellationToken CancellationToken);
+    CancellationToken CancellationToken)
+{
+    /// <summary>
+    /// 每次嘗試結算的用量寫入的帳本。由路由層明確傳入，不再向全域 Manager 查找；
+    /// 為 null 時（直接測試 executor）只觸發 onUsage 回呼、不記帳。
+    /// </summary>
+    public RimLLMUsageTracker UsageTracker { get; init; }
+}
 
 /// <summary>以逐候選的參數（模型、schema 方言、逾時）包裝一次 MEAI IChatClient 呼叫。</summary>
 internal static class RimLLMChatClientExecutor
@@ -83,7 +90,7 @@ internal static class RimLLMChatClientExecutor
             // 服務端已經計費，用量要照記。沒有回報時只有推理內容可估；什麼都沒有就不記。
             if (response?.Usage != null || hasReasoning)
             {
-                RecordUsage(providerId, model, builtMessages, response?.Usage, EstimateCompletionRaw(contents), onUsage);
+                RecordUsage(p.UsageTracker, providerId, model, builtMessages, response?.Usage, EstimateCompletionRaw(contents), onUsage);
             }
             throw new RimLLMException(LLMError.InvalidResponse, hasReasoning
                 ? ReasoningOnlyMessage(providerId)
@@ -91,7 +98,7 @@ internal static class RimLLMChatClientExecutor
         }
 
         // 要不要用估算值只由 RecordUsage 決定；逐字元估算相較網路往返可忽略。
-        RecordUsage(providerId, model, builtMessages, response.Usage, EstimateCompletionRaw(contents), onUsage);
+        RecordUsage(p.UsageTracker, providerId, model, builtMessages, response.Usage, EstimateCompletionRaw(contents), onUsage);
         return response;
     }
 
@@ -197,7 +204,7 @@ internal static class RimLLMChatClientExecutor
                 // 沒有 provider 用量時 RecordUsage 會沿用已累計的 completionEstimate。
                 if (streamState.AnyOutput || streamState.LastUsage != null)
                 {
-                    RecordUsage(providerId, model, builtMessages, streamState.LastUsage, streamState.CompletionEstimate, onUsage);
+                    RecordUsage(p.UsageTracker, providerId, model, builtMessages, streamState.LastUsage, streamState.CompletionEstimate, onUsage);
                 }
             }
         }
@@ -348,7 +355,6 @@ internal static class RimLLMChatClientExecutor
         }
         options.AdditionalProperties[RimLLMChatOptions.DisableReasoningKey] =
             RimLLMChatOptions.GetDisableReasoning(source);
-        options.AdditionalProperties[RimLLMChatOptions.ExecutorManagedKey] = true;
 
         Type responseType = RimLLMChatOptions.GetResponseType(source);
 
@@ -374,7 +380,9 @@ internal static class RimLLMChatClientExecutor
 
     /// <summary>
     /// 記錄請求用量至用量帳本，若供應商未回報則改用字元估算值。
+    /// 這是框架唯一的用量記帳點：provider adapter 不再自行記帳。
     /// </summary>
+    /// <param name="usageTracker">寫入的帳本；為 null 時略過記帳。</param>
     /// <param name="providerId">LLM 供應商識別碼。</param>
     /// <param name="model">使用的模型名稱。</param>
     /// <param name="messages">送出的提示訊息列表。</param>
@@ -382,6 +390,7 @@ internal static class RimLLMChatClientExecutor
     /// <param name="completionEstimate">provider 沒回報用量時使用的 completion token 估算值（<see cref="EstimateTokensRaw"/> 的累計）。</param>
     /// <param name="onUsage">供應商有回報用量時的 token 回呼（數字與帳本相同）；只有估算值時不觸發，以免日誌把估算當實際值顯示。</param>
     private static void RecordUsage(
+        RimLLMUsageTracker usageTracker,
         string providerId,
         string model,
         IList<ChatMessage> messages,
@@ -407,7 +416,7 @@ internal static class RimLLMChatClientExecutor
 
         int billedPrompt = reported ? promptTokens : Math.Max(1, promptTokens);
         int billedCompletion = reported ? completionTokens : Math.Max(1, completionTokens);
-        // 日誌附帶的單次用量與帳本同源；manager 缺席（直接測試 provider）時帳本略過、回呼照觸發。
+        // 日誌附帶的單次用量與帳本同源；沒有帳本（直接測試 executor）時帳本略過、回呼照觸發。
         // 估算值不回呼：請求日誌沒有「估算」標示，顯示層以 0 代表未回報而省略。
         if (reported)
         {
@@ -420,21 +429,14 @@ internal static class RimLLMChatClientExecutor
                 RimLLMLog.Warning($"[RimLLM] Usage callback failed: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
             }
         }
-        try
-        {
-            // 每個已結算嘗試的實際用量都立即累計；外層 Guard 保留 logical request
-            // 的 estimate buffer 到整條 fallback/retry 流程結束，供下一次嘗試使用。
-            RimLLMProvider.Manager.RecordUsage(
-                providerId,
-                model,
-                billedPrompt,
-                billedCompletion,
-                Math.Max(0, cachedPromptTokens));
-        }
-        catch (InvalidOperationException)
-        {
-            // 直接測試 provider 時可能尚未建立 manager；不影響實際回應。
-        }
+        // 每個已結算嘗試的實際用量都立即累計；外層 Guard 保留 logical request
+        // 的 estimate buffer 到整條 fallback/retry 流程結束，供下一次嘗試使用。
+        usageTracker?.RecordUsage(
+            providerId,
+            model,
+            billedPrompt,
+            billedCompletion,
+            Math.Max(0, cachedPromptTokens));
     }
 
     /// <summary>

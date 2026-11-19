@@ -307,13 +307,11 @@ public class RimLLMChatClientExecutorTests
                 ChatRole.Assistant, [new TextReasoningContent(new string('a', 40)), new TextContent("ok")]))
         };
 
-        long completion = RunWithFreshManager(settings =>
-        {
+        long completion = RunWithTracker(tracker =>
             RimLLMChatClientExecutor.GenerateAsync(new GenerationParams(
-                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None))
-                .GetAwaiter().GetResult();
-            return settings.TotalCompletionTokens;
-        });
+                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None)
+            { UsageTracker = tracker })
+                .GetAwaiter().GetResult());
 
         ClassicAssert.AreEqual(11, completion);
     }
@@ -328,12 +326,12 @@ public class RimLLMChatClientExecutorTests
                 ChatRole.Assistant, [new TextReasoningContent(new string('a', 40))]))
         };
 
-        long completion = RunWithFreshManager(settings =>
+        long completion = RunWithTracker(tracker =>
         {
             var ex = Assert.Throws<RimLLMException>(() => RimLLMChatClientExecutor.GenerateAsync(new GenerationParams(
-                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None)).GetAwaiter().GetResult());
+                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None)
+            { UsageTracker = tracker }).GetAwaiter().GetResult());
             ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
-            return settings.TotalCompletionTokens;
         });
 
         ClassicAssert.AreEqual(10, completion);
@@ -347,31 +345,21 @@ public class RimLLMChatClientExecutorTests
         client.StreamUpdates.Add(new ChatResponseUpdate(ChatRole.Assistant, [new TextReasoningContent(new string('a', 40))]));
         client.StreamUpdates.Add(new ChatResponseUpdate(ChatRole.Assistant, [new TextContent("ok")]));
 
-        long completion = RunWithFreshManager(settings =>
-        {
+        long completion = RunWithTracker(tracker =>
             RimLLMChatClientExecutor.StreamAsync(new GenerationParams(
-                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None),
-                _ => Task.CompletedTask).GetAwaiter().GetResult();
-            return settings.TotalCompletionTokens;
-        });
+                client, [new(ChatRole.User, "hi")], null, "local-test", false, "OpenAI", 30f, CancellationToken.None)
+            { UsageTracker = tracker },
+                _ => Task.CompletedTask).GetAwaiter().GetResult());
 
         ClassicAssert.AreEqual(11, completion);
     }
 
-    /// <summary>以全新的 manager 執行，結束後還原原本的 manager，避免影響其他測試的用量帳本。</summary>
-    private static long RunWithFreshManager(Func<RimLLMFrameworkSettings, long> body)
+    /// <summary>以全新的帳本執行，回傳執行後累計的 completion token。</summary>
+    private static long RunWithTracker(Action<RimLLMUsageTracker> body)
     {
-        RimLLMProvider.TryGetManager(out RimLLMManager previous);
-        var settings = new RimLLMFrameworkSettings();
-        RimLLMProvider.Initialize(new RimLLMManager(settings));
-        try
-        {
-            return body(settings);
-        }
-        finally
-        {
-            RimLLMProvider.Initialize(previous);
-        }
+        var settings = new MockSettings();
+        body(new RimLLMUsageTracker(settings));
+        return settings.TotalCompletionTokens;
     }
 
     [Test]

@@ -363,6 +363,26 @@ public class DispatcherAndCircuitBreakerTests
         ClassicAssert.IsTrue(res3);
         ClassicAssert.AreEqual("OpenAI", providerId3);
         ClassicAssert.AreEqual("default", modelName3);
+
+        // 4. 結尾冒號視為純供應商：取預設模型，而不是送出空白模型名稱
+        bool res4 = pipeline.ResolveFallbackEntry("OpenRouter:", out string providerId4, out string modelName4);
+        ClassicAssert.IsTrue(res4);
+        ClassicAssert.AreEqual("OpenRouter", providerId4);
+        ClassicAssert.AreEqual("model-1", modelName4);
+    }
+
+    [TestCase("OpenAI:gpt-4o", true, "OpenAI", "gpt-4o")]
+    [TestCase("Groq:openai/gpt-oss-20b", true, "Groq", "openai/gpt-oss-20b")]
+    [TestCase("OpenAICompatible:llama3:8b", true, "OpenAICompatible", "llama3:8b")]
+    [TestCase("OpenAI", false, "OpenAI", null)]
+    [TestCase("OpenAI:", false, "OpenAI", null)]
+    [TestCase("", false, null, null)]
+    [TestCase(null, false, null, null)]
+    public void TestTrySplitModelId(string entry, bool expected, string expectedProvider, string expectedModel)
+    {
+        ClassicAssert.AreEqual(expected, ProviderIds.TrySplitModelId(entry, out string providerId, out string modelName));
+        ClassicAssert.AreEqual(expectedProvider, providerId);
+        ClassicAssert.AreEqual(expectedModel, modelName);
     }
 
     [Test]

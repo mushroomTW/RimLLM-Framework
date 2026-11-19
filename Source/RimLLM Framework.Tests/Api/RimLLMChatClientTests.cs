@@ -462,15 +462,6 @@ public class RimLLMChatClientTests
     }
 
     [Test]
-    public void TestBuildOptions_IncludesExecutorManagedFlag()
-    {
-        var options = RimLLMChatClientExecutor.BuildOptions(null, "gpt-4o", false, null);
-        ClassicAssert.IsNotNull(options.AdditionalProperties);
-        ClassicAssert.IsTrue(options.AdditionalProperties.ContainsKey(RimLLMChatOptions.ExecutorManagedKey));
-        ClassicAssert.IsTrue((bool)options.AdditionalProperties[RimLLMChatOptions.ExecutorManagedKey]);
-    }
-
-    [Test]
     public void TestGetResponseAsync_RecordUsage_NotDoubleCounted()
     {
         var mockSettings = new MockSettings

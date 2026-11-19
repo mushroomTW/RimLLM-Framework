@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Api;
+using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager;
 
@@ -85,24 +86,19 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
         {
             foreach (string text in messages.Where(m => !string.IsNullOrEmpty(m?.Text)).Select(m => m.Text))
             {
-                estimate = SaturatingAdd(estimate, RimLLMChatClientExecutor.EstimateTokens(text));
+                estimate = SaturatingMath.Add(estimate, RimLLMChatClientExecutor.EstimateTokens(text));
             }
         }
 
         string cachedContext = RimLLMChatOptions.GetCachedContext(options);
         if (!string.IsNullOrEmpty(cachedContext))
         {
-            estimate = SaturatingAdd(estimate, RimLLMChatClientExecutor.EstimateTokens(cachedContext));
+            estimate = SaturatingMath.Add(estimate, RimLLMChatClientExecutor.EstimateTokens(cachedContext));
         }
 
         // BuildOptions supplies 1024 when the caller leaves MaxOutputTokens unset.
-        estimate = SaturatingAdd(estimate, Math.Max(0, options?.MaxOutputTokens ?? 1024));
+        estimate = SaturatingMath.Add(estimate, Math.Max(0, options?.MaxOutputTokens ?? 1024));
         return Math.Max(1, estimate);
-    }
-
-    private static long SaturatingAdd(long left, long right)
-    {
-        return right > 0 && left > long.MaxValue - right ? long.MaxValue : left + right;
     }
 
     private async IAsyncEnumerable<ChatResponseUpdate> StreamWithBudgetReservationAsync(

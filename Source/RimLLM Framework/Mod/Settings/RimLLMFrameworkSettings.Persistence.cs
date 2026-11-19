@@ -10,16 +10,13 @@ using Verse;
 namespace RimLLM_Framework.Mod;
 
 /// <summary>
-/// 設定的存檔與讀檔：DTO 結構、金鑰加解密、Scribe 讀寫與舊版設定遷移。
+/// 設定的存檔與讀檔：DTO 結構、金鑰加解密與 Scribe 讀寫。
 /// </summary>
 public partial class RimLLMFrameworkSettings
 {
     /// <summary>
     /// 用於 JSON 序列化與反序列化的 DTO 結構，避開 RimWorld Scribe 字典嵌套序列化的兼容問題。
-    /// ChatHistory / RequestLogs / Total* 欄位僅保留供舊版設定遷移讀取，新版不再寫入。
     /// </summary>
-    // 遷移用欄位僅由 JSON 反序列化賦值（CS0649 / S3459）。
-#pragma warning disable 0649, S3459
     private sealed class SettingsDto
     {
         public List<string> FallbackChain;
@@ -37,18 +34,8 @@ public partial class RimLLMFrameworkSettings
         public float RetryDelay;
         public bool DetailedLogging;
         public int MaxConcurrentRequests;
-        public List<string> ChatHistory;
-        public List<RimLLMManager.RequestLogEntry> RequestLogs;
         public int DefaultReasoningEffort;
-        public long TotalPromptTokens;
-        public long TotalCompletionTokens;
-        public float TotalEstimatedCost;
         public long DailyTokenBudgetLimit;
-
-        /// <summary>
-        /// 舊版美元上限，只讀不寫：新版存檔寫出 null，因此有值即代表這是舊版存檔（見載入處的遷移）。
-        /// </summary>
-        public float? DailyBudgetLimit;
         public int BudgetPolicy;
         public bool EnableAntiAbuse;
         public int MaxRequestsPerWindow;
@@ -57,11 +44,7 @@ public partial class RimLLMFrameworkSettings
         public int RoutingStrategy = 0;
         public bool EnableNativeSchema = true;
         public bool EnableJsonRepair = true;
-        public string EncryptedEmbeddingApiKey;
         public string EmbeddingProvider = DisabledProvider;
-        public string EmbeddingModel = "gemini-embedding-2";
-        public string EmbeddingEndpoint = "";
-        public string EmbeddingApiKey = "";
         public Dictionary<string, string> EmbeddingModels;
         public Dictionary<string, string> EmbeddingEndpoints;
         public Dictionary<string, string> EncryptedEmbeddingApiKeys;
@@ -73,24 +56,7 @@ public partial class RimLLMFrameworkSettings
         public Dictionary<string, string> EncryptedDecisionApiKeys;
         public List<string> EmbeddingFallbackChain;
         public List<string> DecisionFallbackChain;
-        // 舊版單一供應商欄位。目前仍寫出目前啟用供應商的值作為跨格式冗餘（供降級情境），
-        // 僅在新存檔缺少字典欄位時用於載入遷移，載入時字典欄位一律優先；金鑰欄位一律 null，避免明文殘留。
-        public string DecisionModel = "";
-        public string DecisionEndpoint = "";
-        public string DecisionApiKey = "";
-        public string EncryptedDecisionApiKey;
-
-        /// <summary>設定格式版本，供一次性遷移判斷；舊檔沒有這個欄位，讀成 0。</summary>
-        public int SettingsVersion;
     }
-#pragma warning restore 0649, S3459
-
-    /// <summary>
-    /// 目前的設定格式版本。
-    /// 1：DetailedLogging 預設改為關閉。版本 0 的檔案裡的 true 是舊預設值寫進去的，
-    /// 無法與玩家主動開啟區分，因此載入時一律重設為關閉一次。
-    /// </summary>
-    private const int CurrentSettingsVersion = 1;
 
     /// <summary>
     /// 建立要寫入設定 XML 的 DTO。純加密與組裝，與 Scribe 的讀寫流程分離。
@@ -99,23 +65,6 @@ public partial class RimLLMFrameworkSettings
     {
         var encryptedKeys = EncryptKeys(_apiKeys, _undecryptableApiKeys);
         var encryptedEmbeddingKeys = EncryptKeys(_embeddingApiKeys, _undecryptableEmbeddingApiKeys);
-        AddUndecryptableEmbeddingFallback(encryptedEmbeddingKeys);
-
-        bool preserveUndecryptableEmbeddingApiKey =
-            !string.IsNullOrEmpty(_undecryptableEmbeddingApiKey) &&
-            !string.IsNullOrEmpty(_undecryptableEmbeddingApiKeyProvider) &&
-            string.Equals(this.EmbeddingProvider, _undecryptableEmbeddingApiKeyProvider, StringComparison.Ordinal) &&
-            !string.IsNullOrEmpty(this.EmbeddingProvider) &&
-            !_embeddingApiKeys.ContainsKey(this.EmbeddingProvider);
-        string encryptedEmbeddingApiKey;
-        if (preserveUndecryptableEmbeddingApiKey)
-        {
-            encryptedEmbeddingApiKey = _undecryptableEmbeddingApiKey;
-        }
-        else if (!TryEncryptForSave(this.EmbeddingApiKey ?? "", out encryptedEmbeddingApiKey))
-        {
-            encryptedEmbeddingApiKey = null;
-        }
 
         var encryptedDecisionKeys = EncryptKeys(_decisionApiKeys, _undecryptableDecisionApiKeys);
 
@@ -147,11 +96,6 @@ public partial class RimLLMFrameworkSettings
             EnableNativeSchema = this.EnableNativeSchema,
             EnableJsonRepair = this.EnableJsonRepair,
             EmbeddingProvider = this.EmbeddingProvider,
-            EmbeddingModel = this.EmbeddingModel,
-            EmbeddingEndpoint = this.EmbeddingEndpoint,
-            // Embedding 金鑰與 provider 金鑰採同一套加密；明文欄位明確寫 null 以清除舊資料。
-            EncryptedEmbeddingApiKey = encryptedEmbeddingApiKey,
-            EmbeddingApiKey = null,
             EmbeddingModels = new Dictionary<string, string>(this._embeddingModels),
             EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
             EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys,
@@ -162,12 +106,7 @@ public partial class RimLLMFrameworkSettings
             DecisionEndpoints = new Dictionary<string, string>(this._decisionEndpoints),
             EncryptedDecisionApiKeys = encryptedDecisionKeys,
             EmbeddingFallbackChain = this.EmbeddingFallbackChain,
-            DecisionFallbackChain = this.DecisionFallbackChain,
-            DecisionModel = this.GetDecisionModelRaw(this.DecisionProvider),
-            DecisionEndpoint = this.GetDecisionEndpointRaw(this.DecisionProvider),
-            DecisionApiKey = null,
-            EncryptedDecisionApiKey = null,
-            SettingsVersion = CurrentSettingsVersion
+            DecisionFallbackChain = this.DecisionFallbackChain
         };
 
         return RimLLMJsonHelper.Serialize(dto);
@@ -194,21 +133,6 @@ public partial class RimLLMFrameworkSettings
             encryptedKeys[kvp.Key] = kvp.Value;
         }
         return encryptedKeys;
-    }
-
-    /// <summary>
-    /// 將舊版單一 embedding 金鑰遷移進密文字典，避免切換 provider 後密文遺失。
-    /// </summary>
-    private void AddUndecryptableEmbeddingFallback(Dictionary<string, string> encryptedEmbeddingKeys)
-    {
-        if (!string.IsNullOrEmpty(_undecryptableEmbeddingApiKey) &&
-            !string.IsNullOrEmpty(_undecryptableEmbeddingApiKeyProvider) &&
-            !_embeddingApiKeys.ContainsKey(_undecryptableEmbeddingApiKeyProvider) &&
-            !encryptedEmbeddingKeys.ContainsKey(_undecryptableEmbeddingApiKeyProvider))
-        {
-            // 舊版只有一個 active provider 欄位；切換 provider 後改放入 map，避免密文遺失。
-            encryptedEmbeddingKeys[_undecryptableEmbeddingApiKeyProvider] = _undecryptableEmbeddingApiKey;
-        }
     }
 
     public override void ExposeData()
@@ -249,7 +173,6 @@ public partial class RimLLMFrameworkSettings
     {
         ApplyProviderConfigurations(dto);
         ApplyDecryptedApiKeys(dto);
-        ApplyTelemetryMigration(dto);
         ApplyGlobalPolicies(dto);
         ApplyEmbeddingConfigurations(dto);
         ApplyDecisionConfigurations(dto);
@@ -353,30 +276,12 @@ public partial class RimLLMFrameworkSettings
         }
     }
 
-    private void ApplyTelemetryMigration(SettingsDto dto)
-    {
-        if (_telemetry.LoadedFromDisk ||
-            (dto.ChatHistory == null && dto.RequestLogs == null &&
-             dto.TotalPromptTokens <= 0 && dto.TotalCompletionTokens <= 0 && dto.TotalEstimatedCost <= 0f))
-        {
-            return;
-        }
-
-        if (dto.ChatHistory != null) this.ChatHistory = dto.ChatHistory;
-        if (dto.RequestLogs != null) this.RequestLogs = dto.RequestLogs;
-        this.TotalPromptTokens = dto.TotalPromptTokens;
-        this.TotalCompletionTokens = dto.TotalCompletionTokens;
-        this.TotalEstimatedCost = dto.TotalEstimatedCost;
-        SaveTelemetry();
-        RimLLMLog.Message("[RimLLM] Migrated telemetry from the legacy settings XML to RimLLM_Telemetry.json.");
-    }
-
     private void ApplyGlobalPolicies(SettingsDto dto)
     {
         this.ApiTimeout = dto.ApiTimeout <= 0f ? 30f : dto.ApiTimeout;
         this.MaxRetries = dto.MaxRetries < 0 ? 3 : dto.MaxRetries;
         this.RetryDelay = dto.RetryDelay < 0f ? 3f : dto.RetryDelay;
-        this.DetailedLogging = dto.SettingsVersion >= 1 && dto.DetailedLogging;
+        this.DetailedLogging = dto.DetailedLogging;
         this.MaxConcurrentRequests = dto.MaxConcurrentRequests <= 0 ? 2 : dto.MaxConcurrentRequests;
         RimLLMLog.Enabled = this.DetailedLogging;
 
@@ -394,23 +299,14 @@ public partial class RimLLMFrameworkSettings
     private void ApplyBudgetPolicies(SettingsDto dto)
     {
         this.DailyTokenBudgetLimit = dto.DailyTokenBudgetLimit < 0 ? 0 : dto.DailyTokenBudgetLimit;
-        bool legacyBudgetSave = dto.DailyBudgetLimit.HasValue;
-        if (legacyBudgetSave && dto.DailyBudgetLimit.Value > 0f)
-        {
-            RimLLMLog.Warning(
-                $"[RimLLM] The daily budget is now counted in tokens; the old USD limit ({dto.DailyBudgetLimit.Value:F2}) cannot be converted and was removed. Set a token budget under Budget & Safety.");
-            RimLLMStartupNotices.Post("RimLLM_MsgLegacyBudgetLimitDropped");
-        }
-
         int storedPolicy = dto.BudgetPolicy;
-        bool legacySilentMocking = legacyBudgetSave && storedPolicy == 1;
-        if (legacySilentMocking || SanitizeBudgetPolicy(storedPolicy) != storedPolicy)
+        if (SanitizeBudgetPolicy(storedPolicy) != storedPolicy)
         {
             RimLLMLog.Warning(
                 $"[RimLLM] Unsupported budget policy {storedPolicy} in settings; reset to HardBlock (0).");
             RimLLMStartupNotices.Post("RimLLM_MsgBudgetPolicyReset");
         }
-        this.BudgetPolicy = legacySilentMocking ? 0 : SanitizeBudgetPolicy(storedPolicy);
+        this.BudgetPolicy = SanitizeBudgetPolicy(storedPolicy);
     }
 
     private void ApplyEmbeddingConfigurations(SettingsDto dto)
@@ -426,18 +322,10 @@ public partial class RimLLMFrameworkSettings
         {
             foreach (var kvp in dto.EmbeddingModels) this._embeddingModels[kvp.Key] = kvp.Value;
         }
-        else if (!string.IsNullOrEmpty(dto.EmbeddingModel) && this.EmbeddingProvider != DisabledProvider)
-        {
-            this._embeddingModels[this.EmbeddingProvider] = dto.EmbeddingModel;
-        }
 
         if (dto.EmbeddingEndpoints != null)
         {
             foreach (var kvp in dto.EmbeddingEndpoints) this._embeddingEndpoints[kvp.Key] = kvp.Value;
-        }
-        else if (!string.IsNullOrEmpty(dto.EmbeddingEndpoint) && this.EmbeddingProvider != DisabledProvider)
-        {
-            this._embeddingEndpoints[this.EmbeddingProvider] = dto.EmbeddingEndpoint;
         }
 
         if (dto.EmbeddingFallbackChain != null) this.EmbeddingFallbackChain = dto.EmbeddingFallbackChain;
@@ -447,37 +335,14 @@ public partial class RimLLMFrameworkSettings
     {
         _embeddingApiKeys.Clear();
         _undecryptableEmbeddingApiKeys.Clear();
-        _undecryptableEmbeddingApiKey = null;
-        _undecryptableEmbeddingApiKeyProvider = null;
-        if (dto.EncryptedEmbeddingApiKeys != null)
-        {
-            DecryptApiKeyDictionary(dto.EncryptedEmbeddingApiKeys, _embeddingApiKeys, _undecryptableEmbeddingApiKeys);
-        }
-        else if (!string.IsNullOrEmpty(dto.EncryptedEmbeddingApiKey))
-        {
-            string embeddingProvider = this.EmbeddingProvider;
-            string plain = EncryptionUtility.Decrypt(dto.EncryptedEmbeddingApiKey);
-            if (plain != null && embeddingProvider != DisabledProvider)
-            {
-                _embeddingApiKeys[embeddingProvider] = plain;
-            }
-            else if (plain == null && !string.IsNullOrEmpty(embeddingProvider) && embeddingProvider != DisabledProvider)
-            {
-                _undecryptableEmbeddingApiKey = dto.EncryptedEmbeddingApiKey;
-                _undecryptableEmbeddingApiKeyProvider = embeddingProvider;
-            }
-        }
-        else if (!string.IsNullOrEmpty(dto.EmbeddingApiKey) && this.EmbeddingProvider != DisabledProvider)
-        {
-            _embeddingApiKeys[this.EmbeddingProvider] = dto.EmbeddingApiKey;
-        }
+        DecryptApiKeyDictionary(dto.EncryptedEmbeddingApiKeys, _embeddingApiKeys, _undecryptableEmbeddingApiKeys);
     }
 
     private void ApplyDecisionConfigurations(SettingsDto dto)
     {
         string decisionProvider = SanitizeDecisionProvider(dto.DecisionProvider);
         ApplyDecisionModelsAndEndpoints(dto, decisionProvider);
-        ApplyDecisionApiKeys(dto, decisionProvider);
+        ApplyDecisionApiKeys(dto);
     }
 
     private void ApplyDecisionModelsAndEndpoints(SettingsDto dto, string decisionProvider)
@@ -492,58 +357,18 @@ public partial class RimLLMFrameworkSettings
         {
             foreach (var kvp in dto.DecisionModels) _decisionModels[kvp.Key] = kvp.Value;
         }
-        else if (!string.IsNullOrEmpty(dto.DecisionModel) && decisionProvider != RimLLMDecisionProviderCatalog.Disabled)
-        {
-            _decisionModels[decisionProvider] = dto.DecisionModel;
-        }
 
         if (dto.DecisionEndpoints != null)
         {
             foreach (var kvp in dto.DecisionEndpoints) _decisionEndpoints[kvp.Key] = kvp.Value;
         }
-        else if (!string.IsNullOrEmpty(dto.DecisionEndpoint) && decisionProvider != RimLLMDecisionProviderCatalog.Disabled)
-        {
-            _decisionEndpoints[decisionProvider] = dto.DecisionEndpoint;
-        }
     }
 
-    private void ApplyDecisionApiKeys(SettingsDto dto, string decisionProvider)
+    private void ApplyDecisionApiKeys(SettingsDto dto)
     {
         _decisionApiKeys.Clear();
         _undecryptableDecisionApiKeys.Clear();
-        if (dto.EncryptedDecisionApiKeys != null)
-        {
-            DecryptApiKeyDictionary(dto.EncryptedDecisionApiKeys, _decisionApiKeys, _undecryptableDecisionApiKeys);
-        }
-
-        ApplyLegacyDecisionApiKey(dto, decisionProvider);
-    }
-
-    private void ApplyLegacyDecisionApiKey(SettingsDto dto, string decisionProvider)
-    {
-        if (decisionProvider == RimLLMDecisionProviderCatalog.Disabled ||
-            _decisionApiKeys.ContainsKey(decisionProvider) ||
-            _undecryptableDecisionApiKeys.ContainsKey(decisionProvider))
-        {
-            return;
-        }
-
-        if (!string.IsNullOrEmpty(dto.EncryptedDecisionApiKey))
-        {
-            string plain = EncryptionUtility.Decrypt(dto.EncryptedDecisionApiKey);
-            if (plain != null)
-            {
-                _decisionApiKeys[decisionProvider] = plain;
-            }
-            else
-            {
-                _undecryptableDecisionApiKeys[decisionProvider] = dto.EncryptedDecisionApiKey;
-            }
-        }
-        else if (!string.IsNullOrEmpty(dto.DecisionApiKey))
-        {
-            _decisionApiKeys[decisionProvider] = dto.DecisionApiKey;
-        }
+        DecryptApiKeyDictionary(dto.EncryptedDecisionApiKeys, _decisionApiKeys, _undecryptableDecisionApiKeys);
     }
 
     private void ApplyCompatConfigurations(SettingsDto dto)
@@ -565,9 +390,8 @@ public partial class RimLLMFrameworkSettings
     }
 
     /// <summary>
-    /// 設定檔中的預算策略值正規化。已移除的策略（SilentMocking / FallbackToFree / DialogPrompt）
-    /// 與未知值一律退回 HardBlock：不得靜默變成放行，否則舊存檔升級後會在無預警的情況下繼續燒 token。
-    /// 舊版 SilentMocking 的值 1 與新版 WarnOnly 撞號，單看數值無法分辨，由載入處依舊版存檔另行處理。
+    /// 設定檔中的預算策略值正規化。未知值一律退回 HardBlock：
+    /// 不得靜默變成放行，否則手動編輯過的設定會在無預警的情況下繼續燒 token。
     /// </summary>
     internal static int SanitizeBudgetPolicy(int stored)
     {

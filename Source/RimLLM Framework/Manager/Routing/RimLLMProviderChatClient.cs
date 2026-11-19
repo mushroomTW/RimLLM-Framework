@@ -35,17 +35,21 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     private readonly IRimLLMSettings _settings;
     /// <summary>本次嘗試結算的 token 回呼，由路由層傳入供請求日誌附帶顯示。</summary>
     private readonly Action<UsageTokens> _onUsage;
+    /// <summary>用量帳本，由路由層傳入；為 null 時不記帳（單元測試直接建立本類別時）。</summary>
+    private readonly RimLLMUsageTracker _usageTracker;
 
     public RimLLMProviderChatClient(
         ILLMProvider provider,
         string model,
         IRimLLMSettings settings,
-        Action<UsageTokens> onUsage = null)
+        Action<UsageTokens> onUsage = null,
+        RimLLMUsageTracker usageTracker = null)
     {
         _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         _model = model;
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _onUsage = onUsage;
+        _usageTracker = usageTracker;
     }
 
     public async Task<ChatResponse> GetResponseAsync(
@@ -88,7 +92,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                         true,
                         _provider.ProviderId,
                         _settings.ApiTimeout,
-                        cancellationToken),
+                        cancellationToken) { UsageTracker = _usageTracker },
                     onUsage: _onUsage).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsNativeSchemaRejected(ex))
@@ -125,7 +129,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                 false,
                 _provider.ProviderId,
                 _settings.ApiTimeout,
-                cancellationToken),
+                cancellationToken) { UsageTracker = _usageTracker },
             onUsage: _onUsage).ConfigureAwait(false);
     }
 
@@ -240,7 +244,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                             useNativeSchema,
                             _client._provider.ProviderId,
                             _client._settings.ApiTimeout,
-                            cancellationToken),
+                            cancellationToken) { UsageTracker = _client._usageTracker },
                         async update =>
                         {
                             // 唯一的改寫：把 ModelId 換成 "供應商:模型" 複合識別，

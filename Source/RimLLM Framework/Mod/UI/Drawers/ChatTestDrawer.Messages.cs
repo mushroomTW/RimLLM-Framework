@@ -301,14 +301,9 @@ public static partial class ChatTestDrawer
     internal static string FormatModelDisplayName(string modelId)
     {
         if (string.IsNullOrEmpty(modelId)) return string.Empty;
-        int colonIdx = modelId.IndexOf(':');
-        if (colonIdx > 0 && colonIdx < modelId.Length - 1)
-        {
-            string provider = modelId.Substring(0, colonIdx);
-            string model = modelId.Substring(colonIdx + 1);
-            return $"{provider} • {model}";
-        }
-        return modelId;
+        return ProviderIds.TrySplitModelId(modelId, out string provider, out string model)
+            ? $"{provider} • {model}"
+            : modelId;
     }
 
     /// <summary>

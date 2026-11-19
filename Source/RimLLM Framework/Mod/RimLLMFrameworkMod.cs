@@ -49,6 +49,9 @@ public class RimLLMFrameworkMod : Verse.Mod
         //    RimWorld 沒有保證的關閉回呼，因此兩個掛勾互補註冊。
         RegisterShutdownFlush();
 
+        // 6. 背景下載 models.dev 目錄，讓費用估算與模型分級採用最新費率（失敗時退回內建費率表）。
+        _ = ModelsDevCatalog.GetAllAsync(Settings.ApiTimeout);
+
         Log.Message("[RimLLM] RimLLM Framework loaded.");
     }
 

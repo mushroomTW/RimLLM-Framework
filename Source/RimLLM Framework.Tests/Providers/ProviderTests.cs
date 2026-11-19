@@ -51,16 +51,24 @@ public class ProviderTests
         ClassicAssert.AreEqual("model-c", (string)modelsArray[2]);
     }
 
+    /// <summary>經 executor（框架唯一的記帳點）送出一次請求，用量寫入指定帳本。</summary>
+    private static string GenerateThroughExecutor(ILLMProvider provider, RimLLMUsageTracker tracker, List<ChatMessage> messages, string model)
+    {
+        using IChatClient client = provider.CreateChatClient(model);
+        ChatResponse response = RimLLMChatClientExecutor.GenerateAsync(
+            new GenerationParams(client, messages, null, model, false, provider.ProviderId, 30f, System.Threading.CancellationToken.None)
+            {
+                UsageTracker = tracker
+            }).GetAwaiter().GetResult();
+        return response.Text;
+    }
+
     [Test]
     public void TestOpenAIProviderCacheUsage()
     {
         var mockSettings = new MockSettings();
         mockSettings.ApiKeys["OpenAI"] = "mock-key";
         var manager = new RimLLMManager(mockSettings);
-
-        // 初始化 SDK 入口，讓 OpenAIProvider 能 RecordUsage
-        RimLLMProvider.Initialize(manager);
-
         var provider = new TestOpenAIProviderWithUsage(mockSettings);
 
         // 測試 1：標準 OpenAI 的 prompt_tokens_details.cached_tokens
@@ -76,7 +84,7 @@ public class ProviderTests
             "}";
 
         var messages = new List<ChatMessage> { new(ChatRole.User, "ping") };
-        string res = provider.GenerateAsync(messages, null, "gpt-4o").GetAwaiter().GetResult();
+        string res = GenerateThroughExecutor(provider, manager.UsageTracker, messages, "gpt-4o");
 
         ClassicAssert.AreEqual("hello", res);
         ClassicAssert.AreEqual(1000, mockSettings.TotalPromptTokens);
@@ -104,7 +112,7 @@ public class ProviderTests
             "}" +
             "}";
 
-        string res2 = provider.GenerateAsync(messages, null, "gpt-4o").GetAwaiter().GetResult();
+        string res2 = GenerateThroughExecutor(provider, manager.UsageTracker, messages, "gpt-4o");
         ClassicAssert.AreEqual("hello 2", res2);
         ClassicAssert.AreEqual(2000, mockSettings.TotalPromptTokens);
         ClassicAssert.AreEqual(300, mockSettings.TotalCompletionTokens);
@@ -827,7 +835,7 @@ public class TestDataStructure
     public string Message { get; set; } = "default";
 }
 
-public class MockSettings : IRimLLMSettings, IDailyTokenBudget
+public class MockSettings : IRimLLMSettings
 {
     public List<string> FallbackChain { get; set; } = [];
     public float ApiTimeout { get; set; } = 30f;
@@ -839,7 +847,6 @@ public class MockSettings : IRimLLMSettings, IDailyTokenBudget
     public long TotalPromptTokens { get; set; } = 0;
     public long TotalCompletionTokens { get; set; } = 0;
     public float TotalEstimatedCost { get; set; } = 0f;
-    public float DailyBudgetLimit { get; set; } = 0f;
     public long DailyTokenBudgetLimit { get; set; } = 0;
     public int BudgetPolicy { get; set; } = 0;
     public bool EnableAntiAbuse { get; set; } = true;
@@ -924,11 +931,21 @@ public class MockSettings : IRimLLMSettings, IDailyTokenBudget
         return 0;
     }
 
+    public Dictionary<string, int> ContextWindows = new(StringComparer.OrdinalIgnoreCase);
+    public int? GetContextWindow(string providerId, string modelName) =>
+        ContextWindows.TryGetValue(providerId + ":" + modelName, out int window) ? window : null;
+
+    public Dictionary<string, bool> VisionSupport = new(StringComparer.OrdinalIgnoreCase);
+    public bool? GetVisionSupport(string providerId, string modelName) =>
+        VisionSupport.TryGetValue(providerId + ":" + modelName, out bool supported) ? supported : null;
+
     public List<RimLLMManager.RequestLogEntry> RequestLogs { get; set; } = [];
 
     public void MarkTelemetryDirty() { }
 
     public void SaveTelemetry() { }
+
+    public void QueueTelemetrySave() { }
 
     public void Write() { }
 }

@@ -190,9 +190,9 @@ public static class HomeDrawer
 
     private static void DrawReadyDetails(Listing_Standard listing, string activeEntry)
     {
-        string providerId = ProviderIds.ParseProviderId(activeEntry);
-        int colon = activeEntry.IndexOf(':');
-        string model = colon > 0 ? activeEntry.Substring(colon + 1) : "RimLLM_HomeDefaultModel".Translate().ToString();
+        string model = ProviderIds.TrySplitModelId(activeEntry, out string providerId, out string explicitModel)
+            ? explicitModel
+            : "RimLLM_HomeDefaultModel".Translate().ToString();
 
         listing.Label("RimLLM_HomeCurrentlyUsing".Translate(providerId, model));
         listing.Label("RimLLM_HomeTodayUsage".Translate(Settings.DailyAccumulatedTokens.ToString("N0")));

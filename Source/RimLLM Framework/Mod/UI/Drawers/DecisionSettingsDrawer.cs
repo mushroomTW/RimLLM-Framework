@@ -309,7 +309,7 @@ public static class DecisionSettingsDrawer
         }
         else
         {
-            DrawModelFilterBar(listing, providerId);
+            ModelChipGrid.DrawFilterBar(listing, "RimLLM_DecisionFetchedModelsHint", ModelFilters, providerId);
 
             List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
                 "decision:" + providerId,
@@ -329,7 +329,12 @@ public static class DecisionSettingsDrawer
             }
             else
             {
-                DrawModelGrid(scrollRect, providerId, visibleModels);
+                ModelChipGrid.DrawGrid(scrollRect, providerId, visibleModels, ModelScrollPositions, model =>
+                    ModelChipGrid.ShowModelMenu(model, "RimLLM_DecisionSetAsModel", "RimLLM_DecisionModelLabel", picked =>
+                    {
+                        Settings.SetDecisionModel(providerId, picked);
+                        Settings.Write();
+                    }));
             }
         }
 
@@ -344,128 +349,6 @@ public static class DecisionSettingsDrawer
                 : "RimLLM_FetchStatusNotRun".Translate().ToString(),
             () => StartFetchDecisionModels(providerId),
             buttonWidth: 200f);
-    }
-
-    private static void DrawModelFilterBar(Listing_Standard listing, string providerId)
-    {
-        Rect hintRect = listing.GetRect(18f);
-        using (RimLLMUIStyle.With(font: GameFont.Tiny))
-        {
-            Color oldC = GUI.color;
-            GUI.color = RimLLMUIStyle.Success;
-            Widgets.Label(hintRect, "RimLLM_DecisionFetchedModelsHint".Translate());
-            GUI.color = oldC;
-        }
-        listing.Gap(2f);
-
-        string filter = ModelFilters.TryGetValue(providerId, out string f) ? f : "";
-        Rect searchRowRect = listing.GetRect(28f);
-        float searchLabelWidth = Text.CalcSize("RimLLM_Search".Translate() + ": ").x;
-        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-        {
-            Widgets.Label(
-                new Rect(searchRowRect.x, searchRowRect.y, searchLabelWidth, searchRowRect.height),
-                "RimLLM_Search".Translate() + ": ");
-        }
-
-        Rect searchFieldRect = new Rect(
-            searchRowRect.x + searchLabelWidth + 4f,
-            searchRowRect.y,
-            searchRowRect.width - searchLabelWidth - 4f,
-            searchRowRect.height);
-        ModelFilters[providerId] = Widgets.TextField(searchFieldRect, filter);
-        listing.Gap(4f);
-    }
-
-    private static void DrawModelGrid(Rect scrollRect, string providerId, List<string> visibleModels)
-    {
-        float contentWidth = scrollRect.width - 16f;
-        float chipHeight = 28f;
-        float gap = 8f;
-        RimLLMUIStyle.ComputeChipLayout(contentWidth, gap, 220f, out int cols, out float chipWidth);
-
-        int rows = Mathf.CeilToInt((float)visibleModels.Count / cols);
-        float viewHeight = Mathf.Max(200f, (rows * (chipHeight + gap)) + gap);
-        Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
-
-        if (!ModelScrollPositions.TryGetValue(providerId, out Vector2 scrollPos))
-        {
-            scrollPos = Vector2.zero;
-            ModelScrollPositions[providerId] = scrollPos;
-        }
-
-        Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
-        ModelScrollPositions[providerId] = scrollPos;
-
-        RimLLMUIStyle.GetVisibleRowRange(
-            scrollPos.y,
-            scrollRect.height,
-            chipHeight + gap,
-            gap,
-            rows,
-            out int firstRow,
-            out int endRow);
-        string copyHint = "\n\n" + "RimLLM_ClickToCopy".Translate();
-
-        for (int i = firstRow * cols; i < visibleModels.Count && i < endRow * cols; i++)
-        {
-            string model = visibleModels[i];
-            int col = i % cols;
-            int row = i / cols;
-
-            Rect chipRect = new Rect(
-                (col * (chipWidth + gap)) + gap,
-                (row * (chipHeight + gap)) + gap,
-                chipWidth,
-                chipHeight);
-
-            Widgets.DrawBoxSolid(chipRect, RimLLMUIStyle.ChipFill);
-            Widgets.DrawBox(chipRect, 1);
-
-            if (Mouse.IsOver(chipRect))
-            {
-                Widgets.DrawHighlight(chipRect);
-                TooltipHandler.TipRegion(chipRect, model + copyHint);
-            }
-
-            if (Widgets.ButtonInvisible(chipRect))
-            {
-                ShowModelMenu(providerId, model);
-            }
-
-            Rect textRect = chipRect.ContractedBy(4f);
-            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
-            {
-                Widgets.Label(
-                    textRect,
-                    ColorTagOpen + "silver>" + RimLLMUIStyle.TruncateCached(model, textRect.width) + ColorTagClose);
-            }
-        }
-
-        Widgets.EndScrollView();
-    }
-
-    private static void ShowModelMenu(string providerId, string model)
-    {
-        string capturedModel = model;
-        var options = new List<FloatMenuOption>
-        {
-            new("RimLLM_DecisionSetAsModel".Translate(), () =>
-            {
-                Settings.SetDecisionModel(providerId, capturedModel);
-                Settings.Write();
-                Messages.Message(
-                    "RimLLM_DecisionModelLabel".Translate() + capturedModel,
-                    MessageTypeDefOf.TaskCompletion,
-                    false);
-            }),
-            new("RimLLM_ClickToCopyMenu".Translate(), () =>
-            {
-                GUIUtility.systemCopyBuffer = capturedModel;
-                Messages.Message("RimLLM_CopiedToClipboard".Translate(capturedModel), MessageTypeDefOf.TaskCompletion, false);
-            })
-        };
-        Find.WindowStack.Add(new FloatMenu(options));
     }
 
     private static void StartFetchDecisionModels(string providerId)

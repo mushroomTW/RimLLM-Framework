@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 using Verse;
@@ -22,6 +23,10 @@ public class RimLLMTelemetryStore
     private string _undecryptableEncryptedChatHistory;
     private bool _preserveBackupOnSave;
 
+    private readonly object _saveQueueLock = new();
+    private bool _saveRunning;
+    private bool _saveRequested;
+
     /// <summary>
     /// 檔案路徑解析器。抽為可替換的委派，讓單元測試能指向暫存目錄，
     /// 不必依賴 Verse 的 GenFilePaths。
@@ -39,11 +44,6 @@ public class RimLLMTelemetryStore
     public string DailyBudgetResetDate { get; set; } = "";
 
     /// <summary>
-    /// 磁碟上是否已存在遙測檔案。用於判斷是否需要從舊版設定 XML 遷移。
-    /// </summary>
-    public bool LoadedFromDisk { get; private set; }
-
-    /// <summary>
     /// 是否有尚未寫入磁碟的變更。用量統計採節流寫入，
     /// 關閉遊戲時需依此判斷是否強制 flush，避免遺失最後一段用量。
     /// </summary>
@@ -53,9 +53,6 @@ public class RimLLMTelemetryStore
     {
         /// <summary>加密後的對話歷史（JSON 陣列序列化後再以 AES 加密）。</summary>
         public string EncryptedChatHistory;
-
-        /// <summary>舊版的明文對話歷史，僅供一次性遷移讀取，不再寫入。</summary>
-        public List<string> ChatHistory;
 
         public List<RimLLMManager.RequestLogEntry> RequestLogs;
         public long TotalPromptTokens;
@@ -133,7 +130,7 @@ public class RimLLMTelemetryStore
 
             string backupPath = path + ".bak";
             var primary = new RimLLMTelemetryStore();
-            if (primary.TryLoadFrom(path, out bool needsRewrite))
+            if (primary.TryLoadFrom(path))
             {
                 if (primary._undecryptableEncryptedChatHistory != null &&
                     TryAdoptBackupChatHistory(backupPath, path, primary))
@@ -142,9 +139,6 @@ public class RimLLMTelemetryStore
                 }
 
                 CopyDataFrom(primary);
-                LoadedFromDisk = true;
-                // 讀到的是舊版明文歷史，標記為待重寫以完成加密遷移。
-                if (needsRewrite) IsDirty = true;
                 return;
             }
 
@@ -159,7 +153,7 @@ public class RimLLMTelemetryStore
     private bool TryAdoptBackupChatHistory(string backupPath, string path, RimLLMTelemetryStore primary)
     {
         var backup = new RimLLMTelemetryStore();
-        if (!backup.TryLoadFrom(backupPath, out _))
+        if (!backup.TryLoadFrom(backupPath))
         {
             return false;
         }
@@ -169,7 +163,6 @@ public class RimLLMTelemetryStore
             bool restored = TryRestoreFromBackup(backupPath, path);
             CopyDataFrom(backup);
             _preserveBackupOnSave = !restored;
-            LoadedFromDisk = true;
             IsDirty = true;
             RimLLMLog.Warning(restored
                 ? "[RimLLM] Telemetry chat history could not be decrypted; restored from the .bak backup."
@@ -188,7 +181,7 @@ public class RimLLMTelemetryStore
     private void RecoverFromBackupFile(string backupPath, string path)
     {
         var recovered = new RimLLMTelemetryStore();
-        if (!recovered.TryLoadFrom(backupPath, out _))
+        if (!recovered.TryLoadFrom(backupPath))
         {
             return;
         }
@@ -196,7 +189,6 @@ public class RimLLMTelemetryStore
         bool restored = TryRestoreFromBackup(backupPath, path);
         CopyDataFrom(recovered);
         _preserveBackupOnSave = !restored;
-        LoadedFromDisk = true;
         IsDirty = true;
         RimLLMLog.Warning(restored
             ? "[RimLLM] Telemetry file could not be parsed; restored from the .bak backup."
@@ -217,9 +209,8 @@ public class RimLLMTelemetryStore
         _preserveBackupOnSave = source._preserveBackupOnSave;
     }
 
-    private bool TryLoadFrom(string path, out bool needsRewrite)
+    private bool TryLoadFrom(string path)
     {
-        needsRewrite = false;
         try
         {
             if (!File.Exists(path)) return false;
@@ -227,10 +218,7 @@ public class RimLLMTelemetryStore
             var dto = RimLLMJsonHelper.Deserialize<TelemetryDto>(File.ReadAllText(path));
             if (dto == null) return false;
 
-            ChatHistory = ReadChatHistory(
-                dto,
-                out needsRewrite,
-                out _undecryptableEncryptedChatHistory);
+            ChatHistory = ReadChatHistory(dto, out _undecryptableEncryptedChatHistory);
             TrimChatHistory();
             RequestLogs = dto.RequestLogs ?? [];
             TotalPromptTokens = dto.TotalPromptTokens;
@@ -248,46 +236,79 @@ public class RimLLMTelemetryStore
         }
     }
 
-    private static List<string> ReadChatHistory(
-        TelemetryDto dto,
-        out bool needsRewrite,
-        out string undecryptableEncryptedChatHistory)
+    private static List<string> ReadChatHistory(TelemetryDto dto, out string undecryptableEncryptedChatHistory)
     {
-        needsRewrite = false;
         undecryptableEncryptedChatHistory = null;
-
-        if (!string.IsNullOrEmpty(dto.EncryptedChatHistory))
+        if (string.IsNullOrEmpty(dto.EncryptedChatHistory))
         {
-            string plain = EncryptionUtility.Decrypt(dto.EncryptedChatHistory);
-            if (plain == null)
-            {
-                // 無法取得原使用者的受保護 key 時，以空歷史起始，但保留密文，
-                // 避免本次程序的其他遙測變更將歷史永久覆寫掉。
-                undecryptableEncryptedChatHistory = dto.EncryptedChatHistory;
-                RimLLMLog.Warning("[RimLLM] Chat history could not be decrypted (device or user may have changed); starting with an empty history and keeping the original ciphertext.");
-                return [];
-            }
+            return [];
+        }
 
+        string plain = EncryptionUtility.Decrypt(dto.EncryptedChatHistory);
+        if (plain == null)
+        {
+            // 無法取得原使用者的受保護 key 時，以空歷史起始，但保留密文，
+            // 避免本次程序的其他遙測變更將歷史永久覆寫掉。
+            undecryptableEncryptedChatHistory = dto.EncryptedChatHistory;
+            RimLLMLog.Warning("[RimLLM] Chat history could not be decrypted (device or user may have changed); starting with an empty history and keeping the original ciphertext.");
+            return [];
+        }
+
+        try
+        {
+            return RimLLMJsonHelper.Deserialize<List<string>>(plain) ?? [];
+        }
+        catch
+        {
+            // 明文格式損毀時同樣保留原始密文，避免把未知資料靜默改成空值。
+            undecryptableEncryptedChatHistory = dto.EncryptedChatHistory;
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// 把寫檔排入背景單寫者。同一時間最多一個寫檔在跑；執行中又有新請求時只合併為一次追寫。
+    /// 追寫讀的是執行當下的最新狀態，因此最後一次變更之後必定還有一次完整寫入，
+    /// 中途寫出的檔案即使與記憶體略有落差也會被覆蓋。寫檔失敗保留 <see cref="IsDirty"/>，由關閉時的 flush 重試。
+    /// </summary>
+    public void QueueSave()
+    {
+        lock (_saveQueueLock)
+        {
+            if (_saveRunning)
+            {
+                _saveRequested = true;
+                return;
+            }
+            _saveRunning = true;
+        }
+
+        Task.Run(RunSaveLoop);
+    }
+
+    private void RunSaveLoop()
+    {
+        while (true)
+        {
             try
             {
-                return RimLLMJsonHelper.Deserialize<List<string>>(plain) ?? [];
+                Save();
             }
-            catch
+            catch (Exception ex)
             {
-                // 明文格式損毀時同樣保留原始密文，避免把未知資料靜默改成空值。
-                undecryptableEncryptedChatHistory = dto.EncryptedChatHistory;
-                return [];
+                RimLLMLog.Warning($"[RimLLM] Background telemetry write failed: {ex.Message}");
+            }
+
+            lock (_saveQueueLock)
+            {
+                if (!_saveRequested)
+                {
+                    _saveRunning = false;
+                    return;
+                }
+                _saveRequested = false;
             }
         }
-
-        // 舊版明文欄位：讀入後標記待重寫，下次 Save 即完成加密遷移。
-        if (dto.ChatHistory != null && dto.ChatHistory.Count > 0)
-        {
-            needsRewrite = true;
-            return dto.ChatHistory;
-        }
-
-        return [];
     }
 
     /// <summary>
@@ -325,15 +346,13 @@ public class RimLLMTelemetryStore
     }
 
     /// <summary>
-    /// 組出要寫入磁碟的 DTO。對話歷史加密後才落地，明文欄位一律寫 null。
+    /// 組出要寫入磁碟的 DTO。對話歷史加密後才落地。
     /// </summary>
     private TelemetryDto BuildSaveDto()
     {
         return new TelemetryDto
         {
             EncryptedChatHistory = BuildEncryptedChatHistory(),
-            // 明文欄位明確寫 null，讓舊版殘留的明文歷史在首次存檔後即被清除。
-            ChatHistory = null,
             RequestLogs = RequestLogs,
             TotalPromptTokens = TotalPromptTokens,
             TotalCompletionTokens = TotalCompletionTokens,
@@ -359,11 +378,10 @@ public class RimLLMTelemetryStore
     }
 
     /// <summary>
-    /// 寫檔成功後更新狀態旗標：已落地、無待寫變更，並視情況清除保留的密文與備份保護。
+    /// 寫檔成功後更新狀態旗標：無待寫變更，並視情況清除保留的密文與備份保護。
     /// </summary>
     private void MarkSaved()
     {
-        LoadedFromDisk = true;
         IsDirty = false;
         if (ChatHistory != null && ChatHistory.Count > 0)
         {

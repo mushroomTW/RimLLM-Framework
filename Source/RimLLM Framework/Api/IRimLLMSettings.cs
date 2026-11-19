@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.AI;
 
@@ -102,11 +101,14 @@ public interface IRimLLMSettings
     float TotalEstimatedCost { get; set; }
 
     /// <summary>
-    /// 舊版今日預算上限 (USD)。保留此成員以維持既有外部 Mod 的二進位相容（移除會讓讀取它的呼叫端擲 MissingMethodException）。
-    /// 內建設定已改以 token 計（見 <see cref="IDailyTokenBudget"/>），此值恆為 0；
-    /// 只有未實作 <see cref="IDailyTokenBudget"/> 的外部設定才會以它搭配 <see cref="DailyAccumulatedCost"/> 作為門檻。
+    /// 每日 token 預算上限（輸入＋輸出合計）。0 代表無限制。
     /// </summary>
-    float DailyBudgetLimit { get; set; }
+    long DailyTokenBudgetLimit { get; set; }
+
+    /// <summary>
+    /// 當日已累計 token（輸入＋輸出合計，含查無費率與免費模型的請求）。
+    /// </summary>
+    long DailyAccumulatedTokens { get; set; }
 
     /// <summary>
     /// 預算超限應對策略 (0=HardBlock 直接阻斷並警告, 1=WarnOnly 只警告並照常送出)。
@@ -134,8 +136,7 @@ public interface IRimLLMSettings
     int CoolDownDurationSeconds { get; set; }
 
     /// <summary>
-    /// 舊版今日累計估計消耗 (USD)。每日預算已改以 token 計（見 <see cref="IDailyTokenBudget"/>），
-    /// 此值僅保留作費用顯示，不再作為門檻。
+    /// 今日累計估計消耗 (USD)，僅供費用顯示；每日預算門檻以 <see cref="DailyTokenBudgetLimit"/> 計。
     /// </summary>
     float DailyAccumulatedCost { get; set; }
 
@@ -204,66 +205,54 @@ public interface IRimLLMSettings
     /// 供應商的端點與金鑰在框架設定中是分開儲存的，第三方 Mod 指定供應商做決策時
     /// 必須讀得到該供應商自己的金鑰，而不是啟用中那一家的。
     /// </summary>
-    /// <remarks>
-    /// 預設實作只在 <paramref name="providerId"/> 指向啟用中的供應商時才回傳啟用中供應商的值，
-    /// 其他供應商一律回空字串：既有的外部設定實作者只維護「啟用中供應商」一份資料，
-    /// 補上預設實作才不會讓它們在執行期炸掉；但若把啟用中供應商的金鑰錯當成別家供應商的，
-    /// 請求會打到錯誤的主機、用量也會記到錯誤的供應商帳上，因此寧可回空字串讓呼叫被拒絕。
-    /// 框架內建的 <c>RimLLMFrameworkSettings</c> 覆寫了這三個方法，逐供應商各自取值。
-    /// </remarks>
-    string GetDecisionApiKey(string providerId) =>
-        string.Equals(providerId, DecisionProvider, StringComparison.Ordinal) ? DecisionApiKey : "";
+    string GetDecisionApiKey(string providerId);
 
     /// <summary>
     /// 獲取指定決策供應商的模型名稱（沒有預設模型，未設定時為空字串）。
     /// </summary>
-    /// <inheritdoc cref="GetDecisionApiKey" path="/remarks"/>
-    string GetDecisionModel(string providerId) =>
-        string.Equals(providerId, DecisionProvider, StringComparison.Ordinal) ? DecisionModel : "";
+    string GetDecisionModel(string providerId);
 
     /// <summary>
     /// 獲取指定決策供應商的端點（未設定時由供應商目錄提供預設值）。
     /// </summary>
-    /// <inheritdoc cref="GetDecisionApiKey" path="/remarks"/>
-    string GetDecisionEndpoint(string providerId) =>
-        string.Equals(providerId, DecisionProvider, StringComparison.Ordinal) ? DecisionEndpoint : "";
+    string GetDecisionEndpoint(string providerId);
 
     /// <summary>
     /// Embedding 備援鏈：啟用中的供應商失敗時，依序改用的供應商識別碼（不含啟用中那一家）。
     /// 每家備援供應商使用自己保存的模型、端點與金鑰。
     /// </summary>
-    /// <remarks>預設實作回傳空清單，既有的外部設定實作者不必改動，行為等同沒有備援。</remarks>
-    List<string> EmbeddingFallbackChain => [];
+    List<string> EmbeddingFallbackChain { get; }
 
     /// <summary>
     /// 決策備援鏈：啟用中的供應商失敗時，依序改用的供應商識別碼（不含啟用中那一家）。
     /// </summary>
-    /// <inheritdoc cref="EmbeddingFallbackChain" path="/remarks"/>
-    List<string> DecisionFallbackChain => [];
+    List<string> DecisionFallbackChain { get; }
 
     /// <summary>
     /// 獲取指定 Embedding 供應商保存的模型名稱（沒有預設模型，未設定時為空字串）。
     /// </summary>
-    /// <remarks>
-    /// 預設實作只在 <paramref name="providerId"/> 指向啟用中的供應商時才回傳啟用中供應商的值，
-    /// 其他供應商一律回空字串，原因同 <see cref="GetDecisionApiKey"/>。
-    /// </remarks>
-    string GetEmbeddingModel(string providerId) =>
-        string.Equals(providerId, EmbeddingProvider, StringComparison.Ordinal) ? EmbeddingModel : "";
+    string GetEmbeddingModel(string providerId);
 
     /// <summary>
     /// 獲取指定 Embedding 供應商的端點。
     /// </summary>
-    /// <inheritdoc cref="GetEmbeddingModel" path="/remarks"/>
-    string GetEmbeddingEndpoint(string providerId) =>
-        string.Equals(providerId, EmbeddingProvider, StringComparison.Ordinal) ? EmbeddingEndpoint : "";
+    string GetEmbeddingEndpoint(string providerId);
 
     /// <summary>
     /// 獲取指定 Embedding 供應商保存的 API 金鑰。
     /// </summary>
-    /// <inheritdoc cref="GetEmbeddingModel" path="/remarks"/>
-    string GetEmbeddingApiKey(string providerId) =>
-        string.Equals(providerId, EmbeddingProvider, StringComparison.Ordinal) ? EmbeddingApiKey : "";
+    string GetEmbeddingApiKey(string providerId);
+
+    /// <summary>
+    /// 查詢模型的上下文上限（token 數）：玩家手動填寫的值優先，其次為重新整理模型清單時
+    /// 記下的值；都沒有則回傳 null。
+    /// </summary>
+    int? GetContextWindow(string providerId, string modelName);
+
+    /// <summary>
+    /// 查詢模型是否支援圖片輸入：重新整理模型清單時記下的結果；沒有資料則回傳 null。
+    /// </summary>
+    bool? GetVisionSupport(string providerId, string modelName);
 
     /// <summary>
     /// 歷史請求日誌記錄清單。
@@ -279,6 +268,11 @@ public interface IRimLLMSettings
     /// 儲存遙測資料。
     /// </summary>
     void SaveTelemetry();
+
+    /// <summary>
+    /// 標記遙測待寫入，並排入背景寫檔（不在呼叫端執行緒做加密與磁碟寫入）。
+    /// </summary>
+    void QueueTelemetrySave();
 
     /// <summary>
     /// 將設定寫入/持久化。

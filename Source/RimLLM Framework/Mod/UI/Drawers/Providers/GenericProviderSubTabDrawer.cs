@@ -546,33 +546,24 @@ public static class GenericProviderSubTabDrawer
         listing.Gap(4f);
     }
 
-    private static void StartDetectLocalEndpoint(string providerId = "OpenAICompatible")
+    private static void StartDetectLocalEndpoint(string providerId = ProviderIds.OpenAICompatible)
     {
         IsDetectingLocal = true;
         DetectStatusMsg = "RimLLM_DetectingLocal".Translate();
 
-        Task.Run(async () =>
-        {
-            LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(LocalTargets).ConfigureAwait(false);
-            if (hit != null)
+        LocalEndpointProbe.StartDetect(
+            LocalTargets,
+            hit =>
             {
-                RimLLMDispatcher.EnqueueOnMainThread(() =>
-                {
-                    Settings.SetEndpoint(providerId, hit.BaseUrl);
-                    Settings.Write();
-                    IsDetectingLocal = false;
-                    DetectStatusMsg = "RimLLM_DetectSuccess".Translate(hit.Name, hit.BaseUrl);
-                    Messages.Message("RimLLM_MsgDetectSuccess".Translate(hit.Name), MessageTypeDefOf.PositiveEvent, false);
-                });
-                return;
-            }
-
-            RimLLMDispatcher.EnqueueOnMainThread(() =>
+                Settings.SetEndpoint(providerId, hit.BaseUrl);
+                Settings.Write();
+                IsDetectingLocal = false;
+                DetectStatusMsg = "RimLLM_DetectSuccess".Translate(hit.Name, hit.BaseUrl);
+            },
+            () =>
             {
                 IsDetectingLocal = false;
                 DetectStatusMsg = "RimLLM_DetectFailed".Translate();
-                Messages.Message("RimLLM_MsgDetectFailed".Translate(), MessageTypeDefOf.RejectInput, false);
             });
-        });
     }
 }

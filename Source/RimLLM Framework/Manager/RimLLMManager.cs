@@ -415,11 +415,9 @@ public class RimLLMManager
     /// </summary>
     internal int? GetContextWindow(string modelId)
     {
-        if (string.IsNullOrEmpty(modelId)) return null;
-        int colonIndex = modelId.IndexOf(':');
-        if (colonIndex <= 0 || colonIndex >= modelId.Length - 1) return null;
-
-        return (_settings as IContextWindowLookup)?.GetContextWindow(modelId.Substring(0, colonIndex), modelId.Substring(colonIndex + 1));
+        return ProviderIds.TrySplitModelId(modelId, out string providerId, out string modelName)
+            ? _settings.GetContextWindow(providerId, modelName)
+            : null;
     }
 
     /// <summary>
@@ -428,11 +426,9 @@ public class RimLLMManager
     /// </summary>
     internal bool? SupportsVision(string modelId)
     {
-        if (string.IsNullOrEmpty(modelId)) return null;
-        int colonIndex = modelId.IndexOf(':');
-        if (colonIndex <= 0 || colonIndex >= modelId.Length - 1) return null;
-
-        return (_settings as IVisionLookup)?.GetVisionSupport(modelId.Substring(0, colonIndex), modelId.Substring(colonIndex + 1));
+        return ProviderIds.TrySplitModelId(modelId, out string providerId, out string modelName)
+            ? _settings.GetVisionSupport(providerId, modelName)
+            : null;
     }
 
     public void ClearLogs()

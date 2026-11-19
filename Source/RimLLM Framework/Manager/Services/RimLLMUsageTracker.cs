@@ -10,267 +10,14 @@ using Verse;
 namespace RimLLM_Framework.Manager;
 
 /// <summary>
-/// 管理並統計 API 呼叫量、Token 使用度、連線日誌記錄、API 計費預估與每日預算審查。
-/// 支援對設定檔的磁碟存檔寫入實施節流（防震）保護。
+/// 管理並統計 API 呼叫量、Token 使用度、連線日誌記錄與每日預算審查。
+/// 費率與模型分級見 <see cref="ModelPricing"/>；遙測寫檔由設定端的背景寫入者負責，這裡只做節流排程。
+/// 所有狀態都屬於實例：同一程序中的多個 tracker（例如單元測試）彼此獨立。
 /// </summary>
 public class RimLLMUsageTracker
 {
-    private readonly IRimLLMSettings _settings;
-    private static DateTime _lastLogWriteTime = DateTime.MinValue;
-    private static readonly object LogLock = new();
-    private static readonly object UsageLock = new();
-    private static bool _telemetrySaveDeferred;
-    private static long _telemetrySaveScheduleVersion;
-    // 每筆 reservation 在整個 logical request（含 fallback/retry）結束前都保留一份估算額度。
-    private long _reservedBudgetTokens;
-    private int _reservedLegacyBudgetRequests;
-
     /// <summary>日誌保留上限。與 Trim 邏輯共用，避免魔法數字散落。</summary>
     internal const int MaxRetainedLogs = 30;
-
-    /// <summary>
-    /// 日誌佇列的近似計數。ConcurrentQueue.Count 可能需要走訪內部區段，
-    /// 每請求呼叫一次會隨日誌量線性變貴；此計數器以 Interlocked 維護，Trim 只看它。
-    /// 多執行緒下為近似值（最終一致），僅影響保留條數上下一兩條，不影響正確性。
-    /// </summary>
-    private int _logCount;
-    private long _unpricedUsageCount;
-
-    /// <summary>本次執行中有用量但查無費率的呼叫數；不把未知費用誤認為免費。</summary>
-    public long UnpricedUsageCount => Interlocked.Read(ref _unpricedUsageCount);
-
-    /// <summary>高階模型等級（Level 3）。</summary>
-    public const int ModelLevelHigh = 3;
-    /// <summary>中階模型等級（Level 2）。</summary>
-    public const int ModelLevelMedium = 2;
-    /// <summary>入門/免費模型等級（Level 1）。</summary>
-    public const int ModelLevelLow = 1;
-
-    private const float HighTierCompletionCostThreshold = 3.00f;
-    private const float MediumTierCompletionCostThreshold = 0.50f;
-
-    /// <summary>
-    /// 模型分級快取：費率表為靜態唯讀，同一 provider:model 的分級永不變化。
-    /// 鍵保留原始大小寫，以 OrdinalIgnoreCase 比對，省下每次的 ToLower 配置。
-    /// 使用者覆寫走 <see cref="IRimLLMSettings.GetModelLevelOverride"/> 即時查詢，不進快取，
-    /// 因此設定頁調整分級立即生效。
-    /// </summary>
-    private static readonly ConcurrentDictionary<string, int> ModelLevelCache =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// 依據模型的 API 費率（每百萬 Token 輸出費率）判定其等級：
-    /// Level 3 (High): 輸出費率 &gt;= $3.00 / 1M Tokens (如 GPT-4o, Gemini Pro, Grok, Qwen-Max)
-    /// Level 2 (Medium): 輸出費率 &gt;= $0.50 / 1M Tokens (如 Gemini Flash, DeepSeek-V4-Pro, Qwen-Plus)
-    /// Level 1 (Low): 輸出費率 &lt; $0.50 / 1M Tokens 或本地免費模型 ($0)
-    /// </summary>
-    /// <param name="providerId">LLM 供應商識別碼。</param>
-    /// <param name="modelName">模型名稱。</param>
-    /// <returns>模型的等級（1、2 或 3）。</returns>
-    public static int GetModelLevel(string providerId, string modelName)
-    {
-        if (string.IsNullOrEmpty(modelName) ||
-            string.Equals(providerId, "openaicompatible", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(providerId, "openai-compatible", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(providerId, "local", StringComparison.OrdinalIgnoreCase))
-        {
-            return ModelLevelLow;
-        }
-
-        string cacheKey = BuildModelLevelCacheKey(providerId, modelName);
-        if (ModelLevelCache.TryGetValue(cacheKey, out int cached))
-        {
-            return cached;
-        }
-
-        int level;
-        if (FindModelRate(providerId, modelName, out CostRate rate))
-        {
-            if (rate.CompletionPerMillion >= HighTierCompletionCostThreshold) level = ModelLevelHigh;
-            else if (rate.CompletionPerMillion >= MediumTierCompletionCostThreshold) level = ModelLevelMedium;
-            else level = ModelLevelLow;
-        }
-        else
-        {
-            level = ModelLevelMedium; // 未知雲端模型預設給予 Medium 評級
-        }
-
-        ModelLevelCache[cacheKey] = level;
-        return level;
-    }
-
-    /// <summary>組分級快取鍵：僅剝除 models/ 前綴，不做大小寫正規化（比對器負責）。</summary>
-    private static string BuildModelLevelCacheKey(string providerId, string modelName)
-    {
-        string model = StripModelsPrefix(modelName?.Trim());
-        return (providerId?.Trim() ?? "") + ":" + model;
-    }
-
-    private static string StripModelsPrefix(string model)
-    {
-        if (!string.IsNullOrEmpty(model) && model.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
-        {
-            return model.Substring("models/".Length);
-        }
-        return model ?? "";
-    }
-
-    private static readonly Dictionary<string, CostRate> KnownModelRates = new(StringComparer.OrdinalIgnoreCase)
-    {
-        // OpenAI
-        { "openai:gpt-5", new CostRate(1.25f, 10.00f) },
-        { "openai:gpt-5-mini", new CostRate(0.25f, 2.00f) },
-        { "openai:gpt-5-nano", new CostRate(0.05f, 0.40f) },
-        { "openai:gpt-5.1", new CostRate(1.25f, 10.00f) },
-        { "openai:gpt-4.1", new CostRate(2.00f, 8.00f) },
-        { "openai:gpt-4.1-mini", new CostRate(0.40f, 1.60f) },
-        { "openai:gpt-4.1-nano", new CostRate(0.10f, 0.40f) },
-        { "openai:gpt-4o", new CostRate(2.50f, 10.00f) },
-        { "openai:gpt-4o-mini", new CostRate(0.15f, 0.60f) },
-        { "openai:o1", new CostRate(15.00f, 60.00f) },
-        { "openai:o1-mini", new CostRate(1.10f, 4.40f) },
-        { "openai:o3", new CostRate(2.00f, 8.00f) },
-        { "openai:o3-mini", new CostRate(1.10f, 4.40f) },
-        { "openai:o3-pro", new CostRate(20.00f, 80.00f) },
-        { "openai:o4-mini", new CostRate(1.10f, 4.40f) },
-        { "openai:gpt-4-turbo", new CostRate(10.00f, 30.00f) },
-        { "openai:gpt-4", new CostRate(30.00f, 60.00f) },
-        { "openai:gpt-3.5-turbo", new CostRate(0.50f, 1.50f) },
-        { "openai:text-embedding-3-small", new CostRate(0.02f, 0f) },
-        { "openai:text-embedding-3-large", new CostRate(0.13f, 0f) },
-        { "openai:text-embedding-ada-002", new CostRate(0.10f, 0f) },
-
-        // Google Gemini
-        { "gemini:gemini-embedding-001", new CostRate(0.15f, 0f) },
-        { "gemini:gemini-2.0-flash", new CostRate(0.10f, 0.40f) },
-        { "gemini:gemini-2.0-flash-lite", new CostRate(0.075f, 0.30f) },
-        { "gemini:gemini-1.5-flash", new CostRate(0.075f, 0.30f) },
-        { "gemini:gemini-1.5-pro", new CostRate(1.25f, 5.00f) },
-        { "gemini:gemini-2.5-pro", new CostRate(1.25f, 10.00f) },
-        { "gemini:gemini-2.5-flash", new CostRate(0.30f, 2.50f) },
-        { "gemini:gemini-2.5-flash-lite", new CostRate(0.10f, 0.40f) },
-        { "gemini:gemini-3.1-pro-preview", new CostRate(2.00f, 12.00f) },
-        { "gemini:gemini-3.1-flash-lite", new CostRate(0.25f, 1.50f) },
-        { "gemini:gemini-3.5-flash", new CostRate(1.50f, 9.00f) },
-
-        // DeepSeek
-        { "deepseek:deepseek-chat", new CostRate(0.14f, 0.28f, 0.02f) },
-        { "deepseek:deepseek-reasoner", new CostRate(0.14f, 0.28f, 0.02f) },
-        { "deepseek:deepseek-v3", new CostRate(0.14f, 0.28f, 0.02f) },
-        { "deepseek:deepseek-r1", new CostRate(0.14f, 0.28f, 0.02f) },
-        { "deepseek:deepseek-v4-flash", new CostRate(0.14f, 0.28f, 0.02f) },
-        { "deepseek:deepseek-v4-pro", new CostRate(0.435f, 0.87f, 0.02f) },
-
-        // Groq（模型 ID 含供應商前綴時整段入鍵）
-        { "groq:llama-3.3-70b-versatile", new CostRate(0.59f, 0.79f) },
-        { "groq:llama-3.1-8b-instant", new CostRate(0.05f, 0.08f) },
-        { "groq:mixtral-8x7b-32768", new CostRate(0.24f, 0.24f) },
-        { "groq:gemma2-9b-it", new CostRate(0.20f, 0.20f) },
-        { "groq:openai/gpt-oss-120b", new CostRate(0.15f, 0.75f) },
-        { "groq:openai/gpt-oss-20b", new CostRate(0.10f, 0.50f) },
-        { "groq:qwen/qwen3-32b", new CostRate(0.29f, 0.59f) },
-        { "groq:moonshotai/kimi-k2-instruct", new CostRate(1.00f, 3.00f) },
-
-        // Qwen
-        { "qwen:qwen-max", new CostRate(2.80f, 8.40f) },
-        { "qwen:qwen-plus", new CostRate(0.40f, 1.20f) },
-        { "qwen:qwen-turbo", new CostRate(0.10f, 0.20f) },
-
-        // Moonshot / Kimi
-        { "kimi:kimi-k2", new CostRate(0.60f, 2.50f) },
-        { "kimi:moonshot-v1-8k", new CostRate(1.68f, 1.68f) },
-        { "kimi:moonshot-v1-32k", new CostRate(3.36f, 3.36f) },
-        { "kimi:moonshot-v1-128k", new CostRate(8.40f, 8.40f) },
-
-        // MiniMax
-        { "minimax:minimax-m3", new CostRate(0.30f, 1.20f) },
-        { "minimax:minimax-m2", new CostRate(0.30f, 1.20f) },
-        { "minimax:abab6.5s", new CostRate(0.14f, 0.28f) },
-
-        // Z.ai (GLM)
-        { "z.ai:glm-4.6", new CostRate(0.60f, 2.20f) },
-        { "z.ai:glm-4.5", new CostRate(0.60f, 2.20f) },
-        { "z.ai:glm-4.5-air", new CostRate(0.20f, 1.10f) },
-        { "z.ai:glm-4.5-flash", new CostRate(0f, 0f) },
-
-        // Grok (xAI)
-        { "grok:grok-4", new CostRate(3.00f, 15.00f) },
-        { "grok:grok-4-fast", new CostRate(0.20f, 0.50f) },
-        { "grok:grok-3", new CostRate(3.00f, 15.00f) },
-        { "grok:grok-3-mini", new CostRate(0.30f, 0.50f) },
-        { "grok:grok-2", new CostRate(2.00f, 10.00f) },
-        { "grok:grok-beta", new CostRate(5.00f, 15.00f) },
-
-        // Player2：本地 App 免費，雲端以 joules 而非美元計費，因此 USD 費率記為已知的 0。
-        { "player2:player2", new CostRate(0f, 0f) }
-    };
-
-    private struct CostRate
-    {
-        public readonly float PromptPerMillion;
-        public readonly float CompletionPerMillion;
-        public readonly float CachedPromptPerMillion;
-
-        public CostRate(float promptPerMillion, float completionPerMillion, float cacheReadMultiplier = 0.25f)
-        {
-            PromptPerMillion = promptPerMillion;
-            CompletionPerMillion = completionPerMillion;
-            CachedPromptPerMillion = promptPerMillion * cacheReadMultiplier;
-        }
-    }
-
-    /// <summary>
-    /// 存放最近 API 呼叫歷史的執行緒安全佇列。
-    /// </summary>
-    private readonly ConcurrentQueue<RimLLMManager.RequestLogEntry> _requestLogs =
-        new();
-
-    /// <summary>最近 API 呼叫歷史的唯讀檢視；寫入一律經由 <see cref="RecordLog"/>，以維持計數與存檔快照一致。</summary>
-    public IReadOnlyCollection<RimLLMManager.RequestLogEntry> RequestLogs => _requestLogs;
-
-    public class ProviderStats
-    {
-        private int _successCount;
-        private int _failureCount;
-
-        public int SuccessCount => _successCount;
-        public int FailureCount => _failureCount;
-
-        public int TotalCount => _successCount + _failureCount;
-        public float SuccessRate => TotalCount > 0 ? (float)_successCount / TotalCount : 1f;
-
-        // API-side Context Caching Stats
-        private long _totalPromptTokens;
-        private long _cachedPromptTokens;
-
-        public long TotalPromptTokens => _totalPromptTokens;
-        public long CachedPromptTokens => _cachedPromptTokens;
-
-        public float ContextCacheHitRate => TotalPromptTokens > 0 ? (float)CachedPromptTokens / TotalPromptTokens : 0f;
-
-        internal void IncrementSuccess() => System.Threading.Interlocked.Increment(ref _successCount);
-        internal void IncrementFailure() => System.Threading.Interlocked.Increment(ref _failureCount);
-
-        /// <summary>累加此供應商的 prompt token 與 API 端快取命中 token；呼叫端須自行鎖住本實例。</summary>
-        internal void AddTokenCounts(long promptTokens, long cachedPromptTokens)
-        {
-            _totalPromptTokens += promptTokens;
-            _cachedPromptTokens += cachedPromptTokens;
-        }
-
-        /// <summary>清除此供應商的 token 統計；呼叫端須自行鎖住本實例。</summary>
-        internal void ResetTokenCounts()
-        {
-            _totalPromptTokens = 0;
-            _cachedPromptTokens = 0;
-        }
-
-    }
-
-    private readonly ConcurrentDictionary<string, ProviderStats> _providerStatistics =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    public IReadOnlyDictionary<string, ProviderStats> ProviderStatistics => _providerStatistics;
 
     /// <summary>
     /// 呼叫端 modId 的收錄上限。modId 由呼叫端自取、可任意輪換，
@@ -278,25 +25,56 @@ public class RimLLMUsageTracker
     /// </summary>
     public const int MaxCallerModIds = 64;
 
+    /// <summary>遙測寫檔節流間隔：成功請求的用量最多每這麼久寫一次檔，失敗日誌則立即寫。</summary>
+    private static readonly TimeSpan TelemetrySaveInterval = TimeSpan.FromSeconds(15);
+
+    /// <summary>預算超限應對策略：只警告並照常送出（<c>BudgetPolicy = 1</c>）。</summary>
+    private const int BudgetPolicyWarnOnly = 1;
+
+    /// <summary>沒有翻譯資料時（單元測試、headless）使用的英文字串，同時也是日誌內容。</summary>
+    private const string BudgetWarnOnlyFallbackText =
+        "Daily budget limit exceeded. Requests are still being sent because the exceeded policy " +
+        "is set to 'warn only'. Raise the budget or switch the policy to 'block requests and " +
+        "warn' in RimLLM settings -> Budget & Safety.";
+
+    /// <summary>HardBlock 超限警告的英文字串（無翻譯資料時使用，同時也是日誌內容）。</summary>
+    private const string BudgetHardBlockFallbackText =
+        "Daily budget limit exceeded. RimLLM is blocking AI requests until the budget resets tomorrow. " +
+        "Raise the budget or switch the policy to 'warn only' in RimLLM settings -> Budget & Safety.";
+
+    private readonly IRimLLMSettings _settings;
+
+    /// <summary>保護日誌、遙測排程與設定快照；需要同時持有兩把鎖時一律先取這把。</summary>
+    private readonly object _logLock = new();
+    /// <summary>保護用量累計與預算預留。</summary>
+    private readonly object _usageLock = new();
+
+    private DateTime _lastTelemetrySaveTime = DateTime.MinValue;
+    private bool _telemetrySaveDeferred;
+    private long _telemetrySaveScheduleVersion;
+
+    /// <summary>每筆 reservation 在整個 logical request（含 fallback/retry）結束前都保留一份估算額度。</summary>
+    private long _reservedBudgetTokens;
+
+    /// <summary>最後一次發出超限警告的重置基準日，讓超限警告每天只吵一次。</summary>
+    private string _budgetWarnedDate = "";
+
+    /// <summary>
+    /// 日誌佇列的近似計數。ConcurrentQueue.Count 可能需要走訪內部區段，
+    /// 每請求呼叫一次會隨日誌量線性變貴；此計數器以 Interlocked 維護，Trim 只看它。
+    /// </summary>
+    private int _logCount;
+    private long _unpricedUsageCount;
+
+    /// <summary>存放最近 API 呼叫歷史的執行緒安全佇列。</summary>
+    private readonly ConcurrentQueue<RimLLMManager.RequestLogEntry> _requestLogs = new();
+
+    private readonly ConcurrentDictionary<string, ProviderStats> _providerStatistics =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>本次遊戲實際送出過請求的 modId（值不使用，僅當集合）。</summary>
     private readonly ConcurrentDictionary<string, byte> _callerModIds =
         new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>收錄的 modId 數量；設定頁每幀用它判斷是否需要重組，不必複製整個集合。</summary>
-    public int CallerModIdCount => _callerModIds.Count;
-
-    /// <summary>收錄的 modId 快照，供設定頁「使用中的模組」。modId 為呼叫端自取的字串，不保證等於 packageId。</summary>
-    public IReadOnlyCollection<string> GetCallerModIds() => new List<string>(_callerModIds.Keys);
-
-    /// <summary>
-    /// 記錄一次請求的呼叫端。在請求進入守衛時呼叫，而不是在建立 client 時：
-    /// 許多 Mod 一啟動就先取 client，但從未真的送出請求。
-    /// </summary>
-    public void RecordCaller(string modId)
-    {
-        if (string.IsNullOrEmpty(modId) || _callerModIds.Count >= MaxCallerModIds) return;
-        _callerModIds.TryAdd(modId, 0);
-    }
 
     public RimLLMUsageTracker(IRimLLMSettings settings)
     {
@@ -316,8 +94,74 @@ public class RimLLMUsageTracker
         }
     }
 
+    /// <summary>本次執行中有用量但查無費率的呼叫數；不把未知費用誤認為免費。</summary>
+    public long UnpricedUsageCount => Interlocked.Read(ref _unpricedUsageCount);
+
+    /// <summary>最近 API 呼叫歷史的唯讀檢視；寫入一律經由 <see cref="RecordLog"/>，以維持計數與存檔快照一致。</summary>
+    public IReadOnlyCollection<RimLLMManager.RequestLogEntry> RequestLogs => _requestLogs;
+
+    public IReadOnlyDictionary<string, ProviderStats> ProviderStatistics => _providerStatistics;
+
+    /// <summary>收錄的 modId 數量；設定頁每幀用它判斷是否需要重組，不必複製整個集合。</summary>
+    public int CallerModIdCount => _callerModIds.Count;
+
+    /// <summary>收錄的 modId 快照，供設定頁「使用中的模組」。modId 為呼叫端自取的字串，不保證等於 packageId。</summary>
+    public IReadOnlyCollection<string> GetCallerModIds() => new List<string>(_callerModIds.Keys);
+
+    /// <summary>單一供應商的成功／失敗計數與 API 端上下文快取命中統計。</summary>
+    public class ProviderStats
+    {
+        private readonly object _tokenLock = new();
+        private int _successCount;
+        private int _failureCount;
+        private long _totalPromptTokens;
+        private long _cachedPromptTokens;
+
+        public int SuccessCount => Volatile.Read(ref _successCount);
+        public int FailureCount => Volatile.Read(ref _failureCount);
+        public int TotalCount => SuccessCount + FailureCount;
+        public float SuccessRate => TotalCount > 0 ? (float)SuccessCount / TotalCount : 1f;
+
+        public long TotalPromptTokens => Interlocked.Read(ref _totalPromptTokens);
+        public long CachedPromptTokens => Interlocked.Read(ref _cachedPromptTokens);
+        public float ContextCacheHitRate => TotalPromptTokens > 0 ? (float)CachedPromptTokens / TotalPromptTokens : 0f;
+
+        internal void IncrementSuccess() => Interlocked.Increment(ref _successCount);
+        internal void IncrementFailure() => Interlocked.Increment(ref _failureCount);
+
+        /// <summary>累加此供應商的 prompt token 與 API 端快取命中 token；兩者同鎖更新，命中率不會讀到半套。</summary>
+        internal void AddTokenCounts(long promptTokens, long cachedPromptTokens)
+        {
+            lock (_tokenLock)
+            {
+                Interlocked.Add(ref _totalPromptTokens, promptTokens);
+                Interlocked.Add(ref _cachedPromptTokens, cachedPromptTokens);
+            }
+        }
+
+        /// <summary>清除此供應商的 token 統計。</summary>
+        internal void ResetTokenCounts()
+        {
+            lock (_tokenLock)
+            {
+                Interlocked.Exchange(ref _totalPromptTokens, 0);
+                Interlocked.Exchange(ref _cachedPromptTokens, 0);
+            }
+        }
+    }
+
     /// <summary>
-    /// 記錄一次請求的日誌與結果，並在背景以節流機制寫入 XML 設定檔中。
+    /// 記錄一次請求的呼叫端。在請求進入守衛時呼叫，而不是在建立 client 時：
+    /// 許多 Mod 一啟動就先取 client，但從未真的送出請求。
+    /// </summary>
+    public void RecordCaller(string modId)
+    {
+        if (string.IsNullOrEmpty(modId) || _callerModIds.Count >= MaxCallerModIds) return;
+        _callerModIds.TryAdd(modId, 0);
+    }
+
+    /// <summary>
+    /// 記錄一次請求的日誌與結果，並以節流排程交由背景寫入遙測檔。
     /// token 數由呼叫端在成功且供應商有回報時填入；拿不到時保持 0，顯示層會省略。
     /// </summary>
     public void RecordLog(RimLLMManager.RequestLogEntry entry)
@@ -328,7 +172,7 @@ public class RimLLMUsageTracker
         entry.CompletionTokens = Math.Max(0, entry.CompletionTokens);
 
         TelemetrySaveSchedule schedule;
-        lock (LogLock)
+        lock (_logLock)
         {
             _requestLogs.Enqueue(entry);
             Interlocked.Increment(ref _logCount);
@@ -336,15 +180,13 @@ public class RimLLMUsageTracker
             _settings.RequestLogs = new List<RimLLMManager.RequestLogEntry>(_requestLogs.ToArray());
             CountOutcome(entry.Provider, entry.Success);
             // Snapshot 與 dirty 標記同鎖更新，讓背景寫入及關閉 flush 都能看見最新日誌。
-            schedule = MarkTelemetryDirtyLocked(_settings, immediate: !entry.Success);
+            schedule = MarkTelemetryDirtyLocked(immediate: !entry.Success);
         }
 
         RunTelemetrySaveSchedule(schedule);
     }
 
-    /// <summary>
-    /// 將一次請求結果計入該供應商的成功／失敗計數。
-    /// </summary>
+    /// <summary>將一次請求結果計入該供應商的成功／失敗計數。</summary>
     private void CountOutcome(string provider, bool success)
     {
         var stats = _providerStatistics.GetOrAdd(provider ?? "Unknown", _ => new ProviderStats());
@@ -357,10 +199,6 @@ public class RimLLMUsageTracker
             stats.IncrementFailure();
         }
     }
-
-    private static readonly object SaveQueueLock = new();
-    private static bool _telemetrySaveRunning;
-    private static bool _telemetrySaveRequested;
 
     private readonly struct TelemetrySaveSchedule
     {
@@ -378,19 +216,18 @@ public class RimLLMUsageTracker
         }
     }
 
-    /// <summary>LogLock 必須由呼叫端持有，讓快照、dirty 標記和節流時間保持同一個順序。</summary>
-    private static TelemetrySaveSchedule MarkTelemetryDirtyLocked(IRimLLMSettings settings, bool immediate)
+    /// <summary>_logLock 必須由呼叫端持有，讓快照、dirty 標記和節流時間保持同一個順序。</summary>
+    private TelemetrySaveSchedule MarkTelemetryDirtyLocked(bool immediate)
     {
-        settings.MarkTelemetryDirty();
+        _settings.MarkTelemetryDirty();
         DateTime now = DateTime.UtcNow;
-        TimeSpan interval = TimeSpan.FromSeconds(15);
-        TimeSpan elapsed = _lastLogWriteTime == DateTime.MinValue
-            ? interval
-            : now - _lastLogWriteTime;
+        TimeSpan elapsed = _lastTelemetrySaveTime == DateTime.MinValue
+            ? TelemetrySaveInterval
+            : now - _lastTelemetrySaveTime;
 
-        if (immediate || elapsed >= interval)
+        if (immediate || elapsed >= TelemetrySaveInterval)
         {
-            _lastLogWriteTime = now;
+            _lastTelemetrySaveTime = now;
             _telemetrySaveDeferred = false;
             _telemetrySaveScheduleVersion++;
             return new TelemetrySaveSchedule(true, false, TimeSpan.Zero, _telemetrySaveScheduleVersion);
@@ -400,7 +237,7 @@ public class RimLLMUsageTracker
         {
             _telemetrySaveDeferred = true;
             long version = ++_telemetrySaveScheduleVersion;
-            return new TelemetrySaveSchedule(false, true, interval - elapsed, version);
+            return new TelemetrySaveSchedule(false, true, TelemetrySaveInterval - elapsed, version);
         }
 
         return default;
@@ -410,97 +247,52 @@ public class RimLLMUsageTracker
     {
         if (schedule.QueueNow)
         {
-            QueueTelemetrySave(_settings);
+            _settings.QueueTelemetrySave();
         }
         else if (schedule.QueueLater)
         {
-            _ = QueueTelemetrySaveAfterDelay(_settings, schedule.Delay, schedule.Version);
+            _ = QueueTelemetrySaveAfterDelay(schedule.Delay, schedule.Version);
         }
     }
 
-    private static async Task QueueTelemetrySaveAfterDelay(IRimLLMSettings settings, TimeSpan delay, long version)
+    private async Task QueueTelemetrySaveAfterDelay(TimeSpan delay, long version)
     {
         await Task.Delay(delay).ConfigureAwait(false);
         bool shouldQueue;
-        lock (LogLock)
+        lock (_logLock)
         {
             shouldQueue = _telemetrySaveDeferred && version == _telemetrySaveScheduleVersion;
             if (shouldQueue)
             {
                 _telemetrySaveDeferred = false;
-                _lastLogWriteTime = DateTime.UtcNow;
+                _lastTelemetrySaveTime = DateTime.UtcNow;
             }
         }
 
         if (shouldQueue)
         {
-            QueueTelemetrySave(settings);
+            _settings.QueueTelemetrySave();
         }
     }
 
-    /// <summary>
-    /// 把遙測寫檔排入背景單寫者佇列。同一時間最多一個寫檔在跑，
-    /// 執行中若又有新請求，只合併為一次追寫（存檔讀的是執行當下的最新狀態，不會遺失）。
-    /// 寫檔本身（Save）為例外安全且以暫存檔原子替換，失敗會保留 IsDirty 由下次 flush 重試。
-    /// 背景寫檔持有 <see cref="LogLock"/>，與主線程的記憶體更新、ClearLogs 互斥，
-    /// 排序與過去「主線程內寫檔」一致；關閉時的 FlushTelemetryIfDirty 仍同步執行。
-    /// </summary>
-    internal static void QueueTelemetrySave(IRimLLMSettings settings)
+    /// <summary>手動清除／重設後立即同步寫檔，並作廢尚在等待的延遲寫入。_logLock 必須由呼叫端持有。</summary>
+    private void SaveTelemetryNowLocked(string operation)
     {
-        lock (SaveQueueLock)
+        _settings.MarkTelemetryDirty();
+        _lastTelemetrySaveTime = DateTime.UtcNow;
+        _telemetrySaveDeferred = false;
+        _telemetrySaveScheduleVersion++;
+        try
         {
-            if (_telemetrySaveRunning)
-            {
-                _telemetrySaveRequested = true;
-                return;
-            }
-            _telemetrySaveRunning = true;
+            _settings.SaveTelemetry();
         }
-
-        Task.Run(() =>
+        catch (Exception ex)
         {
-            try
-            {
-                while (true)
-                {
-                    try
-                    {
-                        lock (LogLock)
-                        {
-                            settings.SaveTelemetry();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        RimLLMLog.Warning($"[RimLLM] Background telemetry write failed: {ex.Message}");
-                    }
-
-                    lock (SaveQueueLock)
-                    {
-                        if (!_telemetrySaveRequested)
-                        {
-                            _telemetrySaveRunning = false;
-                            return;
-                        }
-                        _telemetrySaveRequested = false;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                lock (SaveQueueLock)
-                {
-                    _telemetrySaveRunning = false;
-                    _telemetrySaveRequested = false;
-                }
-                RimLLMLog.Warning($"[RimLLM] Background telemetry writer failed: {ex.Message}");
-            }
-        });
+            RimLLMLog.Warning($"[RimLLM] {operation} telemetry write failed: {ex.Message}");
+        }
     }
 
-    /// <summary>
-    /// 以計數器為準修剪多餘日誌，避免 ConcurrentQueue.Count 的加鎖列舉。
-    /// </summary>
+    /// <summary>以計數器為準修剪多餘日誌，避免 ConcurrentQueue.Count 的加鎖列舉。</summary>
     private void TrimLogs()
     {
         while (Volatile.Read(ref _logCount) > MaxRetainedLogs)
@@ -513,50 +305,31 @@ public class RimLLMUsageTracker
         }
     }
 
-    /// <summary>
-    /// 清空所有快取的請求日誌，並儲存設定。
-    /// </summary>
+    /// <summary>清空所有快取的請求日誌，並儲存設定。</summary>
     public void ClearLogs()
     {
-        lock (LogLock)
+        lock (_logLock)
         {
-            while (_requestLogs.TryDequeue(out _))
-            {
-                // 刻意清空佇列，僅需出列副作用，無需額外處理。
-            }
+            _requestLogs.Clear();
             Interlocked.Exchange(ref _logCount, 0);
             _providerStatistics.Clear();
             _settings.RequestLogs = [];
-            _settings.MarkTelemetryDirty();
-            InvalidateDeferredTelemetrySaveLocked();
-            try
-            {
-                _settings.SaveTelemetry();
-            }
-            catch (Exception ex)
-            {
-                RimLLMLog.Warning($"[RimLLM] Clear logs telemetry write failed: {ex.Message}");
-            }
+            SaveTelemetryNowLocked("Clear logs");
         }
     }
 
-    /// <summary>
-    /// 檢查並執行跨天重置日預算累計（token 與舊版美元估計值一併重置）。
-    /// </summary>
+    /// <summary>檢查並執行跨天重置日預算累計（token 與美元估計值一併重置）。</summary>
     public void CheckDailyReset()
     {
         string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
-        lock (LogLock)
+        lock (_logLock)
         {
-            lock (UsageLock)
+            lock (_usageLock)
             {
-                if (string.IsNullOrEmpty(_settings.DailyBudgetResetDate) || _settings.DailyBudgetResetDate != todayStr)
+                if (_settings.DailyBudgetResetDate != todayStr)
                 {
                     _settings.DailyAccumulatedCost = 0f;
-                    if (_settings is IDailyTokenBudget tokenLedger)
-                    {
-                        tokenLedger.DailyAccumulatedTokens = 0;
-                    }
+                    _settings.DailyAccumulatedTokens = 0;
                     _settings.DailyBudgetResetDate = todayStr;
                 }
             }
@@ -580,28 +353,22 @@ public class RimLLMUsageTracker
         completionTokens = Math.Max(0, completionTokens);
         if (promptTokens == 0 && completionTokens == 0) return;
 
-        if (cachedPromptTokens < 0) cachedPromptTokens = 0;
-        if (cachedPromptTokens > promptTokens) cachedPromptTokens = promptTokens;
+        cachedPromptTokens = Math.Clamp(cachedPromptTokens, 0, promptTokens);
 
         CheckDailyReset();
 
         TelemetrySaveSchedule schedule;
-        lock (LogLock)
+        lock (_logLock)
         {
-            lock (UsageLock)
+            lock (_usageLock)
             {
-                long usageTokens = (long)promptTokens + completionTokens;
-
                 _settings.TotalPromptTokens += promptTokens;
                 _settings.TotalCompletionTokens += completionTokens;
 
                 // Token 預算不看費率：免費、本地與查無費率的請求一樣消耗 token。
-                if (_settings is IDailyTokenBudget tokenLedger)
-                {
-                    tokenLedger.DailyAccumulatedTokens += usageTokens;
-                }
+                _settings.DailyAccumulatedTokens += (long)promptTokens + completionTokens;
 
-                if (TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost))
+                if (ModelPricing.TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost))
                 {
                     _settings.TotalEstimatedCost += cost;
                     _settings.DailyAccumulatedCost += cost;
@@ -612,27 +379,21 @@ public class RimLLMUsageTracker
                 }
             }
 
-            // 累加特定供應商的 prompt tokens 與 API 快取 tokens 用量。
-            var stats = _providerStatistics.GetOrAdd(providerId, _ => new ProviderStats());
-            lock (stats)
-            {
-                stats.AddTokenCounts(promptTokens, cachedPromptTokens);
-            }
+            _providerStatistics.GetOrAdd(providerId ?? "Unknown", _ => new ProviderStats())
+                .AddTokenCounts(promptTokens, cachedPromptTokens);
 
-            schedule = MarkTelemetryDirtyLocked(_settings, immediate: false);
+            schedule = MarkTelemetryDirtyLocked(immediate: false);
         }
 
         RunTelemetrySaveSchedule(schedule);
     }
 
-    /// <summary>
-    /// 重設所有的 Token 與費用計量器。
-    /// </summary>
+    /// <summary>重設所有的 Token 與費用計量器。</summary>
     public void ResetUsage()
     {
-        lock (LogLock)
+        lock (_logLock)
         {
-            lock (UsageLock)
+            lock (_usageLock)
             {
                 _settings.TotalPromptTokens = 0;
                 _settings.TotalCompletionTokens = 0;
@@ -641,141 +402,15 @@ public class RimLLMUsageTracker
 
                 foreach (var stats in _providerStatistics.Values)
                 {
-                    lock (stats)
-                    {
-                        stats.ResetTokenCounts();
-                    }
+                    stats.ResetTokenCounts();
                 }
             }
 
-            _settings.MarkTelemetryDirty();
-            InvalidateDeferredTelemetrySaveLocked();
-            try
-            {
-                _settings.SaveTelemetry();
-            }
-            catch (Exception ex)
-            {
-                RimLLMLog.Warning($"[RimLLM] Reset usage telemetry write failed: {ex.Message}");
-            }
+            SaveTelemetryNowLocked("Reset usage");
         }
-    }
-
-    private static void InvalidateDeferredTelemetrySaveLocked()
-    {
-        _lastLogWriteTime = DateTime.UtcNow;
-        _telemetrySaveDeferred = false;
-        _telemetrySaveScheduleVersion++;
-    }
-
-    /// <summary>
-    /// 估算單次呼叫的美元成本。為維持既有 API，查無費率時仍回傳 0；
-    /// 需要區分未知費用與已知免費時，應使用 <see cref="TryEstimateCost"/>。
-    /// <paramref name="cachedPromptTokens"/> 由呼叫端保證已落在 [0, promptTokens] 範圍內。
-    /// </summary>
-    public static float EstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens)
-    {
-        TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost);
-        return cost;
-    }
-
-    /// <summary>回傳是否找到費率，讓記帳區分未知費用與明確的零元費率。</summary>
-    internal static bool TryEstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens, out float cost)
-    {
-        if (!FindModelRate(providerId, modelName, out CostRate rate))
-        {
-            cost = 0f;
-            return false;
-        }
-
-        int fullRatePromptTokens = promptTokens - cachedPromptTokens;
-        float promptCost = (fullRatePromptTokens / 1000000f) * rate.PromptPerMillion
-                           + (cachedPromptTokens / 1000000f) * rate.CachedPromptPerMillion;
-        float completionCost = (completionTokens / 1000000f) * rate.CompletionPerMillion;
-        cost = promptCost + completionCost;
-        return true;
-    }
-
-    /// <summary>
-    /// 前綴模糊匹配需比對每個鍵並保留最長匹配，無法以單一 LINQ 運算式替換，故保留迴圈。
-    /// </summary>
-    #pragma warning disable S3267 // 需同時比對前綴邊界並保留最長匹配鍵，LINQ 運算式會讓邏輯更難讀且無法提前結束。
-    private static bool FindModelRate(string providerId, string modelName, out CostRate rate)
-    {
-        // 字典本身為 OrdinalIgnoreCase，直接以未轉小寫的鍵查詢，省下每次的 ToLower 配置。
-        string normModel = StripModelsPrefix(modelName?.Trim());
-        string exactKey = (providerId?.Trim() ?? "") + ":" + normModel;
-
-        if (KnownModelRates.TryGetValue(exactKey, out rate))
-        {
-            return true;
-        }
-
-        // 前綴模糊匹配（例如 gpt-4o-2024-08-06 匹配 gpt-4o, gemini-2.0-flash-001 匹配 gemini-2.0-flash）。
-        // 前綴之後必須是分隔字元或結尾：單純的 StartsWith 會讓 "gpt-4" 吃到 "gpt-4.1-mini"，
-        // 把 $0.40 的模型以 $30 計價。
-        string bestPrefixMatchKey = null;
-        int bestPrefixLen = 0;
-
-        string providerPrefix = (providerId?.Trim() ?? "") + ":";
-        foreach (var kvp in KnownModelRates)
-        {
-            if (kvp.Key.StartsWith(providerPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                string candidateModel = kvp.Key.Substring(providerPrefix.Length);
-                if (normModel.StartsWith(candidateModel, StringComparison.OrdinalIgnoreCase) &&
-                    IsPrefixBoundary(normModel, candidateModel.Length) &&
-                    candidateModel.Length > bestPrefixLen)
-                {
-                    bestPrefixLen = candidateModel.Length;
-                    bestPrefixMatchKey = kvp.Key;
-                }
-            }
-        }
-
-        if (bestPrefixMatchKey != null && KnownModelRates.TryGetValue(bestPrefixMatchKey, out rate))
-        {
-            return true;
-        }
-
-        rate = default;
-        return false;
-    }
-    #pragma warning restore S3267
-
-    /// <summary>
-    /// 前綴比對的版本邊界：緊接在前綴後的字元必須是分隔符（或已到結尾），
-    /// 讓 "gpt-4o" 命中 "gpt-4o-2024-08-06" 但 "gpt-4" 不命中 "gpt-4.1"。
-    /// </summary>
-    private static bool IsPrefixBoundary(string model, int prefixLength)
-    {
-        if (prefixLength >= model.Length) return true;
-        char next = model[prefixLength];
-        return next == '-' || next == '_' || next == ':' || next == '@' || next == ' ';
     }
 
     #region Budget Ledger & Policy Gatekeeping
-
-    /// <summary>
-    /// 預算超限應對策略：只警告並照常送出（<c>BudgetPolicy = 1</c>）。
-    /// </summary>
-    private const int BudgetPolicyWarnOnly = 1;
-
-    /// <summary>
-    /// 沒有翻譯資料時（單元測試、headless）使用的英文字串，同時也是日誌內容。
-    /// </summary>
-    private const string BudgetWarnOnlyFallbackText =
-        "Daily budget limit exceeded. Requests are still being sent because the exceeded policy " +
-        "is set to 'warn only'. Raise the budget or switch the policy to 'block requests and " +
-        "warn' in RimLLM settings -> Budget & Safety.";
-
-    /// <summary>HardBlock 超限警告的英文字串（無翻譯資料時使用，同時也是日誌內容）。</summary>
-    private const string BudgetHardBlockFallbackText =
-        "Daily budget limit exceeded. RimLLM is blocking AI requests until the budget resets tomorrow. " +
-        "Raise the budget or switch the policy to 'warn only' in RimLLM settings -> Budget & Safety.";
-
-    /// <summary>最後一次發出超限警告的重置基準日，讓超限警告每天只吵一次。</summary>
-    private string _budgetWarnedDate = "";
 
     /// <summary>
     /// 原子地檢查預算並保留整個 logical request 的估算 token。每個 fallback/retry attempt
@@ -804,14 +439,14 @@ public class RimLLMUsageTracker
         bool overBudget;
         bool warnOnly;
         reservation = null;
-        lock (UsageLock)
+        lock (_usageLock)
         {
             overBudget = IsBudgetExceededLocked();
             contended = !overBudget && IsBudgetContendedLocked();
             warnOnly = _settings.BudgetPolicy == BudgetPolicyWarnOnly;
             if ((!overBudget && !contended) || warnOnly)
             {
-                reservation = TryReserveBudgetLocked(estimatedTokens);
+                reservation = ReserveBudgetLocked(estimatedTokens);
             }
         }
 
@@ -853,89 +488,55 @@ public class RimLLMUsageTracker
             : new RimLLMException(LLMError.QuotaExceeded, "Daily budget limit exceeded.");
     }
 
-    /// <summary>
-    /// 在 UsageLock 保護下執行預留邏輯。呼叫端必須已持有鎖。
-    /// </summary>
-    private BudgetReservation TryReserveBudgetLocked(long estimatedTokens)
+    /// <summary>在 _usageLock 保護下執行預留邏輯。呼叫端必須已持有鎖。</summary>
+    private BudgetReservation ReserveBudgetLocked(long estimatedTokens)
     {
-        IDailyTokenBudget tokenLedger = _settings as IDailyTokenBudget;
-        bool hasTokenLedger = tokenLedger != null;
-        long reservedTokens = hasTokenLedger ? Math.Max(1L, estimatedTokens) : 0L;
-        if (tokenLedger != null && tokenLedger.DailyTokenBudgetLimit > 0)
+        long reservedTokens = Math.Max(1L, estimatedTokens);
+        long limit = _settings.DailyTokenBudgetLimit;
+        if (limit > 0)
         {
             // 單筆估算不當成精準上限；保留量最多到達門檻，阻止後續請求
             // 共用同一份剩餘額度，實際超出估算的 token 仍會完整記帳。
-            reservedTokens = Math.Min(reservedTokens, tokenLedger.DailyTokenBudgetLimit);
+            reservedTokens = Math.Min(reservedTokens, limit);
         }
-        _reservedBudgetTokens = SaturatingAdd(_reservedBudgetTokens, reservedTokens);
-
-        bool reserveLegacySlot = !hasTokenLedger && _settings.DailyBudgetLimit > 0f;
-        if (reserveLegacySlot && _reservedLegacyBudgetRequests < int.MaxValue)
-        {
-            _reservedLegacyBudgetRequests++;
-        }
-
-        return new BudgetReservation(this, reservedTokens, reserveLegacySlot);
+        _reservedBudgetTokens = SaturatingMath.Add(_reservedBudgetTokens, reservedTokens);
+        return new BudgetReservation(this, reservedTokens);
     }
 
     /// <summary>已結算的用量是否真的達到上限。</summary>
     private bool IsBudgetExceededLocked()
     {
-        if (_settings is IDailyTokenBudget tokenLedger)
-        {
-            long limit = tokenLedger.DailyTokenBudgetLimit;
-            return limit > 0 && Math.Max(0, tokenLedger.DailyAccumulatedTokens) >= limit;
-        }
-
-        return _settings.DailyBudgetLimit > 0f && _settings.DailyAccumulatedCost >= _settings.DailyBudgetLimit;
+        long limit = _settings.DailyTokenBudgetLimit;
+        return limit > 0 && Math.Max(0, _settings.DailyAccumulatedTokens) >= limit;
     }
 
     /// <summary>尚未超限，但剩餘額度已被在途請求全部預留。</summary>
     private bool IsBudgetContendedLocked()
     {
-        if (_settings is IDailyTokenBudget tokenLedger)
-        {
-            long limit = tokenLedger.DailyTokenBudgetLimit;
-            return limit > 0 && _reservedBudgetTokens >= limit - Math.Max(0, tokenLedger.DailyAccumulatedTokens);
-        }
-
-        // 舊版外部設定只有美元帳本，沒有可供估算的 token 上限；保守地一次放行一個
-        // 在途請求，待其美元用量結算後再讓下一個請求檢查，維持既有門檻語意。
-        return _settings.DailyBudgetLimit > 0f && _reservedLegacyBudgetRequests > 0;
-    }
-
-    private static long SaturatingAdd(long left, long right)
-    {
-        return right > 0 && left > long.MaxValue - right ? long.MaxValue : left + right;
+        long limit = _settings.DailyTokenBudgetLimit;
+        return limit > 0 && _reservedBudgetTokens >= limit - Math.Max(0, _settings.DailyAccumulatedTokens);
     }
 
     private void ReleaseBudgetReservation(BudgetReservation reservation)
     {
-        lock (UsageLock)
+        lock (_usageLock)
         {
             if (!reservation.TryReleaseAllLocked(out long released)) return;
             _reservedBudgetTokens = Math.Max(0, _reservedBudgetTokens - released);
-            if (reservation.HasLegacySlot && _reservedLegacyBudgetRequests > 0)
-            {
-                _reservedLegacyBudgetRequests--;
-            }
         }
     }
 
     internal sealed class BudgetReservation : IDisposable
     {
-        private readonly bool _hasLegacySlot;
         private readonly long _reservedTokens;
         private bool _disposed;
 
         internal RimLLMUsageTracker Tracker { get; }
-        internal bool HasLegacySlot => _hasLegacySlot;
 
-        internal BudgetReservation(RimLLMUsageTracker tracker, long reservedTokens, bool hasLegacySlot)
+        internal BudgetReservation(RimLLMUsageTracker tracker, long reservedTokens)
         {
             Tracker = tracker;
             _reservedTokens = reservedTokens;
-            _hasLegacySlot = hasLegacySlot;
         }
 
         internal void RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
@@ -975,7 +576,7 @@ public class RimLLMUsageTracker
 
         bool overBudget;
         bool warnOnly;
-        lock (UsageLock)
+        lock (_usageLock)
         {
             overBudget = IsBudgetExceededLocked();
             warnOnly = _settings.BudgetPolicy == BudgetPolicyWarnOnly;
@@ -986,7 +587,6 @@ public class RimLLMUsageTracker
             return true;
         }
 
-        // 0=HardBlock, 1=WarnOnly
         if (warnOnly)
         {
             WarnBudgetExceeded("RimLLM_BudgetWarnOnlyExceeded", BudgetWarnOnlyFallbackText);
@@ -1022,9 +622,9 @@ public class RimLLMUsageTracker
     /// </remarks>
     internal bool ShouldWarnBudgetExceeded()
     {
-        string resetDate = _settings.DailyBudgetResetDate;
-        lock (UsageLock)
+        lock (_usageLock)
         {
+            string resetDate = _settings.DailyBudgetResetDate;
             if (_budgetWarnedDate == resetDate)
             {
                 return false;
@@ -1035,7 +635,7 @@ public class RimLLMUsageTracker
     }
 
     /// <summary>
-    /// 在主執行緒弹出遊戲訊息。這個檢查可能發生在背景執行緒（呼叫端自行決定 await 續行的位置），
+    /// 在主執行緒彈出遊戲訊息。這個檢查可能發生在背景執行緒（呼叫端自行決定 await 續行的位置），
     /// 而 <see cref="Messages"/> 是主執行緒狀態，直接呼叫並不安全。
     /// </summary>
     private static void ShowBudgetExceededMessage(string translationKey, string fallbackText)

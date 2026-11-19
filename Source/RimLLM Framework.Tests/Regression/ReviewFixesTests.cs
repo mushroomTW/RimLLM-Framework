@@ -177,41 +177,34 @@ public class ReviewFixesTests
     [Test]
     public void StreamAsync_WithoutReportedUsage_RecordsEstimateOfAllChunks()
     {
-        RimLLMProvider.TryGetManager(out RimLLMManager previousManager);
         var settings = new MockSettings();
-        RimLLMProvider.Initialize(new RimLLMManager(settings));
-        try
+        var tracker = new RimLLMUsageTracker(settings);
+        // 最後一塊超過舊實作的 4MB 字元上限：若有人把封頂加回來，估算會少算而失敗。
+        string huge = new('x', 4 * 1024 * 1024 + 4000);
+        var client = new CapturingChatClient();
+        foreach (string chunk in new[] { "ab", "中文", huge })
         {
-            // 最後一塊超過舊實作的 4MB 字元上限：若有人把封頂加回來，估算會少算而失敗。
-            string huge = new('x', 4 * 1024 * 1024 + 4000);
-            var client = new CapturingChatClient();
-            foreach (string chunk in new[] { "ab", "中文", huge })
-            {
-                client.StreamUpdates.Add(new ChatResponseUpdate(
-                    ChatRole.Assistant, [new TextContent(chunk)]));
-            }
-
-            RimLLMChatClientExecutor.StreamAsync(
-                new GenerationParams(
-                    client,
-                    new List<ChatMessage> { new(ChatRole.User, "hello") },
-                    null,
-                    "gpt-test",
-                    false,
-                    "OpenAI",
-                    30f,
-                    CancellationToken.None),
-                null).GetAwaiter().GetResult();
-
-            // 逐塊累加的估算必須等於對整段文字一次估算的結果，且不得封頂。
-            ClassicAssert.AreEqual(
-                RimLLMChatClientExecutor.EstimateTokens("ab中文" + huge),
-                settings.TotalCompletionTokens);
+            client.StreamUpdates.Add(new ChatResponseUpdate(
+                ChatRole.Assistant, [new TextContent(chunk)]));
         }
-        finally
-        {
-            RimLLMProvider.Initialize(previousManager);
-        }
+
+        RimLLMChatClientExecutor.StreamAsync(
+            new GenerationParams(
+                client,
+                new List<ChatMessage> { new(ChatRole.User, "hello") },
+                null,
+                "gpt-test",
+                false,
+                "OpenAI",
+                30f,
+                CancellationToken.None)
+            { UsageTracker = tracker },
+            null).GetAwaiter().GetResult();
+
+        // 逐塊累加的估算必須等於對整段文字一次估算的結果，且不得封頂。
+        ClassicAssert.AreEqual(
+            RimLLMChatClientExecutor.EstimateTokens("ab中文" + huge),
+            settings.TotalCompletionTokens);
     }
 
     [Test]

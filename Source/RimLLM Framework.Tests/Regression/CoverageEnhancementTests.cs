@@ -356,11 +356,11 @@ public class CoverageEnhancementTests
         ClassicAssert.AreEqual("P1:preferred-m", $"{preferred.ProviderId}:{preferred.ModelName}");
 
         // 5. MinFallbackLevel 分級過濾與 API 價格分級
-        ClassicAssert.AreEqual(3, RimLLMUsageTracker.GetModelLevel("openai", "gpt-4o")); // Completion $10.00 >= $3.00 -> High (3)
-        ClassicAssert.AreEqual(2, RimLLMUsageTracker.GetModelLevel("openai", "gpt-4o-mini")); // Completion $0.60 >= $0.50 -> Medium (2)
-        ClassicAssert.AreEqual(1, RimLLMUsageTracker.GetModelLevel("gemini", "gemini-2.0-flash-lite")); // Completion $0.30 < $0.50 -> Low (1)
-        ClassicAssert.AreEqual(1, RimLLMUsageTracker.GetModelLevel("deepseek", "deepseek-chat")); // Completion $0.28 < $0.50 -> Low (1)
-        ClassicAssert.AreEqual(1, RimLLMUsageTracker.GetModelLevel("openai-compatible", "local-llama")); // 本地免費 -> Low (1)
+        ClassicAssert.AreEqual(3, ModelPricing.GetModelLevel("openai", "gpt-4o")); // Completion $10.00 >= $3.00 -> High (3)
+        ClassicAssert.AreEqual(2, ModelPricing.GetModelLevel("openai", "gpt-4o-mini")); // Completion $0.60 >= $0.50 -> Medium (2)
+        ClassicAssert.AreEqual(1, ModelPricing.GetModelLevel("gemini", "gemini-2.0-flash-lite")); // Completion $0.30 < $0.50 -> Low (1)
+        ClassicAssert.AreEqual(1, ModelPricing.GetModelLevel("deepseek", "deepseek-chat")); // Completion $0.28 < $0.50 -> Low (1)
+        ClassicAssert.AreEqual(1, ModelPricing.GetModelLevel(ProviderIds.OpenAICompatible, "local-llama")); // 本地免費 -> Low (1)
 
         settings.ModelLevelOverrides["P2:pro-model"] = 3;
         settings.FallbackChain = ["P1:mini-model", "P2:pro-model"]; // P1 預設為 tier 2, P2 覆寫為 tier 3
@@ -623,6 +623,13 @@ public class CoverageEnhancementTests
         ClassicAssert.AreEqual(1, promptCalls, "被拒後只能以提示式路徑重打一次");
     }
 
+    /// <summary>查無費率時回傳 0，方便以單一數值斷言費用。</summary>
+    private static float EstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens)
+    {
+        ModelPricing.TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost);
+        return cost;
+    }
+
     /// <summary>
     /// 前綴比對必須停在版本邊界：先前 "gpt-4"（$30/$60）會吃到 "gpt-4.1-mini"（$0.40/$1.60），
     /// 成本高估 75 倍；日期後綴等以 "-" 接續的變體仍要能命中。
@@ -632,16 +639,16 @@ public class CoverageEnhancementTests
     {
         var tracker = new RimLLMUsageTracker(new MockSettings());
 
-        float mini = RimLLMUsageTracker.EstimateCost("openai", "gpt-4.1-mini", 1000000, 1000000, 0);
+        float mini = EstimateCost("openai", "gpt-4.1-mini", 1000000, 1000000, 0);
         ClassicAssert.AreEqual(2.00f, mini, 0.01f, "gpt-4.1-mini 必須以自己的費率計算，不能落到 gpt-4");
 
-        float datedMini = RimLLMUsageTracker.EstimateCost("openai", "gpt-4.1-mini-2025-04-14", 1000000, 1000000, 0);
+        float datedMini = EstimateCost("openai", "gpt-4.1-mini-2025-04-14", 1000000, 1000000, 0);
         ClassicAssert.AreEqual(mini, datedMini, 0.001f, "日期後綴以 - 接續，仍屬同一費率");
 
-        float gpt4 = RimLLMUsageTracker.EstimateCost("openai", "gpt-4-0613", 1000000, 1000000, 0);
+        float gpt4 = EstimateCost("openai", "gpt-4-0613", 1000000, 1000000, 0);
         ClassicAssert.AreEqual(90.00f, gpt4, 0.01f, "gpt-4 自己的版本後綴照常命中");
 
-        ClassicAssert.AreEqual(0f, RimLLMUsageTracker.EstimateCost("openai", "gpt-40", 1000000, 1000000, 0),
+        ClassicAssert.AreEqual(0f, EstimateCost("openai", "gpt-40", 1000000, 1000000, 0),
             "前綴後接數字不是版本邊界，不得命中 gpt-4");
     }
 
@@ -652,23 +659,23 @@ public class CoverageEnhancementTests
         var tracker = new RimLLMUsageTracker(settings);
 
         // 1. 定價精準匹配與前綴模糊匹配
-        float exactCost = RimLLMUsageTracker.EstimateCost("openai", "gpt-4o", 1000000, 1000000, 0);
+        float exactCost = EstimateCost("openai", "gpt-4o", 1000000, 1000000, 0);
         ClassicAssert.AreEqual(12.50f, exactCost, 0.01f);
 
-        float prefixCost = RimLLMUsageTracker.EstimateCost("openai", "gpt-4o-2024-11-20", 1000000, 1000000, 0);
+        float prefixCost = EstimateCost("openai", "gpt-4o-2024-11-20", 1000000, 1000000, 0);
         ClassicAssert.AreEqual(12.50f, prefixCost, 0.01f);
 
-        float geminiPrefixCost = RimLLMUsageTracker.EstimateCost("gemini", "gemini-2.0-flash-001", 1000000, 1000000, 0);
+        float geminiPrefixCost = EstimateCost("gemini", "gemini-2.0-flash-001", 1000000, 1000000, 0);
         ClassicAssert.AreEqual(0.50f, geminiPrefixCost, 0.01f);
 
         // 2. 快取折扣計算
-        float fullPromptCost = RimLLMUsageTracker.EstimateCost("gemini", "gemini-1.5-flash", 1000000, 0, 0);
-        float cachedPromptCost = RimLLMUsageTracker.EstimateCost("gemini", "gemini-1.5-flash", 1000000, 0, 1000000);
+        float fullPromptCost = EstimateCost("gemini", "gemini-1.5-flash", 1000000, 0, 0);
+        float cachedPromptCost = EstimateCost("gemini", "gemini-1.5-flash", 1000000, 0, 1000000);
         ClassicAssert.IsTrue(cachedPromptCost < fullPromptCost);
         ClassicAssert.AreEqual(fullPromptCost * 0.25f, cachedPromptCost, 0.001f);
 
         // 3. 未知模型回傳 0f
-        float unknownCost = RimLLMUsageTracker.EstimateCost("unknown-prov", "unknown-model", 1000, 1000, 0);
+        float unknownCost = EstimateCost("unknown-prov", "unknown-model", 1000, 1000, 0);
         ClassicAssert.AreEqual(0f, unknownCost);
 
         // 4. 預算政策審查（token 制）

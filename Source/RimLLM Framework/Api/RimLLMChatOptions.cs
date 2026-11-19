@@ -16,7 +16,6 @@ namespace RimLLM_Framework;
 public class RimLLMChatOptions : ChatOptions
 {
     internal const string DisableReasoningKey = "rimllm_disable_reasoning";
-    internal const string ExecutorManagedKey = "rimllm_executor_managed";
     internal const string PriorityKey = "rimllm_priority";
     internal const string MinFallbackLevelKey = "rimllm_min_fallback_level";
     internal const string CachedContextKey = "rimllm_cached_context";

@@ -14,7 +14,7 @@ namespace RimLLM_Framework.Mod;
 /// RimWorld Mod 設定檔。
 /// 將複雜的字典結構序列化為單一 JSON 字串儲存，並在序列化時調用 EncryptionUtility 加解密 API 金鑰。
 /// </summary>
-public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, IContextWindowLookup, IVisionLookup, IDailyTokenBudget
+public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
 {
     /// <summary>
     /// API 供應商的 Fallback Chain 順序。
@@ -150,9 +150,6 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, ICo
     /// <summary>每日 token 預算上限（輸入＋輸出合計）。0 代表無限制，存於設定 XML。</summary>
     public long DailyTokenBudgetLimit { get; set; } = 0;
 
-    /// <summary>舊版美元門檻僅為介面相容而保留；內建設定改看 token 預算，恆為 0 且不存檔。</summary>
-    float IRimLLMSettings.DailyBudgetLimit { get => 0f; set { /* 介面相容性：已棄用且不儲存 */ } }
-
     /// <summary>
     /// 最大合法的預算超限應對策略值。新增策略時要同步更新這裡與
     /// <see cref="BudgetSettingsDrawer"/> 的策略名稱清單。
@@ -256,7 +253,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, ICo
     public void QueueTelemetrySave()
     {
         _telemetry.MarkDirty();
-        RimLLMUsageTracker.QueueTelemetrySave(this);
+        _telemetry.QueueSave();
     }
 
     /// <summary>
@@ -317,8 +314,6 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, ICo
     private readonly Dictionary<string, string> _embeddingEndpoints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _embeddingApiKeys = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _undecryptableEmbeddingApiKeys = new(StringComparer.Ordinal);
-    private string _undecryptableEmbeddingApiKey;
-    private string _undecryptableEmbeddingApiKeyProvider;
 
     private readonly Dictionary<string, string> _decisionModels = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _decisionEndpoints = new(StringComparer.Ordinal);
@@ -644,14 +639,9 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, ICo
             _fallbackChain.RemoveAll(e => e == entry);
             _contextWindowOverrides.Remove(entry);
 
-            int colonIndex = entry.IndexOf(':');
-            if (colonIndex < 0) return;
-            string modelName = entry.Substring(colonIndex + 1);
+            if (!ProviderIds.TrySplitModelId(entry, out _, out string modelName)) return;
             bool stillUsed = _fallbackChain.Exists(e =>
-            {
-                int i = e.IndexOf(':');
-                return i >= 0 && e.Substring(i + 1) == modelName;
-            });
+                ProviderIds.TrySplitModelId(e, out _, out string otherModel) && otherModel == modelName);
             if (!stillUsed) _modelLevelOverrides.Remove(modelName);
         }
     }
@@ -665,14 +655,10 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings, ICo
             {
                 return level;
             }
-            int colonIndex = modelName.IndexOf(':');
-            if (colonIndex >= 0 && colonIndex < modelName.Length - 1)
+            if (ProviderIds.TrySplitModelId(modelName, out _, out string stripped) &&
+                _modelLevelOverrides.TryGetValue(stripped, out level))
             {
-                string stripped = modelName.Substring(colonIndex + 1);
-                if (_modelLevelOverrides.TryGetValue(stripped, out level))
-                {
-                    return level;
-                }
+                return level;
             }
             return 0;
         }

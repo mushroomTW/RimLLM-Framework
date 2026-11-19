@@ -22,8 +22,7 @@ internal static class CompatSeedUtil
     internal static string ModelLabel(string modId)
     {
         string pin = Mod.RimLLMFrameworkMod.Settings?.GetCompatModelPin(modId);
-        int colon = pin == null ? -1 : pin.IndexOf(':');
-        return colon > 0 && colon < pin.Length - 1 ? pin.Substring(colon + 1) : DefaultModelLabel;
+        return ProviderIds.TrySplitModelId(pin, out _, out string model) ? model : DefaultModelLabel;
     }
 
     /// <summary>登錄端點處理器：把該 Mod 送來的 OpenAI 相容請求轉給 RimLLM。</summary>
