@@ -92,6 +92,8 @@ public static class SetupWizardDrawer
     private static int _fetchGeneration;
     private static bool _modelsBusy;
     private static List<string> _chatModels = [];
+    /// <summary><see cref="_chatModels"/> 所屬的供應商，供模型選擇視窗以廠商名篩選。</summary>
+    private static string _chatModelsProvider;
     private static string _chatModel = "";
     private static string _modelsFailKey;
     private static string _modelsFailDetail;
@@ -442,7 +444,7 @@ public static class SetupWizardDrawer
         {
             DrawOptionalRow(listing, "RimLLM_SetupChatModel".Translate(), DescribePick(_chatModel, "RimLLM_SelectModelPlaceholder"),
                 "RimLLM_SetupChooseModelBtn".Translate(),
-                () => Find.WindowStack.Add(new Dialog_SelectModel(_chatModels, model => _chatModel = model)));
+                () => Find.WindowStack.Add(new Dialog_SelectModel(_chatModels, model => _chatModel = model, _chatModelsProvider)));
         }
         else
         {
@@ -485,6 +487,7 @@ public static class SetupWizardDrawer
         int generation = ++_fetchGeneration;
         _modelsBusy = true;
         _chatModels = [];
+        _chatModelsProvider = providerId;
         _chatModel = "";
         _modelsFailKey = null;
         _modelsFailDetail = null;

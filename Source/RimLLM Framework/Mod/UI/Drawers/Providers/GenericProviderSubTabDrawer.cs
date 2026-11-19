@@ -197,7 +197,8 @@ public static class GenericProviderSubTabDrawer
 
         // 過濾結果與清單複製都走快取：只有模型清單版本或過濾字串變了才重算。
         List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
-            providerId, Settings.ModelListVersion, ModelFilters[providerId], () => Settings.GetModelList(providerId));
+            providerId, Settings.ModelListVersion, ModelFilters[providerId], () => Settings.GetModelList(providerId),
+            RimLLMUIStyle.GetModelVendor(providerId));
 
         Rect scrollRect = listing.GetRect(220f);
         Widgets.DrawMenuSection(scrollRect);

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Text.Json;
 using System.Threading.Tasks;
+using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Manager.Services;
 using TypeSafeAI;
@@ -20,10 +21,14 @@ public sealed class RimLLMDecisionClient
     private readonly RimLLMManager _manager;
     private readonly string _modId;
 
+    /// <summary>此 Mod 的 OpenRouter 應用歸屬，於每次呼叫時放進 <see cref="RimLLMAppAttribution.Current"/>。</summary>
+    private readonly RimLLMAppAttribution _attribution;
+
     internal RimLLMDecisionClient(RimLLMManager manager, string modId)
     {
         _manager = manager ?? throw new ArgumentNullException(nameof(manager));
         _modId = modId ?? throw new ArgumentNullException(nameof(modId));
+        _attribution = manager.AttributionResolver?.Invoke(modId);
     }
 
     /// <summary>
@@ -40,6 +45,7 @@ public sealed class RimLLMDecisionClient
     {
         _manager.UsageTracker.RecordCaller(_modId);
         _manager.CheckAntiAbuseForMod(_modId);
+        RimLLMAppAttribution.Current = _attribution;
         using RimLLMUsageTracker.BudgetReservation reservation = ReserveBudget(state, plan);
         DecisionEvaluation evaluation = await _manager.DecisionService
             .EvaluateDetailedAsync(state, plan, model, cancellationToken)
@@ -66,6 +72,7 @@ public sealed class RimLLMDecisionClient
     {
         _manager.UsageTracker.RecordCaller(_modId);
         _manager.CheckAntiAbuseForMod(_modId);
+        RimLLMAppAttribution.Current = _attribution;
         using RimLLMUsageTracker.BudgetReservation reservation = ReserveBudget(state, plan);
         DecisionEvaluation evaluation = await _manager.DecisionService
             .EvaluateWithProviderDetailedAsync(state, plan, providerId, model, cancellationToken)
@@ -85,6 +92,7 @@ public sealed class RimLLMDecisionClient
     {
         _manager.UsageTracker.RecordCaller(_modId);
         _manager.CheckAntiAbuseForMod(_modId);
+        RimLLMAppAttribution.Current = _attribution;
 
         return await _manager.DecisionService
             .FetchDecisionModelsAsync(providerId, cancellationToken)

@@ -23,8 +23,18 @@ public class Dialog_SelectModel : Window
 
     public override Vector2 InitialSize => new(550f, 650f);
 
+    /// <summary>直連供應商的廠商鍵；讓「google」這類廠商名也篩得到不帶前綴的模型 ID。</summary>
+    private readonly string _vendor;
+
     public Dialog_SelectModel(List<string> models, Action<string> onSelected)
+        : this(models, onSelected, null)
     {
+    }
+
+    /// <param name="providerId">模型清單所屬的框架供應商；用來推得廠商鍵，未知時可為 null。</param>
+    public Dialog_SelectModel(List<string> models, Action<string> onSelected, string providerId)
+    {
+        this._vendor = RimLLMUIStyle.GetModelVendor(providerId);
         this._allModels = models ?? [];
         this._onSelected = onSelected;
         this.doCloseButton = true;
@@ -50,7 +60,7 @@ public class Dialog_SelectModel : Window
         if (_cachedFiltered == null || !string.Equals(_cachedFilter, _filter, StringComparison.Ordinal))
         {
             _cachedFilter = _filter;
-            _cachedFiltered = RimLLMUIStyle.FilterModels(_allModels, _filter);
+            _cachedFiltered = RimLLMUIStyle.FilterModels(_allModels, _filter, _vendor);
         }
         List<string> filteredModels = _cachedFiltered;
 

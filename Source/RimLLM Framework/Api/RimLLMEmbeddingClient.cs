@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
+using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework;
@@ -18,10 +19,14 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
     private readonly RimLLMManager _manager;
     private readonly string _modId;
 
+    /// <summary>此 Mod 的 OpenRouter 應用歸屬，於每次呼叫時放進 <see cref="RimLLMAppAttribution.Current"/>。</summary>
+    private readonly RimLLMAppAttribution _attribution;
+
     internal RimLLMEmbeddingClient(RimLLMManager manager, string modId)
     {
         _manager = manager ?? throw new ArgumentNullException(nameof(manager));
         _modId = modId ?? throw new ArgumentNullException(nameof(modId));
+        _attribution = manager.AttributionResolver?.Invoke(modId);
     }
 
     public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
@@ -33,6 +38,7 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
 
         _manager.UsageTracker.RecordCaller(_modId);
         _manager.CheckAntiAbuseForMod(_modId);
+        RimLLMAppAttribution.Current = _attribution;
 
         var inputValues = new List<string>(values);
         long estimatedTokens = EstimateTotalTokens(inputValues);

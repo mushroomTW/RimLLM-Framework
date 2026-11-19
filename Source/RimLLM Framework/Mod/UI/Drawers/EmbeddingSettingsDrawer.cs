@@ -21,6 +21,7 @@ public static class EmbeddingSettingsDrawer
 
     private const string ProviderGoogle = "Google";
     private const string ProviderOpenAI = "OpenAI";
+    private const string ProviderOpenRouter = RimLLMEmbeddingService.OpenRouterProvider;
     private const string ProviderOllama = "LocalAPI_Ollama";
     private const string ProviderLocalOpenAI = "LocalAPI_OpenAI";
     private const string ColorTagOpen = "<color=";
@@ -34,6 +35,7 @@ public static class EmbeddingSettingsDrawer
     [
         new KeyValuePair<string, string>("Google Gemini", ProviderGoogle),
         new KeyValuePair<string, string>("OpenAI", ProviderOpenAI),
+        new KeyValuePair<string, string>("OpenRouter", ProviderOpenRouter),
         new KeyValuePair<string, string>("Ollama (本地)", ProviderOllama),
         new KeyValuePair<string, string>("OpenAI 相容 (本地/自訂)", ProviderLocalOpenAI)
     ];
@@ -182,9 +184,10 @@ public static class EmbeddingSettingsDrawer
         GUI.color = oldColor;
     }
 
+    /// <summary>與服務端規則一致：本機服務以外的雲端供應商都需要金鑰。</summary>
     private static bool ProviderNeedsApiKey(string providerId)
     {
-        return providerId == "Google" || providerId == "OpenAI";
+        return !IsLocalProvider(providerId);
     }
 
     private static bool HasEffectiveApiKey(string providerId)

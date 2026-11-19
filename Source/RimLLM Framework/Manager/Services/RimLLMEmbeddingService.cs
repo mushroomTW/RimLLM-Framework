@@ -39,6 +39,9 @@ public class RimLLMEmbeddingService
     /// </summary>
     private const string PlaceholderApiKey = "not-required";
 
+    /// <summary>OpenRouter 的 Embedding 供應商識別碼（同時是設定檔與語系鍵的一部分）。</summary>
+    internal const string OpenRouterProvider = "OpenRouter";
+
     /// <summary>
     /// 各 Embedding 供應商的 OpenAI 相容預設服務根位址。
     /// 模型清單與向量運算兩條路徑共用同一張表，新增供應商時只改一處。
@@ -48,6 +51,7 @@ public class RimLLMEmbeddingService
         {
             { "Google", GoogleOpenAiCompatibleEndpoint },
             { "OpenAI", "https://api.openai.com/v1" },
+            { OpenRouterProvider, "https://" + OpenRouterAttributionPolicy.Host + "/api/v1" },
             { "LocalAPI_Ollama", "http://localhost:11434/v1" },
             { "LocalAPI_OpenAI", "http://localhost:1234/v1" },
         };
@@ -415,6 +419,11 @@ public class RimLLMEmbeddingService
                     return await FetchOllamaEmbeddingModelsAsync(root, linkedCts.Token).ConfigureAwait(false);
                 case "LocalAPI_OpenAI":
                     return await FetchLocalEmbeddingModelsAsync(root, effectiveApiKey, linkedCts.Token).ConfigureAwait(false);
+                case OpenRouterProvider:
+                    // OpenRouter 的 /models 有數百個對話模型；/embeddings/models 只列 embedding 模型，不必再靠名稱猜。
+                    return new RimLLMEmbeddingModelList(
+                        await FetchOpenAiCompatibleModelsAsync(effectiveApiKey, root + "/embeddings", linkedCts.Token).ConfigureAwait(false),
+                        filtered: true);
                 default:
                     List<string> ids = await FetchOpenAiCompatibleModelsAsync(effectiveApiKey, root, linkedCts.Token).ConfigureAwait(false);
                     return new RimLLMEmbeddingModelList(ids.FindAll(LooksLikeEmbeddingModel), filtered: true);
@@ -810,6 +819,10 @@ public class RimLLMEmbeddingService
             // 也延後切換到備援供應商。
             RetryPolicy = new ClientRetryPolicy(0)
         };
+        if (OpenRouterAttributionPolicy.Targets(options.Endpoint))
+        {
+            options.AddPolicy(OpenRouterAttributionPolicy.Instance, PipelinePosition.PerCall);
+        }
         if (TransportOverride != null)
         {
             options.Transport = TransportOverride;
@@ -834,6 +847,10 @@ public class RimLLMEmbeddingService
             Endpoint = new Uri(root, UriKind.Absolute),
             RetryPolicy = new ClientRetryPolicy(0)
         };
+        if (TransportOverride != null)
+        {
+            options.Transport = TransportOverride;
+        }
         var credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
 
         OpenAIModelCollection models = await new OpenAIClient(credential, options)
@@ -969,6 +986,7 @@ public class RimLLMEmbeddingService
         {
             "Google" => ProviderIds.Gemini,
             "OpenAI" => ProviderIds.OpenAI,
+            OpenRouterProvider => ProviderIds.OpenRouter,
             "LocalAPI_OpenAI" => ProviderIds.OpenAICompatible,
             "LocalAPI_Ollama" => ProviderIds.OpenAICompatible,
             _ => ProviderIds.OpenAI,

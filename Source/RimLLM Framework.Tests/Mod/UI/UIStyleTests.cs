@@ -75,6 +75,40 @@ public class UIStyleTests
         ClassicAssert.AreEqual("google/gemini-3.5-flash-lite", result[0]);
     }
 
+    /// <summary>直連 Gemini 的模型 ID 不帶 google/ 前綴，帶入廠商鍵後以「google」仍篩得到全部。</summary>
+    [Test]
+    public void VendorKeyLetsUnprefixedIdsMatchTheVendorName()
+    {
+        var models = new List<string> { "gemini-2.5-flash", "gemma-4-31b-it" };
+        string vendor = RimLLMUIStyle.GetModelVendor(ProviderIds.Gemini);
+
+        CollectionAssert.AreEqual(models, RimLLMUIStyle.FilterModels(models, "google", vendor));
+        CollectionAssert.AreEqual(new[] { "gemma-4-31b-it" }, RimLLMUIStyle.FilterModels(models, "google/gemma", vendor));
+        CollectionAssert.AreEqual(new[] { "gemma-4-31b-it" }, RimLLMUIStyle.FilterModels(models, "gle/gemma", vendor), "橫跨斜線的片段也要比對得到");
+        ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModels(models, "google/flash", vendor).Count);
+        ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModels(models, "google").Count, "沒有廠商鍵時維持純字串比對");
+    }
+
+    /// <summary>快取必須以廠商名區分：同一個 cacheKey 換了廠商不得回傳舊結果。</summary>
+    [Test]
+    public void FilterCacheDistinguishesVendor()
+    {
+        var models = new List<string> { "gemini-2.5-flash" };
+        const string key = "test:vendor-cache";
+
+        ClassicAssert.AreEqual(1, RimLLMUIStyle.FilterModelsCached(key, 1, "google", () => models, "google").Count);
+        ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModelsCached(key, 1, "google", () => models, null).Count);
+    }
+
+    /// <summary>已帶前綴的 ID（聚合商）只比對自己的前綴，不套用直連供應商的廠商鍵。</summary>
+    [Test]
+    public void VendorKeyIsNotAppliedToPrefixedIds()
+    {
+        var models = new List<string> { "meta/llama-4", "google/gemini-3.5-flash" };
+
+        CollectionAssert.AreEqual(new[] { "google/gemini-3.5-flash" }, RimLLMUIStyle.FilterModels(models, "google", "nvidia"));
+    }
+
     [Test]
     public void NoMatchReturnsEmptyList()
     {

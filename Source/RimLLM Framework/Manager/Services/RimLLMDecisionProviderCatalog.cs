@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using RimLLM_Framework.Providers;
 
 namespace RimLLM_Framework.Manager.Services;
 
@@ -66,6 +67,8 @@ public static class RimLLMDecisionProviderCatalog
     public const string OpenAI = "OpenAI";
     /// <summary>Google Gemini Decision（Gemini Decisions API，經 <see cref="GeminiDecisionsAdapterHandler"/> 轉接）。</summary>
     public const string Gemini = "Gemini";
+    /// <summary>OpenRouter Decisions API（經 <see cref="OpenRouterDecisionsAdapterHandler"/> 改寫路徑）。</summary>
+    public const string OpenRouter = "OpenRouter";
 
     /// <summary>Ollama 0.35 以上內建的 Jev 風格決策介面（/v1/systemone）。</summary>
     public const string Ollama = "Ollama";
@@ -91,6 +94,14 @@ public static class RimLLMDecisionProviderCatalog
             "https://" + GeminiDecisionsAdapterHandler.GeminiHost)
         {
             ChatKeyProviderId = ProviderIds.Gemini
+        },
+
+        // OpenRouter 路徑與 System One 不同，由 OpenRouterDecisionsAdapterHandler 在傳輸層改寫。
+        new RimLLMDecisionProvider(
+            OpenRouter,
+            "https://" + OpenRouterAttributionPolicy.Host)
+        {
+            ChatKeyProviderId = ProviderIds.OpenRouter
         },
 
         new RimLLMDecisionProvider(

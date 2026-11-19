@@ -117,11 +117,47 @@ public static class RimLLMUIStyle
     }
 
     /// <summary>
+    /// 直連供應商 → 廠商名，取 OpenRouter 模型 ID 的前綴寫法（例如 Gemini 的模型在 OpenRouter 上是 google/…）。
+    /// 只列模型全出自單一廠商的供應商；Groq、Nvidia、Player2 這類代管多家模型的服務沒有單一廠商，不列入。
+    /// 獨立維護而不沿用 models.dev 的供應商鍵：那張表服務於上下文長度下載，鍵名可能為了下載而調整。
+    /// </summary>
+    private static readonly Dictionary<string, string> ModelVendors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [ProviderIds.OpenAI] = "openai",
+        [ProviderIds.Gemini] = "google",
+        [ProviderIds.DeepSeek] = "deepseek",
+        [ProviderIds.Grok] = "x-ai",
+        [ProviderIds.Kimi] = "moonshotai",
+        [ProviderIds.MiniMax] = "minimax",
+        [ProviderIds.Qwen] = "qwen",
+        [ProviderIds.Zai] = "z-ai",
+    };
+
+    /// <summary>供應商的模型廠商名，供 <see cref="FilterModels(IEnumerable{string}, string, string)"/> 使用；沒有單一廠商時為 null。</summary>
+    public static string GetModelVendor(string providerId)
+    {
+        return providerId != null && ModelVendors.TryGetValue(providerId, out string vendor) ? vendor : null;
+    }
+
+    /// <summary>
+    /// 不帶廠商鍵的 <see cref="FilterModels(IEnumerable{string}, string, string)"/>；保留原簽章以免破壞外部呼叫端。
+    /// </summary>
+    public static List<string> FilterModels(IEnumerable<string> models, string filter)
+    {
+        return FilterModels(models, filter, null);
+    }
+
+    /// <summary>
     /// 以關鍵字過濾模型名稱。空白關鍵字代表不過濾。
     /// 供應商設定頁與 <see cref="Dialog_SelectModel"/> 共用同一份實作，
     /// 否則兩處的比對規則會各自漂移（例如一邊分大小寫、一邊不分）。
     /// </summary>
-    public static List<string> FilterModels(IEnumerable<string> models, string filter)
+    /// <param name="vendor">
+    /// 直連供應商的廠商名（見 <see cref="GetModelVendor"/>）。
+    /// 直連供應商的模型 ID 不帶廠商前綴（Gemini 是 <c>gemini-2.5-flash</c>，OpenRouter 是 <c>google/gemini-2.5-flash</c>），
+    /// 不帶前綴的 ID 會視同 <c>{vendor}/{id}</c> 比對，以廠商名搜尋才不會一筆都找不到。
+    /// </param>
+    public static List<string> FilterModels(IEnumerable<string> models, string filter, string vendor)
     {
         var result = new List<string>();
         if (models == null) return result;
@@ -134,12 +170,28 @@ public static class RimLLMUIStyle
         foreach (string model in models)
         {
             if (string.IsNullOrEmpty(model)) continue;
-            if (matchAll || model.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            if (matchAll
+                || model.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                || (vendor != null && !model.Contains('/') && MatchesVendorPrefixed(vendor, model, needle)))
             {
                 result.Add(model);
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// <c>{vendor}/{model}</c> 是否包含 <paramref name="needle"/>，但不實際串接字串（每次按鍵都對數百筆重算）。
+    /// 呼叫前已確認 <paramref name="model"/> 本身不含 needle，因此只剩兩種可能：
+    /// needle 落在廠商名內，或橫跨斜線（廠商名結尾 + "/" + 模型開頭）。
+    /// </summary>
+    private static bool MatchesVendorPrefixed(string vendor, string model, string needle)
+    {
+        if (vendor.Contains(needle, StringComparison.OrdinalIgnoreCase)) return true;
+        int slash = needle.IndexOf('/');
+        return slash >= 0
+               && vendor.AsSpan().EndsWith(needle.AsSpan(0, slash), StringComparison.OrdinalIgnoreCase)
+               && model.AsSpan().StartsWith(needle.AsSpan(slash + 1), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -151,6 +203,7 @@ public static class RimLLMUIStyle
     {
         public int Version;
         public string Filter;
+        public string Vendor;
         public List<string> Result;
     }
 
@@ -158,18 +211,28 @@ public static class RimLLMUIStyle
         new(StringComparer.Ordinal);
 
     /// <summary>
-    /// 帶快取的 <see cref="FilterModels"/>。<paramref name="version"/> 或 <paramref name="filter"/>
+    /// 不帶廠商鍵的 <see cref="FilterModelsCached(string, int, string, Func{IList{string}}, string)"/>；保留原簽章以免破壞外部呼叫端。
+    /// </summary>
+    public static List<string> FilterModelsCached(string cacheKey, int version, string filter, Func<IList<string>> sourceProvider)
+    {
+        return FilterModelsCached(cacheKey, version, filter, sourceProvider, null);
+    }
+
+    /// <summary>
+    /// 帶快取的 <see cref="FilterModels(IEnumerable{string}, string, string)"/>。<paramref name="version"/> 或 <paramref name="filter"/>
     /// 與上次相同就直接回傳上次的結果（同一個 List 實例，呼叫端不得改動）。
     /// <paramref name="sourceProvider"/> 只在需要重算時才被呼叫，讓呼叫端連清單複製都能省下。
     /// </summary>
-    public static List<string> FilterModelsCached(string cacheKey, int version, string filter, Func<IList<string>> sourceProvider)
+    public static List<string> FilterModelsCached(
+        string cacheKey, int version, string filter, Func<IList<string>> sourceProvider, string vendor)
     {
         ArgumentNullException.ThrowIfNull(sourceProvider);
         filter = filter ?? string.Empty;
 
         if (FilteredModelsCache.TryGetValue(cacheKey ?? string.Empty, out FilteredModelsEntry entry) &&
             entry.Version == version &&
-            string.Equals(entry.Filter, filter, StringComparison.Ordinal))
+            string.Equals(entry.Filter, filter, StringComparison.Ordinal) &&
+            string.Equals(entry.Vendor, vendor, StringComparison.Ordinal))
         {
             return entry.Result;
         }
@@ -179,7 +242,8 @@ public static class RimLLMUIStyle
         {
             Version = version,
             Filter = filter,
-            Result = FilterModels(source, filter)
+            Vendor = vendor,
+            Result = FilterModels(source, filter, vendor)
         };
         FilteredModelsCache[cacheKey ?? string.Empty] = entry;
         return entry.Result;

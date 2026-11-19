@@ -209,7 +209,7 @@ public static class ModelSettingsDrawer
 
         if (Widgets.ButtonText(addModBtn, "RimLLM_SelectModelBtn".Translate(modelBtnLabel)))
         {
-            Find.WindowStack.Add(new Dialog_SelectModel(models, (selectedM) => addModelName = selectedM));
+            Find.WindowStack.Add(new Dialog_SelectModel(models, (selectedM) => addModelName = selectedM, addProviderId));
         }
 
         // 點擊新增

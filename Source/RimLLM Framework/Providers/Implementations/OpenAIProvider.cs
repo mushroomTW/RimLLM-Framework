@@ -108,6 +108,16 @@ public class OpenAIProvider : ILLMProvider
         {
             options.Endpoint = new Uri(normalizedEndpoint, UriKind.Absolute);
         }
+        // 依主機而非供應商類別判斷：玩家把 OpenAI 相容供應商指向 openrouter.ai 時，
+        // 對話也要和 embedding／決策一樣帶上應用歸屬標頭。
+        if (OpenRouterAttributionPolicy.Targets(options.Endpoint))
+        {
+            options.AddPolicy(OpenRouterAttributionPolicy.Instance, PipelinePosition.PerCall);
+        }
+        if (TransportOverride != null)
+        {
+            options.Transport = TransportOverride;
+        }
 
         // 唯一允許的建立點：其他地方一律呼叫本方法，RetryPolicy 與逾時才不會漏設。
 #pragma warning disable RS0030
@@ -115,6 +125,12 @@ public class OpenAIProvider : ILLMProvider
 #pragma warning restore RS0030
         return client.AsIChatClient();
     }
+
+    /// <summary>
+    /// 讓單元測試以假的 HTTP 傳輸攔截對話請求（與 <c>RimLLMEmbeddingService.TransportOverride</c>
+    /// 同一種測試接縫）；正式環境一律 null，走 SDK 預設傳輸。
+    /// </summary>
+    internal static PipelineTransport TransportOverride { get; set; }
 
     private static readonly char[] SlashChars = ['/'];
 

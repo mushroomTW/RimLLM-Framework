@@ -260,6 +260,12 @@ public class RimLLMManager
         }
     }
 
+    /// <summary>
+    /// 把 modId 解析為 OpenRouter 應用歸屬。遊戲內由 <see cref="RimLLM_Framework.Mod.RimLLMFrameworkMod"/>
+    /// 以啟動時的啟用 Mod 快照注入；單元測試不注入，一律歸屬框架。
+    /// </summary>
+    internal Func<string, RimLLMAppAttribution> AttributionResolver { get; init; }
+
     internal IChatClient CreateChatClient(string modId)
     {
         if (string.IsNullOrEmpty(modId))
@@ -272,8 +278,10 @@ public class RimLLMManager
         // 守衛（防濫用在先、預算在後）排在佇列之前，被擋下的請求不該佔用併發名額；
         // 併發名額不在這裡疊：由路由對每一個候選嘗試各包一層佇列，名額只留給真正
         // 要打 API 的那一次呼叫，重試前的指數退避不會占著名額讓其他 Mod 排隊。
+        // 歸屬層緊貼路由外側：被守衛擋下的請求不會送出，不必設定歸屬。
         IChatClient client = RimLLMFailoverChatClient.Create(
             _settings, _healthLedger, _usageTracker, _fallbackPipeline, modId, _requestQueue);
+        client = new RimLLMAttributionChatClient(client, AttributionResolver?.Invoke(modId));
         client = new RimLLMGuardChatClient(client, _settings, _throttleStore, modId, _usageTracker);
         client = new RimLLMOptionsNormalizingChatClient(client, _settings);
         return client;

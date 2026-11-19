@@ -189,6 +189,7 @@
   <RimLLM_EmbeddingProvider_Disabled>停用（不使用 Embedding）</RimLLM_EmbeddingProvider_Disabled>
   <RimLLM_EmbeddingProvider_Google>Google Gemini</RimLLM_EmbeddingProvider_Google>
   <RimLLM_EmbeddingProvider_OpenAI>OpenAI</RimLLM_EmbeddingProvider_OpenAI>
+  <RimLLM_EmbeddingProvider_OpenRouter>OpenRouter</RimLLM_EmbeddingProvider_OpenRouter>
   <RimLLM_EmbeddingProvider_LocalAPI_Ollama>Ollama (本地)</RimLLM_EmbeddingProvider_LocalAPI_Ollama>
   <RimLLM_EmbeddingProvider_LocalAPI_OpenAI>OpenAI 兼容 (本地/自定义)</RimLLM_EmbeddingProvider_LocalAPI_OpenAI>
   
@@ -274,6 +275,7 @@
   <RimLLM_DecisionProvider_Microsoft>Microsoft</RimLLM_DecisionProvider_Microsoft>
   <RimLLM_DecisionProvider_OpenAI>OpenAI</RimLLM_DecisionProvider_OpenAI>
   <RimLLM_DecisionProvider_Gemini>Google Gemini</RimLLM_DecisionProvider_Gemini>
+  <RimLLM_DecisionProvider_OpenRouter>OpenRouter</RimLLM_DecisionProvider_OpenRouter>
   <RimLLM_DecisionProvider_Ollama>Ollama</RimLLM_DecisionProvider_Ollama>
   <RimLLM_DecisionProvider_Unsloth>Unsloth</RimLLM_DecisionProvider_Unsloth>
   <RimLLM_DecisionProvider_Local>其他本机服务</RimLLM_DecisionProvider_Local>

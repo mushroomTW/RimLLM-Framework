@@ -145,7 +145,12 @@ public class RimLLMDecisionService
             // Gemini Decisions API 的路徑、金鑰標頭與欄位名稱和 System One 不同，在傳輸層互轉。
             handler = new GeminiDecisionsAdapterHandler { InnerHandler = handler };
         }
-        // 本機服務的 /v1/models 多為 OpenAI 格式，轉成 SDK 能解析的形狀。
+        else
+        {
+            // OpenRouter 的路徑與 System One 不同；只對 openrouter.ai 主機生效，其他端點原樣放行。
+            handler = new OpenRouterDecisionsAdapterHandler { InnerHandler = handler };
+        }
+        // 本機服務與 OpenRouter 的 /v1/models 是 OpenAI 格式，轉成 SDK 能解析的形狀。
         handler = new OpenAiModelListAdapterHandler { InnerHandler = handler };
         // SDK 豁免：要注入上面的傳輸層 handler，只能用 TypeSafeClient 接收 HttpClient 的建構子；請求本身仍由 SDK 發出。
 #pragma warning disable RS0030

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 using UnityEngine;
@@ -24,7 +25,17 @@ public class RimLLMFrameworkMod : Verse.Mod
         Settings = GetSettings<RimLLMFrameworkSettings>();
 
         // 2. 註冊 SDK 服務管理器到 Provider 入口 (依賴注入 Settings)
-        RimLLMProvider.Initialize(new RimLLMManager(Settings));
+        //    歸屬快照以 foreach 收集而非 LINQ lambda：lambda 會產生型別為 Func<ModMetaData, …> 的快取欄位，
+        //    反射載入該欄位會連帶要求 Steamworks 組件，讓相容層的型別掃描測試失敗。
+        var activeMods = new List<(string PackageId, string Name, string Url)>();
+        foreach (ModMetaData mod in ModsConfig.ActiveModsInLoadOrder)
+        {
+            activeMods.Add((mod.PackageIdPlayerFacing, mod.Name, mod.Url));
+        }
+        RimLLMProvider.Initialize(new RimLLMManager(Settings)
+        {
+            AttributionResolver = RimLLMAppAttribution.CreateResolver(activeMods)
+        });
 
         // 3. 於主線程建立 Unity 主線程派遣器 (RimLLMDispatcher)。
         //    背景執行緒不得建立 Unity GameObject，因此建立時機必須固定在此。
