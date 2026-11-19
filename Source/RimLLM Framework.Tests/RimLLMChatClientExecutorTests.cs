@@ -432,8 +432,7 @@ public class RimLLMChatClientExecutorTests
 
     /// <summary>
     /// 串流一律原樣轉發 provider 的 update：推理內容維持 TextReasoningContent，
-    /// 不再被合成成 &lt;think&gt; 字串 chunk。想要那種扁平表述的呈現層自己用
-    /// RimLLMThinkTagFormatter 組。
+    /// 不再被合成成 &lt;think&gt; 字串 chunk。
     /// </summary>
     [Test]
     public void TestStreamAsync_ForwardsUpdatesVerbatim()
@@ -472,38 +471,6 @@ public class RimLLMChatClientExecutorTests
         ClassicAssert.IsInstanceOf<TextReasoningContent>(received[0].Contents[0]);
         ClassicAssert.AreEqual("think a", ((TextReasoningContent)received[0].Contents[0]).Text);
         ClassicAssert.AreEqual("answer", ((TextContent)received[2].Contents[0]).Text);
-    }
-
-    /// <summary>
-    /// &lt;think&gt; 封裝從框架資料流移到呈現層之後，這裡是它唯一的定義處。
-    /// </summary>
-    [Test]
-    public void TestThinkTagFormatter_WrapsReasoningSegments()
-    {
-        var formatter = new RimLLMThinkTagFormatter();
-
-        string a = formatter.Append(new ChatResponseUpdate(
-            ChatRole.Assistant, [new TextReasoningContent("think a")]));
-        string b = formatter.Append(new ChatResponseUpdate(
-            ChatRole.Assistant, [new TextReasoningContent("think b")]));
-        string c = formatter.Append(new ChatResponseUpdate(
-            ChatRole.Assistant, [new TextContent("answer")]));
-
-        ClassicAssert.AreEqual("<think>think a", a);
-        ClassicAssert.AreEqual("think b", b);
-        ClassicAssert.AreEqual("</think>answer", c);
-        ClassicAssert.AreEqual(string.Empty, formatter.Complete(), "已閉合就不該再補標籤。");
-    }
-
-    /// <summary>整段都是推理內容時，收尾標籤只能在串流結束後補。</summary>
-    [Test]
-    public void TestThinkTagFormatter_ClosesUnterminatedReasoning()
-    {
-        var formatter = new RimLLMThinkTagFormatter();
-
-        ClassicAssert.AreEqual("<think>only thinking", formatter.Append(new ChatResponseUpdate(
-            ChatRole.Assistant, [new TextReasoningContent("only thinking")])));
-        ClassicAssert.AreEqual("</think>", formatter.Complete());
     }
 
     [Test]

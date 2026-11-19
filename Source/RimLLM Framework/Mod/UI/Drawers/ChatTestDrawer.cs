@@ -434,7 +434,9 @@ public static class ChatTestDrawer
     private sealed class StreamRenderState
     {
         public readonly object ReplyLock = new();
-        public readonly StringBuilder AccumulatedReply = new();
+        /// <summary>供應商原生的推理內容（<see cref="TextReasoningContent"/>），與答案分開累積。</summary>
+        public readonly StringBuilder Reasoning = new();
+        public readonly StringBuilder Answer = new();
         public long LastRenderTimestamp;
         public bool TrailingRenderScheduled;
         public bool StreamCompleted;
@@ -477,15 +479,30 @@ public static class ChatTestDrawer
             if (details.OutputTokenCount.HasValue) CompletionTokens = (int)details.OutputTokenCount.Value;
         }
 
-        public void Append(string text)
+        public void Append(ChatResponseUpdate update)
         {
-            if (string.IsNullOrEmpty(text)) return;
+            if (update?.Contents == null) return;
 
             bool renderNow;
             bool scheduleTrailing = false;
             lock (ReplyLock)
             {
-                AccumulatedReply.Append(text);
+                bool appended = false;
+                foreach (AIContent part in update.Contents)
+                {
+                    if (part is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
+                    {
+                        Reasoning.Append(reasoning.Text);
+                        appended = true;
+                    }
+                    else if (part is TextContent text && !string.IsNullOrEmpty(text.Text))
+                    {
+                        Answer.Append(text.Text);
+                        appended = true;
+                    }
+                }
+                if (!appended) return;
+
                 long now = System.Diagnostics.Stopwatch.GetTimestamp();
                 renderNow = now - LastRenderTimestamp >= StreamRenderIntervalTicks;
                 if (renderNow)
@@ -523,7 +540,7 @@ public static class ChatTestDrawer
             lock (ReplyLock)
             {
                 if (StreamCompleted) return;
-                string localReply = MarkdownBodyMarker + AccumulatedReply;
+                string localReply = BuildMarkdownBody(Reasoning.ToString(), Answer.ToString());
                 var liveMeta = new ChatEntryMeta
                 {
                     ModelId = ActualModelId,
@@ -587,7 +604,6 @@ public static class ChatTestDrawer
                 ModelId = pinnedModel
             };
 
-            var thinkFormatter = new RimLLMThinkTagFormatter();
             var enumerator = client.GetStreamingResponseAsync(messages, options, requestToken).GetAsyncEnumerator(requestToken);
             try
             {
@@ -595,7 +611,7 @@ public static class ChatTestDrawer
                 {
                     var update = enumerator.Current;
                     renderState.RecordUsage(update);
-                    renderState.Append(thinkFormatter.Append(update));
+                    renderState.Append(update);
                 }
             }
             finally
@@ -603,18 +619,18 @@ public static class ChatTestDrawer
                 await enumerator.DisposeAsync().ConfigureAwait(false);
             }
 
-            string tail = thinkFormatter.Complete();
-            string fullReply;
+            string reasoningText;
+            string answerText;
             lock (renderState.ReplyLock)
             {
-                if (!string.IsNullOrEmpty(tail)) renderState.AccumulatedReply.Append(tail);
                 renderState.StreamCompleted = true;
-                fullReply = renderState.AccumulatedReply.ToString();
+                reasoningText = renderState.Reasoning.ToString();
+                answerText = renderState.Answer.ToString();
             }
 
             renderState.Stopwatch.Stop();
-            var finalMeta = BuildFinalChatMeta(userPrompt, fullReply, renderState);
-            UpdateAiHistoryEntry(requestGeneration, aiHistoryIndex, MarkdownBodyMarker + fullReply, meta: finalMeta, persist: true);
+            var finalMeta = BuildFinalChatMeta(userPrompt, reasoningText + answerText, renderState);
+            UpdateAiHistoryEntry(requestGeneration, aiHistoryIndex, BuildMarkdownBody(reasoningText, answerText), meta: finalMeta, persist: true);
         }
         catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
         {
@@ -750,13 +766,62 @@ public static class ChatTestDrawer
     }
 
     /// <summary>
+    /// 推理欄位的標記，後接推理內容的字元數：<c>&lt;!--rimllm-reasoning:123--&gt;</c>。
+    /// 對話紀錄是整條字串持久化，推理與答案需要分界；以長度而非結束標記分界，
+    /// 推理內容不論含什麼字元都不必跳脫，也不會和模型自己寫在正文裡的 &lt;think&gt; 混淆。
+    /// </summary>
+    private const string ReasoningMarkerPrefix = "<!--rimllm-reasoning:";
+    private const string ReasoningMarkerSuffix = "-->";
+
+    /// <summary>組出 Markdown 本文：推理內容（若有）以長度標記存放在答案之前。</summary>
+    internal static string BuildMarkdownBody(string reasoning, string answer)
+    {
+        if (string.IsNullOrEmpty(reasoning)) return MarkdownBodyMarker + answer;
+        return MarkdownBodyMarker + ReasoningMarkerPrefix + reasoning.Length + ReasoningMarkerSuffix + reasoning + answer;
+    }
+
+    /// <summary><see cref="BuildMarkdownBody"/> 的反向：拆出推理內容與答案。標記不完整時整段視為答案。</summary>
+    internal static void SplitMarkdownBody(string body, out string reasoning, out string answer)
+    {
+        reasoning = string.Empty;
+        answer = body ?? string.Empty;
+        if (!answer.StartsWith(ReasoningMarkerPrefix, StringComparison.Ordinal)) return;
+
+        int lengthStart = ReasoningMarkerPrefix.Length;
+        int suffixStart = answer.IndexOf(ReasoningMarkerSuffix, lengthStart, StringComparison.Ordinal);
+        if (suffixStart < 0) return;
+        if (!int.TryParse(answer.Substring(lengthStart, suffixStart - lengthStart), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out int length)) return;
+
+        int contentStart = suffixStart + ReasoningMarkerSuffix.Length;
+        if (length > answer.Length - contentStart) return;
+        reasoning = answer.Substring(contentStart, length);
+        answer = answer.Substring(contentStart + length);
+    }
+
+    /// <summary>
+    /// 供應商原生推理直接以欄位呈現：還沒有答案時顯示「思考中」，否則顯示已閉合的思考過程。
+    /// 答案部分仍要經過 <see cref="FormatThinkProcess"/>，因為部分模型（如本機 Ollama/Qwen）
+    /// 把 &lt;think&gt; 直接寫在正文裡，那是一般文字，MEAI 不會拆成推理內容。
+    /// </summary>
+    private static string FormatReasoning(string reasoning, bool hasAnswer)
+    {
+        if (string.IsNullOrWhiteSpace(reasoning)) return string.Empty;
+        string escaped = RimLLMMarkdown.EscapeUntrustedUnityTags(reasoning);
+        return hasAnswer
+            ? WrapClosedThought(escaped)
+            : WrapTrailingThought(escaped, 0, 0);
+    }
+
+    /// <summary>
     /// 先抽出思考過程並標灰，再轉 Markdown —— ```thought 圍籬必須先被思考處理吃掉，否則會被當成程式碼區塊。
     /// 思考區塊整段當文字，表格只從最後一個已閉合思考區塊之後切，否則灰色 wrapper 會被拆開；
     /// 仍在思考（未閉合）時整段都是文字。
     /// </summary>
-    private static List<BubblePart> RenderMarkdownBody(string markdown, GUIStyle richLabelStyle, float width)
+    private static List<BubblePart> RenderMarkdownBody(string body, GUIStyle richLabelStyle, float width)
     {
-        string formatted = FormatThinkProcess(markdown) ?? string.Empty;
+        SplitMarkdownBody(body, out string reasoning, out string answer);
+        string formatted = (FormatReasoning(reasoning, !string.IsNullOrEmpty(answer)) + (FormatThinkProcess(answer) ?? string.Empty)).Trim();
         int answerStart = 0;
         if (formatted.Contains("<color=silver>" + ThinkingLabel))
         {

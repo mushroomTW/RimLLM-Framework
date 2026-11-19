@@ -97,6 +97,37 @@ public class ChatTestDrawerTests
         ClassicAssert.AreEqual(500, parsedMeta.TotalTokens);
     }
 
+    /// <summary>
+    /// 推理內容以長度標記和答案分開存放：內容含 --&gt;、&lt;think&gt; 或標記本身都不能讓分界錯位。
+    /// </summary>
+    [TestCase("", "answer")]
+    [TestCase("plain reasoning", "answer")]
+    [TestCase("tricky --> <think>x</think> <!--rimllm-reasoning:3-->", "<think>inline</think>answer")]
+    [TestCase("only reasoning", "")]
+    public void MarkdownBody_RoundTripsReasoningAndAnswer(string reasoning, string answer)
+    {
+        string built = ChatTestDrawer.BuildMarkdownBody(reasoning, answer);
+        StringAssert.StartsWith(ChatTestDrawer.MarkdownBodyMarker, built);
+
+        ChatTestDrawer.SplitMarkdownBody(built.Substring(ChatTestDrawer.MarkdownBodyMarker.Length),
+            out string parsedReasoning, out string parsedAnswer);
+
+        ClassicAssert.AreEqual(reasoning, parsedReasoning);
+        ClassicAssert.AreEqual(answer, parsedAnswer);
+    }
+
+    /// <summary>標記損壞（長度超出、不是數字）時不能擲出例外，整段退回當答案顯示。</summary>
+    [TestCase("<!--rimllm-reasoning:999-->short")]
+    [TestCase("<!--rimllm-reasoning:-1-->x")]
+    [TestCase("<!--rimllm-reasoning:abc-->x")]
+    public void SplitMarkdownBody_MalformedMarkerFallsBackToAnswer(string body)
+    {
+        ChatTestDrawer.SplitMarkdownBody(body, out string reasoning, out string answer);
+
+        ClassicAssert.AreEqual(string.Empty, reasoning);
+        ClassicAssert.AreEqual(body, answer);
+    }
+
     [Test]
     public void ParseMessage_WithoutMeta_ParsesNormally()
     {

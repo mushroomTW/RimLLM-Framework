@@ -68,7 +68,7 @@ internal static class RimLLMChatClientExecutor
         // 回應原樣交還。ResponseId、CreatedAt、ConversationId、RawRepresentation 這些
         // 只有 provider 知道的欄位，一旦在這裡拆成中介型別再重組就補不回來了。
         // 推理內容維持 MEAI 原生的 TextReasoningContent，不再合成 <think> 文字——
-        // 那是呈現層的事，由 RimLLMThinkTagFormatter 在需要時組裝。
+        // 要不要顯示、怎麼顯示是呈現層的事。
         //
         // 空回應判定仍要逐則彙整 Contents：response.Text 只涵蓋 TextContent，
         // 內層 client 回傳多則訊息時（巢狀 decorator）工具呼叫與推理內容不在其中。

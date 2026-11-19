@@ -527,6 +527,54 @@ public class ProviderTests
         }
     }
 
+    /// <summary>
+    /// OpenRouter（與 Groq、Ollama、vLLM）把推理放在 <c>reasoning</c> 欄位，MEAI.OpenAI 11 不解析它；
+    /// 框架須補成 TextReasoningContent。<c>reasoning: null</c> 的答案 chunk 不能多出空推理。
+    /// </summary>
+    [Test]
+    public void TestOpenRouterReasoningFieldIsPromoted()
+    {
+        var mockSettings = new MockSettings();
+        mockSettings.ApiKeys["OpenRouter"] = "mock-key";
+        var userMsgs = new List<ChatMessage> { new(ChatRole.User, "hello") };
+
+        var provider = new TestOpenRouterProvider(mockSettings);
+        provider.WireHandler.ResponseBody = "{\"choices\": [{\"message\": {\"role\": \"assistant\", " +
+            "\"content\": \"Answer\", \"reasoning\": \"Router thinking\"}}]}";
+        AssertReasoningSeparated(provider, userMsgs, "m", "Router thinking", "Answer");
+
+        var streaming = new TestOpenRouterProvider(mockSettings);
+        streaming.WireHandler.ResponseContentType = "text/event-stream";
+        const string chunk = "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":";
+        streaming.WireHandler.ResponseBody =
+            chunk + "{\"role\":\"assistant\",\"content\":\"\",\"reasoning\":\"Step 1. \"}}]}\n\n" +
+            chunk + "{\"content\":\"\",\"reasoning\":\"Step 2.\"}}]}\n\n" +
+            chunk + "{\"content\":\"Done\",\"reasoning\":null}}]}\n\n" +
+            "data: [DONE]\n\n";
+        using IChatClient client = streaming.CreateChatClient("m");
+        var updates = new List<ChatResponseUpdate>();
+        var enumerator = client.GetStreamingResponseAsync(userMsgs).GetAsyncEnumerator();
+        while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult()) updates.Add(enumerator.Current);
+        enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+        var reasoningParts = updates.SelectMany(u => u.Contents).OfType<TextReasoningContent>().ToList();
+        ClassicAssert.AreEqual("Step 1. Step 2.", string.Concat(reasoningParts.Select(c => c.Text)));
+        ClassicAssert.AreEqual(2, reasoningParts.Count, "reasoning 為 null 的 chunk 不應補出推理內容。");
+        ClassicAssert.AreEqual("Done", string.Concat(updates.Select(u => u.Text)));
+    }
+
+    /// <summary>同時回傳 reasoning_content 與 reasoning 時只保留 MEAI 已解析的那份，不重複。</summary>
+    [Test]
+    public void TestReasoningFieldNotDuplicatedWhenReasoningContentPresent()
+    {
+        var mockSettings = new MockSettings();
+        mockSettings.ApiKeys["OpenRouter"] = "mock-key";
+        var provider = new TestOpenRouterProvider(mockSettings);
+        provider.WireHandler.ResponseBody = "{\"choices\": [{\"message\": {\"role\": \"assistant\", " +
+            "\"content\": \"Answer\", \"reasoning_content\": \"Same\", \"reasoning\": \"Same\"}}]}";
+        AssertReasoningSeparated(provider, [new(ChatRole.User, "hello")], "m", "Same", "Answer");
+    }
+
     /// <summary>思考內容必須以 TextReasoningContent 呈現，且不得混入正文。</summary>
     private static void AssertReasoningSeparated(
         ILLMProvider provider, List<ChatMessage> messages, string model, string expectedReasoning, string expectedText)
