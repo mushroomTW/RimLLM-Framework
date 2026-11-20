@@ -27,6 +27,7 @@ docs/
 SteamDescriptions/
 AGENTS.md
 CLAUDE.md
+/Documentation/decisions.md
 
 # ------------------------------------------------------------------------------
 # 3. .NET Build Output & Intermediate Files
