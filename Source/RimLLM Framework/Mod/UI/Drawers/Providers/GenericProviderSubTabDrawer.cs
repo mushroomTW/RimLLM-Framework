@@ -114,9 +114,9 @@ public static class GenericProviderSubTabDrawer
 
             // 由右至左配置：刪除鈕（可刪時）、顯示切換鈕，其餘給輸入框。
             float reservedRight = RevealButtonWidth + 8f + (canDelete ? 40f : 0f);
-            Rect inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width - reservedRight, rowRect.height);
-            Rect revealRect = new Rect(inputRect.xMax + 8f, rowRect.y, RevealButtonWidth, rowRect.height);
-            Rect deleteRect = new Rect(rowRect.x + rowRect.width - 32f, rowRect.y, 32f, rowRect.height);
+            Rect inputRect = new(rowRect.x, rowRect.y, rowRect.width - reservedRight, rowRect.height);
+            Rect revealRect = new(inputRect.xMax + 8f, rowRect.y, RevealButtonWidth, rowRect.height);
+            Rect deleteRect = new(rowRect.x + rowRect.width - 32f, rowRect.y, 32f, rowRect.height);
 
             string revealKey = providerId + ":" + i;
             bool revealed = RevealedKeys.TryGetValue(revealKey, out bool r) && r;
@@ -139,7 +139,7 @@ public static class GenericProviderSubTabDrawer
         }
 
         Rect addKeyRowRect = listing.GetRect(28f);
-        Rect addKeyBtnRect = new Rect(addKeyRowRect.x, addKeyRowRect.y, 140f, addKeyRowRect.height);
+        Rect addKeyBtnRect = new(addKeyRowRect.x, addKeyRowRect.y, 140f, addKeyRowRect.height);
         if (Widgets.ButtonText(addKeyBtnRect, "RimLLM_AddApiKeyBtn".Translate()))
         {
             keys.Add("");
@@ -187,7 +187,7 @@ public static class GenericProviderSubTabDrawer
                 new Rect(searchRowRect.x, searchRowRect.y, searchLabelWidth, searchRowRect.height),
                 "RimLLM_Search".Translate() + ": ");
         }
-        Rect searchFieldRect = new Rect(
+        Rect searchFieldRect = new(
             searchRowRect.x + searchLabelWidth + 4f,
             searchRowRect.y,
             searchRowRect.width - searchLabelWidth - 4f,
@@ -219,7 +219,7 @@ public static class GenericProviderSubTabDrawer
 
         int rows = Mathf.CeilToInt((float)visibleModels.Count / cols);
         float viewHeight = Mathf.Max(220f, rows * (chipHeight + gap) + gap);
-        Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
+        Rect viewRect = new(0f, 0f, contentWidth, viewHeight);
 
         if (!ModelScrollPositions.TryGetValue(providerId, out Vector2 scrollPos))
         {
@@ -240,7 +240,7 @@ public static class GenericProviderSubTabDrawer
             int col = i % cols;
             int row = i / cols;
 
-            Rect chipRect = new Rect(
+            Rect chipRect = new(
                 col * (chipWidth + gap) + gap,
                 row * (chipHeight + gap) + gap,
                 chipWidth,
@@ -318,9 +318,9 @@ public static class GenericProviderSubTabDrawer
         float buttonWidth = 180f)
     {
         Rect rowRect = listing.GetRect(60f);
-        Rect btnRect = new Rect(rowRect.x, rowRect.y + 15f, buttonWidth, 30f);
+        Rect btnRect = new(rowRect.x, rowRect.y + 15f, buttonWidth, 30f);
         float statusOffset = buttonWidth + 10f;
-        Rect msgRect = new Rect(rowRect.x + statusOffset, rowRect.y, rowRect.width - statusOffset, 60f);
+        Rect msgRect = new(rowRect.x + statusOffset, rowRect.y, rowRect.width - statusOffset, 60f);
 
         if (busy)
         {
@@ -521,8 +521,8 @@ public static class GenericProviderSubTabDrawer
     private static void DrawLocalDetectionControls(Listing_Standard listing, string providerId)
     {
         Rect detectRect = listing.GetRect(30f);
-        Rect detectBtnRect = new Rect(detectRect.x, detectRect.y, 250f, detectRect.height);
-        Rect detectStatusRect = new Rect(detectRect.x + 260f, detectRect.y, detectRect.width - 260f, detectRect.height);
+        Rect detectBtnRect = new(detectRect.x, detectRect.y, 250f, detectRect.height);
+        Rect detectStatusRect = new(detectRect.x + 260f, detectRect.y, detectRect.width - 260f, detectRect.height);
 
         if (IsDetectingLocal)
         {

@@ -18,29 +18,29 @@ namespace RimLLM_Framework.Compat;
 internal static class RimLLMCompatBootstrap
 {
     /// <summary>所有已知的接管目標（依設定頁顯示順序）。</summary>
-    public static readonly IReadOnlyList<RimLLMCompatTarget> Targets = new RimLLMCompatTarget[]
-    {
-        new RimLLMCompatTarget(
+    public static readonly IReadOnlyList<RimLLMCompatTarget> Targets =
+    [
+        new(
             RimTalkCompatPatch.PackageId,
             "RimTalk",
             RimTalkCompatPatch.Apply,
             RimTalkCompatPatch.OnTakeoverToggled),
-        new RimLLMCompatTarget(
+        new(
             AutoTranslationCompatPatch.PackageId,
             "Auto Translation",
             AutoTranslationCompatPatch.Apply,
             AutoTranslationCompatPatch.OnTakeoverToggled),
-        new RimLLMCompatTarget(
+        new(
             ScAutoCompatPatch.PackageId,
             "One 簡中自動化 (Simplified Chinese Automation: One)",
             ScAutoCompatPatch.Apply,
             ScAutoCompatPatch.OnTakeoverToggled),
-        new RimLLMCompatTarget(
+        new(
             ModCompatCheckerCompatPatch.PackageId,
             "Mod 兼容性檢查器 (Mod Compatibility Checker)",
             ModCompatCheckerCompatPatch.Apply,
             ModCompatCheckerCompatPatch.OnTakeoverToggled)
-    };
+    ];
 
     static RimLLMCompatBootstrap()
     {

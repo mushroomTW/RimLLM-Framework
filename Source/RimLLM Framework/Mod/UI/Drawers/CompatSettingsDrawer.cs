@@ -50,7 +50,7 @@ public static class CompatSettingsDrawer
         {
             if (_rows != null) return _rows;
 
-            List<Row> rows = new List<Row>(RimLLMCompatBootstrap.Targets.Count);
+            List<Row> rows = new(RimLLMCompatBootstrap.Targets.Count);
             foreach (RimLLMCompatTarget target in RimLLMCompatBootstrap.Targets)
             {
                 rows.Add(new Row
@@ -119,7 +119,7 @@ public static class CompatSettingsDrawer
         string pin = Settings.GetCompatModelPin(modId);
         string shown = string.IsNullOrEmpty(pin) ? (string)"RimLLM_CompatModelDefault".Translate() : pin;
 
-        Rect labelRect = new Rect(rect.x + RowPadding, rect.y, 120f, rect.height);
+        Rect labelRect = new(rect.x + RowPadding, rect.y, 120f, rect.height);
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
             GUI.color = RimLLMUIStyle.Muted;
@@ -127,12 +127,12 @@ public static class CompatSettingsDrawer
             GUI.color = Color.white;
         }
 
-        Rect buttonRect = new Rect(labelRect.xMax, rect.y + 2f, Mathf.Min(360f, rect.width - labelRect.width - RowPadding * 2f), rect.height - 4f);
+        Rect buttonRect = new(labelRect.xMax, rect.y + 2f, Mathf.Min(360f, rect.width - labelRect.width - RowPadding * 2f), rect.height - 4f);
         if (Widgets.ButtonText(buttonRect, shown))
         {
             var options = new List<FloatMenuOption>
             {
-                new FloatMenuOption("RimLLM_CompatModelDefault".Translate(), () => SavePin(row.Target, null))
+                new("RimLLM_CompatModelDefault".Translate(), () => SavePin(row.Target, null))
             };
             foreach (string entry in Settings.FallbackChain)
             {
@@ -194,7 +194,7 @@ public static class CompatSettingsDrawer
             TooltipHandler.TipRegion(rowRect, BuildTooltip(row, enabled));
         }
 
-        Rect checkboxRect = new Rect(
+        Rect checkboxRect = new(
             rowRect.xMax - RowPadding - CheckboxSize,
             rowRect.y + (rowRect.height - CheckboxSize) / 2f,
             CheckboxSize, CheckboxSize);

@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
-using TypeSafeAI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Manager.Services;
+using TypeSafeAI;
 
 namespace RimLLM_Framework.Tests;
 
@@ -23,8 +23,8 @@ public class DecisionLocalEndpointTests
 
     private DecisionTestDoubles.FakeJevHandler _handler;
     private Func<HttpMessageHandler> _originalMessageHandlerFactory;
-    private static readonly string[] expected = new[] { "default", "laya" };
-    private static readonly string[] expectedSingleModelId = new[] { "a" };
+    private static readonly string[] expected = ["default", "laya"];
+    private static readonly string[] expectedSingleModelId = ["a"];
 
     [SetUp]
     public void SetUp()

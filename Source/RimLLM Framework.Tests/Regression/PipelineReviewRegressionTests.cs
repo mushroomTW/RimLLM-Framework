@@ -172,10 +172,10 @@ public sealed class PipelineReviewRegressionTests
         ClassicAssert.AreEqual("keep this prompt", inner.ReceivedMessages.Single().Text);
     }
 
-    private static readonly string[] expected = new[] { "P1", "P2", "P3" };
-    private static readonly string[] expectedFirstRotation = new[] { "P2", "P3", "P1" };
-    private static readonly string[] expectedSecondRotation = new[] { "P3", "P1", "P2" };
-    private static readonly string[] expectedPreferredLast = new[] { "P3", "P2", "P1" };
+    private static readonly string[] expected = ["P1", "P2", "P3"];
+    private static readonly string[] expectedFirstRotation = ["P2", "P3", "P1"];
+    private static readonly string[] expectedSecondRotation = ["P3", "P1", "P2"];
+    private static readonly string[] expectedPreferredLast = ["P3", "P2", "P1"];
 
     [Test]
     public void RoundRobin_RotatesFallbackCandidatesAndKeepsPreferredFirst()

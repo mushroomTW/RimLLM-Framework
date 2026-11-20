@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using TypeSafeAI;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Manager.Services;
+using TypeSafeAI;
 
 namespace RimLLM_Framework.Tests;
 
@@ -32,7 +32,7 @@ public class DecisionProviderSelectionTests
 
     private DecisionTestDoubles.FakeJevHandler _handler;
     private Func<HttpMessageHandler> _originalMessageHandlerFactory;
-    private static readonly string[] expected = new[] { "jev-latest", "jev-1.13" };
+    private static readonly string[] expected = ["jev-latest", "jev-1.13"];
 
     [SetUp]
     public void SetUp()

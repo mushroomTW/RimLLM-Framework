@@ -70,7 +70,7 @@ public class Dialog_SelectModel : Window
 
     private void DrawSearchBar(Rect inRect)
     {
-        Rect searchLabelRect = new Rect(0f, 40f, 70f, 30f);
+        Rect searchLabelRect = new(0f, 40f, 70f, 30f);
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
             Widgets.Label(searchLabelRect, "RimLLM_Search".Translate() + ": ");
@@ -78,7 +78,7 @@ public class Dialog_SelectModel : Window
 
         bool hasFilter = !string.IsNullOrEmpty(_filter);
         float clearBtnWidth = hasFilter ? 30f : 0f;
-        Rect filterRect = new Rect(75f, 40f, inRect.width - 75f - clearBtnWidth, 30f);
+        Rect filterRect = new(75f, 40f, inRect.width - 75f - clearBtnWidth, 30f);
         // 命名控制項：輸入第一個字後清除鈕出現、清單內容改變，匿名控制項 ID 會偏移而丟失焦點。
         GUI.SetNextControlName(SearchControlName);
         string newFilter = Widgets.TextField(filterRect, _filter);
@@ -91,7 +91,7 @@ public class Dialog_SelectModel : Window
 
         if (hasFilter)
         {
-            Rect clearRect = new Rect(inRect.width - 28f, 41f, 28f, 28f);
+            Rect clearRect = new(inRect.width - 28f, 41f, 28f, 28f);
             if (Widgets.ButtonText(clearRect, "×"))
             {
                 _filter = "";
@@ -102,7 +102,7 @@ public class Dialog_SelectModel : Window
 
     private void DrawQuickFilters(Rect inRect)
     {
-        Rect quickFilterRow = new Rect(0f, 75f, inRect.width, 26f);
+        Rect quickFilterRow = new(0f, 75f, inRect.width, 26f);
         string[] presetFilters = ["", "google", "gpt", "claude", "deepseek", "qwen", "flash", "free"];
         float chipX = quickFilterRow.x;
         for (int p = 0; p < presetFilters.Length; p++)
@@ -112,7 +112,7 @@ public class Dialog_SelectModel : Window
             float chipWidth = Text.CalcSize(label).x + 16f;
             if (chipX + chipWidth > inRect.width) break;
 
-            Rect chipRect = new Rect(chipX, quickFilterRow.y, chipWidth, 24f);
+            Rect chipRect = new(chipX, quickFilterRow.y, chipWidth, 24f);
             bool isActive = (string.IsNullOrEmpty(tag) && string.IsNullOrEmpty(_filter)) ||
                             (!string.IsNullOrEmpty(tag) && _filter.Equals(tag, StringComparison.OrdinalIgnoreCase));
 
@@ -134,7 +134,7 @@ public class Dialog_SelectModel : Window
     {
         float topOffset = 108f;
         float bottomOffset = 55f; // 為關閉按鈕留空間
-        Rect listRect = new Rect(0f, topOffset, inRect.width, inRect.height - topOffset - bottomOffset);
+        Rect listRect = new(0f, topOffset, inRect.width, inRect.height - topOffset - bottomOffset);
         Widgets.DrawMenuSection(listRect);
 
         if (_allModels.Count == 0)
@@ -156,7 +156,7 @@ public class Dialog_SelectModel : Window
             float contentWidth = listRect.width - 16f;
             float rowHeight = 36f;
             float viewHeight = Math.Max(listRect.height, filteredModels.Count * rowHeight + 10f);
-            Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
+            Rect viewRect = new(0f, 0f, contentWidth, viewHeight);
 
             Widgets.BeginScrollView(listRect, ref _scrollPosition, viewRect);
 
@@ -165,7 +165,7 @@ public class Dialog_SelectModel : Window
             for (int i = firstRow; i < endRow; i++)
             {
                 string model = filteredModels[i];
-                Rect rowRect = new Rect(4f, i * rowHeight + 4f, contentWidth - 8f, rowHeight - 2f);
+                Rect rowRect = new(4f, i * rowHeight + 4f, contentWidth - 8f, rowHeight - 2f);
 
                 if (Widgets.ButtonText(rowRect, model, true, true, true))
                 {

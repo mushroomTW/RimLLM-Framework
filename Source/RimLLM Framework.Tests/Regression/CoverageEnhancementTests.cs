@@ -18,7 +18,7 @@ namespace RimLLM_Framework.Tests;
 public class CoverageEnhancementTests
 {
     private string _encryptionKeyDirectory;
-    private static readonly string[] expected = new[] { "P1:m1", "P2:m2" };
+    private static readonly string[] expected = ["P1:m1", "P2:m2"];
 
     [SetUp]
     public void SetUpEncryptionKeyStore()

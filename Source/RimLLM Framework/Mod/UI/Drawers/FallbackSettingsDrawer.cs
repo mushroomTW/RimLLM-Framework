@@ -65,10 +65,10 @@ public static class FallbackSettingsDrawer
         Rect itemRect = listing.GetRect(30f);
 
         // 左右劃分：本頁只管順序與增刪，模型級數值（分級、上下文上限）改在模型設置頁調整。
-        Rect labelRect = new Rect(itemRect.x, itemRect.y, itemRect.width - 120f, itemRect.height);
-        Rect upRect = new Rect(itemRect.x + itemRect.width - 110f, itemRect.y, 30f, itemRect.height);
-        Rect downRect = new Rect(itemRect.x + itemRect.width - 75f, itemRect.y, 30f, itemRect.height);
-        Rect deleteRect = new Rect(itemRect.x + itemRect.width - 40f, itemRect.y, 30f, itemRect.height);
+        Rect labelRect = new(itemRect.x, itemRect.y, itemRect.width - 120f, itemRect.height);
+        Rect upRect = new(itemRect.x + itemRect.width - 110f, itemRect.y, 30f, itemRect.height);
+        Rect downRect = new(itemRect.x + itemRect.width - 75f, itemRect.y, 30f, itemRect.height);
+        Rect deleteRect = new(itemRect.x + itemRect.width - 40f, itemRect.y, 30f, itemRect.height);
 
         // 繪製順序標記與名稱
         Widgets.Label(labelRect, $" {i + 1}. <color=cyan>{entry}</color>");
@@ -131,8 +131,8 @@ public static class FallbackSettingsDrawer
     {
         Rect routingRect = listing.GetRect(30f);
         float routingLabelWidth = Text.CalcSize("RimLLM_RoutingStrategyLabel".Translate()).x;
-        Rect strategyLabelRect = new Rect(routingRect.x, routingRect.y, routingLabelWidth + 5f, routingRect.height);
-        Rect strategyBtnRect = new Rect(routingRect.x + routingLabelWidth + 15f, routingRect.y, 220f, routingRect.height);
+        Rect strategyLabelRect = new(routingRect.x, routingRect.y, routingLabelWidth + 5f, routingRect.height);
+        Rect strategyBtnRect = new(routingRect.x + routingLabelWidth + 15f, routingRect.y, 220f, routingRect.height);
 
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {

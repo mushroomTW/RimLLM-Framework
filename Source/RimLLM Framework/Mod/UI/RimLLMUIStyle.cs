@@ -407,12 +407,12 @@ public static class RimLLMUIStyle
         bool hovered = Mouse.IsOver(rowRect);
         if (hovered) Widgets.DrawHighlight(rowRect);
 
-        Rect badgeRect = new Rect(rowRect.xMax - StatusRowPadding - rightInset - StatusBadgeWidth, rowRect.y, StatusBadgeWidth, rowRect.height);
-        Rect dotRect = new Rect(
+        Rect badgeRect = new(rowRect.xMax - StatusRowPadding - rightInset - StatusBadgeWidth, rowRect.y, StatusBadgeWidth, rowRect.height);
+        Rect dotRect = new(
             rowRect.x + StatusRowPadding,
             rowRect.y + (rowRect.height - StatusDotSize) / 2f,
             StatusDotSize, StatusDotSize);
-        Rect titleRect = new Rect(dotRect.xMax + 8f, rowRect.y, badgeRect.x - dotRect.xMax - 16f, rowRect.height);
+        Rect titleRect = new(dotRect.xMax + 8f, rowRect.y, badgeRect.x - dotRect.xMax - 16f, rowRect.height);
 
         GUI.color = tint;
         Widgets.DrawBoxSolid(dotRect, statusColor * tint);

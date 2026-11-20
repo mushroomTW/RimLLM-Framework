@@ -6,10 +6,10 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using TypeSafeAI;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using RimLLM_Framework.Manager.Services;
+using TypeSafeAI;
 
 namespace RimLLM_Framework.Tests;
 
@@ -26,7 +26,7 @@ public class GeminiDecisionTests
 
     private FakeGeminiHandler _handler;
     private Func<HttpMessageHandler> _originalMessageHandlerFactory;
-    private static readonly string[] expected = new[] { "gemini-decision-1" };
+    private static readonly string[] expected = ["gemini-decision-1"];
     private static readonly string[] CosmeticBlockedAnchors = ["Cosmetic", "Blocked"];
     private static readonly string[] QueueChoices = ["billing", "replacements"];
     private static readonly string[] LowHighAnchors = ["Low", "High"];

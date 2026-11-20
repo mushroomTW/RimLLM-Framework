@@ -66,7 +66,7 @@ internal static class ProviderFallbackChainControls
         bool inChain = index >= 0;
         bool wantChain = inChain;
         Rect rowRect = listing.GetRect(28f);
-        Rect checkRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 130f, rowRect.height);
+        Rect checkRect = new(rowRect.x, rowRect.y, rowRect.width - 130f, rowRect.height);
         Widgets.CheckboxLabeled(checkRect, "RimLLM_FallbackChainJoin".Translate(), ref wantChain);
 
         if (wantChain != inChain)
@@ -81,8 +81,8 @@ internal static class ProviderFallbackChainControls
         if (!inChain) return;
 
         // 順位與調整按鈕只在已加入時出現。
-        Rect upRect = new Rect(rowRect.xMax - 64f, rowRect.y, 30f, rowRect.height);
-        Rect downRect = new Rect(rowRect.xMax - 30f, rowRect.y, 30f, rowRect.height);
+        Rect upRect = new(rowRect.xMax - 64f, rowRect.y, 30f, rowRect.height);
+        Rect downRect = new(rowRect.xMax - 30f, rowRect.y, 30f, rowRect.height);
         Widgets.Label(
             new Rect(rowRect.xMax - 130f, rowRect.y + 4f, 62f, rowRect.height),
             "RimLLM_FallbackChainPosition".Translate(index + 1));

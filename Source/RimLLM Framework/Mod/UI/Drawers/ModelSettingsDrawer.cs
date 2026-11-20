@@ -71,7 +71,7 @@ public static class ModelSettingsDrawer
 
                 bool hasModelName = ProviderIds.TrySplitModelId(entry, out string providerId, out string modelName);
                 float labelWidth = hasModelName ? (itemRect.width - 200f) : (itemRect.width - 50f);
-                Rect labelRect = new Rect(itemRect.x, itemRect.y, labelWidth, itemRect.height);
+                Rect labelRect = new(itemRect.x, itemRect.y, labelWidth, itemRect.height);
                 Widgets.Label(labelRect, $" <color=cyan>{entry}</color>");
 
                 // 純供應商條目沒有可調的模型級數值，只顯示名稱。
@@ -193,9 +193,9 @@ public static class ModelSettingsDrawer
 
         // 選擇供應商
         Rect addRect = listing.GetRect(30f);
-        Rect addProvBtn = new Rect(addRect.x, addRect.y, 150f, addRect.height);
-        Rect addModBtn = new Rect(addRect.x + 160f, addRect.y, 250f, addRect.height);
-        Rect addSubmitBtn = new Rect(addRect.x + 420f, addRect.y, 100f, addRect.height);
+        Rect addProvBtn = new(addRect.x, addRect.y, 150f, addRect.height);
+        Rect addModBtn = new(addRect.x + 160f, addRect.y, 250f, addRect.height);
+        Rect addSubmitBtn = new(addRect.x + 420f, addRect.y, 100f, addRect.height);
         if (Widgets.ButtonText(addProvBtn, "RimLLM_SelectProviderBtn".Translate(addProviderId)))
         {
             ShowProviderSelectionMenu();

@@ -105,19 +105,12 @@ internal static class SetupStatus
     /// </summary>
     internal static string DescribeFailureKey(LLMError error)
     {
-        switch (error)
+        return error switch
         {
-            case LLMError.InvalidKey:
-                return "RimLLM_SetupFail_Key";
-            case LLMError.RateLimit:
-            case LLMError.QuotaExceeded:
-                return "RimLLM_SetupFail_Quota";
-            case LLMError.Timeout:
-            case LLMError.ProviderOffline:
-            case LLMError.NetworkError:
-                return "RimLLM_SetupFail_Offline";
-            default:
-                return "RimLLM_SetupFail_Other";
-        }
+            LLMError.InvalidKey => "RimLLM_SetupFail_Key",
+            LLMError.RateLimit or LLMError.QuotaExceeded => "RimLLM_SetupFail_Quota",
+            LLMError.Timeout or LLMError.ProviderOffline or LLMError.NetworkError => "RimLLM_SetupFail_Offline",
+            _ => "RimLLM_SetupFail_Other",
+        };
     }
 }

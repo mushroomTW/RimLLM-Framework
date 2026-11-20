@@ -199,7 +199,7 @@ public static partial class ChatTestDrawer
         }
 
         float chatViewHeight = Math.Max(480f, totalBubblesHeight);
-        Rect chatViewRect = new Rect(0f, 0f, chatContentWidth, chatViewHeight);
+        Rect chatViewRect = new(0f, 0f, chatContentWidth, chatViewHeight);
 
         Widgets.BeginScrollView(chatRect, ref chatScrollPosition, chatViewRect);
 
@@ -227,7 +227,7 @@ public static partial class ChatTestDrawer
                     continue;
                 }
 
-                Rect bubbleRect = new Rect(4f, cardTop, bubbleWidth, layout.Height);
+                Rect bubbleRect = new(4f, cardTop, bubbleWidth, layout.Height);
                 DrawChatBubble(bubbleRect, layout, richLabelStyle, bubbleInnerWidth, copyLabel);
             }
         }
@@ -247,7 +247,7 @@ public static partial class ChatTestDrawer
         Widgets.DrawBox(bubbleRect, 1);
 
         // 標題列
-        Rect headerRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 4f, bubbleRect.width - 16f, 20f);
+        Rect headerRect = new(bubbleRect.x + 8f, bubbleRect.y + 4f, bubbleRect.width - 16f, 20f);
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
         {
             Widgets.Label(headerRect, layout.HeaderText);
@@ -256,7 +256,7 @@ public static partial class ChatTestDrawer
         // 內文
         if (layout.Parts == null)
         {
-            Rect bodyRect = new Rect(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.TextHeight + 2f);
+            Rect bodyRect = new(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.TextHeight + 2f);
             GUI.Label(bodyRect, layout.Body, richLabelStyle);
         }
         else
@@ -264,7 +264,7 @@ public static partial class ChatTestDrawer
             float partY = bubbleRect.y + 24f;
             foreach (BubblePart part in layout.Parts)
             {
-                Rect partRect = new Rect(bubbleRect.x + 8f, partY, bubbleInnerWidth, part.Height + 2f);
+                Rect partRect = new(bubbleRect.x + 8f, partY, bubbleInnerWidth, part.Height + 2f);
                 if (part.Table != null) part.Table.Draw(partRect);
                 else GUI.Label(partRect, part.Rich, richLabelStyle);
                 partY += part.Height + PartGap;
@@ -277,7 +277,7 @@ public static partial class ChatTestDrawer
             float btnWidth = 80f;
             float btnHeight = 22f;
             float bottomY = bubbleRect.yMax - 27f;
-            Rect copyBtnRect = new Rect(bubbleRect.xMax - 8f - btnWidth, bottomY, btnWidth, btnHeight);
+            Rect copyBtnRect = new(bubbleRect.xMax - 8f - btnWidth, bottomY, btnWidth, btnHeight);
 
             if (!chatLoading && Widgets.ButtonText(copyBtnRect, copyLabel))
             {
@@ -287,7 +287,7 @@ public static partial class ChatTestDrawer
 
             if (layout.Meta != null)
             {
-                Rect badgesArea = new Rect(bubbleRect.x + 8f, bottomY, copyBtnRect.x - 8f - (bubbleRect.x + 8f), btnHeight);
+                Rect badgesArea = new(bubbleRect.x + 8f, bottomY, copyBtnRect.x - 8f - (bubbleRect.x + 8f), btnHeight);
                 DrawAiMetaBadges(badgesArea, layout);
             }
         }
@@ -296,9 +296,9 @@ public static partial class ChatTestDrawer
     private static void DrawChatInputRow(Listing_Standard listing)
     {
         Rect inputRowRect = listing.GetRect(30f);
-        Rect textInputRect = new Rect(inputRowRect.x, inputRowRect.y, inputRowRect.width - 180f, inputRowRect.height);
-        Rect clearBtnRect = new Rect(inputRowRect.x + inputRowRect.width - 170f, inputRowRect.y, 80f, inputRowRect.height);
-        Rect sendBtnRect = new Rect(inputRowRect.x + inputRowRect.width - 80f, inputRowRect.y, 80f, inputRowRect.height);
+        Rect textInputRect = new(inputRowRect.x, inputRowRect.y, inputRowRect.width - 180f, inputRowRect.height);
+        Rect clearBtnRect = new(inputRowRect.x + inputRowRect.width - 170f, inputRowRect.y, 80f, inputRowRect.height);
+        Rect sendBtnRect = new(inputRowRect.x + inputRowRect.width - 80f, inputRowRect.y, 80f, inputRowRect.height);
 
         DrawChatInputField(textInputRect);
         HandleClearButton(clearBtnRect);
@@ -376,8 +376,8 @@ public static partial class ChatTestDrawer
 
         Rect rowRect = listing.GetRect(30f);
         float labelWidth = Text.CalcSize("RimLLM_ChatTestModelLabel".Translate()).x;
-        Rect labelRect = new Rect(rowRect.x, rowRect.y, labelWidth + 5f, rowRect.height);
-        Rect btnRect = new Rect(rowRect.x + labelWidth + 15f, rowRect.y, 300f, rowRect.height);
+        Rect labelRect = new(rowRect.x, rowRect.y, labelWidth + 5f, rowRect.height);
+        Rect btnRect = new(rowRect.x + labelWidth + 15f, rowRect.y, 300f, rowRect.height);
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
             Widgets.Label(labelRect, "RimLLM_ChatTestModelLabel".Translate());
@@ -412,8 +412,8 @@ public static partial class ChatTestDrawer
     {
         Rect effortRowRect = listing.GetRect(30f);
         float effortLabelWidth = Text.CalcSize(ReasoningEffortLabelKey.Translate()).x;
-        Rect effortLabelRect = new Rect(effortRowRect.x, effortRowRect.y, effortLabelWidth + 5f, effortRowRect.height);
-        Rect effortBtnRect = new Rect(effortRowRect.x + effortLabelWidth + 15f, effortRowRect.y, 160f, effortRowRect.height);
+        Rect effortLabelRect = new(effortRowRect.x, effortRowRect.y, effortLabelWidth + 5f, effortRowRect.height);
+        Rect effortBtnRect = new(effortRowRect.x + effortLabelWidth + 15f, effortRowRect.y, 160f, effortRowRect.height);
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
             Widgets.Label(effortLabelRect, ReasoningEffortLabelKey.Translate());
@@ -511,7 +511,7 @@ public static partial class ChatTestDrawer
         string modelId = layout.Meta.ModelId;
 
         float modelW = Mathf.Min(layout.ModelTextWidth + 6f, area.width * 0.6f);
-        Rect modelRect = new Rect(curX, area.y, modelW, area.height);
+        Rect modelRect = new(curX, area.y, modelW, area.height);
 
         bool hovered = Mouse.IsOver(modelRect);
         if (hovered)
@@ -540,7 +540,7 @@ public static partial class ChatTestDrawer
         // 分隔點
         if (area.xMax - curX > 50f)
         {
-            Rect dotRect = new Rect(curX, area.y, gap, area.height);
+            Rect dotRect = new(curX, area.y, gap, area.height);
             using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny, wordWrap: false))
             {
                 Widgets.Label(dotRect, "<color=#475569>•</color>");
@@ -555,7 +555,7 @@ public static partial class ChatTestDrawer
         if (remainW <= 40f) return;
 
         float statW = Mathf.Min(layout.StatTextWidth + 8f, remainW);
-        Rect statRect = new Rect(curX, area.y, statW, area.height);
+        Rect statRect = new(curX, area.y, statW, area.height);
 
         bool hovered = Mouse.IsOver(statRect);
         if (hovered)

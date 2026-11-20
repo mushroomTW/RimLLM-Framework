@@ -86,44 +86,44 @@ public static class RimLLMSettingsUI
         float height = inRect.height - 10f;
 
         // 1. 左側一級分類欄
-        Rect leftColRect = new Rect(inRect.x, inRect.y, leftWidth, height);
+        Rect leftColRect = new(inRect.x, inRect.y, leftWidth, height);
         Widgets.DrawMenuSection(leftColRect);
         DrawLeftCategoryMenu(leftColRect);
 
         // 2. 根據選中項目決定中欄與右欄佈局
         if (activeMainCategory == ProvidersCategoryId)
         {
-            Rect midColRect = new Rect(leftColRect.xMax + gap, inRect.y, midWidth, height);
+            Rect midColRect = new(leftColRect.xMax + gap, inRect.y, midWidth, height);
             Widgets.DrawMenuSection(midColRect);
             ProviderSettingsDrawer.DrawMiddleProviderMenu(midColRect);
 
-            Rect rightColRect = new Rect(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
+            Rect rightColRect = new(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
             Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
         else if (activeMainCategory == EmbeddingPageId)
         {
-            Rect midColRect = new Rect(leftColRect.xMax + gap, inRect.y, midWidth, height);
+            Rect midColRect = new(leftColRect.xMax + gap, inRect.y, midWidth, height);
             Widgets.DrawMenuSection(midColRect);
             EmbeddingSettingsDrawer.DrawMiddleEmbeddingMenu(midColRect);
 
-            Rect rightColRect = new Rect(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
+            Rect rightColRect = new(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
             Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
         else if (activeMainCategory == DecisionPageId)
         {
-            Rect midColRect = new Rect(leftColRect.xMax + gap, inRect.y, midWidth, height);
+            Rect midColRect = new(leftColRect.xMax + gap, inRect.y, midWidth, height);
             Widgets.DrawMenuSection(midColRect);
             DecisionSettingsDrawer.DrawMiddleDecisionMenu(midColRect);
 
-            Rect rightColRect = new Rect(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
+            Rect rightColRect = new(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
             Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
         else
         {
-            Rect rightColRect = new Rect(leftColRect.xMax + gap, inRect.y, inRect.width - leftWidth - gap, height);
+            Rect rightColRect = new(leftColRect.xMax + gap, inRect.y, inRect.width - leftWidth - gap, height);
             Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
@@ -132,12 +132,12 @@ public static class RimLLMSettingsUI
     private static void DrawLeftCategoryMenu(Rect rect)
     {
         Rect contentRect = rect.ContractedBy(6f);
-        Rect titleRect = new Rect(contentRect.x, contentRect.y, contentRect.width, 20f);
+        Rect titleRect = new(contentRect.x, contentRect.y, contentRect.width, 20f);
         Text.Font = GameFont.Small;
         Widgets.Label(titleRect, "RimLLM_MainMenu".Translate());
 
         // 視窗被玩家縮短時，決策模型等較下方的分頁仍要能捲到。
-        Rect listRect = new Rect(
+        Rect listRect = new(
             contentRect.x,
             titleRect.yMax + 6f,
             contentRect.width,
@@ -152,10 +152,10 @@ public static class RimLLMSettingsUI
             if (page.Advanced && !expanded) continue;
             viewHeight += (page.Id == HomePageId ? HomeButtonHeight : CategoryButtonHeight) + CategoryButtonGap;
         }
-        Rect viewRect = new Rect(0f, 0f, listRect.width - ScrollBarWidth, viewHeight);
+        Rect viewRect = new(0f, 0f, listRect.width - ScrollBarWidth, viewHeight);
 
         Widgets.BeginScrollView(listRect, ref _leftScrollPosition, viewRect);
-        Listing_Standard listing = new Listing_Standard();
+        Listing_Standard listing = new();
         listing.Begin(viewRect);
         DrawCategoryButtons(listing, onlyAdvanced: false);
         DrawAdvancedGroupHeader(listing, expanded, activePage);
@@ -271,20 +271,20 @@ public static class RimLLMSettingsUI
     private static void DrawRightDetailContent(Rect rect)
     {
         Rect contentRect = rect.ContractedBy(8f);
-        Rect titleRect = new Rect(contentRect.x, contentRect.y, contentRect.width, 24f);
+        Rect titleRect = new(contentRect.x, contentRect.y, contentRect.width, 24f);
         DetailPage page = FindPage(activeMainCategory);
         string titleText = page != null ? page.Title() : string.Empty;
 
         Widgets.Label(titleRect, $"<size=14><b>{titleText}</b></size>");
         Widgets.DrawLineHorizontal(contentRect.x, titleRect.yMax + 4f, contentRect.width);
 
-        Rect detailRect = new Rect(contentRect.x, titleRect.yMax + 8f, contentRect.width, contentRect.height - 36f);
+        Rect detailRect = new(contentRect.x, titleRect.yMax + 8f, contentRect.width, contentRect.height - 36f);
 
         // 扣掉捲軸寬度，否則垂直捲軸出現時內容被擠出右緣，還會多冒出一條水平捲軸。
         float viewWidth = detailRect.width - ScrollBarWidth;
-        Rect viewRect = new Rect(0f, 0f, viewWidth, ResolveDetailViewHeight(viewWidth, detailRect.height));
+        Rect viewRect = new(0f, 0f, viewWidth, ResolveDetailViewHeight(viewWidth, detailRect.height));
         Widgets.BeginScrollView(detailRect, ref _detailScrollPosition, viewRect);
-        Listing_Standard listing = new Listing_Standard();
+        Listing_Standard listing = new();
         // 內容超出 viewRect 時，Listing 預設會換到右側新欄（被裁掉看不到），
         // 且 CurHeight 會從新欄重新計算，量測高度永遠長不上去；限制單欄才能正確捲動。
         listing.maxOneColumn = true;

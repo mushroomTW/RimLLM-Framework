@@ -7,9 +7,9 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public class MarkdownTableTests
 {
-    private static readonly string[] expected = new[] { "殖民者", "工作" };
-    private static readonly string[] expectedBoldRow = new[] { "**Cole**", "建造、射擊 12**" };
-    private static readonly string[] expectedEscapedPipeRow = new[] { "Toon", "a | b" };
+    private static readonly string[] expected = ["殖民者", "工作"];
+    private static readonly string[] expectedBoldRow = ["**Cole**", "建造、射擊 12**"];
+    private static readonly string[] expectedEscapedPipeRow = ["Toon", "a | b"];
 
     [Test]
     public void TopLevelTableIsSplitIntoRawCells()
@@ -50,9 +50,9 @@ public class MarkdownTableTests
         }
     }
 
-    private static readonly float[] expectedWidths = new[] { 50f, 100f };
-    private static readonly float[] expectedTwoColumnWidths = new[] { 120f, 480f };
-    private static readonly float[] expectedThreeColumnWidths = new[] { 60f, 270f, 270f };
+    private static readonly float[] expectedWidths = [50f, 100f];
+    private static readonly float[] expectedTwoColumnWidths = [120f, 480f];
+    private static readonly float[] expectedThreeColumnWidths = [60f, 270f, 270f];
 
     [Test]
     public void FitColumnsKeepsNarrowColumnsAndShrinksWideOnes()

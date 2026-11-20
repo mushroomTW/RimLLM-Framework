@@ -23,7 +23,7 @@ internal sealed partial class LinuxSecretStore : ISecretStore
         {
             CheckError(error);
             // 項目不存在代表尚未建立金鑰；回傳空集合，讓上層以「金鑰無效」統一回報。
-            return value == IntPtr.Zero ? Array.Empty<byte>() : Convert.FromBase64String(Marshal.PtrToStringUTF8(value));
+            return value == IntPtr.Zero ? [] : Convert.FromBase64String(Marshal.PtrToStringUTF8(value));
         }
         finally { if (value != IntPtr.Zero) secret_password_free(value); }
     }

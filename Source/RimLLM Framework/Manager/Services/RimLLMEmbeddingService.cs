@@ -114,7 +114,7 @@ public class RimLLMEmbeddingService
         }
 
         IReadOnlyList<RimLLMEmbeddingResult> results =
-            await ComputeEmbeddingsAsync(new[] { text }, cancellationToken).ConfigureAwait(false);
+            await ComputeEmbeddingsAsync([text], cancellationToken).ConfigureAwait(false);
         return results[0];
     }
 
@@ -770,7 +770,7 @@ public class RimLLMEmbeddingService
         {
             List<RimLLMEmbeddingResult> results = await ComputeOpenAiCompatibleEmbeddingsAsync(
                 new EmbeddingBatchContext(model, provider, effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider), timeoutSeconds, null),
-                new[] { text }, linkedCts.Token).ConfigureAwait(false);
+                [text], linkedCts.Token).ConfigureAwait(false);
             return results[0];
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

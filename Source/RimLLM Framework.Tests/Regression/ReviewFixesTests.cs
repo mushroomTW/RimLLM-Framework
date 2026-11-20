@@ -95,7 +95,7 @@ public class ReviewFixesTests
         ];
     }
 
-    private static readonly string[] values = new[] { "hello" };
+    private static readonly string[] values = ["hello"];
 
     // ---------- [P2] 快取深層快照：呼叫端修改不污染快取 ----------
 

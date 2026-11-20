@@ -10,7 +10,7 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public class FallbackRemovalAndCompatStateTests
 {
-    private static readonly string[] expectedSingleGeminiModel = new[] { "Gemini:bar" };
+    private static readonly string[] expectedSingleGeminiModel = ["Gemini:bar"];
 
     // ---------- 備援鏈移除 ----------
 

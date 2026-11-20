@@ -15,7 +15,7 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public class ServiceConsumerTests
 {
-    private static readonly string[] expected = new[] { "mod.a" };
+    private static readonly string[] expected = ["mod.a"];
 
     /// <summary>只建立 client 不算呼叫；真正送出請求（即使失敗）才記錄。</summary>
     [Test]
@@ -28,7 +28,7 @@ public class ServiceConsumerTests
 
         try
         {
-            client.GetResponseAsync(new[] { new ChatMessage(ChatRole.User, "hi") }).GetAwaiter().GetResult();
+            client.GetResponseAsync([new ChatMessage(ChatRole.User, "hi")]).GetAwaiter().GetResult();
         }
         catch (Exception)
         {
@@ -74,9 +74,9 @@ public class ServiceConsumerTests
         };
     }
 
-    private static readonly string[] callerModIds = new[] { "foo.bar_steam", "foo.bar", "taken.over", "custom-id" };
-    private static readonly string[] expectedArray = new[] { "foo.bar", "foo.bar_steam" };
-    private static readonly string[] expectedArray0 = new[] { "taken.over" };
+    private static readonly string[] callerModIds = ["foo.bar_steam", "foo.bar", "taken.over", "custom-id"];
+    private static readonly string[] expectedArray = ["foo.bar", "foo.bar_steam"];
+    private static readonly string[] expectedArray0 = ["taken.over"];
 
     [Test]
     public void TestBuild_MergesDeclaredAndCalled()
@@ -113,8 +113,8 @@ public class ServiceConsumerTests
     public void TestBuild_ExcludesOnlyInternalModIds()
     {
         List<ServiceConsumerRow> rows = ServiceConsumerList.Build(
-            Array.Empty<KeyValuePair<string, string>>(),
-            new[] { ServiceConsumerList.DebugChatModId, ServiceConsumerList.SchemaSelfTestModId, "RimLLM.VoiceAddon" },
+            [],
+            [ServiceConsumerList.DebugChatModId, ServiceConsumerList.SchemaSelfTestModId, "RimLLM.VoiceAddon"],
             Resolve);
 
         ClassicAssert.AreEqual(1, rows.Count);

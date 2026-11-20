@@ -109,8 +109,8 @@ public static class DebugSettingsDrawer
 
         // 最近請求紀錄日誌
         Rect headerRect = listing.GetRect(30f);
-        Rect labelRect = new Rect(headerRect.x, headerRect.y, headerRect.width - 150f, headerRect.height);
-        Rect clearBtnRect = new Rect(headerRect.x + headerRect.width - 140f, headerRect.y + 2f, 140f, headerRect.height - 4f);
+        Rect labelRect = new(headerRect.x, headerRect.y, headerRect.width - 150f, headerRect.height);
+        Rect clearBtnRect = new(headerRect.x + headerRect.width - 140f, headerRect.y + 2f, 140f, headerRect.height - 4f);
 
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
@@ -161,7 +161,7 @@ public static class DebugSettingsDrawer
         float contentWidth = logScrollRect.width - 16f;
         float logHeight = 24f;
         float viewHeight = Math.Max(420f, logLines.Count * logHeight + 10f);
-        Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
+        Rect viewRect = new(0f, 0f, contentWidth, viewHeight);
 
         // 清除歷史後內容會從 30 筆縮回幾筆，捲動位置若留在原處，僅存的那幾列會被畫到可視範圍之外，
         // 看起來就像「請求沒有被記錄」。內容變短時必須把捲動位置一起收回來。
@@ -176,7 +176,7 @@ public static class DebugSettingsDrawer
         Text.Font = GameFont.Tiny;
         for (int i = 0; i < logLines.Count; i++)
         {
-            Rect lineRect = new Rect(4f, i * logHeight + 4f, contentWidth - 8f, logHeight - 2f);
+            Rect lineRect = new(4f, i * logHeight + 4f, contentWidth - 8f, logHeight - 2f);
             Widgets.Label(lineRect, logLines[i]);
         }
         Text.Font = GameFont.Small;
@@ -191,8 +191,8 @@ public static class DebugSettingsDrawer
         Rect usageRect = listing.GetRect(50f);
         Widgets.DrawMenuSection(usageRect);
 
-        Rect usageInfoRect = new Rect(usageRect.x + 8f, usageRect.y + 4f, usageRect.width - 160f, usageRect.height - 8f);
-        Rect resetUsageBtnRect = new Rect(usageRect.xMax - 150f, usageRect.y + 10f, 140f, 30f);
+        Rect usageInfoRect = new(usageRect.x + 8f, usageRect.y + 4f, usageRect.width - 160f, usageRect.height - 8f);
+        Rect resetUsageBtnRect = new(usageRect.xMax - 150f, usageRect.y + 10f, 140f, 30f);
 
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
@@ -327,7 +327,7 @@ public static class DebugSettingsDrawer
     {
         try
         {
-            StringBuilder sb = new StringBuilder();
+            StringBuilder sb = new();
             sb.AppendLine("=== RimLLM Framework Diagnostics ===");
             sb.AppendLine($"Export Time: {DateTime.Now}");
             sb.AppendLine($"OS: {SystemInfo.operatingSystem}");

@@ -48,13 +48,13 @@ public class RimLLMEmbeddingClientTests
 
         // 空輸入不會碰到供應商，因此即使 Provider 停用也能走完整條組裝路徑。
         GeneratedEmbeddings<Embedding<float>> generated =
-            generator.GenerateAsync(Array.Empty<string>()).GetAwaiter().GetResult();
+            generator.GenerateAsync([]).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual(0, generated.Count);
         ClassicAssert.IsNull(generated.Usage);
     }
 
-    private static readonly string[] singleInput = new[] { "hello" };
+    private static readonly string[] singleInput = ["hello"];
 
     [Test]
     public async Task TestGenerateAsync_ReturnsEmbedding()
@@ -98,8 +98,8 @@ public class RimLLMEmbeddingClientTests
         ClassicAssert.AreEqual(LLMError.RateLimit, ex2.Error);
     }
 
-    private static readonly string[] batchInputs = new[] { "a", "b", "c" };
-    private static readonly string[] values = new[] { "hello 2" };
+    private static readonly string[] batchInputs = ["a", "b", "c"];
+    private static readonly string[] values = ["hello 2"];
 
     /// <summary>
     /// 一批文字必須合成一次 API 呼叫（先前逐筆序列呼叫，N 筆 = N 次來回），

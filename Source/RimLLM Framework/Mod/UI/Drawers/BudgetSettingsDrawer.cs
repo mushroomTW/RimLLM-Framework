@@ -47,8 +47,8 @@ public static class BudgetSettingsDrawer
 
         // 2. 預算超限應對策略 (Budget Policy)
         Rect policyRect = listing.GetRect(30f);
-        Rect policyLabelRect = new Rect(policyRect.x, policyRect.y, 250f, policyRect.height);
-        Rect policyBtnRect = new Rect(policyRect.x + 260f, policyRect.y, 280f, policyRect.height);
+        Rect policyLabelRect = new(policyRect.x, policyRect.y, 250f, policyRect.height);
+        Rect policyBtnRect = new(policyRect.x + 260f, policyRect.y, 280f, policyRect.height);
 
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {

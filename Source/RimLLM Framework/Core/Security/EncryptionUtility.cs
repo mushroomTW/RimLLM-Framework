@@ -92,10 +92,10 @@ public static class EncryptionUtility
             aes.GenerateIV();
 
             using ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
-            using MemoryStream ms = new MemoryStream();
-            using (CryptoStream cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+            using MemoryStream ms = new();
+            using (CryptoStream cs = new(ms, encryptor, CryptoStreamMode.Write))
             {
-                using StreamWriter sw = new StreamWriter(cs);
+                using StreamWriter sw = new(cs);
                 sw.Write(plainText);
             }
             byte[] cipherBytes = ms.ToArray();
@@ -172,9 +172,9 @@ public static class EncryptionUtility
         aes.Padding = PaddingMode.PKCS7;
 
         using ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
-        using MemoryStream ms = new MemoryStream(cipherBytes);
-        using CryptoStream cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
-        using StreamReader sr = new StreamReader(cs);
+        using MemoryStream ms = new(cipherBytes);
+        using CryptoStream cs = new(ms, decryptor, CryptoStreamMode.Read);
+        using StreamReader sr = new(cs);
         return sr.ReadToEnd();
     }
 

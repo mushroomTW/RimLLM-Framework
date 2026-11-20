@@ -17,8 +17,8 @@ namespace RimLLM_Framework.Tests;
 public class SettingsAndTelemetryTests
 {
     private string _encryptionKeyDirectory;
-    private static readonly string[] expected = new[] { "hello" };
-    private static readonly string[] expectedArray = new[] { "Gemini:gemini-2.5-flash" };
+    private static readonly string[] expected = ["hello"];
+    private static readonly string[] expectedArray = ["Gemini:gemini-2.5-flash"];
 
     [SetUp]
     public void SetUpEncryptionKeyStore()

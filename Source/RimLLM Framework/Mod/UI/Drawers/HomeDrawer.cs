@@ -130,16 +130,16 @@ public static class HomeDrawer
                 break;
         }
 
-        Rect textRect = new Rect(card.x + 16f, card.y + 10f, card.width - CardButtonWidth - 40f, card.height - 20f);
-        Rect titleRect = new Rect(textRect.x, textRect.y, textRect.width, 34f);
-        Rect reasonRect = new Rect(textRect.x, titleRect.yMax + 2f, textRect.width, textRect.height - 36f);
+        Rect textRect = new(card.x + 16f, card.y + 10f, card.width - CardButtonWidth - 40f, card.height - 20f);
+        Rect titleRect = new(textRect.x, textRect.y, textRect.width, 34f);
+        Rect reasonRect = new(textRect.x, titleRect.yMax + 2f, textRect.width, textRect.height - 36f);
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Medium))
         {
             Widgets.Label(titleRect, $"<color=#{ColorUtility.ToHtmlStringRGB(tint)}><b>{titleKey.Translate()}</b></color>");
         }
         Widgets.Label(reasonRect, reasonKey.Translate());
 
-        Rect buttonRect = new Rect(card.xMax - CardButtonWidth - 16f, card.y + (card.height - 44f) / 2f, CardButtonWidth, 44f);
+        Rect buttonRect = new(card.xMax - CardButtonWidth - 16f, card.y + (card.height - 44f) / 2f, CardButtonWidth, 44f);
         if (Widgets.ButtonText(buttonRect, buttonKey.Translate()))
         {
             if (state == SetupState.Ready)

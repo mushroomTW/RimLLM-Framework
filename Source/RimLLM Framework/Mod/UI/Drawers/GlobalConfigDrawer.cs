@@ -95,8 +95,8 @@ public static class GlobalConfigDrawer
 
         // 5. 預設思考強度
         Rect effortRect = listing.GetRect(30f);
-        Rect labelRect = new Rect(effortRect.x, effortRect.y, 250f, effortRect.height);
-        Rect btnRect = new Rect(effortRect.x + 260f, effortRect.y, 200f, effortRect.height);
+        Rect labelRect = new(effortRect.x, effortRect.y, 250f, effortRect.height);
+        Rect btnRect = new(effortRect.x + 260f, effortRect.y, 200f, effortRect.height);
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
             Widgets.Label(labelRect, "RimLLM_ReasoningEffortLabel".Translate());

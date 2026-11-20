@@ -110,7 +110,7 @@ public class ContextWindowTests
                 ""gpt-4o"": { ""id"": ""gpt-4o"", ""limit"": { ""context"": 128000, ""output"": 16384 } }
             } }
         }";
-    private static readonly string[] expected = new[] { "only-this" };
+    private static readonly string[] expected = ["only-this"];
 
     [Test]
     public void ModelsDevPrefersInputLimitAndSkipsZero()

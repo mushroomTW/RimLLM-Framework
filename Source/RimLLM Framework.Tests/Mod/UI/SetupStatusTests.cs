@@ -78,7 +78,7 @@ public class SetupStatusTests
         ClassicAssert.AreEqual(expectedKey, SetupStatus.DescribeFailureKey(error));
     }
 
-    private static readonly string[] expected = new[] { "Gemini:keep-me" };
+    private static readonly string[] expected = ["Gemini:keep-me"];
 
     [Test]
     public void ResetRequestSettingsRestoresFreshDefaults()

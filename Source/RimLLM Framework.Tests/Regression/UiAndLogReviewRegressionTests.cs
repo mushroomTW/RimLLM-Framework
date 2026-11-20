@@ -32,7 +32,7 @@ public class UiAndLogReviewRegressionTests
         Assert.That(RimLLMLog.SanitizeForLog(value), Is.EqualTo(value));
     }
 
-    private static readonly string[] expected = new[] { "new request placeholder" };
+    private static readonly string[] expected = ["new request placeholder"];
 
     [TestCase(false, false, false)]
     [TestCase(false, true, false)]
@@ -68,12 +68,12 @@ public class UiAndLogReviewRegressionTests
                 if (error)
                 {
                     drawer.GetMethod("UpdateChatError", flags).Invoke(null,
-                        new object[] { generation, 0, "old delayed error" });
+                        [generation, 0, "old delayed error"]);
                 }
                 else
                 {
                     drawer.GetMethod("UpdateAiHistoryEntry", flags).Invoke(null,
-                        new object[] { generation, 0, "old delayed reply", null, true, false });
+                        [generation, 0, "old delayed reply", null, true, false]);
                 }
             }
             if (!enqueueAfterCancel) EnqueueOldCallback();
@@ -85,7 +85,7 @@ public class UiAndLogReviewRegressionTests
             if (enqueueAfterCancel) EnqueueOldCallback();
             RimLLMDispatcher.DrainWithBudget(int.MaxValue, long.MaxValue);
 
-            Assert.That(history, Is.EqualTo(clearOnly ? Array.Empty<string>() : expected),
+            Assert.That(history, Is.EqualTo(clearOnly ? [] : expected),
                 "已取消請求的延遲回覆不能寫進重建後的歷史。");
             Assert.That(loading.GetValue(null), Is.EqualTo(!clearOnly));
 
@@ -93,7 +93,7 @@ public class UiAndLogReviewRegressionTests
             {
                 long currentGeneration = (long)generationField.GetValue(null);
                 drawer.GetMethod("UpdateAiHistoryEntry", flags).Invoke(null,
-                    new object[] { currentGeneration, 0, "current reply", null, false, false });
+                    [currentGeneration, 0, "current reply", null, false, false]);
                 RimLLMDispatcher.DrainWithBudget(int.MaxValue, long.MaxValue);
                 Assert.That(history[0], Does.Contain("current reply"), "新請求的更新仍須正常顯示。");
                 Assert.That(loading.GetValue(null), Is.True);

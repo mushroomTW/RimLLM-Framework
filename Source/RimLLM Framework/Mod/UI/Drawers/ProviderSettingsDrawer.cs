@@ -87,15 +87,15 @@ public static class ProviderSettingsDrawer
     {
         Rect contentRect = rect.ContractedBy(6f);
 
-        Rect titleRect = new Rect(contentRect.x, contentRect.y, contentRect.width, 20f);
+        Rect titleRect = new(contentRect.x, contentRect.y, contentRect.width, 20f);
         Text.Font = GameFont.Small;
         Widgets.Label(titleRect, "RimLLM_ApiProviders".Translate());
 
-        Rect listRect = new Rect(contentRect.x, titleRect.yMax + 4f, contentRect.width, contentRect.height - 24f);
+        Rect listRect = new(contentRect.x, titleRect.yMax + 4f, contentRect.width, contentRect.height - 24f);
         float viewHeight = MenuEntries.Count * (SubButtonHeight + SubButtonGap) + 10f;
-        Rect viewRect = new Rect(0f, 0f, listRect.width - 16f, viewHeight);
+        Rect viewRect = new(0f, 0f, listRect.width - 16f, viewHeight);
         Widgets.BeginScrollView(listRect, ref _midScrollPosition, viewRect);
-        Listing_Standard listing = new Listing_Standard();
+        Listing_Standard listing = new();
         listing.Begin(viewRect);
 
         foreach (var entry in MenuEntries)
@@ -118,8 +118,8 @@ public static class ProviderSettingsDrawer
             ActiveProviderSubTab = providerId;
         }
 
-        Rect nameRect = new Rect(btnRect.x + 8f, btnRect.y + 3f, btnRect.width - 16f, 22f);
-        Rect statusRect = new Rect(btnRect.x + 8f, btnRect.y + 25f, btnRect.width - 16f, 18f);
+        Rect nameRect = new(btnRect.x + 8f, btnRect.y + 3f, btnRect.width - 16f, 22f);
+        Rect statusRect = new(btnRect.x + 8f, btnRect.y + 25f, btnRect.width - 16f, 18f);
         Text.Font = GameFont.Small;
         string nameText = ActiveProviderSubTab == providerId ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
         Widgets.Label(nameRect, nameText);

@@ -4,9 +4,9 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using TypeSafeAI;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Manager.Services;
+using TypeSafeAI;
 
 namespace RimLLM_Framework.Tests;
 

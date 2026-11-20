@@ -43,24 +43,22 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
         var inputValues = new List<string>(values);
         long estimatedTokens = EstimateTotalTokens(inputValues);
 
-        using (RimLLMUsageTracker.BudgetReservation reservation = _manager.UsageTracker.ReserveBudgetOrThrow(estimatedTokens))
-        {
-            IReadOnlyList<RimLLMEmbeddingResult> results = await _manager.EmbeddingService
-                .ComputeEmbeddingsAsync(
-                    inputValues,
-                    options,
-                    batchResults => RecordBatchUsage(reservation, batchResults),
-                    cancellationToken)
-                .ConfigureAwait(false);
+        using RimLLMUsageTracker.BudgetReservation reservation = _manager.UsageTracker.ReserveBudgetOrThrow(estimatedTokens);
+        IReadOnlyList<RimLLMEmbeddingResult> results = await _manager.EmbeddingService
+            .ComputeEmbeddingsAsync(
+                inputValues,
+                options,
+                batchResults => RecordBatchUsage(reservation, batchResults),
+                cancellationToken)
+            .ConfigureAwait(false);
 
-            // 標上實際算出向量的模型與供應商——由服務在請求開始時捕捉（見
-            // RimLLMEmbeddingResult.ModelId），而不是 await 之後重新讀設定：
-            // 請求期間玩家切換設定，若這裡重讀，向量會被標成新模型、用量記到新供應商，
-            // 污染向量索引與帳本。少了它，呼叫端把不同模型的向量存進同一個索引
-            // 也不會發現——維度相同但語意空間不同的向量，比對結果只會是雜訊。
-            string modelId = ResolveModelId(results, options);
-            return BuildGeneratedEmbeddings(results, modelId);
-        }
+        // 標上實際算出向量的模型與供應商——由服務在請求開始時捕捉（見
+        // RimLLMEmbeddingResult.ModelId），而不是 await 之後重新讀設定：
+        // 請求期間玩家切換設定，若這裡重讀，向量會被標成新模型、用量記到新供應商，
+        // 污染向量索引與帳本。少了它，呼叫端把不同模型的向量存進同一個索引
+        // 也不會發現——維度相同但語意空間不同的向量，比對結果只會是雜訊。
+        string modelId = ResolveModelId(results, options);
+        return BuildGeneratedEmbeddings(results, modelId);
     }
 
     /// <summary>

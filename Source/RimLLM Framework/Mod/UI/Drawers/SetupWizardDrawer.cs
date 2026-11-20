@@ -169,7 +169,7 @@ public static class SetupWizardDrawer
         float width = (bar.width - gap * (steps - 1)) / steps;
         for (int i = 1; i <= steps; i++)
         {
-            Rect cell = new Rect(bar.x + (i - 1) * (width + gap), bar.y, width, bar.height);
+            Rect cell = new(bar.x + (i - 1) * (width + gap), bar.y, width, bar.height);
             bool now = i == _step;
             bool done = i < _step || (i == steps && _outcome == Outcome.Success);
             RimLLMUIStyle.DrawSelectableFrame(cell, now);
@@ -199,7 +199,7 @@ public static class SetupWizardDrawer
         float cardWidth = (grid.width - CardGap * (cols - 1)) / cols;
         for (int i = 0; i < Featured.Length; i++)
         {
-            Rect card = new Rect(
+            Rect card = new(
                 grid.x + (i % cols) * (cardWidth + CardGap),
                 grid.y + (i / cols) * (CardHeight + CardGap),
                 cardWidth,
@@ -262,7 +262,7 @@ public static class SetupWizardDrawer
             {
                 string tag = choice.TagKey.Translate();
                 float tagWidth = Text.CalcSize(tag).x + 10f;
-                Rect tagRect = new Rect(inner.xMax - tagWidth, inner.y, tagWidth, 18f);
+                Rect tagRect = new(inner.xMax - tagWidth, inner.y, tagWidth, 18f);
                 Widgets.DrawBoxSolid(tagRect, new Color(0.18f, 0.42f, 0.2f, 0.9f));
                 using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
                 {
@@ -284,8 +284,8 @@ public static class SetupWizardDrawer
     {
         listing.Label("RimLLM_SetupKeyFieldLabel".Translate());
         Rect keyRow = listing.GetRect(30f);
-        Rect inputRect = new Rect(keyRow.x, keyRow.y, keyRow.width - 48f, keyRow.height);
-        Rect revealRect = new Rect(inputRect.xMax + 8f, keyRow.y, 40f, keyRow.height);
+        Rect inputRect = new(keyRow.x, keyRow.y, keyRow.width - 48f, keyRow.height);
+        Rect revealRect = new(inputRect.xMax + 8f, keyRow.y, 40f, keyRow.height);
         string edited = RimLLMUIStyle.DrawMaskableKeyField(inputRect, revealRect, raw ?? "", ref _revealKey);
         if (edited != (raw ?? ""))
         {
@@ -648,7 +648,7 @@ public static class SetupWizardDrawer
         listing.Gap(10f);
 
         Rect row = listing.GetRect(BigButtonHeight);
-        Rect btn = new Rect(row.x, row.y, 220f, row.height);
+        Rect btn = new(row.x, row.y, 220f, row.height);
         if (_busy)
         {
             GUI.color = RimLLMUIStyle.Muted;
@@ -901,7 +901,7 @@ public static class SetupWizardDrawer
         Widgets.DrawBox(box, 2);
         GUI.color = Color.white;
 
-        Rect text = new Rect(box.x + 12f, box.y + 8f, box.width - 200f, box.height - 16f);
+        Rect text = new(box.x + 12f, box.y + 8f, box.width - 200f, box.height - 16f);
         using (RimLLMUIStyle.With(TextAnchor.UpperLeft, GameFont.Medium))
         {
             Widgets.Label(new Rect(text.x, text.y, text.width, 30f), $"<color=#{ColorUtility.ToHtmlStringRGB(tint)}><b>{title}</b></color>");
@@ -1019,7 +1019,7 @@ public static class SetupWizardDrawer
         }
 
         if (nextLabel == null) return;
-        Rect next = new Rect(row.xMax - 200f, row.y, 200f, row.height);
+        Rect next = new(row.xMax - 200f, row.y, 200f, row.height);
         if (!canNext) GUI.color = RimLLMUIStyle.Muted;
         bool clicked = Widgets.ButtonText(next, nextLabel, active: canNext);
         GUI.color = Color.white;

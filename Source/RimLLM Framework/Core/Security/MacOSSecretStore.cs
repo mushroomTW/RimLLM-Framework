@@ -24,7 +24,7 @@ internal sealed partial class MacOSSecretStore : ISecretStore
         int status = SecItemCopyMatching(query.Handle, out IntPtr result);
         using var data = new CFHandle(result);
         // 項目不存在代表尚未建立金鑰；回傳空集合，讓上層以「金鑰無效」統一回報。
-        if (status == NotFound) return Array.Empty<byte>();
+        if (status == NotFound) return [];
         CheckStatus(status);
         if (result == IntPtr.Zero || CFDataGetLength(result) != 32)
             throw new CryptographicException("The Keychain storage key has an invalid length.");

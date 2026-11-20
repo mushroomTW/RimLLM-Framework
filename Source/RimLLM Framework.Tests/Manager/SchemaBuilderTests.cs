@@ -268,8 +268,8 @@ public class SchemaBuilderTests
     /// 上限取目前體積的約 1.5 倍，只擋量級上的退步。
     /// </summary>
     private const int MaxRecursiveSchemaLength = 700;
-    private static readonly string[] expected = new[] { "integer", "null" };
-    private static readonly string[] expectedArray = new[] { "Alpha", "Beta" };
+    private static readonly string[] expected = ["integer", "null"];
+    private static readonly string[] expectedArray = ["Alpha", "Beta"];
 
     [Test]
     public void RecursiveSchemaStaysCompact()

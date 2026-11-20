@@ -297,7 +297,7 @@ public class EmbeddingReviewRegressionTests
 
     private static string Today => DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    private static readonly string[] values = new[] { "hello" };
+    private static readonly string[] values = ["hello"];
 
     private static MockSettings CreateEmbeddingSettings()
     {
@@ -376,7 +376,7 @@ public class EmbeddingReviewRegressionTests
         public int AcceptedConnections => Volatile.Read(ref _acceptedConnections);
         public Task Completion { get; }
 
-        private static readonly string[] separator = new[] { "\r\n" };
+        private static readonly string[] separator = ["\r\n"];
 
         public SlowLocalHttpServer(TimeSpan responseDelay, string responseBody)
         {

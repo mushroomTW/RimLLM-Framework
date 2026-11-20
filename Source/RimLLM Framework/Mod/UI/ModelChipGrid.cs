@@ -40,7 +40,7 @@ internal static class ModelChipGrid
             Widgets.Label(new Rect(searchRowRect.x, searchRowRect.y, searchLabelWidth, searchRowRect.height), searchLabel);
         }
 
-        Rect searchFieldRect = new Rect(
+        Rect searchFieldRect = new(
             searchRowRect.x + searchLabelWidth + 4f,
             searchRowRect.y,
             searchRowRect.width - searchLabelWidth - 4f,
@@ -65,7 +65,7 @@ internal static class ModelChipGrid
 
         int rows = Mathf.CeilToInt((float)visibleModels.Count / cols);
         float viewHeight = Mathf.Max(200f, (rows * (ChipHeight + ChipGap)) + ChipGap);
-        Rect viewRect = new Rect(0f, 0f, contentWidth, viewHeight);
+        Rect viewRect = new(0f, 0f, contentWidth, viewHeight);
 
         Vector2 scrollPos = scrollPositions.TryGetValue(providerId, out Vector2 saved) ? saved : Vector2.zero;
         Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
@@ -81,7 +81,7 @@ internal static class ModelChipGrid
             int col = i % cols;
             int row = i / cols;
 
-            Rect chipRect = new Rect(
+            Rect chipRect = new(
                 (col * (chipWidth + ChipGap)) + ChipGap,
                 (row * (ChipHeight + ChipGap)) + ChipGap,
                 chipWidth,

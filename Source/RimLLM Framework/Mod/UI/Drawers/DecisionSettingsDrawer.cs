@@ -79,16 +79,16 @@ public static class DecisionSettingsDrawer
     {
         Rect contentRect = rect.ContractedBy(6f);
 
-        Rect titleRect = new Rect(contentRect.x, contentRect.y, contentRect.width, 20f);
+        Rect titleRect = new(contentRect.x, contentRect.y, contentRect.width, 20f);
         Text.Font = GameFont.Small;
         Widgets.Label(titleRect, "RimLLM_DecisionProvidersTitle".Translate());
 
-        Rect listRect = new Rect(contentRect.x, titleRect.yMax + 4f, contentRect.width, contentRect.height - 24f);
+        Rect listRect = new(contentRect.x, titleRect.yMax + 4f, contentRect.width, contentRect.height - 24f);
         float viewHeight = (RimLLMDecisionProviderCatalog.All.Count * (SubButtonHeight + SubButtonGap)) + 10f;
-        Rect viewRect = new Rect(0f, 0f, listRect.width - 16f, viewHeight);
+        Rect viewRect = new(0f, 0f, listRect.width - 16f, viewHeight);
 
         Widgets.BeginScrollView(listRect, ref _midScrollPosition, viewRect);
-        Listing_Standard listing = new Listing_Standard();
+        Listing_Standard listing = new();
         listing.Begin(viewRect);
 
         foreach (RimLLMDecisionProvider provider in RimLLMDecisionProviderCatalog.All)
@@ -112,8 +112,8 @@ public static class DecisionSettingsDrawer
             ActiveDecisionSubTab = providerId;
         }
 
-        Rect nameRect = new Rect(btnRect.x + 8f, btnRect.y + 3f, btnRect.width - 16f, 22f);
-        Rect statusRect = new Rect(btnRect.x + 8f, btnRect.y + 25f, btnRect.width - 16f, 18f);
+        Rect nameRect = new(btnRect.x + 8f, btnRect.y + 3f, btnRect.width - 16f, 22f);
+        Rect statusRect = new(btnRect.x + 8f, btnRect.y + 25f, btnRect.width - 16f, 18f);
         Text.Font = GameFont.Small;
         string nameText = ActiveDecisionSubTab == providerId
             ? $"{ColorTagOpen}white><b>{label}</b>{ColorTagClose}"
@@ -229,8 +229,8 @@ public static class DecisionSettingsDrawer
 
         string currentKey = Settings.GetDecisionApiKey(providerId);
         Rect rowRect = listing.GetRect(30f);
-        Rect inputRect = new Rect(rowRect.x, rowRect.y, rowRect.width - 48f, rowRect.height);
-        Rect revealRect = new Rect(inputRect.xMax + 8f, rowRect.y, 40f, rowRect.height);
+        Rect inputRect = new(rowRect.x, rowRect.y, rowRect.width - 48f, rowRect.height);
+        Rect revealRect = new(inputRect.xMax + 8f, rowRect.y, 40f, rowRect.height);
 
         bool revealed = RevealedKeys.TryGetValue(providerId, out bool r) && r;
         string newKey = RimLLMUIStyle.DrawMaskableKeyField(inputRect, revealRect, currentKey, ref revealed);

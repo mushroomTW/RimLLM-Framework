@@ -763,7 +763,7 @@ public class DispatcherAndCircuitBreakerTests
             "不含 Dictionary 的型別不應被誤判為開放式 map");
     }
 
-    private static readonly string[] expected = new[] { "integer", "null" };
+    private static readonly string[] expected = ["integer", "null"];
 
     [Test]
     public void TestJsonSchemaNullableIsRequiredButTypedAsUnion()

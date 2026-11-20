@@ -12,7 +12,7 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public sealed class StructuredReviewRegressionTests
 {
-    private static readonly string[] expected = new[] { "Name" };
+    private static readonly string[] expected = ["Name"];
 
     [Test]
     public void SchemaAndValidationFollowStjDeserializationContract()
@@ -80,7 +80,7 @@ public sealed class StructuredReviewRegressionTests
         Assert.Throws<InvalidOperationException>(() => RimLLMJsonHelper.ValidateStructuredObject(root));
     }
 
-    private static readonly string[] expectedIntegerOrNull = new[] { "integer", "null" };
+    private static readonly string[] expectedIntegerOrNull = ["integer", "null"];
 
     [Test]
     public void NullableCollectionAndMapValuesRemainNullableInSchema()
@@ -116,7 +116,7 @@ public sealed class StructuredReviewRegressionTests
         ClassicAssert.IsNull(parsed.Lookup["empty"]);
     }
 
-    private static readonly string[] expectedStringOrNull = new[] { "string", "null" };
+    private static readonly string[] expectedStringOrNull = ["string", "null"];
 
     private static void AssertNullableEnumSchema(JsonObject schema)
     {

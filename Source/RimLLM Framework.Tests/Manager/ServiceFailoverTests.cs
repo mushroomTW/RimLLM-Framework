@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.ClientModel.Primitives;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -27,13 +27,13 @@ public class ServiceFailoverTests
         "\"usage\":{\"prompt_tokens\":10,\"total_tokens\":10}}";
 
     // 重複出現於多個測試的常數輸入與主機清單，抽為靜態唯讀欄位避免重複建立陣列。
-    private static readonly string[] HelloInput = new[] { "hello" };
-    private static readonly string[] OpenAiHost = new[] { "api.openai.com" };
-    private static readonly string[] OpenAiAndGeminiHosts = new[] { "api.openai.com", "generativelanguage.googleapis.com" };
-    private static readonly string[] GoogleProviders = new[] { "Google", "Google" };
-    private static readonly string[] GoogleAndOpenAIProviders = new[] { "Google", "OpenAI" };
-    private static readonly string[] DecisionFallbackChainLiquid = new[] { RimLLMDecisionProviderCatalog.Liquid };
-    private static readonly string[] FallbackChainNames = new[] { "EmbeddingFallbackChain", "DecisionFallbackChain" };
+    private static readonly string[] HelloInput = ["hello"];
+    private static readonly string[] OpenAiHost = ["api.openai.com"];
+    private static readonly string[] OpenAiAndGeminiHosts = ["api.openai.com", "generativelanguage.googleapis.com"];
+    private static readonly string[] GoogleProviders = ["Google", "Google"];
+    private static readonly string[] GoogleAndOpenAIProviders = ["Google", "OpenAI"];
+    private static readonly string[] DecisionFallbackChainLiquid = [RimLLMDecisionProviderCatalog.Liquid];
+    private static readonly string[] FallbackChainNames = ["EmbeddingFallbackChain", "DecisionFallbackChain"];
 
     // ---------- 共用規則 ----------
 
@@ -352,14 +352,14 @@ public class ServiceFailoverTests
     private const string PrimaryHost = "primary.example.test";
     private const string BackupHost = "backup.example.test";
 
-    private static readonly string[] PrimaryHostArray = new[] { PrimaryHost };
-    private static readonly string[] PrimaryAndBackupHosts = new[] { PrimaryHost, BackupHost };
+    private static readonly string[] PrimaryHostArray = [PrimaryHost];
+    private static readonly string[] PrimaryAndBackupHosts = [PrimaryHost, BackupHost];
 
     private Func<HttpMessageHandler> _originalFactory;
     private List<string> _decisionHosts;
-    private static readonly string[] chain = new[] { "B", "", "A", "C", "B", "Disabled" };
-    private static readonly string[] expected = new[] { "A", "B", "C" };
-    private static readonly string[] chainArray = new[] { "B" };
+    private static readonly string[] chain = ["B", "", "A", "C", "B", "Disabled"];
+    private static readonly string[] expected = ["A", "B", "C"];
+    private static readonly string[] chainArray = ["B"];
 
     [SetUp]
     public void SetUp()

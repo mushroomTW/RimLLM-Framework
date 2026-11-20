@@ -96,8 +96,8 @@ public class RimLLMDecisionService
         string normalized = endpoint.Trim().TrimEnd('/');
         // /v1beta 只對 Gemini 主機有意義；其他閘道可能就掛在 /v1beta 底下，不能拿掉。
         string[] suffixes = GeminiDecisionsAdapterHandler.Targets(normalized)
-            ? new[] { "/v1/systemone", "/v1beta/decisions", "/v1beta" }
-            : new[] { "/v1/systemone" };
+            ? ["/v1/systemone", "/v1beta/decisions", "/v1beta"]
+            : ["/v1/systemone"];
         string suffix = suffixes.FirstOrDefault(s => normalized.EndsWith(s, StringComparison.OrdinalIgnoreCase));
         if (suffix != null)
         {
@@ -401,7 +401,7 @@ public class RimLLMDecisionService
                     connection.Endpoint, connection.Model, connection.ApiKey, cancellationToken)
                 .ConfigureAwait(false);
 
-            List<string> names = new List<string>(models?.Count ?? 0);
+            List<string> names = new(models?.Count ?? 0);
             if (models != null)
             {
                 foreach (string name in models.Where(m => m != null && !string.IsNullOrEmpty(m.Name)).Select(m => m.Name))
@@ -434,7 +434,7 @@ public class RimLLMDecisionService
         using var client = new TypeSafeClient(http, CreateOptions(normalizedEndpoint, clientModel, apiKey));
         ModelsResponse response =
             await client.Models.ListAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-        return response?.Models ?? Array.Empty<ModelInfo>();
+        return response?.Models ?? [];
     }
 
     /// <summary>
@@ -599,70 +599,53 @@ public class RimLLMDecisionService
     /// </summary>
     internal static Exception TranslateDecisionError(Exception ex)
     {
-        switch (ex)
+        return ex switch
         {
             // HTTP 狀態碼 → LLMError 的對照由既有 LLMErrorMapper 單一來源處理；
             // TypeSafeApiException 帶 StatusCode 與 Retry-After，正好可以完整重用。
-            case TypeSafeApiException apiError:
-                return LLMErrorMapper.CreateException(
-                    (int)apiError.StatusCode,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(apiError.Message, 300)}",
-                    retryAfter: apiError.RetryAfter,
-                    innerException: apiError);
-
+            TypeSafeApiException apiError => LLMErrorMapper.CreateException(
+                                (int)apiError.StatusCode,
+                                $"Decision API: {RimLLMLog.SanitizeForLog(apiError.Message, 300)}",
+                                retryAfter: apiError.RetryAfter,
+                                innerException: apiError),
             // TypeSafeTimeoutException 繼承 TypeSafeConnectionException，必須排在前面。
-            case TypeSafeTimeoutException timeout:
-                return new RimLLMException(
-                    LLMError.Timeout,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(timeout.Message, 300)}",
-                    innerException: timeout);
-
-            case TypeSafeConnectionException connection:
-                return new RimLLMException(
-                    LLMError.NetworkError,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(connection.Message, 300)}",
-                    innerException: connection);
-
-            case TypeSafeResponseValidationException invalidResponse:
-                return new RimLLMException(
-                    LLMError.InvalidResponse,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(invalidResponse.Message, 300)}",
-                    innerException: invalidResponse);
-
+            TypeSafeTimeoutException timeout => new RimLLMException(
+                                LLMError.Timeout,
+                                $"Decision API: {RimLLMLog.SanitizeForLog(timeout.Message, 300)}",
+                                innerException: timeout),
+            TypeSafeConnectionException connection => new RimLLMException(
+                                LLMError.NetworkError,
+                                $"Decision API: {RimLLMLog.SanitizeForLog(connection.Message, 300)}",
+                                innerException: connection),
+            TypeSafeResponseValidationException invalidResponse => new RimLLMException(
+                                LLMError.InvalidResponse,
+                                $"Decision API: {RimLLMLog.SanitizeForLog(invalidResponse.Message, 300)}",
+                                innerException: invalidResponse),
             // TypeSafeClient 建立時的金鑰檢查：與 ResolveActiveConnection 的前置檢查同一語意，
             // 但 SDK 訊息是英文原文，統一成 InvalidKey 並保留原文供除錯。
-            case TypeSafeException missingKey when missingKey.Message != null &&
-                                                   missingKey.Message.Contains("API key", StringComparison.Ordinal):
-                return new RimLLMException(
-                    LLMError.InvalidKey,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(missingKey.Message, 300)}",
-                    innerException: missingKey);
-
-            case TypeSafeException sdkError:
-                return new RimLLMException(
-                    LLMError.Unknown,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(sdkError.Message, 300)}",
-                    innerException: sdkError);
-
-            case TimeoutException:
-                return new RimLLMException(
-                    LLMError.Timeout,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(ex.Message, 300)}",
-                    innerException: ex);
-
-            case UriFormatException badUri:
-                return new RimLLMException(
-                    LLMError.Unknown,
-                    "Decision API: the configured endpoint is not a valid absolute URI. " +
-                    RimLLMLog.SanitizeForLog(badUri.Message, 300),
-                    innerException: badUri);
-
-            default:
-                return new RimLLMException(
-                    LLMError.Unknown,
-                    $"Decision API: {RimLLMLog.SanitizeForLog(ex.Message, 300)}",
-                    innerException: ex);
-        }
+            TypeSafeException missingKey when missingKey.Message != null &&
+                                                               missingKey.Message.Contains("API key", StringComparison.Ordinal) => new RimLLMException(
+                                LLMError.InvalidKey,
+                                $"Decision API: {RimLLMLog.SanitizeForLog(missingKey.Message, 300)}",
+                                innerException: missingKey),
+            TypeSafeException sdkError => new RimLLMException(
+                                LLMError.Unknown,
+                                $"Decision API: {RimLLMLog.SanitizeForLog(sdkError.Message, 300)}",
+                                innerException: sdkError),
+            TimeoutException => new RimLLMException(
+                                LLMError.Timeout,
+                                $"Decision API: {RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                                innerException: ex),
+            UriFormatException badUri => new RimLLMException(
+                                LLMError.Unknown,
+                                "Decision API: the configured endpoint is not a valid absolute URI. " +
+                                RimLLMLog.SanitizeForLog(badUri.Message, 300),
+                                innerException: badUri),
+            _ => new RimLLMException(
+                                LLMError.Unknown,
+                                $"Decision API: {RimLLMLog.SanitizeForLog(ex.Message, 300)}",
+                                innerException: ex),
+        };
     }
 
     private sealed record DecisionConnection(string ProviderId, string Endpoint, string Model, string ApiKey);
