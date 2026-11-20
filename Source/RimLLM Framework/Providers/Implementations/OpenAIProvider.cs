@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
@@ -49,7 +47,7 @@ public class OpenAIProvider : ILLMProvider
     /// 每次請求也讀兩次，逐次 new 只是白白製造 GC 壓力。延遲建立而非建構子建立，
     /// 是因為 <see cref="SupportsNativeJsonSchemaPayload"/> 為虛擬屬性，子類覆寫在建構子期間尚不可靠。
     /// </summary>
-    private LLMProviderCapabilities _capabilities;
+    private LLMProviderCapabilities? _capabilities;
 
     public virtual LLMProviderCapabilities Capabilities => _capabilities ?? (_capabilities = new LLMProviderCapabilities
     {
@@ -91,7 +89,7 @@ public class OpenAIProvider : ILLMProvider
     /// </summary>
     private static readonly TimeSpan SdkNetworkTimeout = TimeSpan.FromSeconds(180);
 
-    public static IChatClient CreateOpenAiChatClient(string apiKey, string model, string endpoint = null)
+    public static IChatClient CreateOpenAiChatClient(string apiKey, string model, string? endpoint = null)
     {
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new ArgumentException("OpenAI API key 不得為空。", nameof(apiKey));
@@ -105,7 +103,7 @@ public class OpenAIProvider : ILLMProvider
             RetryPolicy = new ClientRetryPolicy(0),
             NetworkTimeout = SdkNetworkTimeout
         };
-        string normalizedEndpoint = NormalizeEndpoint(endpoint);
+        string? normalizedEndpoint = NormalizeEndpoint(endpoint);
         if (!string.IsNullOrEmpty(normalizedEndpoint))
         {
             options.Endpoint = new Uri(normalizedEndpoint, UriKind.Absolute);
@@ -132,11 +130,11 @@ public class OpenAIProvider : ILLMProvider
     /// 讓單元測試以假的 HTTP 傳輸攔截對話請求（與 <c>RimLLMEmbeddingService.TransportOverride</c>
     /// 同一種測試接縫）；正式環境一律 null，走 SDK 預設傳輸。
     /// </summary>
-    internal static PipelineTransport TransportOverride { get; set; }
+    internal static PipelineTransport? TransportOverride { get; set; }
 
     private static readonly char[] SlashChars = ['/'];
 
-    public static string NormalizeEndpoint(string endpoint)
+    public static string? NormalizeEndpoint(string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint)) return null;
         string normalized = endpoint.Trim().TrimEnd(SlashChars);
@@ -152,17 +150,17 @@ public class OpenAIProvider : ILLMProvider
     /// 依模型類型調整 MEAI ChatOptions：推理模型清空 temperature 並對應 reasoning effort，
     /// 其餘維持 executor 已設定的基礎選項。
     /// </summary>
-    protected virtual void BuildChatOptions(ChatOptions requestOptions, string model, ChatOptions options)
+    protected virtual void BuildChatOptions(ChatOptions? requestOptions, string model, ChatOptions options)
     {
         bool strict = false;
         if (requestOptions?.AdditionalProperties != null &&
-            requestOptions.AdditionalProperties.TryGetValue("strict", out object strictVal) && strictVal is bool strictBool)
+            requestOptions.AdditionalProperties.TryGetValue("strict", out object? strictVal) && strictVal is bool strictBool)
         {
             // strict 只認 RimLLMSchemaBuilder 算出的值。此處原本還有一段以字串比對
             // "additionalProperties": true 來推斷 strict 的 heuristic —— 那是死碼：
             // 產生器對開放式 map 輸出的是 value schema 物件而非字面 true，比對永遠不命中。
             strict = strictBool;
-            options.AdditionalProperties["strict"] = strictBool;
+            (options.AdditionalProperties ??= [])["strict"] = strictBool;
         }
 
         // response_format 一律以 Patch 寫入原始 JSON，並確保 MEAI 這一側維持 null。
@@ -171,7 +169,7 @@ public class OpenAIProvider : ILLMProvider
         // 還原該屬性時會拿到基底 ChatResponseFormat，送出請求時序列化就會拋
         // "The WriteCore method should be invoked on an overriding type derived from ChatResponseFormat."
         options.ResponseFormat = null;
-        string responseFormatJson = BuildResponseFormatJson(requestOptions, strict);
+        string? responseFormatJson = BuildResponseFormatJson(requestOptions, strict);
 
         ApplyReasoningAndSampling(requestOptions, model, options, responseFormatJson);
     }
@@ -180,7 +178,7 @@ public class OpenAIProvider : ILLMProvider
     /// 組出 <c>response_format</c> 欄位的完整 JSON：有 schema 走 json_schema，
     /// 只要求 JSON 模式時走 json_object；完全沒有 JSON 需求才回傳 null。
     /// </summary>
-    private static string BuildResponseFormatJson(ChatOptions requestOptions, bool strict)
+    private static string? BuildResponseFormatJson(ChatOptions? requestOptions, bool strict)
     {
         if (requestOptions?.ResponseFormat is not ChatResponseFormatJson jsonFormat)
         {
@@ -240,7 +238,7 @@ public class OpenAIProvider : ILLMProvider
     /// 把框架的思考強度換成此供應商認得的字面值。
     /// 各家的詞彙不完全一致（例如 Kimi 只吃 low/high/max），詞彙不同的供應商覆寫這裡。
     /// </summary>
-    protected virtual string MapEffortLiteral(ReasoningEffort effort)
+    protected virtual string? MapEffortLiteral(ReasoningEffort effort)
     {
         if (effort == ReasoningEffort.Low) return "low";
         if (effort == ReasoningEffort.Medium) return "medium";
@@ -258,10 +256,10 @@ public class OpenAIProvider : ILLMProvider
     /// <summary>掛在送出去的 ChatOptions 上，記錄這次請求實際送出的思考強度字面值（null 代表沒送）。</summary>
     private const string SentEffortLiteralKey = "rimllm_sent_effort_literal";
 
-    private void ApplyReasoningAndSampling(ChatOptions requestOptions, string model, ChatOptions options, string responseFormatJson)
+    private void ApplyReasoningAndSampling(ChatOptions? requestOptions, string model, ChatOptions options, string? responseFormatJson)
     {
         ReasoningEffort? effort = requestOptions?.Reasoning?.Effort;
-        string effortLiteral = ResolveOutgoingEffortLiteral(requestOptions, model);
+        string? effortLiteral = ResolveOutgoingEffortLiteral(requestOptions, model);
         bool thinkingEnabled = effortLiteral != null && effortLiteral != "none";
         // 把這次實際送出的字面值記在請求上。事後判讀 400 要看的是「送了什麼」，不能重算：
         // 並行請求可能已經改寫學習記憶，重算會得到另一個答案而記錯項目。
@@ -282,7 +280,7 @@ public class OpenAIProvider : ILLMProvider
                                 !RimLLMReasoningSupport.IsMaxTokensUnsupported(ProviderId, model);
 
         ReasoningWireFormat format = ReasoningFormat;
-        Func<IChatClient, object> baseFactory = options.RawRepresentationFactory;
+        Func<IChatClient, object?>? baseFactory = options.RawRepresentationFactory;
         options.RawRepresentationFactory = client =>
         {
             var chatCompletionOptions = OpenAIPatchExtensions.GetOrCreateOptions(baseFactory, client);
@@ -368,7 +366,7 @@ public class OpenAIProvider : ILLMProvider
     /// 解析呼叫端是否要求關閉思考。RimLLMChatOptions 直接帶屬性，框架管線則以 AdditionalProperties 轉遞；
     /// MEAI 標準的 <see cref="ReasoningEffort.None"/> 是同一個意思。
     /// </summary>
-    private static bool ResolveDisableReasoning(ChatOptions requestOptions)
+    private static bool ResolveDisableReasoning(ChatOptions? requestOptions)
     {
         if (requestOptions?.Reasoning?.Effort == ReasoningEffort.None) return true;
 
@@ -381,7 +379,7 @@ public class OpenAIProvider : ILLMProvider
     /// 算出這次請求實際會送出的強度字面值。回傳 null 代表不干預，交給服務端自己的預設。
     /// 組裝請求與事後判讀 400 都走這一個函式，兩邊對「送了什麼」的認知才不會分歧。
     /// </summary>
-    private string ResolveOutgoingEffortLiteral(ChatOptions requestOptions, string model)
+    private string? ResolveOutgoingEffortLiteral(ChatOptions? requestOptions, string model)
     {
         // 服務端先前明確拒絕過思考參數的模型不再嘗試，避免每次請求都白白換來一次 400。
         bool reasoningAllowed = ReasoningFormat != ReasoningWireFormat.None &&
@@ -426,7 +424,7 @@ public class OpenAIProvider : ILLMProvider
     {
         if (update?.RawRepresentation is not StreamingChatCompletionUpdate raw) return;
         if (update.Contents.Any(c => c is TextReasoningContent)) return;
-        if (!raw.Patch.TryGetValue(StreamingReasoningPath, out string reasoning) || string.IsNullOrEmpty(reasoning)) return;
+        if (!raw.Patch.TryGetValue(StreamingReasoningPath, out string? reasoning) || string.IsNullOrEmpty(reasoning)) return;
         update.Contents.Insert(0, new TextReasoningContent(reasoning));
     }
 
@@ -435,7 +433,7 @@ public class OpenAIProvider : ILLMProvider
     {
         if (response?.RawRepresentation is not ChatCompletion raw || response.Messages.Count == 0) return;
         if (response.Messages.Any(m => m.Contents.Any(c => c is TextReasoningContent))) return;
-        if (!raw.Patch.TryGetValue(ResponseReasoningPath, out string reasoning) || string.IsNullOrEmpty(reasoning)) return;
+        if (!raw.Patch.TryGetValue(ResponseReasoningPath, out string? reasoning) || string.IsNullOrEmpty(reasoning)) return;
         response.Messages[response.Messages.Count - 1].Contents.Insert(0, new TextReasoningContent(reasoning));
     }
 
@@ -453,7 +451,7 @@ public class OpenAIProvider : ILLMProvider
 
         public override async Task<ChatResponse> GetResponseAsync(
             IEnumerable<ChatMessage> messages,
-            ChatOptions options = null,
+            ChatOptions? options = null,
             System.Threading.CancellationToken cancellationToken = default)
         {
             var targetOptions = options?.Clone() ?? new ChatOptions();
@@ -494,7 +492,7 @@ public class OpenAIProvider : ILLMProvider
 
         public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
             IEnumerable<ChatMessage> messages,
-            ChatOptions options = null,
+            ChatOptions? options = null,
             System.Threading.CancellationToken cancellationToken = default)
         {
             return new OpenAiStreamEnumerable(
@@ -508,13 +506,13 @@ public class OpenAIProvider : ILLMProvider
     private sealed class OpenAiStreamEnumerable : IAsyncEnumerable<ChatResponseUpdate>
     {
         private readonly Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> _streamFactory;
-        private readonly ChatOptions _originalOptions;
+        private readonly ChatOptions? _originalOptions;
         private readonly OpenAIProvider _provider;
         private readonly string _model;
 
         public OpenAiStreamEnumerable(
             Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> streamFactory,
-            ChatOptions originalOptions,
+            ChatOptions? originalOptions,
             OpenAIProvider provider,
             string model)
         {
@@ -538,7 +536,7 @@ public class OpenAIProvider : ILLMProvider
     {
         private readonly Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> _streamFactory;
         private IAsyncEnumerator<ChatResponseUpdate> _inner;
-        private readonly ChatOptions _originalOptions;
+        private readonly ChatOptions? _originalOptions;
         /// <summary>目前這次嘗試實際送出的 options，判讀 400 時要看它而不是重算。</summary>
         private ChatOptions _sentOptions;
         private readonly OpenAIProvider _provider;
@@ -549,7 +547,7 @@ public class OpenAIProvider : ILLMProvider
         public OpenAiStreamEnumerator(
             Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> streamFactory,
             IAsyncEnumerator<ChatResponseUpdate> inner,
-            ChatOptions originalOptions,
+            ChatOptions? originalOptions,
             ChatOptions sentOptions,
             OpenAIProvider provider,
             string model,
@@ -618,7 +616,7 @@ public class OpenAIProvider : ILLMProvider
             // 送出的是「關閉」指令時，學到的只是「這個模型關不掉」，不是「不吃思考參數」——
             // 兩者混記的話，連線測試（一律要求關閉）的一次 400 就會讓該模型整個 session
             // 都收不到玩家設定的強度。
-            if (RimLLMChatOptions.ReadAdditional<string>(sentOptions, SentEffortLiteralKey, null) == "none")
+            if (RimLLMChatOptions.ReadAdditional<string?>(sentOptions, SentEffortLiteralKey, null) == "none")
             {
                 if (RimLLMReasoningSupport.MarkDisableUnsupported(ProviderId, model))
                 {
@@ -774,7 +772,7 @@ public class OpenAIProvider : ILLMProvider
     internal virtual async Task<ModelCatalog> FetchModelCatalogAsync()
     {
         string apiKey = Settings.GetActiveApiKey(ProviderId);
-        string endpoint = NormalizeEndpoint(
+        string? endpoint = NormalizeEndpoint(
             Settings.GetEndpoint(ProviderId, DefaultEndpoint));
         float timeoutSeconds = Settings.ApiTimeout > 0 ? Settings.ApiTimeout : 30f;
         using var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
@@ -792,7 +790,7 @@ public class OpenAIProvider : ILLMProvider
 
         var list = new List<string>();
         Dictionary<string, int> contextWindows;
-        Dictionary<string, bool> visionSupport = null;
+        Dictionary<string, bool>? visionSupport = null;
         try
         {
             ClientResult<OpenAIModelCollection> result = await new OpenAIClient(credential, options)
@@ -804,7 +802,7 @@ public class OpenAIProvider : ILLMProvider
             {
                 list.Add(model.Id);
             }
-            string rawJson = result.GetRawResponse()?.Content?.ToString();
+            string? rawJson = result.GetRawResponse()?.Content?.ToString();
             contextWindows = ParseContextWindows(rawJson);
             visionSupport = ParseVisionSupport(rawJson);
         }
@@ -836,7 +834,7 @@ public class OpenAIProvider : ILLMProvider
     /// 目前只有 OpenRouter 回報（<c>architecture.input_modalities</c>）；沒回報的模型不收錄，視為未知。
     /// 格式不符時回傳空集合，不讓整個模型清單的重新整理失敗。
     /// </summary>
-    internal static Dictionary<string, bool> ParseVisionSupport(string json)
+    internal static Dictionary<string, bool> ParseVisionSupport(string? json)
     {
         var support = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrEmpty(json)) return support;
@@ -863,7 +861,7 @@ public class OpenAIProvider : ILLMProvider
                 {
                     continue;
                 }
-                string id = idElement.GetString();
+                string? id = idElement.GetString();
                 if (string.IsNullOrEmpty(id)) continue;
 
                 support[id] = System.Linq.Enumerable.Any(
@@ -889,7 +887,7 @@ public class OpenAIProvider : ILLMProvider
     /// 從 OpenAI 相容 /models 原始 JSON 讀出「模型 id → 上下文上限」。
     /// 上限只是附帶資訊，格式不符時回傳空集合，不讓整個模型清單的重新整理失敗。
     /// </summary>
-    internal static Dictionary<string, int> ParseContextWindows(string json)
+    internal static Dictionary<string, int> ParseContextWindows(string? json)
     {
         var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrEmpty(json)) return windows;
@@ -912,7 +910,7 @@ public class OpenAIProvider : ILLMProvider
                 {
                     continue;
                 }
-                string id = idElement.GetString();
+                string? id = idElement.GetString();
                 if (string.IsNullOrEmpty(id)) continue;
 
                 int tokens = TryReadContextWindowTokens(model);

@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -32,7 +30,7 @@ public class OpenRouterProvider : OpenAIProvider
     /// model 含逗號時轉為 models 陣列（走 RawRepresentationFactory Patch）。
     /// 思考強度由基底類別依 <see cref="ReasoningFormat"/> 統一處理。
     /// </summary>
-    protected override void BuildChatOptions(ChatOptions requestOptions, string model, ChatOptions options)
+    protected override void BuildChatOptions(ChatOptions? requestOptions, string model, ChatOptions options)
     {
         base.BuildChatOptions(requestOptions, model, options);
 

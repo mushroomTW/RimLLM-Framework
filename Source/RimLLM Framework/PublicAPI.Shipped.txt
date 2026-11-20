@@ -573,25 +573,25 @@ RimLLM_Framework.IRimLLMSettings.SetModelList(string! providerId, System.Collect
 ~RimLLM_Framework.Mod.RimLLMTelemetryStore.DailyBudgetResetDate.set -> void
 ~RimLLM_Framework.Mod.RimLLMTelemetryStore.RequestLogs.get -> System.Collections.Generic.List<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry>
 ~RimLLM_Framework.Mod.RimLLMTelemetryStore.RequestLogs.set -> void
-~RimLLM_Framework.Providers.DeepSeekProvider.DeepSeekProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.GeminiProvider.GeminiProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.GrokProvider.GrokProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.GroqProvider.GroqProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.ILLMProvider.Capabilities.get -> RimLLM_Framework.LLMProviderCapabilities
-~RimLLM_Framework.Providers.ILLMProvider.CreateChatClient(string model) -> Microsoft.Extensions.AI.IChatClient
-~RimLLM_Framework.Providers.ILLMProvider.FetchAvailableModelsAsync() -> System.Threading.Tasks.Task<System.Collections.Generic.List<string>>
-~RimLLM_Framework.Providers.ILLMProvider.ProviderId.get -> string
-~RimLLM_Framework.Providers.ILLMProvider.TestConnectionAsync() -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult>
-~RimLLM_Framework.Providers.KimiProvider.KimiProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.MiniMaxProvider.MiniMaxProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.NvidiaProvider.NvidiaProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.OpenAICompatibleProvider.OpenAICompatibleProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.OpenAIProvider.OpenAIChatClientAdapter.OpenAIChatClientAdapter(Microsoft.Extensions.AI.IChatClient innerClient, RimLLM_Framework.Providers.OpenAIProvider provider, string model) -> void
-~RimLLM_Framework.Providers.OpenAIProvider.OpenAIProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.OpenAIProvider.OpenAIProvider(RimLLM_Framework.IRimLLMSettings settings, string providerId, string defaultEndpoint) -> void
-~RimLLM_Framework.Providers.OpenRouterProvider.OpenRouterProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.QwenProvider.QwenProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Providers.ZaiProvider.ZaiProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
+RimLLM_Framework.Providers.DeepSeekProvider.DeepSeekProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.GeminiProvider.GeminiProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.GrokProvider.GrokProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.GroqProvider.GroqProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.ILLMProvider.Capabilities.get -> RimLLM_Framework.LLMProviderCapabilities!
+RimLLM_Framework.Providers.ILLMProvider.CreateChatClient(string! model) -> Microsoft.Extensions.AI.IChatClient!
+RimLLM_Framework.Providers.ILLMProvider.FetchAvailableModelsAsync() -> System.Threading.Tasks.Task<System.Collections.Generic.List<string!>!>!
+RimLLM_Framework.Providers.ILLMProvider.ProviderId.get -> string!
+RimLLM_Framework.Providers.ILLMProvider.TestConnectionAsync() -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult!>!
+RimLLM_Framework.Providers.KimiProvider.KimiProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.MiniMaxProvider.MiniMaxProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.NvidiaProvider.NvidiaProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.OpenAICompatibleProvider.OpenAICompatibleProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.OpenAIProvider.OpenAIChatClientAdapter.OpenAIChatClientAdapter(Microsoft.Extensions.AI.IChatClient! innerClient, RimLLM_Framework.Providers.OpenAIProvider! provider, string! model) -> void
+RimLLM_Framework.Providers.OpenAIProvider.OpenAIProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.OpenAIProvider.OpenAIProvider(RimLLM_Framework.IRimLLMSettings! settings, string! providerId, string! defaultEndpoint) -> void
+RimLLM_Framework.Providers.OpenRouterProvider.OpenRouterProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.QwenProvider.QwenProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Providers.ZaiProvider.ZaiProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
 RimLLM_Framework.RimLLMChatOptions.CachedContext.get -> string?
 RimLLM_Framework.RimLLMChatOptions.CachedContext.set -> void
 RimLLM_Framework.RimLLMChatOptions.MinFallbackLevel.get -> string?
@@ -638,18 +638,18 @@ const RimLLM_Framework.ProviderIds.Qwen = "Qwen" -> string!
 const RimLLM_Framework.ProviderIds.Zai = "Z.ai" -> string!
 const RimLLM_Framework.RimLLMChatOptions.FallbackModelId = "fallback" -> string!
 ~override RimLLM_Framework.Mod.RimLLMFrameworkMod.SettingsCategory() -> string
-~override RimLLM_Framework.Providers.KimiProvider.MapEffortLiteral(Microsoft.Extensions.AI.ReasoningEffort effort) -> string
-~override RimLLM_Framework.Providers.OpenAICompatibleProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions requestOptions, string model, Microsoft.Extensions.AI.ChatOptions options) -> void
-~override RimLLM_Framework.Providers.OpenAICompatibleProvider.DefaultEndpoint.get -> string
-~override RimLLM_Framework.Providers.OpenAICompatibleProvider.ProviderId.get -> string
-~override RimLLM_Framework.Providers.OpenAIProvider.OpenAIChatClientAdapter.GetResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.AI.ChatResponse>
-~override RimLLM_Framework.Providers.OpenAIProvider.OpenAIChatClientAdapter.GetStreamingResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, Microsoft.Extensions.AI.ChatOptions options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Microsoft.Extensions.AI.ChatResponseUpdate>
-~override RimLLM_Framework.Providers.OpenRouterProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions requestOptions, string model, Microsoft.Extensions.AI.ChatOptions options) -> void
-~override RimLLM_Framework.Providers.OpenRouterProvider.DefaultEndpoint.get -> string
-~override RimLLM_Framework.Providers.OpenRouterProvider.ProviderId.get -> string
+override RimLLM_Framework.Providers.KimiProvider.MapEffortLiteral(Microsoft.Extensions.AI.ReasoningEffort effort) -> string?
+override RimLLM_Framework.Providers.OpenAICompatibleProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions? requestOptions, string! model, Microsoft.Extensions.AI.ChatOptions! options) -> void
+override RimLLM_Framework.Providers.OpenAICompatibleProvider.DefaultEndpoint.get -> string!
+override RimLLM_Framework.Providers.OpenAICompatibleProvider.ProviderId.get -> string!
+override RimLLM_Framework.Providers.OpenAIProvider.OpenAIChatClientAdapter.GetResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage!>! messages, Microsoft.Extensions.AI.ChatOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.AI.ChatResponse!>!
+override RimLLM_Framework.Providers.OpenAIProvider.OpenAIChatClientAdapter.GetStreamingResponseAsync(System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage!>! messages, Microsoft.Extensions.AI.ChatOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Microsoft.Extensions.AI.ChatResponseUpdate!>!
+override RimLLM_Framework.Providers.OpenRouterProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions? requestOptions, string! model, Microsoft.Extensions.AI.ChatOptions! options) -> void
+override RimLLM_Framework.Providers.OpenRouterProvider.DefaultEndpoint.get -> string!
+override RimLLM_Framework.Providers.OpenRouterProvider.ProviderId.get -> string!
 ~readonly RimLLM_Framework.Mod.RimLLMMarkdownSegment.Markdown -> string
 ~readonly RimLLM_Framework.Mod.RimLLMMarkdownSegment.Rows -> System.Collections.Generic.IReadOnlyList<string[]>
-~readonly RimLLM_Framework.Providers.OpenAIProvider.Settings -> RimLLM_Framework.IRimLLMSettings
+readonly RimLLM_Framework.Providers.OpenAIProvider.Settings -> RimLLM_Framework.IRimLLMSettings!
 ~static RimLLM_Framework.Core.EncryptionUtility.Decrypt(string cipherText) -> string
 ~static RimLLM_Framework.Core.EncryptionUtility.Encrypt(string plainText) -> string
 ~static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThread(System.Action action) -> void
@@ -732,9 +732,9 @@ static RimLLM_Framework.ProviderIds.IsPlayer2CloudEndpoint(string! endpoint) -> 
 static RimLLM_Framework.ProviderIds.ParseProviderId(string! fallbackEntry) -> string?
 static RimLLM_Framework.ProviderIds.RequiresApiKey(string! providerId, string! endpoint) -> bool
 static RimLLM_Framework.ProviderIds.TrySplitModelId(string! entry, out string? providerId, out string? modelName) -> bool
-~static RimLLM_Framework.Providers.OpenAIProvider.CreateOpenAiChatClient(string apiKey, string model, string endpoint = null) -> Microsoft.Extensions.AI.IChatClient
-~static RimLLM_Framework.Providers.OpenAIProvider.IsOpenAiReasoningModel(string modelName) -> bool
-~static RimLLM_Framework.Providers.OpenAIProvider.NormalizeEndpoint(string endpoint) -> string
+static RimLLM_Framework.Providers.OpenAIProvider.CreateOpenAiChatClient(string! apiKey, string! model, string? endpoint = null) -> Microsoft.Extensions.AI.IChatClient!
+static RimLLM_Framework.Providers.OpenAIProvider.IsOpenAiReasoningModel(string! modelName) -> bool
+static RimLLM_Framework.Providers.OpenAIProvider.NormalizeEndpoint(string? endpoint) -> string?
 static RimLLM_Framework.RimLLMChatOptions.IsFallbackModelId(string! modelId) -> bool
 static RimLLM_Framework.RimLLMClientExtensions.GetResponseObjectAsync<T>(this Microsoft.Extensions.AI.IChatClient! client, System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage!>! messages, RimLLM_Framework.RimLLMChatOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T>!
 static RimLLM_Framework.RimLLMClientExtensions.WereToolsStripped(this Microsoft.Extensions.AI.ChatResponse! response) -> bool
@@ -760,13 +760,13 @@ static RimLLM_Framework.RimLLMProvider.TestProviderAsync(string! providerId) -> 
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.TestStatus -> System.Collections.Generic.Dictionary<string, string>
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.Testing -> System.Collections.Generic.Dictionary<string, bool>
 static readonly RimLLM_Framework.ProviderIds.BuiltIn -> System.Collections.Generic.IReadOnlyList<string!>!
-~virtual RimLLM_Framework.Providers.OpenAIProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions requestOptions, string model, Microsoft.Extensions.AI.ChatOptions options) -> void
-~virtual RimLLM_Framework.Providers.OpenAIProvider.Capabilities.get -> RimLLM_Framework.LLMProviderCapabilities
-~virtual RimLLM_Framework.Providers.OpenAIProvider.CreateChatClient(string model) -> Microsoft.Extensions.AI.IChatClient
-~virtual RimLLM_Framework.Providers.OpenAIProvider.DefaultEndpoint.get -> string
-~virtual RimLLM_Framework.Providers.OpenAIProvider.FetchAvailableModelsAsync() -> System.Threading.Tasks.Task<System.Collections.Generic.List<string>>
-~virtual RimLLM_Framework.Providers.OpenAIProvider.IsKnownNonReasoningModel(string modelName) -> bool
-~virtual RimLLM_Framework.Providers.OpenAIProvider.MapEffortLiteral(Microsoft.Extensions.AI.ReasoningEffort effort) -> string
-~virtual RimLLM_Framework.Providers.OpenAIProvider.ProviderId.get -> string
-~virtual RimLLM_Framework.Providers.OpenAIProvider.TestConnectionAsync() -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult>
-~virtual RimLLM_Framework.Providers.OpenAIProvider.TestConnectionAsync(string model) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult>
+virtual RimLLM_Framework.Providers.OpenAIProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions? requestOptions, string! model, Microsoft.Extensions.AI.ChatOptions! options) -> void
+virtual RimLLM_Framework.Providers.OpenAIProvider.Capabilities.get -> RimLLM_Framework.LLMProviderCapabilities!
+virtual RimLLM_Framework.Providers.OpenAIProvider.CreateChatClient(string! model) -> Microsoft.Extensions.AI.IChatClient!
+virtual RimLLM_Framework.Providers.OpenAIProvider.DefaultEndpoint.get -> string!
+virtual RimLLM_Framework.Providers.OpenAIProvider.FetchAvailableModelsAsync() -> System.Threading.Tasks.Task<System.Collections.Generic.List<string!>!>!
+virtual RimLLM_Framework.Providers.OpenAIProvider.IsKnownNonReasoningModel(string! modelName) -> bool
+virtual RimLLM_Framework.Providers.OpenAIProvider.MapEffortLiteral(Microsoft.Extensions.AI.ReasoningEffort effort) -> string?
+virtual RimLLM_Framework.Providers.OpenAIProvider.ProviderId.get -> string!
+virtual RimLLM_Framework.Providers.OpenAIProvider.TestConnectionAsync() -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult!>!
+virtual RimLLM_Framework.Providers.OpenAIProvider.TestConnectionAsync(string! model) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult!>!

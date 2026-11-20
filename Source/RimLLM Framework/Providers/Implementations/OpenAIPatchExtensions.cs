@@ -16,7 +16,7 @@ internal static class OpenAIPatchExtensions
     /// 取得基礎工廠產生的 <see cref="ChatCompletionOptions"/>；工廠不存在或型別不符時建立新實例。
     /// </summary>
     public static ChatCompletionOptions GetOrCreateOptions(
-        Func<IChatClient, object> baseFactory,
+        Func<IChatClient, object?>? baseFactory,
         IChatClient client)
     {
         return baseFactory?.Invoke(client) as ChatCompletionOptions ?? new ChatCompletionOptions();
@@ -28,7 +28,7 @@ internal static class OpenAIPatchExtensions
     /// 因此各供應商一律走這裡串接而非取代。
     /// </summary>
     public static Func<IChatClient, object> ChainPatch(
-        Func<IChatClient, object> baseFactory,
+        Func<IChatClient, object?>? baseFactory,
         Action<ChatCompletionOptions> mutate)
     {
         return client =>

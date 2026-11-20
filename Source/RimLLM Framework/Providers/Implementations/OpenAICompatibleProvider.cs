@@ -1,5 +1,3 @@
-#nullable disable
-
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
 
@@ -32,7 +30,7 @@ public class OpenAICompatibleProvider : OpenAIProvider
     /// 本地相容伺服器的 wire 差異補救：
     /// 移除 SDK 自動附加的 stream_options，並還原舊版 max_tokens 欄位。
     /// </summary>
-    protected override void BuildChatOptions(ChatOptions requestOptions, string model, ChatOptions options)
+    protected override void BuildChatOptions(ChatOptions? requestOptions, string model, ChatOptions options)
     {
         base.BuildChatOptions(requestOptions, model, options);
 

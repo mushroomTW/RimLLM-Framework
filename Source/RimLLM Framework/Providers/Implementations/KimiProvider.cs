@@ -1,5 +1,3 @@
-#nullable disable
-
 
 namespace RimLLM_Framework.Providers;
 
@@ -23,7 +21,7 @@ public class KimiProvider : OpenAIProvider
     /// Kimi 的強度詞彙是 low / high / max，沒有 medium。
     /// 中強度對應到 high，是三個可選值裡最接近的一階。
     /// </summary>
-    protected override string MapEffortLiteral(Microsoft.Extensions.AI.ReasoningEffort effort)
+    protected override string? MapEffortLiteral(Microsoft.Extensions.AI.ReasoningEffort effort)
     {
         if (effort == Microsoft.Extensions.AI.ReasoningEffort.Low) return "low";
         if (effort == Microsoft.Extensions.AI.ReasoningEffort.Medium) return "high";

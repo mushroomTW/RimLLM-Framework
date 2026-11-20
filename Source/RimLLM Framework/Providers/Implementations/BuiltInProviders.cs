@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -30,20 +28,20 @@ public class GeminiProvider : OpenAIProvider
     /// </summary>
     internal override async Task<ModelCatalog> FetchModelCatalogAsync()
     {
-        Task<Dictionary<string, int>> nativeTask = FetchNativeInputTokenLimitsAsync();
+        Task<Dictionary<string, int>?> nativeTask = FetchNativeInputTokenLimitsAsync();
         ModelCatalog catalog = await base.FetchModelCatalogAsync().ConfigureAwait(false);
-        Dictionary<string, int> windows = await nativeTask.ConfigureAwait(false);
+        Dictionary<string, int>? windows = await nativeTask.ConfigureAwait(false);
         // 相容端點的 /models 回傳 "models/xxx"，去掉前綴才會與 Embedding、決策模型及上限表的寫法一致
         var models = catalog.Models.ConvertAll(name =>
-            name != null && name.StartsWith("models/", StringComparison.Ordinal) ? name.Substring("models/".Length) : name);
+            name.StartsWith("models/", StringComparison.Ordinal) ? name.Substring("models/".Length) : name);
         return new ModelCatalog(models, windows ?? catalog.ContextWindows);
     }
 
     /// <summary>讀取原生端點的輸入上限；無法推得原生端點或請求失敗時回傳 null（失敗會記警告）。</summary>
-    private async Task<Dictionary<string, int>> FetchNativeInputTokenLimitsAsync()
+    private async Task<Dictionary<string, int>?> FetchNativeInputTokenLimitsAsync()
     {
         // 相容根位址以 /openai 結尾，去掉即為原生 API 根位址；自訂成其他代理時無從推得，略過。
-        string root = NormalizeEndpoint(Settings.GetEndpoint(ProviderId, DefaultEndpoint));
+        string? root = NormalizeEndpoint(Settings.GetEndpoint(ProviderId, DefaultEndpoint));
         if (root == null || !root.EndsWith("/openai", StringComparison.OrdinalIgnoreCase))
         {
             return null;
