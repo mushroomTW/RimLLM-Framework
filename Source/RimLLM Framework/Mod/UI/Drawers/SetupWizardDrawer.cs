@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -503,7 +505,7 @@ public static class SetupWizardDrawer
         _embeddingModels = [];
         _decisionModels = [];
 
-        Task.Run(() => FetchChatModelsAsync(providerId, generation));
+        _ = Task.Run(() => FetchChatModelsAsync(providerId, generation));
 
         if (_embeddingPickProvider != null) StartFetchEmbeddingList(_embeddingPickProvider, generation);
         if (_decisionPickProvider != null) StartFetchDecisionList(_decisionPickProvider, generation);
@@ -574,7 +576,7 @@ public static class SetupWizardDrawer
         return await Finish(() =>
         {
             if (generation == _fetchGeneration) action();
-        });
+        }).ConfigureAwait(false);
     }
 
     /// <summary>Embedding 金鑰留空時服務會沿用對話金鑰，所以第二步貼的金鑰就能抓清單。</summary>
@@ -583,7 +585,7 @@ public static class SetupWizardDrawer
         _embeddingListBusy = true;
         string endpoint = Settings.GetEmbeddingEndpoint(embeddingProviderId);
         string apiKey = Settings.GetEmbeddingApiKey(embeddingProviderId);
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             List<string> models = [];
             try
@@ -614,7 +616,7 @@ public static class SetupWizardDrawer
         _decisionListBusy = true;
         var service = new RimLLMDecisionService(Settings);
         DecisionPreviewArguments args = service.GetPreviewArguments(decisionProviderId);
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             List<string> models = [];
             try
@@ -781,7 +783,7 @@ public static class SetupWizardDrawer
         var service = new RimLLMDecisionService(Settings);
         DecisionPreviewArguments args = service.GetPreviewArguments(decisionProviderId);
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             string error = null;
             try
@@ -864,7 +866,7 @@ public static class SetupWizardDrawer
         string endpoint = Settings.GetEmbeddingEndpoint(embeddingProviderId);
         string apiKey = Settings.GetEmbeddingApiKey(embeddingProviderId);
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             string error = null;
             try
@@ -925,7 +927,7 @@ public static class SetupWizardDrawer
         _outcome = Outcome.None;
         _progressKey = "RimLLM_SetupProgressTest";
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             try
             {
@@ -994,7 +996,7 @@ public static class SetupWizardDrawer
                 tcs.SetException(ex);
             }
         });
-        return await tcs.Task;
+        return await tcs.Task.ConfigureAwait(false);
     }
 
     // ── 共用小元件 ──────────────────────────────────

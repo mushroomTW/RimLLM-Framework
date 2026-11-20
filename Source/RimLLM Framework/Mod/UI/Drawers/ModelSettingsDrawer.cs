@@ -1,4 +1,7 @@
+#nullable disable
+
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using RimWorld;
 using UnityEngine;
@@ -39,7 +42,7 @@ public static class ModelSettingsDrawer
     /// </summary>
     internal static List<string> CollectEntries()
     {
-        return [.. Settings.FallbackChain.Where(entry => !string.IsNullOrEmpty(entry)).Distinct()];
+        return [.. Settings.FallbackChain.Where(entry => !string.IsNullOrEmpty(entry)).Distinct(System.StringComparer.Ordinal)];
     }
 
     /// <summary>
@@ -280,22 +283,22 @@ public static class ModelSettingsDrawer
             }
 
             return "RimLLM_ContextWindowTooltip".Translate(
-                effective.HasValue ? effective.Value.ToString("N0") : "?", source);
-        }, entry.GetHashCode());
+                effective.HasValue ? effective.Value.ToString("N0", CultureInfo.InvariantCulture) : "?", source);
+        }, System.StringComparer.Ordinal.GetHashCode(entry));
 
         if (Widgets.ButtonText(rect, label))
         {
             var options = new List<FloatMenuOption>
             {
                 new(
-                    "RimLLM_ContextWindowAuto".Translate(fetched.HasValue ? fetched.Value.ToString("N0") : "?"),
+                    "RimLLM_ContextWindowAuto".Translate(fetched.HasValue ? fetched.Value.ToString("N0", CultureInfo.InvariantCulture) : "?"),
                     () => { Settings.SetContextWindowOverride(entry, 0); Settings.Write(); })
             };
             foreach (int preset in ContextWindowPresets)
             {
                 int captured = preset;
                 options.Add(new FloatMenuOption(
-                    FormatTokens(captured) + " (" + captured.ToString("N0") + ")",
+                    FormatTokens(captured) + " (" + captured.ToString("N0", CultureInfo.InvariantCulture) + ")",
                     () => { Settings.SetContextWindowOverride(entry, captured); Settings.Write(); }));
             }
             options.Add(new FloatMenuOption("RimLLM_ContextWindowCustom".Translate(), () =>
@@ -313,12 +316,12 @@ public static class ModelSettingsDrawer
     {
         if (tokens >= 1000000)
         {
-            return (tokens / 1000000.0).ToString("0.#") + "M";
+            return (tokens / 1000000.0).ToString("0.#", CultureInfo.InvariantCulture) + "M";
         }
         if (tokens >= 1000)
         {
-            return (tokens / 1000.0).ToString("0") + "K";
+            return (tokens / 1000.0).ToString("0", CultureInfo.InvariantCulture) + "K";
         }
-        return tokens.ToString();
+        return tokens.ToString(CultureInfo.InvariantCulture);
     }
 }

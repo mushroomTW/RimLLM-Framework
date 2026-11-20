@@ -33,7 +33,7 @@ public class CostEstimationTests
     [Test]
     public void CachedInputUsesMatchedModelsRate()
     {
-        var tracker = new RimLLMUsageTracker(new MockSettings());
+        _ = new RimLLMUsageTracker(new MockSettings());
 
         ClassicAssert.IsTrue(ModelPricing.TryEstimateCost("deepseek", "deepseek-chat", 1000000, 0, 1000000, out float deepseekCost));
         ClassicAssert.AreEqual(0.14f * 0.02f, deepseekCost, 0.00001f);

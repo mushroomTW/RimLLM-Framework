@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -61,7 +63,7 @@ internal static class SetupStatus
     internal static bool IsProviderUsable(string providerId)
     {
         RimLLMFrameworkSettings settings = RimLLMFrameworkMod.Settings;
-        bool builtIn = ProviderIds.BuiltIn.Contains(providerId);
+        bool builtIn = ProviderIds.BuiltIn.Contains(providerId, StringComparer.Ordinal);
 
         if (!builtIn)
         {

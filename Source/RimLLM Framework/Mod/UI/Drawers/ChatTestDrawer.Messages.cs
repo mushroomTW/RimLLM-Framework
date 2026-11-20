@@ -1,4 +1,7 @@
+#nullable disable
+
 using System;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Verse;
 
@@ -56,16 +59,16 @@ public static partial class ChatTestDrawer
                     meta.ModelId = val;
                     break;
                 case "ms":
-                    if (long.TryParse(val, out long ms)) { meta.ElapsedMs = ms; }
+                    if (long.TryParse(val, CultureInfo.InvariantCulture, out long ms)) { meta.ElapsedMs = ms; }
                     break;
                 case "tok":
-                    if (int.TryParse(val, out int tok)) { meta.TotalTokens = tok; }
+                    if (int.TryParse(val, CultureInfo.InvariantCulture, out int tok)) { meta.TotalTokens = tok; }
                     break;
                 case "p":
-                    if (int.TryParse(val, out int p)) { meta.PromptTokens = p; }
+                    if (int.TryParse(val, CultureInfo.InvariantCulture, out int p)) { meta.PromptTokens = p; }
                     break;
                 case "c":
-                    if (int.TryParse(val, out int c)) { meta.CompletionTokens = c; }
+                    if (int.TryParse(val, CultureInfo.InvariantCulture, out int c)) { meta.CompletionTokens = c; }
                     break;
                 case "est":
                     meta.IsEstimatedTokens = val == "1";
@@ -112,7 +115,7 @@ public static partial class ChatTestDrawer
         int suffixStart = answer.IndexOf(ReasoningMarkerSuffix, lengthStart, StringComparison.Ordinal);
         if (suffixStart < 0) return;
         if (!int.TryParse(answer.AsSpan(lengthStart, suffixStart - lengthStart), System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture, out int length)) return;
+                CultureInfo.InvariantCulture, out int length)) return;
 
         int contentStart = suffixStart + ReasoningMarkerSuffix.Length;
         if (length > answer.Length - contentStart) return;

@@ -433,14 +433,14 @@ public class EmbeddingReviewRegressionTests
             bool expectContinue = false;
             foreach (string line in header.ToString().Split(separator, StringSplitOptions.None))
             {
-                int separator = line.IndexOf(':');
-                if (separator <= 0) continue;
+                int colon = line.IndexOf(':');
+                if (colon <= 0) continue;
 
-                string name = line.Substring(0, separator).Trim();
-                string value = line.Substring(separator + 1).Trim();
+                string name = line.Substring(0, colon).Trim();
+                string value = line.Substring(colon + 1).Trim();
                 if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
                 {
-                    int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out contentLength);
+                    _ = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out contentLength);
                 }
                 else if (name.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
                 {

@@ -1,3 +1,5 @@
+#nullable disable
+
 namespace RimLLM_Framework;
 
 /// <summary>

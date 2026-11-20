@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -104,7 +106,7 @@ public static class RimLLMSchemaBuilder
     /// </summary>
     private static readonly ConcurrentDictionary<Type, RimLLMSchemaResult> ResultCache = new();
 
-    private static readonly object OptionsLock = new();
+    private static readonly System.Threading.Lock OptionsLock = new();
     private static JsonSerializerOptions _serializerOptions;
 
     /// <summary>

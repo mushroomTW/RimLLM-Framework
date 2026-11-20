@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -16,7 +18,7 @@ public static partial class ChatTestDrawer
 {
     private sealed class StreamRenderState
     {
-        public readonly object ReplyLock = new();
+        public readonly Lock ReplyLock = new();
         /// <summary>供應商原生的推理內容（<see cref="TextReasoningContent"/>），與答案分開累積。</summary>
         public readonly StringBuilder Reasoning = new();
         public readonly StringBuilder Answer = new();
@@ -105,7 +107,7 @@ public static partial class ChatTestDrawer
             }
             else if (scheduleTrailing)
             {
-                Task.Delay(StreamRenderIntervalMs, RequestToken).ContinueWith(_ =>
+                _ = Task.Delay(StreamRenderIntervalMs, RequestToken).ContinueWith(_ =>
                 {
                     lock (ReplyLock)
                     {
@@ -155,7 +157,7 @@ public static partial class ChatTestDrawer
         chatCts = requestCts;
         CancellationToken requestToken = requestCts.Token;
 
-        Task.Run(() => ExecuteChatStreamingAsync(userPrompt, pinnedModel, requestGeneration, aiHistoryIndex, requestCts, requestToken), CancellationToken.None);
+        _ = Task.Run(() => ExecuteChatStreamingAsync(userPrompt, pinnedModel, requestGeneration, aiHistoryIndex, requestCts, requestToken), CancellationToken.None);
     }
 
     private static async Task ExecuteChatStreamingAsync(

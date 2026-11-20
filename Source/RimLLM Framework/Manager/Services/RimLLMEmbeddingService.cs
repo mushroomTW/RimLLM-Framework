@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
@@ -349,10 +351,10 @@ public class RimLLMEmbeddingService
             return await ComputeOpenAiCompatibleEmbeddingsAsync(
                 ctx, batch, linkedCts.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             // 呼叫端沒有取消，代表是 ApiTimeout 觸發的逾時。
-            throw new RimLLMException(LLMError.Timeout, $"Embedding request timed out after {ctx.TimeoutSeconds} seconds.");
+            throw new RimLLMException(LLMError.Timeout, $"Embedding request timed out after {ctx.TimeoutSeconds} seconds.", ex);
         }
         catch (OperationCanceledException)
         {
@@ -429,9 +431,9 @@ public class RimLLMEmbeddingService
                     return new RimLLMEmbeddingModelList(ids.FindAll(LooksLikeEmbeddingModel), filtered: true);
             }
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new RimLLMException(LLMError.Timeout, $"Embedding model list request timed out after {timeoutSeconds} seconds.");
+            throw new RimLLMException(LLMError.Timeout, $"Embedding model list request timed out after {timeoutSeconds} seconds.", ex);
         }
         catch (OperationCanceledException)
         {
@@ -620,7 +622,7 @@ public class RimLLMEmbeddingService
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, nativeRoot + "/api/show");
             request.Content = new StringContent(
-                RimLLMJsonHelper.Serialize(new Dictionary<string, string> { { "model", name } }),
+                RimLLMJsonHelper.Serialize(new Dictionary<string, string>(StringComparer.Ordinal) { { "model", name } }),
                 Encoding.UTF8, "application/json");
             using JsonDocument doc = await SendForJsonAsync(request, cancellationToken).ConfigureAwait(false);
             if (!doc.RootElement.TryGetProperty("capabilities", out JsonElement caps) || caps.ValueKind != JsonValueKind.Array)
@@ -773,9 +775,9 @@ public class RimLLMEmbeddingService
                 [text], linkedCts.Token).ConfigureAwait(false);
             return results[0];
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new RimLLMException(LLMError.Timeout, $"Embedding connection test timed out after {timeoutSeconds} seconds.");
+            throw new RimLLMException(LLMError.Timeout, $"Embedding connection test timed out after {timeoutSeconds} seconds.", ex);
         }
         catch (OperationCanceledException)
         {
@@ -903,7 +905,7 @@ public class RimLLMEmbeddingService
     /// </summary>
     private static async Task<List<RimLLMEmbeddingResult>> ComputeOpenAiCompatibleEmbeddingsAsync(
         EmbeddingBatchContext ctx,
-        IReadOnlyList<string> texts,
+        List<string> texts,
         CancellationToken cancellationToken)
     {
         BuildOpenAiCompatibleClientArgs(ctx.ApiKey, ctx.Endpoint, ctx.DefaultEndpoint, out var credential, out var options);

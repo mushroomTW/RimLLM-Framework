@@ -1,5 +1,8 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -411,7 +414,7 @@ public static class RimLLMMarkdown
             _listDepth++;
             bool isOrdered = list.IsOrdered;
             // 模型常在編號項目之間夾段落，每段都是新清單，要沿用原文的起始編號才不會全變成 1。
-            int itemIndex = int.TryParse(list.OrderedStart, out int start) ? start : 1;
+            int itemIndex = int.TryParse(list.OrderedStart, CultureInfo.InvariantCulture, out int start) ? start : 1;
 
             for (int i = 0; i < list.Count; i++)
             {

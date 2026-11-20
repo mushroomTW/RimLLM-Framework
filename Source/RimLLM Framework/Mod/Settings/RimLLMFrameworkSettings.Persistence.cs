@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -79,10 +81,10 @@ public partial class RimLLMFrameworkSettings
             MaxRetries = this.MaxRetries,
             RetryDelay = this.RetryDelay,
             ChinaModeProviders = this._chinaModeProviders,
-            ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides),
+            ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides, StringComparer.Ordinal),
             ProviderContextWindows = this._providerContextWindows,
             ProviderVisionSupport = this._providerVisionSupport,
-            ContextWindowOverrides = new Dictionary<string, int>(this._contextWindowOverrides),
+            ContextWindowOverrides = new Dictionary<string, int>(this._contextWindowOverrides, StringComparer.Ordinal),
             DetailedLogging = this.DetailedLogging,
             MaxConcurrentRequests = this.MaxConcurrentRequests,
             DefaultReasoningEffort = EncodeReasoningEffort(this.DefaultReasoningEffort),
@@ -96,14 +98,14 @@ public partial class RimLLMFrameworkSettings
             EnableNativeSchema = this.EnableNativeSchema,
             EnableJsonRepair = this.EnableJsonRepair,
             EmbeddingProvider = this.EmbeddingProvider,
-            EmbeddingModels = new Dictionary<string, string>(this._embeddingModels),
-            EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints),
+            EmbeddingModels = new Dictionary<string, string>(this._embeddingModels, StringComparer.Ordinal),
+            EmbeddingEndpoints = new Dictionary<string, string>(this._embeddingEndpoints, StringComparer.Ordinal),
             EncryptedEmbeddingApiKeys = encryptedEmbeddingKeys,
-            CompatTakeovers = new Dictionary<string, bool>(this._compatTakeovers),
-            CompatModelPins = new Dictionary<string, string>(this._compatModelPins),
+            CompatTakeovers = new Dictionary<string, bool>(this._compatTakeovers, StringComparer.Ordinal),
+            CompatModelPins = new Dictionary<string, string>(this._compatModelPins, StringComparer.Ordinal),
             DecisionProvider = this.DecisionProvider,
-            DecisionModels = new Dictionary<string, string>(this._decisionModels),
-            DecisionEndpoints = new Dictionary<string, string>(this._decisionEndpoints),
+            DecisionModels = new Dictionary<string, string>(this._decisionModels, StringComparer.Ordinal),
+            DecisionEndpoints = new Dictionary<string, string>(this._decisionEndpoints, StringComparer.Ordinal),
             EncryptedDecisionApiKeys = encryptedDecisionKeys,
             EmbeddingFallbackChain = this.EmbeddingFallbackChain,
             DecisionFallbackChain = this.DecisionFallbackChain
@@ -120,7 +122,7 @@ public partial class RimLLMFrameworkSettings
         Dictionary<string, string> sourceKeys,
         Dictionary<string, string> undecryptableKeys)
     {
-        var encryptedKeys = new Dictionary<string, string>();
+        var encryptedKeys = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var kvp in sourceKeys)
         {
             if (TryEncryptForSave(kvp.Value, out string cipher))

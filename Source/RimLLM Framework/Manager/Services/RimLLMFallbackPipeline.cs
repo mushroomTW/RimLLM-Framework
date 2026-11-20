@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -245,7 +247,7 @@ public class RimLLMFallbackPipeline
     }
 
     private static readonly Random SharedRandom = new();
-    private static readonly object RandomLock = new();
+    private static readonly Lock RandomLock = new();
 
     // Random 非執行緒安全，重試抖動可能來自不同的背景執行緒；共用加鎖實例。
     private static double NextRandomDouble()

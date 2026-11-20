@@ -38,7 +38,7 @@ public enum ReasoningWireFormat
 /// </summary>
 public static class RimLLMReasoningSupport
 {
-    private static readonly object Gate = new();
+    private static readonly System.Threading.Lock Gate = new();
     // 各種「不支援」記在同一集合，鍵以種類前綴區分（r=思考參數、t=temperature、d=關閉思考、m=max_tokens）。
     private static readonly HashSet<string> Unsupported = [];
 

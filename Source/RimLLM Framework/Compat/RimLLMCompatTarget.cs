@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Mod;

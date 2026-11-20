@@ -54,11 +54,11 @@ public sealed class OpenAIPatchCompatibilityTests
         options.Patch.Remove(OpenAIPatchPaths.Reasoning);
 
         JsonObject json = Serialize(options);
-        ClassicAssert.AreEqual("json_object", (string)json["response_format"]!["type"]);
+        ClassicAssert.AreEqual("json_object", (string)json["response_format"]["type"]);
         ClassicAssert.AreEqual("high", (string)json["reasoning_effort"]);
-        ClassicAssert.AreEqual("enabled", (string)json["thinking"]!["type"]);
+        ClassicAssert.AreEqual("enabled", (string)json["thinking"]["type"]);
         ClassicAssert.IsTrue((bool)json["enable_thinking"]);
-        ClassicAssert.AreEqual(2, json["models"]!.AsArray().Count);
+        ClassicAssert.AreEqual(2, json["models"].AsArray().Count);
         ClassicAssert.IsNull(json["stream_options"]);
     }
 

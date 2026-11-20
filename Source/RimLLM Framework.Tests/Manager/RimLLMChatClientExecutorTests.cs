@@ -539,7 +539,7 @@ public class TestClientResultException : ClientResultException
     }
 }
 
-public class CapturingChatClient : IChatClient
+public sealed class CapturingChatClient : IChatClient
 {
     public List<IEnumerable<ChatMessage>> ReceivedMessages { get; } = [];
     public List<ChatOptions> ReceivedOptions { get; } = [];

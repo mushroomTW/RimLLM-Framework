@@ -677,14 +677,14 @@ public class SettingsAndTelemetryTests
         ClassicAssert.AreEqual(7, dto.Count);
     }
 
-    private class SettingsLikeDto
+    private sealed class SettingsLikeDto
     {
-        public List<string> FallbackChain = null!;
-        public Dictionary<string, int> ModelLevelOverrides = null!;
+        public List<string> FallbackChain = null;
+        public Dictionary<string, int> ModelLevelOverrides = null;
         public float ApiTimeout = 0f;
         public int MaxRetries = 0;
         public bool DetailedLogging = false;
-        public string EmbeddingProvider = null!;
+        public string EmbeddingProvider = null;
         public DateTime Stamp = default;
         public int Count = 0;
     }

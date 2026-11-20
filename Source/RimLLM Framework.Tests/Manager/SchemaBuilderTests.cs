@@ -36,10 +36,10 @@ public class SchemaBuilderTests
             // 以 STJ 自身的中繼資料解析反序列化契約，再與 schema 成員比對。
             // 用的是生產路徑同一份設定（RimLLMJsonHelper.Options），契約漂移會在這裡現形。
             JsonTypeInfo typeInfo = new DefaultJsonTypeInfoResolver().GetTypeInfo(type, RimLLMJsonHelper.Options);
-            var expected = new List<string>();
+            var expectedNames = new List<string>();
             foreach (JsonPropertyInfo property in typeInfo.Properties)
             {
-                expected.Add(property.Name);
+                expectedNames.Add(property.Name);
             }
 
             JsonObject schema = ParseSchema(type);
@@ -49,10 +49,10 @@ public class SchemaBuilderTests
                 actual.Add(property.Key);
             }
 
-            expected.Sort(StringComparer.Ordinal);
+            expectedNames.Sort(StringComparer.Ordinal);
             actual.Sort(StringComparer.Ordinal);
             CollectionAssert.AreEqual(
-                expected,
+                expectedNames,
                 actual,
                 type.Name + " 的 schema 成員集合必須與 STJ 的反序列化契約一致。");
         }

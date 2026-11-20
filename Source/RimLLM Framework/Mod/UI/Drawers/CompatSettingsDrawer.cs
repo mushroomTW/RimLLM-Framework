@@ -1,3 +1,5 @@
+#nullable disable
+
 using System.Collections.Generic;
 using RimLLM_Framework.Compat;
 using UnityEngine;

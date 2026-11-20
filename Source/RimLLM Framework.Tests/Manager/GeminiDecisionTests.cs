@@ -172,7 +172,7 @@ public class GeminiDecisionTests
 
         var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             NewGeminiService().EvaluateAsync("state", builder));
-        ClassicAssert.AreEqual(LLMError.InvalidResponse, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
     }
 
     [Test]
@@ -221,7 +221,7 @@ public class GeminiDecisionTests
 
         var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             NewGeminiService().EvaluateAsync("state", builder));
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
     }
 
     // ---------- 沿用對話的 Gemini 金鑰（一把金鑰設好對話、Embedding、決策）----------
@@ -314,7 +314,7 @@ public class GeminiDecisionTests
             Requests.Add(new CapturedRequest(
                 request.RequestUri, request.Headers.Authorization?.ToString(), googKey, body));
 
-            bool isModels = request.RequestUri!.AbsolutePath.EndsWith("/models", StringComparison.Ordinal);
+            bool isModels = request.RequestUri.AbsolutePath.EndsWith("/models", StringComparison.Ordinal);
             return new HttpResponseMessage(isModels ? HttpStatusCode.OK : StatusCode)
             {
                 Content = new StringContent(isModels ? ModelsBody : EvaluateBody, Encoding.UTF8, "application/json")

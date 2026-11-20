@@ -1,5 +1,8 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using Microsoft.Extensions.AI;
@@ -573,8 +576,8 @@ public static partial class ChatTestDrawer
             ChatEntryMeta meta = layout.Meta;
             float timeSec = meta.ElapsedMs / 1000f;
             string statTip = meta.IsEstimatedTokens
-                ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens.ToString("N0"))
-                : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2"), meta.TotalTokens.ToString("N0"), meta.PromptTokens.ToString("N0"), meta.CompletionTokens.ToString("N0"));
+                ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2", CultureInfo.InvariantCulture), meta.TotalTokens.ToString("N0", CultureInfo.InvariantCulture))
+                : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2", CultureInfo.InvariantCulture), meta.TotalTokens.ToString("N0", CultureInfo.InvariantCulture), meta.PromptTokens.ToString("N0", CultureInfo.InvariantCulture), meta.CompletionTokens.ToString("N0", CultureInfo.InvariantCulture));
             TooltipHandler.TipRegion(statRect, statTip);
         }
     }

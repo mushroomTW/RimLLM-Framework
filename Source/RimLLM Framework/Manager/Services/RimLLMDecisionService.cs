@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -106,7 +108,7 @@ public class RimLLMDecisionService
         return normalized;
     }
 
-    private static readonly object HttpClientLock = new();
+    private static readonly Lock HttpClientLock = new();
     private static Func<HttpMessageHandler> _httpClientFactoryKey;
     private static HttpClient _defaultHttpClient;
     private static HttpClient _geminiHttpClient;

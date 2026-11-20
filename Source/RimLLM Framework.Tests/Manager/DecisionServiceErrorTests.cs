@@ -129,7 +129,7 @@ public class DecisionServiceErrorTests
         var service = new RimLLMDecisionService(settings);
         var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             service.EvaluateAsync("state", OneQuestionPlan()));
-        ClassicAssert.AreEqual(LLMError.Unknown, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.Unknown, ex.Error);
         ClassicAssert.AreEqual("Disabled", settings.DecisionProvider);
     }
 
@@ -142,7 +142,7 @@ public class DecisionServiceErrorTests
         var service = new RimLLMDecisionService(settings);
         var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             service.EvaluateAsync("state", OneQuestionPlan()));
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
     }
 
     [Test]
@@ -151,7 +151,7 @@ public class DecisionServiceErrorTests
         var service = new RimLLMDecisionService(new MockSettings());
         var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             service.TestConnectionAsync("https://api.typesafe.ai", "jev-latest", ""));
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
     }
 
     [Test]
@@ -160,6 +160,6 @@ public class DecisionServiceErrorTests
         var service = new RimLLMDecisionService(new MockSettings());
         var ex = await ClassicAssert.ThrowsAsync<RimLLMException>(() =>
             service.FetchModelsAsync("https://api.typesafe.ai", "jev-latest", ""));
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
     }
 }

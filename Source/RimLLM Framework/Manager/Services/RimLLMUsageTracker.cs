@@ -1,6 +1,9 @@
+#nullable disable
+
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
@@ -45,9 +48,9 @@ public class RimLLMUsageTracker
     private readonly IRimLLMSettings _settings;
 
     /// <summary>保護日誌、遙測排程與設定快照；需要同時持有兩把鎖時一律先取這把。</summary>
-    private readonly object _logLock = new();
+    private readonly Lock _logLock = new();
     /// <summary>保護用量累計與預算預留。</summary>
-    private readonly object _usageLock = new();
+    private readonly Lock _usageLock = new();
 
     private DateTime _lastTelemetrySaveTime = DateTime.MinValue;
     private bool _telemetrySaveDeferred;
@@ -111,7 +114,7 @@ public class RimLLMUsageTracker
     /// <summary>單一供應商的成功／失敗計數與 API 端上下文快取命中統計。</summary>
     public class ProviderStats
     {
-        private readonly object _tokenLock = new();
+        private readonly Lock _tokenLock = new();
         private int _successCount;
         private int _failureCount;
         private long _totalPromptTokens;
@@ -321,7 +324,7 @@ public class RimLLMUsageTracker
     /// <summary>檢查並執行跨天重置日預算累計（token 與美元估計值一併重置）。</summary>
     public void CheckDailyReset()
     {
-        string todayStr = DateTime.Today.ToString("yyyy-MM-dd");
+        string todayStr = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         lock (_logLock)
         {
             lock (_usageLock)

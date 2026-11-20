@@ -183,7 +183,7 @@ public sealed class StructuredReviewRegressionTests
         public Dictionary<string, int?> Lookup { get; set; } = new();
     }
 
-    public enum ReviewEnum
+    public enum ReviewKind
     {
         First,
         Second
@@ -191,9 +191,9 @@ public sealed class StructuredReviewRegressionTests
 
     public sealed class NullableEnumContainersDto
     {
-        public List<ReviewEnum?> Values { get; set; } = new();
+        public List<ReviewKind?> Values { get; set; } = new();
 
-        public Dictionary<string, ReviewEnum?> Lookup { get; set; } = new();
+        public Dictionary<string, ReviewKind?> Lookup { get; set; } = new();
     }
 
     public sealed class RepairDto

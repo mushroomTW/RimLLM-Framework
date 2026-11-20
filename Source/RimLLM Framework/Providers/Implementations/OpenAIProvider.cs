@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
@@ -220,7 +222,7 @@ public class OpenAIProvider : ILLMProvider
     protected virtual bool IsKnownNonReasoningModel(string modelName)
     {
         string name = NormalizeModelName(modelName);
-        return name.StartsWith("gpt-3.5") || name.StartsWith("gpt-4") || name.StartsWith("chatgpt-4");
+        return name.StartsWith("gpt-3.5", StringComparison.Ordinal) || name.StartsWith("gpt-4", StringComparison.Ordinal) || name.StartsWith("chatgpt-4", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -334,14 +336,14 @@ public class OpenAIProvider : ILLMProvider
             case ReasoningWireFormat.OpenRouterReasoning:
                 chatCompletionOptions.Patch.Set(
                     OpenAIPatchPaths.Reasoning,
-                    JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string> { { "effort", effortLiteral } }));
+                    JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string>(StringComparer.Ordinal) { { "effort", effortLiteral } }));
                 break;
 
             case ReasoningWireFormat.ThinkingSwitch:
                 chatCompletionOptions.Patch.Set(
                     OpenAIPatchPaths.Thinking,
                     JsonSerializer.SerializeToUtf8Bytes(
-                        new Dictionary<string, string> { { "type", thinkingEnabled ? "enabled" : "disabled" } }));
+                        new Dictionary<string, string>(StringComparer.Ordinal) { { "type", thinkingEnabled ? "enabled" : "disabled" } }));
                 if (thinkingEnabled)
                 {
                     chatCompletionOptions.Patch.Set(
@@ -660,8 +662,8 @@ public class OpenAIProvider : ILLMProvider
     protected static bool IsOpenAiReasoningModel(string modelName)
     {
         string name = NormalizeModelName(modelName);
-        return name.StartsWith("o1") || name.StartsWith("o3") || name.StartsWith("o4") ||
-               name.StartsWith("gpt-5");
+        return name.StartsWith("o1", StringComparison.Ordinal) || name.StartsWith("o3", StringComparison.Ordinal) || name.StartsWith("o4", StringComparison.Ordinal) ||
+               name.StartsWith("gpt-5", StringComparison.Ordinal);
     }
 
     /// <summary>

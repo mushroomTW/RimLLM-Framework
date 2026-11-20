@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -230,7 +232,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
             string composedModelId = ComposeModelId(_client._provider.ProviderId, _client._model);
 
-            Task.Run(async () =>
+            _ = Task.Run(async () =>
             {
                 try
                 {

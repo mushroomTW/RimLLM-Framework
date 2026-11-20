@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,11 +21,11 @@ public class RimLLMTelemetryStore
     private const string FileName = "RimLLM_Telemetry.json";
     private const int MaxChatHistoryEntries = 100;
 
-    private readonly object _ioLock = new();
+    private readonly System.Threading.Lock _ioLock = new();
     private string _undecryptableEncryptedChatHistory;
     private bool _preserveBackupOnSave;
 
-    private readonly object _saveQueueLock = new();
+    private readonly System.Threading.Lock _saveQueueLock = new();
     private bool _saveRunning;
     private bool _saveRequested;
 
@@ -283,7 +285,7 @@ public class RimLLMTelemetryStore
             _saveRunning = true;
         }
 
-        Task.Run(RunSaveLoop);
+        _ = Task.Run(RunSaveLoop);
     }
 
     private void RunSaveLoop()

@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -359,7 +361,7 @@ public static class DecisionSettingsDrawer
         // 端點、模型與金鑰只由服務這裡決定，避免設定頁兩處各抄一份。
         DecisionPreviewArguments args = new RimLLMDecisionService(Settings).GetPreviewArguments(providerId);
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             Func<string> applyResult;
             try
@@ -424,7 +426,7 @@ public static class DecisionSettingsDrawer
         // 與抓取模型清單共用同一組參數來源。
         DecisionPreviewArguments args = new RimLLMDecisionService(Settings).GetPreviewArguments(providerId);
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             Func<string> applyResult;
             try

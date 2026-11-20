@@ -231,7 +231,7 @@ public class DecisionLocalEndpointTests
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.TypeSafe));
 
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
         ClassicAssert.IsEmpty(_handler.RequestUris, "缺金鑰時不得送出任何網路請求");
     }
 

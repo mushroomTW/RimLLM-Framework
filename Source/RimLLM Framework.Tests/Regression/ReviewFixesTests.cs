@@ -20,13 +20,13 @@ public class ReviewFixesTests
 {
     // ---------- [P1] 結構化驗證：重複型別的物件不再被跳過 ----------
 
-    private class Item
+    private sealed class Item
     {
         public string Name;
         public string RequiredField;
     }
 
-    private class ItemContainer
+    private sealed class ItemContainer
     {
         public List<Item> Items;
     }
@@ -76,7 +76,7 @@ public class ReviewFixesTests
         RimLLMJsonHelper.ValidateStructuredObject(node);
     }
 
-    private class CyclicNode
+    private sealed class CyclicNode
     {
         public CyclicNode Next;
     }
@@ -249,7 +249,7 @@ public class ReviewFixesTests
 
     // ---------- [P3] 結構化驗證追蹤修正：集合 null 元素 ----------
 
-    private class NullableItemContainer
+    private sealed class NullableItemContainer
     {
         public List<int?> Values;
     }

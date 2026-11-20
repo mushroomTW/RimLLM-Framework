@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using RimLLM_Framework.Core;
 using RimWorld;
 using UnityEngine;
@@ -41,7 +42,7 @@ public static class BudgetSettingsDrawer
         int prevCooldown = Settings.CoolDownDurationSeconds;
 
         // 1. 今日 token 預算上限（輸入＋輸出合計），0 代表無限制
-        listing.Label("RimLLM_DailyBudgetLimitLabel".Translate(Settings.DailyTokenBudgetLimit.ToString("N0")));
+        listing.Label("RimLLM_DailyBudgetLimitLabel".Translate(Settings.DailyTokenBudgetLimit.ToString("N0", CultureInfo.InvariantCulture)));
         Settings.DailyTokenBudgetLimit = (long)Math.Round(listing.Slider((float)Settings.DailyTokenBudgetLimit, 0f, MaxDailyTokenBudget));
         RimLLMUIStyle.DrawHint(listing, "RimLLM_DailyBudgetLimitHint".Translate());
 
@@ -100,8 +101,8 @@ public static class BudgetSettingsDrawer
         // 4. 遙測統計與重置
         listing.GapLine(12f);
         listing.Label("RimLLM_DailyAccumulatedCostLabel".Translate(
-            Settings.DailyAccumulatedTokens.ToString("N0"),
-            string.IsNullOrEmpty(Settings.DailyBudgetResetDate) ? DateTime.Today.ToString("yyyy-MM-dd") : Settings.DailyBudgetResetDate
+            Settings.DailyAccumulatedTokens.ToString("N0", CultureInfo.InvariantCulture),
+            string.IsNullOrEmpty(Settings.DailyBudgetResetDate) ? DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : Settings.DailyBudgetResetDate
         ));
         listing.Gap(6f);
 
@@ -111,7 +112,7 @@ public static class BudgetSettingsDrawer
         {
             Settings.DailyAccumulatedTokens = 0;
             Settings.DailyAccumulatedCost = 0f;
-            Settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
+            Settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             Settings.SaveTelemetry();
             Messages.Message("RimLLM_MsgDailyCostReset".Translate(), MessageTypeDefOf.TaskCompletion, false);
         }

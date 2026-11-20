@@ -55,7 +55,7 @@ public sealed class ReviewFindingsRegressionTests
                 .GetResponseAsync([new ChatMessage(ChatRole.User, "hi")]));
 
         ClassicAssert.AreEqual(1, server.RequestCount, "重試必須只由框架負責，SDK 不得自行放大請求");
-        ClassicAssert.AreEqual(status, ex!.HttpStatusCode);
+        ClassicAssert.AreEqual(status, ex.HttpStatusCode);
         ClassicAssert.AreEqual(status == 429 ? LLMError.RateLimit : LLMError.ProviderOffline, ex.Error);
         if (status == 429)
         {
@@ -78,7 +78,7 @@ public sealed class ReviewFindingsRegressionTests
             await manager.CreateChatClient("test.transport")
                 .GetResponseAsync([new ChatMessage(ChatRole.User, "hi")]));
 
-        ClassicAssert.AreEqual(LLMError.RateLimit, ex!.Error, "伺服器的限流答覆不得被等待逾時蓋掉");
+        ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error, "伺服器的限流答覆不得被等待逾時蓋掉");
         ClassicAssert.AreEqual(TimeSpan.FromSeconds(120), ex.RetryAfter);
         ClassicAssert.AreEqual(1, server.RequestCount);
         ClassicAssert.Less((DateTime.UtcNow - started).TotalSeconds, 10);
@@ -113,7 +113,7 @@ public sealed class ReviewFindingsRegressionTests
             }
         });
 
-        ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex.Error);
         ClassicAssert.AreEqual(429, ex.HttpStatusCode);
         ClassicAssert.AreEqual(TimeSpan.FromSeconds(7), ex.RetryAfter);
         StringAssert.Contains("All fallback attempts failed", ex.Message);
@@ -245,7 +245,7 @@ public sealed class ReviewFindingsRegressionTests
                 client, [new ChatMessage(ChatRole.User, "hi")], null, "model", false, "P1", 30f, CancellationToken.None),
             null));
 
-        ClassicAssert.AreEqual(LLMError.InvalidResponse, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
         StringAssert.Contains("MaxOutputTokens", ex.Message);
     }
 
@@ -288,7 +288,7 @@ public sealed class ReviewFindingsRegressionTests
                 client, [new ChatMessage(ChatRole.User, "hi")], null, "model", false, "P1", 0.1f, CancellationToken.None),
             null));
 
-        ClassicAssert.AreEqual(LLMError.Timeout, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.Timeout, ex.Error);
     }
 
     #endregion
@@ -321,7 +321,7 @@ public sealed class ReviewFindingsRegressionTests
 
         var format = provider.LastOptions.ResponseFormat as ChatResponseFormatJson;
         ClassicAssert.IsNotNull(format, "仍要維持 JSON 模式");
-        ClassicAssert.IsNull(format!.Schema, "不支援的供應商不得收到 json_schema");
+        ClassicAssert.IsNull(format.Schema, "不支援的供應商不得收到 json_schema");
         StringAssert.Contains("\"answer\"", provider.LastMessages.First(m => m.Role == ChatRole.System).Text);
     }
 
@@ -373,7 +373,7 @@ public sealed class ReviewFindingsRegressionTests
 
         ClassicAssert.IsNotNull(schemaFormat?.Schema);
         ClassicAssert.IsNotNull(objectFormat);
-        ClassicAssert.IsNull(objectFormat!.Schema);
+        ClassicAssert.IsNull(objectFormat.Schema);
     }
 
     #endregion
@@ -395,12 +395,12 @@ public sealed class ReviewFindingsRegressionTests
 
         TestDeepSeekPayloadProvider before = BuildPayloadProvider();
         before.GenerateAsync([new ChatMessage(ChatRole.User, "hi")], options, "future-model").GetAwaiter().GetResult();
-        ClassicAssert.IsNotNull(JsonNode.Parse(before.CapturedPayload)!["max_tokens"]);
+        ClassicAssert.IsNotNull(JsonNode.Parse(before.CapturedPayload)["max_tokens"]);
 
         TestDeepSeekPayloadProvider after = BuildPayloadProvider();
         RimLLMReasoningSupport.MarkMaxTokensUnsupported(after.ProviderId, "future-model");
         after.GenerateAsync([new ChatMessage(ChatRole.User, "hi")], options, "future-model").GetAwaiter().GetResult();
-        JsonNode payload = JsonNode.Parse(after.CapturedPayload)!;
+        JsonNode payload = JsonNode.Parse(after.CapturedPayload);
         ClassicAssert.IsNull(payload["max_tokens"]);
         ClassicAssert.AreEqual(50, payload["max_completion_tokens"]?.GetValue<int>());
     }
@@ -413,14 +413,14 @@ public sealed class ReviewFindingsRegressionTests
             [new ChatMessage(ChatRole.User, "hi")],
             new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.ExtraHigh } },
             "deepseek-chat").GetAwaiter().GetResult();
-        ClassicAssert.AreEqual("xhigh", JsonNode.Parse(extraHigh.CapturedPayload)!["reasoning_effort"]?.ToString());
+        ClassicAssert.AreEqual("xhigh", JsonNode.Parse(extraHigh.CapturedPayload)["reasoning_effort"]?.ToString());
 
         TestDeepSeekPayloadProvider none = BuildPayloadProvider();
         none.GenerateAsync(
             [new ChatMessage(ChatRole.User, "hi")],
             new ChatOptions { Reasoning = new ReasoningOptions { Effort = ReasoningEffort.None } },
             "deepseek-chat").GetAwaiter().GetResult();
-        ClassicAssert.AreEqual("disabled", JsonNode.Parse(none.CapturedPayload)!["thinking"]?["type"]?.ToString());
+        ClassicAssert.AreEqual("disabled", JsonNode.Parse(none.CapturedPayload)["thinking"]?["type"]?.ToString());
     }
 
     #endregion
@@ -442,7 +442,7 @@ public sealed class ReviewFindingsRegressionTests
         using RimLLMUsageTracker.BudgetReservation holder = tracker.ReserveBudgetOrThrow(100);
         RimLLMException ex = Assert.Throws<RimLLMException>(() => tracker.ReserveBudgetOrThrow(1));
 
-        ClassicAssert.AreEqual(LLMError.RateLimit, ex!.Error, "在途預留不是超限");
+        ClassicAssert.AreEqual(LLMError.RateLimit, ex.Error, "在途預留不是超限");
         ClassicAssert.IsNotNull(ex.RetryAfter);
         ClassicAssert.IsTrue(tracker.ShouldWarnBudgetExceeded(), "當天第一次真正超限時仍必須警告");
     }
@@ -461,7 +461,7 @@ public sealed class ReviewFindingsRegressionTests
 
         RimLLMException ex = Assert.Throws<RimLLMException>(() => tracker.ReserveBudgetOrThrow(1));
 
-        ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex.Error);
     }
 
     #endregion

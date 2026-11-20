@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -163,12 +165,12 @@ public static class RimLLMJsonHelper
     /// <summary>移除開頭與結尾的 Markdown 程式碼區塊標記。</summary>
     private static string StripMarkdownCodeBlocks(string json)
     {
-        if (json.StartsWith("```"))
+        if (json.StartsWith("```", StringComparison.Ordinal))
         {
             int startIndex = json.IndexOf('\n');
             json = startIndex != -1 ? json.Substring(startIndex + 1) : json.Substring(3);
         }
-        if (json.EndsWith("```"))
+        if (json.EndsWith("```", StringComparison.Ordinal))
         {
             json = json.Substring(0, json.Length - 3);
         }

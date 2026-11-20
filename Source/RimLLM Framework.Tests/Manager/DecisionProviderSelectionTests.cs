@@ -168,7 +168,7 @@ public class DecisionProviderSelectionTests
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.Liquid));
 
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
         ClassicAssert.IsEmpty(_handler.RequestUris, "缺金鑰時不得送出任何網路請求");
     }
 
@@ -206,7 +206,7 @@ public class DecisionProviderSelectionTests
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), "NotAProvider"));
 
-        ClassicAssert.AreEqual(LLMError.Unknown, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.Unknown, ex.Error);
         ClassicAssert.IsEmpty(_handler.RequestUris, "供應商不存在時不得送出任何網路請求");
     }
 
@@ -225,7 +225,7 @@ public class DecisionProviderSelectionTests
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.Disabled));
 
-        ClassicAssert.AreEqual(LLMError.Unknown, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.Unknown, ex.Error);
         ClassicAssert.IsEmpty(_handler.RequestUris);
     }
 
@@ -244,7 +244,7 @@ public class DecisionProviderSelectionTests
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.TypeSafe));
 
-        ClassicAssert.AreEqual(LLMError.Unknown, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.Unknown, ex.Error);
         ClassicAssert.IsEmpty(_handler.RequestUris, "玩家全域停用時，指定供應商也不得送出請求");
     }
 
@@ -382,7 +382,7 @@ public class DecisionProviderSelectionTests
             await client.EvaluateWithProviderAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.TypeSafe));
 
-        ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.QuotaExceeded, ex.Error);
         ClassicAssert.IsEmpty(_handler.RequestUris, "預算超限時不得送出任何網路請求");
     }
 
@@ -433,7 +433,7 @@ public class DecisionProviderSelectionTests
         RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
             await service.FetchModelsAsync(FakeEndpoint, "jev-latest", ""));
 
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
         ClassicAssert.IsEmpty(_handler.RequestUris);
     }
 

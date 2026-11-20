@@ -43,7 +43,7 @@ public class RimLLMHealthLedger
 
     private readonly ConcurrentDictionary<string, ProviderHealthRecord> _ledger =
         new(StringComparer.OrdinalIgnoreCase);
-    private readonly object _lock = new();
+    private readonly System.Threading.Lock _lock = new();
 
     /// <summary>
     /// 記錄一次成功的呼叫，重設連續失敗次數、解除冷卻並更新延遲。

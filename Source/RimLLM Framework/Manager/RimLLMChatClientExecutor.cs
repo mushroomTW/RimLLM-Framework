@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.ClientModel;
 using System.Collections.Generic;
@@ -67,9 +69,9 @@ internal static class RimLLMChatClientExecutor
         {
             throw new RimLLMException(LLMError.NetworkError, $"{providerId} network error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new RimLLMException(LLMError.Timeout, $"{providerId} request timed out after {timeoutSeconds} seconds.");
+            throw new RimLLMException(LLMError.Timeout, $"{providerId} request timed out after {timeoutSeconds} seconds.", ex);
         }
 
         // 回應原樣交還。ResponseId、CreatedAt、ConversationId、RawRepresentation 這些
@@ -158,7 +160,7 @@ internal static class RimLLMChatClientExecutor
                 await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync(
                     builtMessages,
                     BuildOptions(options, model, useNativeSchema, customizeOptions),
-                    linkedCts.Token))
+                    linkedCts.Token).ConfigureAwait(false))
                 {
                     // 收到任何更新即重設閒置計時器，避免長回應被整體逾時誤殺。
                     if (update?.Contents == null)
@@ -194,9 +196,9 @@ internal static class RimLLMChatClientExecutor
             {
                 throw new RimLLMException(LLMError.NetworkError, $"{providerId} streaming network error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new RimLLMException(LLMError.Timeout, $"{providerId} stream idle timeout: no new content for {timeoutSeconds} seconds.");
+                throw new RimLLMException(LLMError.Timeout, $"{providerId} stream idle timeout: no new content for {timeoutSeconds} seconds.", ex);
             }
             finally
             {

@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -506,7 +508,7 @@ public static class EmbeddingSettingsDrawer
         string endpoint = Settings.GetEmbeddingEndpoint(providerId);
         string apiKey = Settings.GetEmbeddingApiKey(providerId);
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             Func<string> applyResult;
             try
@@ -572,7 +574,7 @@ public static class EmbeddingSettingsDrawer
         string apiKey = Settings.GetEmbeddingApiKey(providerId);
         var sw = Stopwatch.StartNew();
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             Func<string> applyResult;
             try

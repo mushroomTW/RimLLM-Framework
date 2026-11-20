@@ -27,7 +27,7 @@ internal sealed class RimLLMThrottleStore
         new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTime> _coolDownUntil =
         new(StringComparer.OrdinalIgnoreCase);
-    private readonly object _globalLock = new();
+    private readonly System.Threading.Lock _globalLock = new();
     private readonly List<DateTime> _globalRequestTimestamps = [];
     private DateTime _globalCoolDownUntil = DateTime.MinValue;
 

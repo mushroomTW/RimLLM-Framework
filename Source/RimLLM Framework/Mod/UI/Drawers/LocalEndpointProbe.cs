@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -79,7 +81,7 @@ internal static class LocalEndpointProbe
     /// <param name="onMissing">全部失敗時在主線程執行：更新該頁的狀態文字。</param>
     internal static void StartDetect(IEnumerable<Target> targets, Action<Target> onFound, Action onMissing)
     {
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             Target hit = await FindReachableAsync(targets).ConfigureAwait(false);
             RimLLMDispatcher.EnqueueOnMainThread(() =>

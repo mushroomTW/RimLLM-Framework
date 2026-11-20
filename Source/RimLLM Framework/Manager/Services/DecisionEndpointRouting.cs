@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -180,14 +182,14 @@ internal static class JevWireFormat
         var entries = new List<Dictionary<string, string>>();
         foreach ((string name, string description) in models)
         {
-            entries.Add(new Dictionary<string, string>
+            entries.Add(new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["name"] = name,
                 ["description"] = description ?? "",
                 ["release_date"] = ""
             });
         }
-        return JsonSerializer.Serialize(new Dictionary<string, object> { ["models"] = entries });
+        return JsonSerializer.Serialize(new Dictionary<string, object>(StringComparer.Ordinal) { ["models"] = entries });
     }
 
     public static StringContent JsonContent(string body)

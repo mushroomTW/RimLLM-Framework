@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -195,33 +197,33 @@ internal sealed class OpenAICompatClient
     {
         if (chatProtocol)
         {
-            return RimLLMJsonHelper.Serialize(new Dictionary<string, object>
+            return RimLLMJsonHelper.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["choices"] = new object[]
                 {
-                    new Dictionary<string, object>
+                    new Dictionary<string, object>(StringComparer.Ordinal)
                     {
                         ["index"] = 0,
-                        ["message"] = new Dictionary<string, object> { ["role"] = "assistant", ["content"] = text },
+                        ["message"] = new Dictionary<string, object>(StringComparer.Ordinal) { ["role"] = "assistant", ["content"] = text },
                         ["finish_reason"] = "stop"
                     }
                 }
             });
         }
 
-        return RimLLMJsonHelper.Serialize(new Dictionary<string, object>
+        return RimLLMJsonHelper.Serialize(new Dictionary<string, object>(StringComparer.Ordinal)
         {
             ["id"] = ResponseId,
             ["status"] = "completed",
             ["output"] = new object[]
             {
-                new Dictionary<string, object>
+                new Dictionary<string, object>(StringComparer.Ordinal)
                 {
                     ["type"] = "message",
                     ["role"] = "assistant",
                     ["content"] = new object[]
                     {
-                        new Dictionary<string, object> { ["type"] = "output_text", ["text"] = text }
+                        new Dictionary<string, object>(StringComparer.Ordinal) { ["type"] = "output_text", ["text"] = text }
                     }
                 }
             }
@@ -231,8 +233,8 @@ internal sealed class OpenAICompatClient
     /// <summary>合成 OpenAI 風格的錯誤回應；該 Mod 的解析器會讀 <c>error.type</c> 與 <c>error.message</c>。</summary>
     internal static string BuildErrorJson(string errorType, string message, bool chatProtocol)
     {
-        var error = new Dictionary<string, object> { ["type"] = errorType, ["message"] = message ?? string.Empty };
-        var root = new Dictionary<string, object> { ["error"] = error };
+        var error = new Dictionary<string, object>(StringComparer.Ordinal) { ["type"] = errorType, ["message"] = message ?? string.Empty };
+        var root = new Dictionary<string, object>(StringComparer.Ordinal) { ["error"] = error };
         if (!chatProtocol)
         {
             root["id"] = ResponseId;

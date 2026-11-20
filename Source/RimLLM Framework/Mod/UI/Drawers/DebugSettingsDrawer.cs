@@ -1,5 +1,8 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -197,9 +200,9 @@ public static class DebugSettingsDrawer
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
             string usageText = "RimLLM_UsageInfo".Translate(
-                Settings.TotalPromptTokens.ToString("N0"),
-                Settings.TotalCompletionTokens.ToString("N0"),
-                Settings.TotalEstimatedCost.ToString("F4")
+                Settings.TotalPromptTokens.ToString("N0", CultureInfo.InvariantCulture),
+                Settings.TotalCompletionTokens.ToString("N0", CultureInfo.InvariantCulture),
+                Settings.TotalEstimatedCost.ToString("F4", CultureInfo.InvariantCulture)
             );
             Widgets.Label(usageInfoRect, usageText);
         }
@@ -243,7 +246,7 @@ public static class DebugSettingsDrawer
         _cachedLogLines.Clear();
         foreach (var log in logs)
         {
-            string timeStr = log.Timestamp.ToString("HH:mm:ss");
+            string timeStr = log.Timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
             // 色碼保留在程式碼中，只有文字部分抽成翻譯鍵，避免譯者需要處理富文字標記。
             string statusText = log.Success
                 ? $"<color=#22c55e>{"RimLLM_StatusRequestSuccess".Translate(log.LatencyMs)}</color>"
@@ -289,7 +292,7 @@ public static class DebugSettingsDrawer
 
         schemaSelfTestStatus = "RimLLM_SchemaSelfTestLocalOk".Translate();
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             string result;
             try
@@ -307,7 +310,7 @@ public static class DebugSettingsDrawer
 
                 result = "<color=#22c55e>" + "RimLLM_SchemaSelfTestOk".Translate(
                     RimLLMLog.SanitizeForLog(payload?.Summary ?? string.Empty, 80),
-                    (payload?.Score ?? 0).ToString()) + "</color>";
+                    (payload?.Score ?? 0).ToString(CultureInfo.InvariantCulture)) + "</color>";
             }
             catch (Exception exception)
             {
@@ -329,8 +332,8 @@ public static class DebugSettingsDrawer
         {
             StringBuilder sb = new();
             sb.AppendLine("=== RimLLM Framework Diagnostics ===");
-            sb.AppendLine($"Export Time: {DateTime.Now}");
-            sb.AppendLine($"OS: {SystemInfo.operatingSystem}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Export Time: {DateTime.Now}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"OS: {SystemInfo.operatingSystem}");
             string maskedDeviceId;
             try
             {
@@ -340,19 +343,19 @@ public static class DebugSettingsDrawer
             {
                 maskedDeviceId = "Unknown";
             }
-            sb.AppendLine($"Device ID: {maskedDeviceId}");
-            sb.AppendLine($"Max Concurrent Requests Setting: {Settings.MaxConcurrentRequests}");
-            sb.AppendLine($"Timeout Setting: {Settings.ApiTimeout}s");
-            sb.AppendLine($"Max Retries Setting: {Settings.MaxRetries}");
-            sb.AppendLine($"Retry Delay Setting: {Settings.RetryDelay}s");
-            sb.AppendLine($"Detailed Logging: {Settings.DetailedLogging}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Device ID: {maskedDeviceId}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Max Concurrent Requests Setting: {Settings.MaxConcurrentRequests}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Timeout Setting: {Settings.ApiTimeout}s");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Max Retries Setting: {Settings.MaxRetries}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Retry Delay Setting: {Settings.RetryDelay}s");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"Detailed Logging: {Settings.DetailedLogging}");
             sb.AppendLine();
 
             sb.AppendLine("=== Fallback Chain ===");
             var fallbackChain = Settings.FallbackChain;
             for (int i = 0; i < fallbackChain.Count; i++)
             {
-                sb.AppendLine($"  {i + 1}. {fallbackChain[i]}");
+                sb.AppendLine(CultureInfo.InvariantCulture, $"  {i + 1}. {fallbackChain[i]}");
             }
             sb.AppendLine();
 
@@ -380,12 +383,12 @@ public static class DebugSettingsDrawer
             bool enabled = Settings.IsProviderEnabled(prov);
             bool hasKey = !string.IsNullOrEmpty(Settings.GetApiKey(prov));
             string endpoint = Settings.GetEndpoint(prov, "default");
-            sb.AppendLine($"  {prov}: Enabled={enabled}, HasKey={hasKey}, Endpoint={MaskEndpoint(endpoint)}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"  {prov}: Enabled={enabled}, HasKey={hasKey}, Endpoint={MaskEndpoint(endpoint)}");
             var models = Settings.GetModelList(prov);
             string modelPreview = models.Count > 20
                 ? string.Join(", ", models.GetRange(0, 20)) + $", ... ({models.Count - 20} more)"
                 : string.Join(", ", models);
-            sb.AppendLine($"    Cached Models ({models.Count}): {RimLLMLog.SanitizeForLog(modelPreview, 1000)}");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"    Cached Models ({models.Count}): {RimLLMLog.SanitizeForLog(modelPreview, 1000)}");
         }
         sb.AppendLine();
     }
@@ -407,7 +410,7 @@ public static class DebugSettingsDrawer
                     string status = log.Success ? "SUCCESS" : $"FAILED ({RimLLMLog.SanitizeForLog(log.ErrorMessage, 200)})";
                     int totalTokens = log.PromptTokens + log.CompletionTokens;
                     string tokenInfo = totalTokens > 0 ? $" | Tokens: {totalTokens:N0} (prompt {log.PromptTokens:N0}, completion {log.CompletionTokens:N0})" : "";
-                    sb.AppendLine($"  [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Mod: {log.ModId} | Provider: {log.Provider} ({log.Model}) | {status} | Latency: {log.LatencyMs}ms{tokenInfo}");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"  [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Mod: {log.ModId} | Provider: {log.Provider} ({log.Model}) | {status} | Latency: {log.LatencyMs}ms{tokenInfo}");
                 }
             }
         }

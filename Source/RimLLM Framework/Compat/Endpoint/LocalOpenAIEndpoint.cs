@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -33,7 +35,7 @@ internal static class LocalOpenAIEndpoint
     internal delegate Task<string> Handler(string payloadJson, bool chatProtocol, CancellationToken cancellationToken);
 
     private static readonly Dictionary<string, Handler> Handlers = new(StringComparer.Ordinal);
-    private static readonly object Gate = new();
+    private static readonly Lock Gate = new();
     private static HttpListener _listener;
     private static int _port;
 

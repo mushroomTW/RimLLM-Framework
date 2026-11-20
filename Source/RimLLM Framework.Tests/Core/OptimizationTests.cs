@@ -398,7 +398,7 @@ public class OptimizationTests
     public void ModelLevelCacheIsConsistentAcrossCases()
     {
         var settings = new MockSettings();
-        var tracker = new RimLLMUsageTracker(settings);
+        _ = new RimLLMUsageTracker(settings);
 
         // 快取鍵大小寫不敏感：三次呼叫結果一致，且與覆寫查詢互不干擾。
         ClassicAssert.AreEqual(ModelPricing.GetModelLevel("openai", "gpt-4o"), ModelPricing.GetModelLevel("OpenAI", "GPT-4o"));

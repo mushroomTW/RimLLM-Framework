@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -26,7 +28,7 @@ public class RimLLMManager
     private readonly Dictionary<string, ILLMProvider> _providers = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<string> _providerOrder = [];
     private readonly HashSet<string> _builtInProviderIds = new(StringComparer.OrdinalIgnoreCase);
-    private readonly object _providerLock = new();
+    private readonly Lock _providerLock = new();
 
     private readonly RimLLMUsageTracker _usageTracker;
     private readonly RimLLMEmbeddingService _embeddingService;

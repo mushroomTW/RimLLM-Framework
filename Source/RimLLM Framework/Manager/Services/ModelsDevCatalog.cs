@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -51,7 +53,7 @@ internal static class ModelsDevCatalog
     /// 下載結果保留的時間。玩家常一次重新整理好幾個供應商，每次重下約 5 MB 的資料庫是浪費。
     /// </summary>
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
-    private static readonly object CacheLock = new();
+    private static readonly Lock CacheLock = new();
     private static Task<ModelsDevData> _cached;
     private static DateTime _cachedAt;
 
@@ -69,9 +71,11 @@ internal static class ModelsDevCatalog
     {
         lock (CacheLock)
         {
+            #pragma warning disable VSTHRD103 // 只在 Task 已完成時讀 Result；DownloadAsync 會捕捉所有例外，不會丟出
             bool reusable = _cached != null
                 && DateTime.UtcNow - _cachedAt < CacheDuration
                 && !(_cached.IsCompleted && _cached.Result == null);
+            #pragma warning restore VSTHRD103
             if (!reusable)
             {
                 _cached = DownloadAsync(timeoutSeconds);

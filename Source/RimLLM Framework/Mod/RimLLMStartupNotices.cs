@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
@@ -15,7 +17,7 @@ namespace RimLLM_Framework.Mod;
 /// </remarks>
 internal static class RimLLMStartupNotices
 {
-    private static readonly object Gate = new();
+    private static readonly System.Threading.Lock Gate = new();
     private static readonly List<(string Key, string Argument)> Pending = [];
     private static bool _ready;
 

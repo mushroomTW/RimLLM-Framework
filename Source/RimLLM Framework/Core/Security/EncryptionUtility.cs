@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.IO;
 using System.Security.Cryptography;
@@ -12,7 +14,7 @@ namespace RimLLM_Framework.Core;
 public static class EncryptionUtility
 {
     private static byte[] _secureKey;
-    private static readonly object CryptLock = new();
+    private static readonly System.Threading.Lock CryptLock = new();
     private const string SecureVersionPrefix = "v3:";
     private const string SecureKeyFileName = "RimLLM_EncryptionKey.dat";
 

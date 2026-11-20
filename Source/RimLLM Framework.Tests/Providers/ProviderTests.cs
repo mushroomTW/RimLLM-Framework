@@ -330,7 +330,7 @@ public class ProviderTests
                 Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium },
                 MaxOutputTokens = 1500
             };
-            string response = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
+            _ = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
             ClassicAssert.IsNotNull(provider.InterceptedPayload);
             var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.AreEqual("medium", (string)payload["reasoning_effort"]);
@@ -348,7 +348,7 @@ public class ProviderTests
                 Temperature = 0.7f,
                 MaxOutputTokens = 1000
             };
-            string response = provider.GenerateAsync(userMsgs, options, "gpt-4o").GetAwaiter().GetResult();
+            _ = provider.GenerateAsync(userMsgs, options, "gpt-4o").GetAwaiter().GetResult();
             ClassicAssert.IsNotNull(provider.InterceptedPayload);
             var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.IsNull(payload["reasoning_effort"]);
@@ -390,7 +390,7 @@ public class ProviderTests
             {
                 Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium }
             };
-            string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
+            _ = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
             ClassicAssert.IsNotNull(provider.InterceptedPayload);
             var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.AreEqual("medium", (string)payload["reasoning"].AsObject()["effort"]);
@@ -405,7 +405,7 @@ public class ProviderTests
             {
                 Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High }
             };
-            string response = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
+            _ = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
             var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.AreEqual("high", (string)payload["reasoning"].AsObject()["effort"]);
         }
@@ -414,7 +414,7 @@ public class ProviderTests
         {
             var provider = new TestOpenRouterProvider(mockSettings);
             var options = new RimLLMChatOptions { DisableReasoning = true };
-            string response = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
+            _ = provider.GenerateAsync(userMsgs, options, "google/gemini-3.5-flash-lite").GetAwaiter().GetResult();
             var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.AreEqual("none", (string)payload["reasoning"].AsObject()["effort"]);
         }
@@ -425,7 +425,7 @@ public class ProviderTests
         {
             var provider = new TestOpenAIProvider(mockSettings);
             var options = new ChatOptions(); // Reasoning null
-            string response = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
+            _ = provider.GenerateAsync(userMsgs, options, "o1-mini").GetAwaiter().GetResult();
             ClassicAssert.IsNotNull(provider.InterceptedPayload);
             var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.IsNull(payload["reasoning_effort"]);
@@ -445,7 +445,7 @@ public class ProviderTests
         {
             var provider = new TestOpenRouterProvider(mockSettings);
             var options = new ChatOptions();
-            string response = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
+            _ = provider.GenerateAsync(userMsgs, options, "deepseek/deepseek-r1").GetAwaiter().GetResult();
             var payload = JsonNode.Parse(provider.InterceptedPayload).AsObject();
             ClassicAssert.IsNull(payload["reasoning"]);
         }
@@ -674,7 +674,7 @@ public class ProviderTests
         mockSettings.EnabledProviders["Kimi"] = true;
         mockSettings.ApiKeys["Kimi"] = "key";
 
-        var manager = new RimLLMManager(mockSettings);
+        _ = new RimLLMManager(mockSettings);
         var provider = new TestKimiPayloadProvider(mockSettings);
 
 
@@ -873,14 +873,18 @@ public class MockSettings : IRimLLMSettings
     public Dictionary<string, string> EmbeddingApiKeys = [];
 
     public string GetEmbeddingModel(string providerId) =>
-        EmbeddingModels.TryGetValue(providerId, out string model) ? model
-        : providerId == EmbeddingProvider ? EmbeddingModel : "";
+        ResolveEmbeddingValue(EmbeddingModels, providerId, EmbeddingModel);
     public string GetEmbeddingEndpoint(string providerId) =>
-        EmbeddingEndpoints.TryGetValue(providerId, out string endpoint) ? endpoint
-        : providerId == EmbeddingProvider ? EmbeddingEndpoint : "";
+        ResolveEmbeddingValue(EmbeddingEndpoints, providerId, EmbeddingEndpoint);
     public string GetEmbeddingApiKey(string providerId) =>
-        EmbeddingApiKeys.TryGetValue(providerId, out string key) ? key
-        : providerId == EmbeddingProvider ? EmbeddingApiKey : "";
+        ResolveEmbeddingValue(EmbeddingApiKeys, providerId, EmbeddingApiKey);
+
+    /// <summary>逐供應商的值優先；沒有時，只有目前的嵌入供應商才退回單一欄位的值。</summary>
+    private string ResolveEmbeddingValue(Dictionary<string, string> perProvider, string providerId, string current)
+    {
+        if (perProvider.TryGetValue(providerId, out string value)) return value;
+        return providerId == EmbeddingProvider ? current : "";
+    }
 
     public string DecisionProvider { get; set; } = "Disabled";
     public string DecisionModel { get; set; } = "";
@@ -907,7 +911,7 @@ public class MockSettings : IRimLLMSettings
     public string GetApiKey(string providerId) => ApiKeys.TryGetValue(providerId, out var val) ? val : "";
     public string GetActiveApiKey(string providerId) => GetApiKey(providerId);
     public string GetEndpoint(string providerId, string defaultVal) => Endpoints.TryGetValue(providerId, out var val) ? val : defaultVal;
-    public bool IsProviderEnabled(string providerId) => EnabledProviders.TryGetValue(providerId, out var val) ? val : true;
+    public bool IsProviderEnabled(string providerId) => !EnabledProviders.TryGetValue(providerId, out var val) || val;
     public List<string> GetModelList(string providerId) => ModelLists.TryGetValue(providerId, out var val) ? val : [];
 
     public string GetDefaultModel(string providerId, string defaultVal)
@@ -924,9 +928,10 @@ public class MockSettings : IRimLLMSettings
         if (string.IsNullOrEmpty(modelName)) return 0;
         if (ModelLevelOverrides.TryGetValue(modelName, out var level)) return level;
         int colonIndex = modelName.IndexOf(':');
-        if (colonIndex >= 0 && colonIndex < modelName.Length - 1)
+        if (colonIndex >= 0 && colonIndex < modelName.Length - 1
+            && ModelLevelOverrides.TryGetValue(modelName.Substring(colonIndex + 1), out level))
         {
-            if (ModelLevelOverrides.TryGetValue(modelName.Substring(colonIndex + 1), out level)) return level;
+            return level;
         }
         return 0;
     }
@@ -1097,7 +1102,7 @@ public static class WireChatClientFactory
     }
 }
 
-public class MockCustomChatClient : IChatClient
+public sealed class MockCustomChatClient : IChatClient
 {
     // 重用同一個中繼資料物件，避免每次讀取都建立新執行個體。
     private readonly ChatClientMetadata _metadata = new("MockCustomClient");
@@ -1145,7 +1150,7 @@ public class MockCustomChatClient : IChatClient
         {
             var linkedCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken, cancellationToken);
             var channel = System.Threading.Channels.Channel.CreateUnbounded<ChatResponseUpdate>();
-            System.Threading.Tasks.Task.Run(async () =>
+            _ = System.Threading.Tasks.Task.Run(async () =>
             {
                 try
                 {
@@ -1202,7 +1207,7 @@ public class MockCustomChatClient : IChatClient
         }
     }
 
-    public object GetService(System.Type serviceType, object key = null) => null;
+    public object GetService(System.Type serviceType, object serviceKey = null) => null;
 }
 
 public class TestOpenAIProvider : OpenAIProvider

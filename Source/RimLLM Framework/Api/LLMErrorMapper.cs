@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.ClientModel;
 using System.Net.Http;

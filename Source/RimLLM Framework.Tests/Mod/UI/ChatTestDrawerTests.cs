@@ -87,7 +87,7 @@ public class ChatTestDrawerTests
 
         string rawEntry = "<b>[AI]:</b> 這是 AI 的回覆內容" + ChatTestDrawer.MetaPrefix + meta.Serialize() + ChatTestDrawer.MetaSuffix;
 
-        bool isUser = ChatTestDrawer.ParseMessage(rawEntry, out string label, out string body, out var parsedMeta);
+        bool isUser = ChatTestDrawer.ParseMessage(rawEntry, out _, out string body, out var parsedMeta);
 
         ClassicAssert.IsFalse(isUser, "AI 訊息應判定為 false");
         ClassicAssert.AreEqual("這是 AI 的回覆內容", body, "Body 必須完全抽乾淨中繼標籤");
@@ -132,7 +132,7 @@ public class ChatTestDrawerTests
     public void ParseMessage_WithoutMeta_ParsesNormally()
     {
         string rawEntry = "<b>[AI]:</b> 一般舊訊息";
-        bool isUser = ChatTestDrawer.ParseMessage(rawEntry, out string label, out string body, out var parsedMeta);
+        bool isUser = ChatTestDrawer.ParseMessage(rawEntry, out _, out string body, out var parsedMeta);
 
         ClassicAssert.IsFalse(isUser);
         ClassicAssert.AreEqual("一般舊訊息", body);
@@ -143,7 +143,7 @@ public class ChatTestDrawerTests
     public void ParseMessage_UserMessage_ParsesNormally()
     {
         string rawEntry = "<b>[我]:</b> 你好呀";
-        bool isUser = ChatTestDrawer.ParseMessage(rawEntry, out string label, out string body, out var parsedMeta);
+        bool isUser = ChatTestDrawer.ParseMessage(rawEntry, out _, out string body, out var parsedMeta);
 
         ClassicAssert.IsTrue(isUser);
         ClassicAssert.AreEqual("你好呀", body);

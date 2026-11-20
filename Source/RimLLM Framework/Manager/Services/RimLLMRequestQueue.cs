@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -19,7 +21,7 @@ namespace RimLLM_Framework.Manager;
 internal class RimLLMRequestQueue
 {
     private readonly IRimLLMSettings _settings;
-    private readonly object _queueLock = new();
+    private readonly Lock _queueLock = new();
     private readonly List<QueueEntry> _waitingQueue = [];
     private int _activeRequests;
     private long _enqueueSequence;

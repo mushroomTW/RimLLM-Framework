@@ -113,7 +113,7 @@ public class CoverageEnhancementTests
         ClassicAssert.AreSame(normalResult, cachedResult);
     }
 
-    private class SimpleTestDataStructure
+    private sealed class SimpleTestDataStructure
     {
         public string Name { get; set; }
         public int Value { get; set; }
@@ -407,7 +407,7 @@ public class CoverageEnhancementTests
     public async Task TestChatExecutionPipelineCoverage()
     {
         var settings = new MockSettings();
-        var manager = new RimLLMManager(settings);
+        _ = new RimLLMManager(settings);
 
         // 2. WarnOnly when daily budget is exceeded (BudgetPolicy = 1)
         settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd");
@@ -637,7 +637,7 @@ public class CoverageEnhancementTests
     [Test]
     public void TestModelRatePrefixMatchStopsAtVersionBoundary()
     {
-        var tracker = new RimLLMUsageTracker(new MockSettings());
+        _ = new RimLLMUsageTracker(new MockSettings());
 
         float mini = EstimateCost("openai", "gpt-4.1-mini", 1000000, 1000000, 0);
         ClassicAssert.AreEqual(2.00f, mini, 0.01f, "gpt-4.1-mini 必須以自己的費率計算，不能落到 gpt-4");
@@ -904,9 +904,9 @@ public class CoverageEnhancementTests
     }
 
 #pragma warning disable CS0649
-    private class TestStructureWithRequiredField
+    private sealed class TestStructureWithRequiredField
     {
-        public string RequiredField = null!;
+        public string RequiredField = null;
     }
 #pragma warning restore CS0649
 }

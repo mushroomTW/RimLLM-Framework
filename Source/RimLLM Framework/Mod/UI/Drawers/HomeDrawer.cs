@@ -1,3 +1,4 @@
+using System.Globalization;
 using UnityEngine;
 using Verse;
 
@@ -195,7 +196,7 @@ public static class HomeDrawer
             : "RimLLM_HomeDefaultModel".Translate().ToString();
 
         listing.Label("RimLLM_HomeCurrentlyUsing".Translate(providerId, model));
-        listing.Label("RimLLM_HomeTodayUsage".Translate(Settings.DailyAccumulatedTokens.ToString("N0")));
+        listing.Label("RimLLM_HomeTodayUsage".Translate(Settings.DailyAccumulatedTokens.ToString("N0", CultureInfo.InvariantCulture)));
         listing.Gap(12f);
 
         Rect row = listing.GetRect(32f);

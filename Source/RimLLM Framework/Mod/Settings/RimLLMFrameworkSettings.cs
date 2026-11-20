@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -325,7 +327,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
 
     private static Dictionary<string, bool> BuildChinaModeMap()
     {
-        var map = new Dictionary<string, bool>();
+        var map = new Dictionary<string, bool>(StringComparer.Ordinal);
         foreach (string providerId in ProviderIds.BuiltIn.Where(ProviderIds.HasChinaEndpoint))
         {
             map[providerId] = false;
@@ -365,7 +367,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
 
     private static Dictionary<string, TValue> BuildBuiltInMap<TValue>(Func<string, TValue> valueFactory)
     {
-        var map = new Dictionary<string, TValue>();
+        var map = new Dictionary<string, TValue>(StringComparer.Ordinal);
         foreach (string providerId in ProviderIds.BuiltIn)
         {
             map[providerId] = valueFactory(providerId);

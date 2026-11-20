@@ -118,7 +118,7 @@ public class ServiceFailoverTests
         {
             RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
                 await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput));
-            ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+            ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
         });
 
         CollectionAssert.AreEqual(OpenAiHost, hosts);
@@ -136,7 +136,7 @@ public class ServiceFailoverTests
         {
             RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
                 await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput));
-            ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error, "沒設定的備援不該蓋掉主供應商真正的失敗原因。");
+            ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error, "沒設定的備援不該蓋掉主供應商真正的失敗原因。");
         });
 
         CollectionAssert.AreEqual(OpenAiHost, hosts, "沒選模型的備援供應商不該被打。");
@@ -153,7 +153,7 @@ public class ServiceFailoverTests
         {
             RimLLMException ex = await ClassicAssert.ThrowsAsync<RimLLMException>(async () =>
                 await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(HelloInput));
-            ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+            ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
         });
 
         ClassicAssert.AreEqual(2, hosts.Count);
@@ -356,7 +356,7 @@ public class ServiceFailoverTests
     private static readonly string[] PrimaryAndBackupHosts = [PrimaryHost, BackupHost];
 
     private Func<HttpMessageHandler> _originalFactory;
-    private List<string> _decisionHosts;
+    private readonly List<string> _decisionHosts = [];
     private static readonly string[] chain = ["B", "", "A", "C", "B", "Disabled"];
     private static readonly string[] expected = ["A", "B", "C"];
     private static readonly string[] chainArray = ["B"];
@@ -365,7 +365,7 @@ public class ServiceFailoverTests
     public void SetUp()
     {
         _originalFactory = RimLLMDecisionService.MessageHandlerFactory;
-        _decisionHosts = [];
+        _decisionHosts.Clear();
         var evaluateBody = new DecisionTestDoubles.FakeJevHandler().EvaluateResponseBody;
         RimLLMDecisionService.MessageHandlerFactory = () => new HttpMessageHandlerStub(request =>
         {
@@ -412,7 +412,7 @@ public class ServiceFailoverTests
             await new RimLLMDecisionService(settings)
                 .EvaluateDetailedAsync("state", DecisionTestDoubles.OneQuestionPlan()));
 
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
         CollectionAssert.AreEqual(PrimaryHostArray, _decisionHosts, "沒有金鑰的備援不該被打。");
     }
 
@@ -425,7 +425,7 @@ public class ServiceFailoverTests
             await new RimLLMDecisionService(settings).EvaluateWithProviderDetailedAsync(
                 "state", DecisionTestDoubles.OneQuestionPlan(), RimLLMDecisionProviderCatalog.TypeSafe));
 
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
         CollectionAssert.AreEqual(PrimaryHostArray, _decisionHosts, "呼叫端明確指定的供應商是它自己的選擇。");
     }
 
@@ -439,7 +439,7 @@ public class ServiceFailoverTests
             await new RimLLMDecisionService(settings)
                 .EvaluateDetailedAsync("state", DecisionTestDoubles.OneQuestionPlan()));
 
-        ClassicAssert.AreEqual(LLMError.InvalidKey, ex!.Error);
+        ClassicAssert.AreEqual(LLMError.InvalidKey, ex.Error);
         CollectionAssert.AreEqual(PrimaryHostArray, _decisionHosts);
     }
 

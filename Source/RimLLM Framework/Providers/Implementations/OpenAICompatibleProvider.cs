@@ -1,3 +1,5 @@
+#nullable disable
+
 using Microsoft.Extensions.AI;
 using OpenAI.Chat;
 

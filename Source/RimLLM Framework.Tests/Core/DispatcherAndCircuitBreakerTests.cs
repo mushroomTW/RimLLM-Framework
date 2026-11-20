@@ -422,7 +422,7 @@ public class DispatcherAndCircuitBreakerTests
         var task1 = client1.GetResponseAsync(messages);
 
         // 2. 執行第 2 個，但先設定 CancellationToken
-        var cts = new System.Threading.CancellationTokenSource();
+        using var cts = new System.Threading.CancellationTokenSource();
         var task2 = client2.GetResponseAsync(messages, cancellationToken: cts.Token);
 
         // 驗證只有 1 個請求實際被調用

@@ -95,4 +95,15 @@
     </PackageReference>
     <AdditionalFiles Include="BannedSymbols.txt" />
   </ItemGroup>
+
+  <!-- 公開 API 守門：公開 API 的任何新增、刪除或簽章變動都要同步更新 PublicAPI.*.txt，避免不小心破壞下游 Mod。
+       已發佈的 API 記在 Shipped，尚未發佈的新增記在 Unshipped；發佈新版時把 Unshipped 的內容搬到 Shipped。 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0">
+      <PrivateAssets>all</PrivateAssets>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
 </Project>

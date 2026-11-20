@@ -1,3 +1,5 @@
+#nullable disable
+
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -23,7 +25,7 @@ public class RimLLMDispatcher : MonoBehaviour
     private const long FrameBudgetMs = 2;
 
     private static RimLLMDispatcher _instance;
-    private static readonly object InstanceLock = new();
+    private static readonly Lock InstanceLock = new();
     private static readonly ConcurrentQueue<QueuedAction> ExecutionQueue = new();
     private static int _queuedCount;
     private static int _droppedCount;
@@ -109,12 +111,16 @@ public class RimLLMDispatcher : MonoBehaviour
         // Register 可能在 token 已取消時同步執行 callback。
         if (Volatile.Read(ref state) == 2)
         {
+            #pragma warning disable VSTHRD103 // 同步方法回傳 tcs.Task，無法 await DisposeAsync；登記只需解除，不會阻塞
             registration.Dispose();
+            #pragma warning restore VSTHRD103
             return tcs.Task;
         }
 
-        // 內層刻意不加 ConfigureAwait(false)：本委派由 Update 在主線程上啟動，
+        // 內層刻意以 ConfigureAwait(true) 保留同步內容：本委派由 Update 在主線程上啟動，
         // 保留 SynchronizationContext 才能讓 func 的續行回到主線程。
+        // 佇列只接受 Action；委派內已捕捉所有例外並轉交 tcs，不會有未觀察的例外。
+        #pragma warning disable MA0147
         EnqueueWaitable(async () =>
         {
             if (Interlocked.CompareExchange(ref state, 1, 0) != 0)
@@ -125,7 +131,7 @@ public class RimLLMDispatcher : MonoBehaviour
 
             try
             {
-                T result = await func();
+                T result = await func().ConfigureAwait(true);
                 tcs.TrySetResult(result);
             }
             catch (OperationCanceledException oce)
@@ -141,6 +147,7 @@ public class RimLLMDispatcher : MonoBehaviour
                 registration.Dispose();
             }
         }, tcs, () => registration.Dispose());
+        #pragma warning restore MA0147
 
         return tcs.Task;
     }
@@ -320,23 +327,23 @@ public class RimLLMDispatcher : MonoBehaviour
     /// Unity 只會叫用執行個體形式的訊息方法，宣告成 static 就不會被呼叫，因此 Awake 必須維持執行個體方法；
     /// 靜態欄位的寫入改由 <see cref="SetPumpActive"/> 負責，避免執行個體方法直接改動靜態狀態。
     /// </remarks>
-    #pragma warning disable CA1822 // Awake 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
+    #pragma warning disable CA1822, S2325 // Awake 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
     private void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
         SetPumpActive(true);
     }
-    #pragma warning restore CA1822
+    #pragma warning restore CA1822, S2325
 
     /// <summary>
     /// 每幀清空佇列。Unity 訊息方法必須是執行個體方法，理由同 <see cref="Awake"/>。
     /// </summary>
-    #pragma warning disable CA1822 // Update 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
+    #pragma warning disable CA1822, S2325 // Update 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
     private void Update() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
         // 每幀受項目數與時間預算雙重限制，避免長回應的大量 chunk 在單一幀內全部執行造成卡頓。
         DrainWithBudget(MaxActionsPerFrame, FrameBudgetMs);
     }
-    #pragma warning restore CA1822
+    #pragma warning restore CA1822, S2325
 
     private void OnDestroy()
     {

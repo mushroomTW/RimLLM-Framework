@@ -1,5 +1,8 @@
+#nullable disable
+
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
@@ -363,7 +366,7 @@ public static class GenericProviderSubTabDrawer
 
         listing.Label("RimLLM_ProviderTotalCallsLabel".Translate(totalCalls));
         listing.Label("RimLLM_ProviderSuccessCallsLabel".Translate(successCount, failureCount));
-        listing.Label("RimLLM_ProviderSuccessRateLabel".Translate(successRate.ToString("F1")));
+        listing.Label("RimLLM_ProviderSuccessRateLabel".Translate(successRate.ToString("F1", CultureInfo.InvariantCulture)));
 
         RimLLMUIStyle.DrawRatioBar(
             listing.GetRect(20f),
@@ -376,7 +379,7 @@ public static class GenericProviderSubTabDrawer
         if (apiTotalTokens > 0)
         {
             float apiCacheRate = (apiCachedTokens * 100f) / apiTotalTokens;
-            listing.Label("RimLLM_ProviderApiCacheRateLabel".Translate(apiCacheRate.ToString("F1"), apiCachedTokens, apiTotalTokens));
+            listing.Label("RimLLM_ProviderApiCacheRateLabel".Translate(apiCacheRate.ToString("F1", CultureInfo.InvariantCulture), apiCachedTokens, apiTotalTokens));
 
             RimLLMUIStyle.DrawRatioBar(
                 listing.GetRect(20f),
@@ -433,7 +436,7 @@ public static class GenericProviderSubTabDrawer
     {
         // 沒有預設測試模型：用玩家在模型設置分頁為這家選的模型測試，還沒選就提示先選。
         // 外部供應商的測試由它自己決定用哪個模型，不在這裡擋。
-        if (ProviderIds.BuiltIn.Contains(providerId) &&
+        if (ProviderIds.BuiltIn.Contains(providerId, StringComparer.Ordinal) &&
             string.IsNullOrEmpty(OpenAIProvider.GetChosenModel(Settings, providerId)))
         {
             TestStatus[providerId] = "RimLLM_TestNeedModel".Translate();
@@ -480,7 +483,7 @@ public static class GenericProviderSubTabDrawer
         busyFlags[providerId] = true;
         statusMessages[providerId] = busyLabel;
 
-        Task.Run(async () =>
+        _ = Task.Run(async () =>
         {
             Func<string> applyResult;
             try
