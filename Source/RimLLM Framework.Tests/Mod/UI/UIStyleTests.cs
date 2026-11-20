@@ -25,7 +25,7 @@ public class UIStyleTests
         ClassicAssert.AreEqual(13, masked.Length, "頭 8 + 省略號 1 + 尾 4。");
         StringAssert.StartsWith("sk-or-v1", masked);
         StringAssert.EndsWith("2e8a", masked);
-        ClassicAssert.IsFalse(masked.Contains("TESTKEY"), "中段必須完全隱藏。");
+        ClassicAssert.IsFalse(masked.Contains("TESTKEY", System.StringComparison.Ordinal), "中段必須完全隱藏。");
     }
 
     [Test]
@@ -52,7 +52,7 @@ public class UIStyleTests
     {
         // 空金鑰若顯示成圓點，畫面上會看起來像已經設定過。
         ClassicAssert.AreEqual("", RimLLMUIStyle.MaskApiKey(""));
-        ClassicAssert.AreEqual("", RimLLMUIStyle.MaskApiKey(null));
+        ClassicAssert.AreEqual("", RimLLMUIStyle.MaskApiKey(apiKey: null));
     }
 
     // ---------- 模型過濾 ----------
@@ -63,7 +63,7 @@ public class UIStyleTests
         var models = new List<string> { "gpt-4o", "o5-preview" };
 
         ClassicAssert.AreEqual(2, RimLLMUIStyle.FilterModels(models, "").Count);
-        ClassicAssert.AreEqual(2, RimLLMUIStyle.FilterModels(models, null).Count);
+        ClassicAssert.AreEqual(2, RimLLMUIStyle.FilterModels(models, filter: null).Count);
         ClassicAssert.AreEqual(2, RimLLMUIStyle.FilterModels(models, "   ").Count);
     }
 
@@ -100,7 +100,7 @@ public class UIStyleTests
         const string key = "test:vendor-cache";
 
         ClassicAssert.AreEqual(1, RimLLMUIStyle.FilterModelsCached(key, 1, "google", () => models, "google").Count);
-        ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModelsCached(key, 1, "google", () => models, null).Count);
+        ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModelsCached(key, 1, "google", () => models, vendor: null).Count);
     }
 
     /// <summary>已帶前綴的 ID（聚合商）只比對自己的前綴，不套用直連供應商的廠商鍵。</summary>
@@ -134,7 +134,7 @@ public class UIStyleTests
     [Test]
     public void NullSourceIsSafe()
     {
-        ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModels(null, "anything").Count);
+        ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModels(models: null, "anything").Count);
     }
 
     // ---------- chip 版面 ----------

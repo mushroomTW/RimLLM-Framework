@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -119,7 +119,7 @@ public static class GenericProviderSubTabDrawer
             Rect revealRect = new(inputRect.xMax + 8f, rowRect.y, RevealButtonWidth, rowRect.height);
             Rect deleteRect = new(rowRect.x + rowRect.width - 32f, rowRect.y, 32f, rowRect.height);
 
-            string revealKey = providerId + ":" + i;
+            string revealKey = providerId + ":" + i.ToString(CultureInfo.CurrentCulture);
             bool revealed = RevealedKeys.TryGetValue(revealKey, out bool r) && r;
 
             keys[i] = RimLLMUIStyle.DrawMaskableKeyField(inputRect, revealRect, keys[i], ref revealed);
@@ -148,7 +148,7 @@ public static class GenericProviderSubTabDrawer
         }
         listing.Gap(8f);
 
-        string newRawKey = string.Join(",", keys);
+        string newRawKey = string.Join(',', keys);
         Settings.SetApiKey(providerId, newRawKey);
     }
 
@@ -179,22 +179,7 @@ public static class GenericProviderSubTabDrawer
         }
 
         // 搜尋列：模型動輒數百筆，沒有過濾等於要在 220px 高的框裡目視搜尋。
-        string filter = ModelFilters.TryGetValue(providerId, out string? f) ? f : "";
-        Rect searchRowRect = listing.GetRect(28f);
-        float searchLabelWidth = Text.CalcSize("RimLLM_Search".Translate() + ": ").x;
-        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-        {
-            Widgets.Label(
-                new Rect(searchRowRect.x, searchRowRect.y, searchLabelWidth, searchRowRect.height),
-                "RimLLM_Search".Translate() + ": ");
-        }
-        Rect searchFieldRect = new(
-            searchRowRect.x + searchLabelWidth + 4f,
-            searchRowRect.y,
-            searchRowRect.width - searchLabelWidth - 4f,
-            searchRowRect.height);
-        ModelFilters[providerId] = Widgets.TextField(searchFieldRect, filter);
-        listing.Gap(4f);
+        DrawModelSearchRow(listing, providerId);
 
         // 過濾結果與清單複製都走快取：只有模型清單版本或過濾字串變了才重算。
         List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
@@ -213,6 +198,12 @@ public static class GenericProviderSubTabDrawer
             return;
         }
 
+        DrawModelChipGrid(scrollRect, providerId, visibleModels);
+    }
+
+    /// <summary>在可捲動區塊中只繪製可視範圍內的模型方塊。</summary>
+    private static void DrawModelChipGrid(Rect scrollRect, string providerId, List<string> visibleModels)
+    {
         float contentWidth = scrollRect.width - 16f;
         float chipHeight = 28f;
         float gap = 8f;
@@ -248,54 +239,86 @@ public static class GenericProviderSubTabDrawer
                 chipHeight
             );
 
-            Widgets.DrawBoxSolid(chipRect, RimLLMUIStyle.ChipFill);
-            Widgets.DrawBox(chipRect, 1);
-
-            if (Mouse.IsOver(chipRect))
-            {
-                Widgets.DrawHighlight(chipRect);
-                TooltipHandler.TipRegion(chipRect, model + copyHint);
-            }
-
-            if (Widgets.ButtonInvisible(chipRect))
-            {
-                string capturedModel = model;
-                var options = new List<FloatMenuOption>
-                {
-                    new("RimLLM_ClickToCopyMenu".Translate(), () =>
-                    {
-                        GUIUtility.systemCopyBuffer = capturedModel;
-                        Messages.Message("RimLLM_CopiedToClipboard".Translate(capturedModel), MessageTypeDefOf.TaskCompletion, false);
-                    }),
-                    new("RimLLM_AddToFallbackMenu".Translate(), () =>
-                    {
-                        string entry = $"{providerId}:{capturedModel}";
-                        var chain = Settings.FallbackChain;
-                        if (chain.Contains(entry))
-                        {
-                            Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, false);
-                        }
-                        else
-                        {
-                            chain.Add(entry);
-                            Settings.FallbackChain = chain;
-                            Settings.Write();
-                            Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
-                        }
-                    })
-                };
-                Find.WindowStack.Add(new FloatMenu(options));
-            }
-
-            Rect textRect = chipRect.ContractedBy(4f);
-            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
-            {
-                // 置中加硬切最難讀：改為左對齊並以省略號收尾，完整名稱留在 tooltip。
-                Widgets.Label(textRect, "<color=silver>" + RimLLMUIStyle.TruncateCached(model, textRect.width) + "</color>");
-            }
+            DrawModelChip(chipRect, providerId, model, copyHint);
         }
 
         Widgets.EndScrollView();
+    }
+
+    /// <summary>模型清單的搜尋列：模型動輒數百筆，沒有過濾等於要在 220px 高的框裡目視搜尋。</summary>
+    private static void DrawModelSearchRow(Listing_Standard listing, string providerId)
+    {
+        string filter = ModelFilters.TryGetValue(providerId, out string? f) ? f : "";
+        Rect searchRowRect = listing.GetRect(28f);
+        float searchLabelWidth = Text.CalcSize("RimLLM_Search".Translate() + ": ").x;
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            Widgets.Label(
+                new Rect(searchRowRect.x, searchRowRect.y, searchLabelWidth, searchRowRect.height),
+                "RimLLM_Search".Translate() + ": ");
+        }
+        Rect searchFieldRect = new(
+            searchRowRect.x + searchLabelWidth + 4f,
+            searchRowRect.y,
+            searchRowRect.width - searchLabelWidth - 4f,
+            searchRowRect.height);
+        ModelFilters[providerId] = Widgets.TextField(searchFieldRect, filter);
+        listing.Gap(4f);
+    }
+
+    /// <summary>繪製單一模型方塊與滑鼠提示。</summary>
+    private static void DrawModelChip(Rect chipRect, string providerId, string model, string copyHint)
+    {
+        Widgets.DrawBoxSolid(chipRect, RimLLMUIStyle.ChipFill);
+        Widgets.DrawBox(chipRect, 1);
+
+        if (Mouse.IsOver(chipRect))
+        {
+            Widgets.DrawHighlight(chipRect);
+            TooltipHandler.TipRegion(chipRect, model + copyHint);
+        }
+
+        if (Widgets.ButtonInvisible(chipRect))
+        {
+            ShowModelChipMenu(providerId, model);
+        }
+
+        Rect textRect = chipRect.ContractedBy(4f);
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
+        {
+            // 置中加硬切最難讀：改為左對齊並以省略號收尾，完整名稱留在 tooltip。
+            Widgets.Label(textRect, "<color=silver>" + RimLLMUIStyle.TruncateCached(model, textRect.width) + "</color>");
+        }
+    }
+
+    /// <summary>模型方塊的右鍵選單：複製名稱或加入備援鏈。</summary>
+    private static void ShowModelChipMenu(string providerId, string capturedModel)
+    {
+        var options = new List<FloatMenuOption>
+        {
+            new("RimLLM_ClickToCopyMenu".Translate(), () =>
+            {
+                GUIUtility.systemCopyBuffer = capturedModel;
+                Messages.Message("RimLLM_CopiedToClipboard".Translate(capturedModel), MessageTypeDefOf.TaskCompletion, historical: false);
+            }),
+            new("RimLLM_AddToFallbackMenu".Translate(), () =>
+            {
+                string entry = $"{providerId}:{capturedModel}";
+                var chain = Settings.FallbackChain;
+                if (chain.Contains(entry))
+                {
+                    Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, historical: false);
+                }
+                else
+                {
+                    chain.Add(entry);
+                    Settings.FallbackChain = chain;
+                    Settings.Write();
+                    Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, historical: false);
+                }
+            })
+        };
+        Find.WindowStack.Add(new FloatMenu(options));
     }
 
     private static void DrawFetchModelsButton(Listing_Standard listing, string providerId)
@@ -371,7 +394,7 @@ public static class GenericProviderSubTabDrawer
             totalCalls > 0 ? (float)successCount / totalCalls : 0f,
             totalCalls > 0 ? RimLLMUIStyle.BarTrackDanger : RimLLMUIStyle.BarTrack,
             RimLLMUIStyle.BarFillSuccess,
-            totalCalls > 0 ? $"{successRate:F1}%" : "100.0% (N/A)");
+            totalCalls > 0 ? string.Create(CultureInfo.CurrentCulture, $"{successRate:F1}%") : "100.0% (N/A)");
         listing.Gap(12f);
 
         if (apiTotalTokens > 0)
@@ -384,7 +407,7 @@ public static class GenericProviderSubTabDrawer
                 (float)apiCachedTokens / apiTotalTokens,
                 RimLLMUIStyle.BarTrack,
                 RimLLMUIStyle.BarFillCache,
-                $"{apiCacheRate:F1}%");
+                string.Create(CultureInfo.CurrentCulture, $"{apiCacheRate:F1}%"));
             listing.Gap(12f);
         }
     }
@@ -472,7 +495,7 @@ public static class GenericProviderSubTabDrawer
     {
         // 免金鑰的供應商不需要金鑰（本地相容介面；Player2 本機 App 模式，雲端模式仍需 p2Key，
         // 因此判斷需代入實際端點）；其餘供應商未填金鑰時不必真的送出請求。
-        if (ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, null)) && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
+        if (ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, defaultVal: null)) && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
         {
             statusMessages[providerId] = "RimLLM_EnterApiKey".Translate();
             return;

@@ -34,7 +34,7 @@ public class OpenRouterProvider : OpenAIProvider
     {
         base.BuildChatOptions(requestOptions, model, options);
 
-        if (model == null || !model.Contains(',')) return;
+        if (model == null || !model.Contains(',', StringComparison.Ordinal)) return;
 
         // 以 null 清除 ModelId，讓 MEAI 的 PatchModelIfNotSet 跳過補寫 $.model，
         // 再由 Patch 完整掌控 model 相關欄位。

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
 using UnityEngine;
@@ -27,17 +27,7 @@ public static class GlobalConfigDrawer
     public static void DrawGlobalConfigSettings(Listing_Standard listing)
     {
         // 0. 「不懂就不要改」提示與恢復預設
-        Rect resetRow = listing.GetRect(30f);
-        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
-        {
-            Widgets.Label(new Rect(resetRow.x, resetRow.y, resetRow.width - 190f, resetRow.height), "RimLLM_AdvancedDontTouch".Translate());
-        }
-        if (Widgets.ButtonText(new Rect(resetRow.xMax - 180f, resetRow.y, 180f, resetRow.height), "RimLLM_ResetToDefaultsBtn".Translate()))
-        {
-            Settings.ResetRequestSettingsToDefaults();
-            Settings.Write();
-        }
-        listing.GapLine(10f);
+        DrawResetRow(listing);
 
         float prevTimeout = Settings.ApiTimeout;
         int prevRetries = Settings.MaxRetries;
@@ -94,6 +84,28 @@ public static class GlobalConfigDrawer
         }
 
         // 5. 預設思考強度
+        DrawReasoningEffort(listing);
+    }
+
+    /// <summary>「不懂就不要改」提示與恢復預設按鈕。</summary>
+    private static void DrawResetRow(Listing_Standard listing)
+    {
+        Rect resetRow = listing.GetRect(30f);
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
+        {
+            Widgets.Label(new Rect(resetRow.x, resetRow.y, resetRow.width - 190f, resetRow.height), "RimLLM_AdvancedDontTouch".Translate());
+        }
+        if (Widgets.ButtonText(new Rect(resetRow.xMax - 180f, resetRow.y, 180f, resetRow.height), "RimLLM_ResetToDefaultsBtn".Translate()))
+        {
+            Settings.ResetRequestSettingsToDefaults();
+            Settings.Write();
+        }
+        listing.GapLine(10f);
+    }
+
+    /// <summary>預設思考強度的下拉選單。</summary>
+    private static void DrawReasoningEffort(Listing_Standard listing)
+    {
         Rect effortRect = listing.GetRect(30f);
         Rect labelRect = new(effortRect.x, effortRect.y, 250f, effortRect.height);
         Rect btnRect = new(effortRect.x + 260f, effortRect.y, 200f, effortRect.height);

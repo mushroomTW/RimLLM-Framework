@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -207,28 +207,51 @@ public static class EmbeddingSettingsDrawer
         string providerId = ActiveEmbeddingSubTab;
 
         // 1. 啟用核取方塊
-        bool isCurrentlyActive = Settings.EmbeddingProvider == providerId;
-        bool oldActive = isCurrentlyActive;
-        listing.CheckboxLabeled("RimLLM_EnableEmbeddingProvider".Translate(), ref isCurrentlyActive);
-        if (isCurrentlyActive != oldActive)
+        DrawActiveToggle(listing, providerId);
+
+        // 2. 簡介說明與備援鏈
+        DrawExplanationAndFallback(listing, providerId);
+
+        // 3. API 金鑰設定
+        DrawApiKeySection(listing, providerId);
+
+        // 4. 端點設定
+        // 官方服務的端點已固定，只有本機服務才開放自訂
+        if (IsLocalProvider(providerId))
         {
-            Settings.EmbeddingProvider = isCurrentlyActive ? providerId : "Disabled";
-            if (isCurrentlyActive)
+            DrawEndpointSection(listing, providerId);
+        }
+
+        // 5. 模型名稱與可用模型清單
+        DrawModelSection(listing, providerId);
+
+        listing.Gap(8f);
+
+        // 6. 連線與向量生成測試
+        DrawConnectionTest(listing, providerId);
+
+        listing.GapLine(4f);
+    }
+
+    private static void DrawActiveToggle(Listing_Standard listing, string providerId)
+    {
+        ProviderFallbackChainControls.DrawActiveToggle(
+            listing,
+            providerId,
+            Settings.EmbeddingProvider == providerId,
+            "Embedding",
+            active =>
             {
-                // 啟用中的供應商是鏈的第一環，不再同時留在備援清單裡。
-                List<string> chain = Settings.EmbeddingFallbackChain;
-                if (chain.Remove(providerId)) Settings.EmbeddingFallbackChain = chain;
-            }
-            Settings.Write();
-        }
+                Settings.EmbeddingProvider = active ? providerId : "Disabled";
+                Settings.Write();
+            },
+            () => Settings.EmbeddingFallbackChain,
+            chain => { Settings.EmbeddingFallbackChain = chain; Settings.Write(); });
+    }
 
-        if (isCurrentlyActive)
-        {
-            listing.Label("RimLLM_EmbeddingActiveBadge".Translate());
-        }
-        listing.Gap(4f);
-
-        // 2. 簡介說明
+    /// <summary>簡介說明與備援鏈控制項。</summary>
+    private static void DrawExplanationAndFallback(Listing_Standard listing, string providerId)
+    {
         Rect expRect = listing.GetRect(32f);
         using (RimLLMUIStyle.With(font: GameFont.Tiny))
         {
@@ -253,26 +276,6 @@ public static class EmbeddingSettingsDrawer
             },
             GetProviderDisplayName);
         listing.Gap(6f);
-
-        // 3. API 金鑰設定
-        DrawApiKeySection(listing, providerId);
-
-        // 4. 端點設定
-        // 官方服務的端點已固定，只有本機服務才開放自訂
-        if (IsLocalProvider(providerId))
-        {
-            DrawEndpointSection(listing, providerId);
-        }
-
-        // 5. 模型名稱與可用模型清單
-        DrawModelSection(listing, providerId);
-
-        listing.Gap(8f);
-
-        // 6. 連線與向量生成測試
-        DrawConnectionTest(listing, providerId);
-
-        listing.GapLine(4f);
     }
 
     /// <summary>

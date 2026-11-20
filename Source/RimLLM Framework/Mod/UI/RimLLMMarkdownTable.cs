@@ -108,7 +108,7 @@ public sealed class RimLLMMarkdownTable
             RowHeights = heights,
             Width = widths.Sum(),
             Height = heights.Sum(),
-            PlainText = string.Join("\n", cells.Select(row => string.Join("\t", row.Select(cell => cell.StripTags()))))
+            PlainText = string.Join('\n', cells.Select(row => string.Join('\t', row.Select(cell => cell.StripTags()))))
         };
     }
 
@@ -194,7 +194,7 @@ public sealed class RimLLMMarkdownTable
 
     private static void AddText(List<RimLLMMarkdownSegment> segments, string text)
     {
-        if (!string.IsNullOrWhiteSpace(text)) segments.Add(new RimLLMMarkdownSegment(text.Trim('\n', '\r'), null));
+        if (!string.IsNullOrWhiteSpace(text)) segments.Add(new RimLLMMarkdownSegment(text.Trim('\n', '\r'), rows: null));
     }
 
     private static List<string[]> Rows(Table table, string source)
@@ -203,7 +203,7 @@ public sealed class RimLLMMarkdownTable
         foreach (Block rowBlock in table)
         {
             if (rowBlock is not TableRow row) continue;
-            var cells = row.Select(cellBlock => source.Substring(cellBlock.Span.Start, cellBlock.Span.Length).Trim().Replace("\\|", "|")).ToList();
+            var cells = row.Select(cellBlock => source.Substring(cellBlock.Span.Start, cellBlock.Span.Length).Trim().Replace("\\|", "|", StringComparison.Ordinal)).ToList();
             if (cells.Count > 0) rows.Add([.. cells]);
         }
         return rows;

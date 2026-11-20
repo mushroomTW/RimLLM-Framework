@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using DevTools.Testing;
 using RimLLM_Framework.Api;
 using RimLLM_Framework.Core;
@@ -10,6 +11,9 @@ namespace RimLLM_Framework.InGameTests;
 
 /// <summary>Mod 建構子的啟動接線：設定、Manager、主線程派遣器。</summary>
 [TestFixture(TestType.MainMenu)]
+[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All)]
+// DevTools 只註冊有一個公開建構式的類別：不能宣告私有建構式或改成 static，測試方法因此是實例方法。
+#pragma warning disable CA1822, MA0038 // 測試方法不存取實例資料，但必須是實例方法
 internal sealed class StartupTests
 {
     [Test]
@@ -42,7 +46,7 @@ internal sealed class StartupTests
         int dispatchers = Resources.FindObjectsOfTypeAll<RimLLMDispatcher>().Length;
         if (dispatchers != 1)
         {
-            failures.Add($"expected exactly one RimLLMDispatcher component, found {dispatchers}");
+            failures.Add(string.Create(CultureInfo.InvariantCulture, $"expected exactly one RimLLMDispatcher component, found {dispatchers}"));
         }
 
         if (!RimLLMDispatcher.HasPump)
@@ -52,3 +56,4 @@ internal sealed class StartupTests
         TestHelpers.AssertNone(failures, "dispatcher not running");
     }
 }
+#pragma warning restore CA1822, MA0038

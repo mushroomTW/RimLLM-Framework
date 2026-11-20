@@ -96,11 +96,11 @@ public sealed class SecureKeyStoreTests
         public int Writes => _writes;
         public bool FailWrites { get; init; }
 
-        public byte[] Read(string account) => Items.TryGetValue(account, out byte[] value) ? value.ToArray() : null;
+        public byte[] Read(string account) => Items.TryGetValue(account, out byte[] value) ? [.. value] : null;
         public void Write(string account, byte[] key)
         {
             if (FailWrites) throw new CryptographicException("Simulated unavailable keyring.");
-            Items[account] = key.ToArray();
+            Items[account] = [.. key];
             Interlocked.Increment(ref _writes);
         }
         public void Delete(string account) => Items.TryRemove(account, out _);

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -53,7 +53,7 @@ public static class DebugSettingsDrawer
         {
             statusHeight = 0f;
         }
-        else if (schemaSelfTestStatus.Contains('\n'))
+        else if (schemaSelfTestStatus.Contains('\n', StringComparison.Ordinal))
         {
             statusHeight = 150f;
         }
@@ -75,7 +75,16 @@ public static class DebugSettingsDrawer
         DrawUsageStats(listing);
         listing.Gap(10f);
 
-        // 詳細日誌
+        // 詳細日誌開關、匯出診斷與結構化輸出自我檢查
+        DrawDebugActions(listing);
+
+        // 最近請求紀錄日誌
+        DrawRecentRequests(listing);
+    }
+
+    /// <summary>詳細日誌開關、匯出診斷與結構化輸出自我檢查。</summary>
+    private static void DrawDebugActions(Listing_Standard listing)
+    {
         bool detailedLogging = Settings.DetailedLogging;
         bool prevDetailedLogging = detailedLogging;
         listing.CheckboxLabeled("RimLLM_DetailedLogging".Translate(), ref detailedLogging, "RimLLM_DetailedLoggingExplanation".Translate());
@@ -107,8 +116,11 @@ public static class DebugSettingsDrawer
             listing.Label(schemaSelfTestStatus);
         }
         listing.Gap(12f);
+    }
 
-        // 最近請求紀錄日誌
+    /// <summary>最近請求紀錄：標題列、清除按鈕與紀錄內容。</summary>
+    private static void DrawRecentRequests(Listing_Standard listing)
+    {
         Rect headerRect = listing.GetRect(30f);
         Rect labelRect = new(headerRect.x, headerRect.y, headerRect.width - 150f, headerRect.height);
         Rect clearBtnRect = new(headerRect.x + headerRect.width - 140f, headerRect.y + 2f, 140f, headerRect.height - 4f);
@@ -122,7 +134,7 @@ public static class DebugSettingsDrawer
             RimLLMProvider.TryGetManager(out var logManager))
         {
             logManager.ClearLogs();
-            Messages.Message("RimLLM_MsgLogsCleared".Translate(), MessageTypeDefOf.PositiveEvent, false);
+            Messages.Message("RimLLM_MsgLogsCleared".Translate(), MessageTypeDefOf.PositiveEvent, historical: false);
         }
         listing.Gap(4f);
 
@@ -156,6 +168,12 @@ public static class DebugSettingsDrawer
 
         List<string> logLines = ResolveLogLines(logs);
 
+        DrawRequestLogLines(listing, logLines);
+    }
+
+    /// <summary>在可捲動區塊中逐列繪製請求紀錄。</summary>
+    private static void DrawRequestLogLines(Listing_Standard listing, List<string> logLines)
+    {
         Rect logScrollRect = listing.GetRect(420f);
         Widgets.DrawMenuSection(logScrollRect);
 
@@ -215,7 +233,7 @@ public static class DebugSettingsDrawer
             RimLLMProvider.TryGetManager(out var usageManager))
         {
             usageManager.ResetUsage();
-            Messages.Message("RimLLM_MsgUsageReset".Translate(), MessageTypeDefOf.PositiveEvent, false);
+            Messages.Message("RimLLM_MsgUsageReset".Translate(), MessageTypeDefOf.PositiveEvent, historical: false);
         }
     }
 
@@ -251,7 +269,7 @@ public static class DebugSettingsDrawer
                 : $"<color=#ef4444>{"RimLLM_StatusRequestFailed".Translate(RimLLMLog.SanitizeForLog(log.ErrorMessage, 160))}</color>";
             // token 拿不到（失敗、或供應商未回報用量）時省略，避免 0 誤導。
             int totalTokens = log.PromptTokens + log.CompletionTokens;
-            string tokenText = totalTokens > 0 ? $" | {totalTokens:N0} tok" : string.Empty;
+            string tokenText = totalTokens > 0 ? string.Create(CultureInfo.CurrentCulture, $" | {totalTokens:N0} tok") : string.Empty;
 
             _cachedLogLines.Add($"[{timeStr}] Mod: {log.ModId} | {log.Provider} ({log.Model}) | {statusText}{tokenText}");
         }
@@ -362,11 +380,11 @@ public static class DebugSettingsDrawer
 
             string path = Path.Combine(GenFilePaths.SaveDataFolderPath, "RimLLM_Diagnostic.txt");
             File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
-            Messages.Message("RimLLM_ExportDiagSuccess".Translate(path), MessageTypeDefOf.PositiveEvent, false);
+            Messages.Message("RimLLM_ExportDiagSuccess".Translate(path), MessageTypeDefOf.PositiveEvent, historical: false);
         }
         catch (Exception ex)
         {
-            Messages.Message("RimLLM_ExportDiagFailed".Translate(RimLLMLog.SanitizeForLog(ex.Message, 200)), MessageTypeDefOf.RejectInput, false);
+            Messages.Message("RimLLM_ExportDiagFailed".Translate(RimLLMLog.SanitizeForLog(ex.Message, 200)), MessageTypeDefOf.RejectInput, historical: false);
         }
     }
 
@@ -384,7 +402,7 @@ public static class DebugSettingsDrawer
             sb.AppendLine(CultureInfo.InvariantCulture, $"  {prov}: Enabled={enabled}, HasKey={hasKey}, Endpoint={MaskEndpoint(endpoint)}");
             var models = Settings.GetModelList(prov);
             string modelPreview = models.Count > 20
-                ? string.Join(", ", models.GetRange(0, 20)) + $", ... ({models.Count - 20} more)"
+                ? string.Join(", ", models.GetRange(0, 20)) + string.Create(CultureInfo.CurrentCulture, $", ... ({models.Count - 20} more)")
                 : string.Join(", ", models);
             sb.AppendLine(CultureInfo.InvariantCulture, $"    Cached Models ({models.Count}): {RimLLMLog.SanitizeForLog(modelPreview, 1000)}");
         }
@@ -407,7 +425,7 @@ public static class DebugSettingsDrawer
                 {
                     string status = log.Success ? "SUCCESS" : $"FAILED ({RimLLMLog.SanitizeForLog(log.ErrorMessage, 200)})";
                     int totalTokens = log.PromptTokens + log.CompletionTokens;
-                    string tokenInfo = totalTokens > 0 ? $" | Tokens: {totalTokens:N0} (prompt {log.PromptTokens:N0}, completion {log.CompletionTokens:N0})" : "";
+                    string tokenInfo = totalTokens > 0 ? string.Create(CultureInfo.CurrentCulture, $" | Tokens: {totalTokens:N0} (prompt {log.PromptTokens:N0}, completion {log.CompletionTokens:N0})") : "";
                     sb.AppendLine(CultureInfo.InvariantCulture, $"  [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Mod: {log.ModId} | Provider: {log.Provider} ({log.Model}) | {status} | Latency: {log.LatencyMs}ms{tokenInfo}");
                 }
             }
@@ -427,7 +445,7 @@ public static class DebugSettingsDrawer
         try
         {
             var uri = new Uri(endpoint);
-            string port = uri.IsDefaultPort ? "" : $":{uri.Port}";
+            string port = uri.IsDefaultPort ? "" : string.Create(CultureInfo.CurrentCulture, $":{uri.Port}");
             return $"{uri.Scheme}://{uri.Host}{port}/...";
         }
         catch

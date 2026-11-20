@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Threading;
@@ -38,7 +39,7 @@ public class CoverageEnhancementTests
         EncryptionUtility.ResetSecureKeyForTests();
         try
         {
-            Directory.Delete(_encryptionKeyDirectory, true);
+            Directory.Delete(_encryptionKeyDirectory, recursive: true);
         }
         catch
         {
@@ -51,10 +52,10 @@ public class CoverageEnhancementTests
         var ledger = new RimLLMHealthLedger();
 
         // Null / empty 安全性
-        ledger.RecordSuccess(null);
-        ledger.RecordFailure(null);
+        ledger.RecordSuccess(target: null);
+        ledger.RecordFailure(target: null);
         ClassicAssert.IsFalse(ledger.IsInCooldown(null));
-        ClassicAssert.AreEqual(0f, ledger.GetAverageLatency(null));
+        ClassicAssert.AreEqual(0f, ledger.GetAverageLatency(target: null));
 
         // 1~2 次失敗（可重試）給予短暫冷卻以利備援切換，並累積失敗計數
         ledger.RecordFailure("p1", isRetryable: true);
@@ -102,7 +103,7 @@ public class CoverageEnhancementTests
     public void TestSchemaBuilderCacheKeysAndEdgeCases()
     {
         // Null type
-        Assert.Throws<ArgumentNullException>(() => RimLLMSchemaBuilder.Build(null));
+        Assert.Throws<ArgumentNullException>(() => RimLLMSchemaBuilder.Build(type: null));
         ClassicAssert.IsFalse(RimLLMSchemaBuilder.ContainsOpenEndedMap(null));
 
         var normalResult = RimLLMSchemaBuilder.Build(typeof(SimpleTestDataStructure));
@@ -132,7 +133,7 @@ public class CoverageEnhancementTests
 
         // Empty text validation
         await Assert.ThrowsAsync<ArgumentException>(async () => await service.ComputeEmbeddingAsync(""));
-        await Assert.ThrowsAsync<ArgumentException>(async () => await service.ComputeEmbeddingAsync(null));
+        await Assert.ThrowsAsync<ArgumentException>(async () => await service.ComputeEmbeddingAsync(text: null));
 
         // Disabled provider validation
         await Assert.ThrowsAsync<RimLLMException>(async () => await service.ComputeEmbeddingAsync("test text"));
@@ -144,17 +145,17 @@ public class CoverageEnhancementTests
         await Assert.ThrowsAsync<RimLLMException>(async () => await service.FetchAvailableModelsAsync());
 
         // Batch embedding validation
-        await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ComputeEmbeddingsAsync(null));
-        var emptyBatch = service.ComputeEmbeddingsAsync(new List<string>()).GetAwaiter().GetResult();
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await service.ComputeEmbeddingsAsync(texts: null));
+        var emptyBatch = await service.ComputeEmbeddingsAsync(new List<string>());
         ClassicAssert.AreEqual(0, emptyBatch.Count);
     }
 
     [Test]
     public void TestEncryptionUtilityEdgeCasesAndTampering()
     {
-        ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Encrypt(null));
+        ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Encrypt(plainText: null));
         ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Encrypt(""));
-        ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Decrypt(null));
+        ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Decrypt(cipherText: null));
         ClassicAssert.AreEqual(string.Empty, EncryptionUtility.Decrypt(""));
         const string plain = "secret-api-key-value-12345";
         string encrypted = EncryptionUtility.Encrypt(plain);
@@ -173,7 +174,7 @@ public class CoverageEnhancementTests
         var queue = new RimLLMRequestQueue(settings);
 
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
         await Assert.ThrowsAsync<TaskCanceledException>(async () =>
         {
             await queue.AcquireSlotAsync(5, cts.Token);
@@ -200,12 +201,12 @@ public class CoverageEnhancementTests
         holder.Dispose();
         ClassicAssert.IsTrue(urgent.Wait(2000), "高優先級應最先取得名額");
         ClassicAssert.IsFalse(waiters.Exists(w => w.IsCompleted), "名額只有一個，同級項目此時都還在等");
-        urgent.Result.Dispose();
+        urgent.GetAwaiter().GetResult().Dispose();
         for (int i = 0; i < 5; i++)
         {
-            int granted = Task.WaitAny(waiters.ToArray(), 2000);
+            int granted = Task.WaitAny([.. waiters], 2000);
             ClassicAssert.AreEqual(i, granted, "同優先級必須依入列順序取得名額");
-            waiters[granted].Result.Dispose();
+            waiters[granted].GetAwaiter().GetResult().Dispose();
             waiters[granted] = new TaskCompletionSource<IDisposable>().Task; // 已處理者換成永不完成的佔位
         }
     }
@@ -217,7 +218,7 @@ public class CoverageEnhancementTests
         RimLLMDispatcher.ResetQueueForTests();
 
         // TryEnqueueBounded with null
-        ClassicAssert.IsFalse(RimLLMDispatcher.TryEnqueueBounded(null));
+        ClassicAssert.IsFalse(RimLLMDispatcher.TryEnqueueBounded(action: null));
 
         // DrainWithBudget error recovery
         int executionCount = 0;
@@ -253,7 +254,7 @@ public class CoverageEnhancementTests
 
         var embeddingClient = new RimLLMEmbeddingClient(manager, "test.mod");
         ClassicAssert.IsNull(embeddingClient.GetService(typeof(string)));
-        await Assert.ThrowsAsync<ArgumentNullException>(async () => await embeddingClient.GenerateAsync(null));
+        await Assert.ThrowsAsync<ArgumentNullException>(async () => await embeddingClient.GenerateAsync(values: null));
         embeddingClient.Dispose();
     }
 
@@ -261,14 +262,14 @@ public class CoverageEnhancementTests
     public void TestChatClientExecutorNullMessagesHandling()
     {
         var cachedContextOptions = new RimLLMChatOptions { CachedContext = "System instruction" };
-        var messagesWithSys = RimLLMChatClientExecutor.BuildMessages(null, cachedContextOptions);
+        var messagesWithSys = RimLLMChatClientExecutor.BuildMessages(messages: null, cachedContextOptions);
 
         ClassicAssert.IsNotNull(messagesWithSys);
         ClassicAssert.AreEqual(1, messagesWithSys.Count);
         ClassicAssert.AreEqual(ChatRole.System, messagesWithSys[0].Role);
         ClassicAssert.AreEqual("System instruction", messagesWithSys[0].Text);
 
-        var messagesEmpty = RimLLMChatClientExecutor.BuildMessages(null, null);
+        var messagesEmpty = RimLLMChatClientExecutor.BuildMessages(messages: null, options: null);
 
         ClassicAssert.IsNotNull(messagesEmpty);
         ClassicAssert.AreEqual(1, messagesEmpty.Count);
@@ -325,11 +326,11 @@ public class CoverageEnhancementTests
 
         // 1. 空鏈例外
         settings.FallbackChain = [];
-        Assert.Throws<RimLLMException>(() => pipeline.ResolveCandidates(null, null));
+        Assert.Throws<RimLLMException>(() => pipeline.ResolveCandidates(preferredModelId: null, minFallbackLevel: null));
 
         // 2. 無符合資格 Provider 例外
         settings.FallbackChain = ["NonExistent:m1"];
-        Assert.Throws<RimLLMException>(() => pipeline.ResolveCandidates(null, null));
+        Assert.Throws<RimLLMException>(() => pipeline.ResolveCandidates(preferredModelId: null, minFallbackLevel: null));
 
         // 3. MinLatency 路由策略 (Strategy = 1)
         var p1 = new MockTestProvider { ProviderId = "P1" };
@@ -348,11 +349,11 @@ public class CoverageEnhancementTests
         ledger.RecordSuccess("P1:m1", 300);
         ledger.RecordSuccess("P2:m2", 50);
 
-        ClassicAssert.AreEqual("P2", pipeline.ResolveCandidates(null, null)[0].ProviderId); // P2 延遲較低應排在前面
+        ClassicAssert.AreEqual("P2", pipeline.ResolveCandidates(preferredModelId: null, minFallbackLevel: null)[0].ProviderId); // P2 延遲較低應排在前面
 
         // 4. PreferredModelId 優先插入
         settings.RoutingStrategy = 0; // Priority
-        var preferred = pipeline.ResolveCandidates("P1:preferred-m", null)[0];
+        var preferred = pipeline.ResolveCandidates("P1:preferred-m", minFallbackLevel: null)[0];
         ClassicAssert.AreEqual("P1:preferred-m", $"{preferred.ProviderId}:{preferred.ModelName}");
 
         // 5. MinFallbackLevel 分級過濾與 API 價格分級
@@ -364,13 +365,13 @@ public class CoverageEnhancementTests
 
         settings.ModelLevelOverrides["P2:pro-model"] = 3;
         settings.FallbackChain = ["P1:mini-model", "P2:pro-model"]; // P1 預設為 tier 2, P2 覆寫為 tier 3
-        var tiered = pipeline.ResolveCandidates(null, "high"); // 等級 3
+        var tiered = pipeline.ResolveCandidates(preferredModelId: null, "high"); // 等級 3
         ClassicAssert.AreEqual(1, tiered.Count); // P1 (tier 2) 被過濾掉
         ClassicAssert.AreEqual("P2", tiered[0].ProviderId);
 
         // 6. RoundRobin 路由策略 (Strategy = 2)
         settings.RoutingStrategy = 2;
-        ClassicAssert.AreEqual(2, pipeline.ResolveCandidates(null, "low").Count);
+        ClassicAssert.AreEqual(2, pipeline.ResolveCandidates(preferredModelId: null, "low").Count);
 
         // 7. 非可重試例外直接跳往備援
         settings.RoutingStrategy = 0;
@@ -430,14 +431,14 @@ public class CoverageEnhancementTests
         var streamEnumerator = warnOnlyClient.GetStreamingResponseAsync(mockMessages).GetAsyncEnumerator();
         try
         {
-            while (streamEnumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+            while (await streamEnumerator.MoveNextAsync())
             {
                 streamedText += streamEnumerator.Current.Text;
             }
         }
         finally
         {
-            streamEnumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await streamEnumerator.DisposeAsync();
         }
         ClassicAssert.AreEqual("mock-stream-text", streamedText, "串流路徑同樣不該被預算攔截");
 
@@ -485,7 +486,7 @@ public class CoverageEnhancementTests
         var rotatingIdStore = new RimLLMThrottleStore(settings);
         for (int i = 0; i < 10; i++)
         {
-            rotatingIdStore.CheckAntiAbuse("rotating-mod-" + i);
+            rotatingIdStore.CheckAntiAbuse("rotating-mod-" + i.ToString(CultureInfo.InvariantCulture));
         }
         Assert.Throws<RimLLMException>(
             () => rotatingIdStore.CheckAntiAbuse("rotating-mod-overflow"));
@@ -556,7 +557,7 @@ public class CoverageEnhancementTests
         ChatResponse res = await schemaClient.GetResponseAsync(
             new List<ChatMessage> { new(ChatRole.User, "hi") }, structuredOptions);
         ClassicAssert.IsNotNull(res);
-        ClassicAssert.IsTrue(res.Text.Contains("fallback-success"));
+        ClassicAssert.IsTrue(res.Text.Contains("fallback-success", StringComparison.Ordinal));
 
         // 2. 結構化修復失敗時拋出 RimLLMException
         Assert.Throws<RimLLMException>(() => RimLLMJsonHelper.DeserializeStructured<NullableTestDataStructure>("totally broken no json anywhere", settings));
@@ -745,7 +746,7 @@ public class CoverageEnhancementTests
     public void TestChatEntryMetaDeserializeEdgeCases()
     {
         // Null or empty
-        ClassicAssert.IsNull(ChatTestDrawer.ChatEntryMeta.Deserialize(null));
+        ClassicAssert.IsNull(ChatTestDrawer.ChatEntryMeta.Deserialize(raw: null));
         ClassicAssert.IsNull(ChatTestDrawer.ChatEntryMeta.Deserialize(""));
 
         // Malformed entry with no equals
@@ -770,8 +771,8 @@ public class CoverageEnhancementTests
 
         // Round-trip serialize
         string serialized = meta.Serialize();
-        ClassicAssert.IsTrue(serialized.Contains("model=test-model"));
-        ClassicAssert.IsTrue(serialized.Contains("est=1"));
+        ClassicAssert.IsTrue(serialized.Contains("model=test-model", StringComparison.Ordinal));
+        ClassicAssert.IsTrue(serialized.Contains("est=1", StringComparison.Ordinal));
     }
 
     [Test]
@@ -795,24 +796,24 @@ public class CoverageEnhancementTests
         settings.FallbackChain = ["P1:default-model"];
 
         // Null or empty preferredModelId
-        var res = pipeline.ResolveCandidates(null, null);
+        var res = pipeline.ResolveCandidates(preferredModelId: null, minFallbackLevel: null);
         ClassicAssert.AreEqual("default-model", res[0].ModelName);
 
-        res = pipeline.ResolveCandidates("", null);
+        res = pipeline.ResolveCandidates("", minFallbackLevel: null);
         ClassicAssert.AreEqual("default-model", res[0].ModelName);
 
         // Preferred model without colon
-        res = pipeline.ResolveCandidates("invalidFormat", null);
+        res = pipeline.ResolveCandidates("invalidFormat", minFallbackLevel: null);
         ClassicAssert.AreEqual("default-model", res[0].ModelName);
 
         // Preferred model already in chain at index 0
-        res = pipeline.ResolveCandidates("P1:default-model", null);
+        res = pipeline.ResolveCandidates("P1:default-model", minFallbackLevel: null);
         ClassicAssert.AreEqual(1, res.Count);
         ClassicAssert.AreEqual("default-model", res[0].ModelName);
 
         // Preferred model with disabled provider
         settings.EnabledProviders["P2"] = false;
-        res = pipeline.ResolveCandidates("P2:some-model", null);
+        res = pipeline.ResolveCandidates("P2:some-model", minFallbackLevel: null);
         ClassicAssert.AreEqual("default-model", res[0].ModelName);
     }
 
@@ -841,7 +842,7 @@ public class CoverageEnhancementTests
         var settings = new MockSettings();
         var pipeline = CreateThreeModelPipeline(settings);
 
-        var res = pipeline.ResolveCandidates("P3:M3", null);
+        var res = pipeline.ResolveCandidates("P3:M3", minFallbackLevel: null);
 
         ClassicAssert.AreEqual(3, res.Count);
         ClassicAssert.AreEqual("P3", res[0].ProviderId);
@@ -866,9 +867,9 @@ public class CoverageEnhancementTests
             settings.RoutingStrategy = strategy;
             for (int i = 0; i < 20; i++)
             {
-                var res = pipeline.ResolveCandidates("P2:m2", null);
-                ClassicAssert.AreEqual(3, res.Count, $"strategy {strategy}");
-                ClassicAssert.AreEqual("P2", res[0].ProviderId, $"strategy {strategy}");
+                var res = pipeline.ResolveCandidates("P2:m2", minFallbackLevel: null);
+                ClassicAssert.AreEqual(3, res.Count, string.Create(CultureInfo.InvariantCulture, $"strategy {strategy}"));
+                ClassicAssert.AreEqual("P2", res[0].ProviderId, string.Create(CultureInfo.InvariantCulture, $"strategy {strategy}"));
             }
         }
     }
@@ -882,7 +883,7 @@ public class CoverageEnhancementTests
 
         foreach (string alias in new[] { "fallback", "Fallback", "FALLBACK" })
         {
-            var res = pipeline.ResolveCandidates(alias, null);
+            var res = pipeline.ResolveCandidates(alias, minFallbackLevel: null);
             ClassicAssert.AreEqual(3, res.Count, $"alias {alias}");
             ClassicAssert.AreEqual("P1", res[0].ProviderId, $"alias {alias}");
             ClassicAssert.AreEqual("P2", res[1].ProviderId, $"alias {alias}");

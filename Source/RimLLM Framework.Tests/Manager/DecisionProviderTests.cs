@@ -107,6 +107,6 @@ public class DecisionProviderTests
     public void ModelListKey_IsScopedToDecisionModule()
     {
         Assert.That(RimLLMDecisionService.GetModelListKey("TypeSafe"), Is.EqualTo("decision:TypeSafe"));
-        Assert.That(RimLLMDecisionService.GetModelListKey(null), Is.EqualTo("decision:"));
+        Assert.That(RimLLMDecisionService.GetModelListKey(providerId: null), Is.EqualTo("decision:"));
     }
 }

@@ -290,7 +290,7 @@ public class RimLLMDecisionService
         {
             Enabled = true,
             ProviderId = providerId,
-            Model = ResolveModel(providerId, null),
+            Model = ResolveModel(providerId, modelOverride: null),
             // 只回報「有沒有金鑰」，金鑰本身絕不外洩。
             HasKey = HasEffectiveApiKey(_settings, providerId),
             // 明文本機端點是玩家自架的服務，可以不填金鑰。
@@ -307,7 +307,7 @@ public class RimLLMDecisionService
     {
         return new DecisionPreviewArguments(
             _settings.GetDecisionEndpoint(providerId),
-            ResolveModel(providerId, null),
+            ResolveModel(providerId, modelOverride: null),
             GetEffectiveApiKey(_settings, providerId));
     }
 
@@ -337,7 +337,7 @@ public class RimLLMDecisionService
     {
         try
         {
-            DecisionConnection connection = ResolveConnection(null);
+            DecisionConnection connection = ResolveConnection(providerId: null);
             return await FetchModelsCoreAsync(
                     connection.Endpoint, connection.Model, connection.ApiKey, cancellationToken)
                 .ConfigureAwait(false);
@@ -540,7 +540,7 @@ public class RimLLMDecisionService
     private bool IsBackupUsable(string providerId)
     {
         if (!RimLLMDecisionProviderCatalog.TryGet(providerId, out _) ||
-            string.IsNullOrWhiteSpace(ResolveModel(providerId, null)))
+            string.IsNullOrWhiteSpace(ResolveModel(providerId, modelOverride: null)))
         {
             return false;
         }

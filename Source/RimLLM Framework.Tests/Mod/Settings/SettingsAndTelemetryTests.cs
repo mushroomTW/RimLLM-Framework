@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Microsoft.Extensions.AI;
@@ -38,7 +39,7 @@ public class SettingsAndTelemetryTests
         EncryptionUtility.ResetSecureKeyForTests();
         try
         {
-            Directory.Delete(_encryptionKeyDirectory, true);
+            Directory.Delete(_encryptionKeyDirectory, recursive: true);
         }
         catch
         {
@@ -59,7 +60,7 @@ public class SettingsAndTelemetryTests
                 $"{effort} 存檔後必須原樣讀回");
         }
 
-        ClassicAssert.AreEqual(0, RimLLMFrameworkSettings.EncodeReasoningEffort(null));
+        ClassicAssert.AreEqual(0, RimLLMFrameworkSettings.EncodeReasoningEffort(effort: null));
         ClassicAssert.IsNull(RimLLMFrameworkSettings.DecodeReasoningEffort(0), "0 代表 Auto");
         ClassicAssert.IsNull(RimLLMFrameworkSettings.DecodeReasoningEffort(-1));
         ClassicAssert.IsNull(RimLLMFrameworkSettings.DecodeReasoningEffort(99), "未知值退回 Auto 而非擲例外");
@@ -77,7 +78,7 @@ public class SettingsAndTelemetryTests
         for (int i = 0; i <= RimLLMFrameworkSettings.MaxBudgetPolicy; i++)
         {
             ClassicAssert.AreEqual(i, RimLLMFrameworkSettings.SanitizeBudgetPolicy(i),
-                $"策略 {i} 是現存選項，不得被改寫");
+                string.Create(CultureInfo.InvariantCulture, $"策略 {i} 是現存選項，不得被改寫"));
         }
 
         // 已移除的 FallbackToFree(2) / DialogPrompt(3) 與負值、未知值一律退回 HardBlock(0)：
@@ -85,7 +86,7 @@ public class SettingsAndTelemetryTests
         foreach (int stale in new[] { 2, 3, 99, -1 })
         {
             ClassicAssert.AreEqual(0, RimLLMFrameworkSettings.SanitizeBudgetPolicy(stale),
-                $"已移除或未知的策略 {stale} 必須退回 HardBlock");
+                string.Create(CultureInfo.InvariantCulture, $"已移除或未知的策略 {stale} 必須退回 HardBlock"));
         }
 
         // 舊值 1 (SilentMocking) 仍在範圍內，讀回後等同 WarnOnly：同樣是預期中的行為變更。
@@ -428,7 +429,7 @@ public class SettingsAndTelemetryTests
                 "遙測寫入必須先寫暫存檔再原子替換，不得留下 .tmp");
 
             string raw = System.IO.File.ReadAllText(path);
-            ClassicAssert.IsFalse(raw.Contains("SENTINEL-CONVERSATION-CONTENT"),
+            ClassicAssert.IsFalse(raw.Contains("SENTINEL-CONVERSATION-CONTENT", StringComparison.Ordinal),
                 "對話歷史不得以明文寫入遙測檔");
 
             var reloaded = new RimLLMTelemetryStore();
@@ -438,7 +439,7 @@ public class SettingsAndTelemetryTests
         finally
         {
             RimLLMTelemetryStore.FilePathResolver = previousResolver;
-            try { System.IO.Directory.Delete(dir, true); } catch { }
+            try { System.IO.Directory.Delete(dir, recursive: true); } catch { }
         }
     }
 
@@ -502,7 +503,7 @@ public class SettingsAndTelemetryTests
             EncryptionUtility.SecureKeyPathResolver = previousKeyResolver;
             try
             {
-                System.IO.Directory.Delete(dir, true);
+                System.IO.Directory.Delete(dir, recursive: true);
             }
             catch
             {
@@ -537,7 +538,7 @@ public class SettingsAndTelemetryTests
         finally
         {
             RimLLMTelemetryStore.FilePathResolver = previousResolver;
-            try { System.IO.Directory.Delete(dir, true); } catch { }
+            try { System.IO.Directory.Delete(dir, recursive: true); } catch { }
         }
     }
 
@@ -640,7 +641,7 @@ public class SettingsAndTelemetryTests
         finally
         {
             RimLLMTelemetryStore.FilePathResolver = previousResolver;
-            try { System.IO.Directory.Delete(dir, true); } catch { }
+            try { System.IO.Directory.Delete(dir, recursive: true); } catch { }
         }
     }
 

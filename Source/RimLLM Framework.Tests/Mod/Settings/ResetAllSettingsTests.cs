@@ -14,7 +14,7 @@ public class ResetAllSettingsTests
     {
         var settings = new RimLLMFrameworkSettings();
         settings.SetApiKey(ProviderIds.Gemini, "chat-key");
-        settings.SetProviderEnabled(ProviderIds.Gemini, true);
+        settings.SetProviderEnabled(ProviderIds.Gemini, enabled: true);
         settings.SetModelList(ProviderIds.Gemini, new List<string> { "models/gemini-2.5-flash" });
         settings.FallbackChain = new List<string> { "Gemini:models/gemini-2.5-flash" };
         settings.EmbeddingProvider = "Google";

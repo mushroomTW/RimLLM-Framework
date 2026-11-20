@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager;
@@ -92,7 +93,7 @@ public class RimLLMHealthLedger
                 cooldownSeconds = CircuitBaseCooldownSeconds * Math.Pow(2, Math.Min(power, MaxCircuitBackoffSteps));
                 if (RimLLMLog.Enabled)
                 {
-                    RimLLMLog.Warning($"[RimLLM] Target {target} has failed {record.ContinuousFailures} times continuously. Circuit cooldown set for {cooldownSeconds} seconds.");
+                    RimLLMLog.Warning(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Target {target} has failed {record.ContinuousFailures} times continuously. Circuit cooldown set for {cooldownSeconds} seconds."));
                 }
             }
             else

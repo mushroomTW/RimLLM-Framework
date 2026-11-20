@@ -14,7 +14,7 @@ internal static class TestHelpers
     {
         if (failures.Count > 0)
         {
-            string details = $"{message} ({failures.Count}):\n{string.Join("\n", failures)}";
+            string details = $"{message} ({failures.Count}):\n{string.Join('\n', failures)}";
             Test.Fail(details);
         }
     }

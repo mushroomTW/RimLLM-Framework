@@ -135,7 +135,7 @@ public static class ServiceConsumersDrawer
             : "RimLLM_ConsumersNotCalled".Translate().ToString()
         };
         if (row.PackageId == null) lines.Add("RimLLM_ConsumersUnresolved".Translate());
-        return string.Join("\n", lines);
+        return string.Join('\n', lines);
     }
 }
 
@@ -187,7 +187,10 @@ internal static class ServiceConsumerList
         {
             // 只排除框架自己的兩個設定頁工具；以前綴過濾會誤藏名稱剛好以 RimLLM. 開頭的第三方模組。
             if (string.Equals(modId, DebugChatModId, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(modId, SchemaSelfTestModId, StringComparison.OrdinalIgnoreCase)) continue;
+                || string.Equals(modId, SchemaSelfTestModId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
 
             KeyValuePair<string, string>? mod = resolve(modId);
             string key = mod.HasValue ? mod.Value.Key : modId;

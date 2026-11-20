@@ -176,6 +176,6 @@ public static class RimLLMProvider
     /// </summary>
     internal static bool TryGetEffectiveCapabilities(out LLMProviderCapabilities? capabilities, out string? failureReason)
     {
-        return TryGetEffectiveCapabilities(null, out capabilities, out failureReason);
+        return TryGetEffectiveCapabilities(preferredModelId: null, out capabilities, out failureReason);
     }
 }

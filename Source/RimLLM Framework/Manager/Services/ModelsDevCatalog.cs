@@ -91,7 +91,7 @@ internal static class ModelsDevCatalog
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 30f));
             using HttpResponseMessage response = await Http.GetAsync(ApiUrl, cts.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            string body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
             using JsonDocument doc = JsonDocument.Parse(body);
             ModelPricing.SetCatalogRates(ReadAllRates(doc.RootElement));
             return new ModelsDevData(ReadAll(doc.RootElement), ReadAllVision(doc.RootElement));

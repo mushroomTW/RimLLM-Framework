@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using RimLLM_Framework.Core;
@@ -43,10 +43,41 @@ public static class BudgetSettingsDrawer
 
         // 1. 今日 token 預算上限（輸入＋輸出合計），0 代表無限制
         listing.Label("RimLLM_DailyBudgetLimitLabel".Translate(Settings.DailyTokenBudgetLimit.ToString("N0", CultureInfo.InvariantCulture)));
-        Settings.DailyTokenBudgetLimit = (long)Math.Round(listing.Slider((float)Settings.DailyTokenBudgetLimit, 0f, MaxDailyTokenBudget));
+        Settings.DailyTokenBudgetLimit = (long)Math.Round(listing.Slider((float)Settings.DailyTokenBudgetLimit, 0f, MaxDailyTokenBudget), MidpointRounding.ToEven);
         RimLLMUIStyle.DrawHint(listing, "RimLLM_DailyBudgetLimitHint".Translate());
 
         // 2. 預算超限應對策略 (Budget Policy)
+        DrawBudgetPolicy(listing);
+
+        // 3. 頻率防護 (Anti-Abuse Throttling)
+        bool enableAntiAbuse = Settings.EnableAntiAbuse;
+        listing.CheckboxLabeled("RimLLM_EnableAntiAbuseLabel".Translate(), ref enableAntiAbuse);
+        Settings.EnableAntiAbuse = enableAntiAbuse;
+        RimLLMUIStyle.DrawHint(listing, "RimLLM_EnableAntiAbuseHint".Translate());
+        listing.Gap(6f);
+
+        DrawAntiAbuseSliders(listing);
+
+        // 4. 遙測統計與重置
+        DrawDailyUsage(listing);
+
+        // 檢查變更並寫入（僅在釋放滑鼠或非 GUI 呼叫時寫入，避免拖曳滑桿時每幀觸發同步磁碟 I/O）
+        bool changed = prevDailyLimit != Settings.DailyTokenBudgetLimit ||
+            prevPolicy != Settings.BudgetPolicy ||
+            prevEnableAntiAbuse != Settings.EnableAntiAbuse ||
+            prevMaxRequests != Settings.MaxRequestsPerWindow ||
+            prevWindow != Settings.ThrottlingWindowSeconds ||
+            prevCooldown != Settings.CoolDownDurationSeconds;
+
+        if (RimLLMUIStyle.ShouldSaveSettings(changed))
+        {
+            Settings.Write();
+        }
+    }
+
+    /// <summary>預算超限應對策略的下拉選單。</summary>
+    private static void DrawBudgetPolicy(Listing_Standard listing)
+    {
         Rect policyRect = listing.GetRect(30f);
         Rect policyLabelRect = new(policyRect.x, policyRect.y, 250f, policyRect.height);
         Rect policyBtnRect = new(policyRect.x + 260f, policyRect.y, 280f, policyRect.height);
@@ -71,14 +102,11 @@ public static class BudgetSettingsDrawer
         }
         RimLLMUIStyle.DrawHint(listing, "RimLLM_BudgetPolicyHint".Translate());
         listing.Gap(8f);
+    }
 
-        // 3. 頻率防護 (Anti-Abuse Throttling)
-        bool enableAntiAbuse = Settings.EnableAntiAbuse;
-        listing.CheckboxLabeled("RimLLM_EnableAntiAbuseLabel".Translate(), ref enableAntiAbuse);
-        Settings.EnableAntiAbuse = enableAntiAbuse;
-        RimLLMUIStyle.DrawHint(listing, "RimLLM_EnableAntiAbuseHint".Translate());
-        listing.Gap(6f);
-
+    /// <summary>頻率防護開啟時的細部滑桿。</summary>
+    private static void DrawAntiAbuseSliders(Listing_Standard listing)
+    {
         if (Settings.EnableAntiAbuse)
         {
             // 窗口內最大請求次數
@@ -97,8 +125,11 @@ public static class BudgetSettingsDrawer
             Settings.CoolDownDurationSeconds = Mathf.RoundToInt(cooldownVal);
             listing.Gap(12f);
         }
+    }
 
-        // 4. 遙測統計與重置
+    /// <summary>今日累計用量與重置按鈕。</summary>
+    private static void DrawDailyUsage(Listing_Standard listing)
+    {
         listing.GapLine(12f);
         listing.Label("RimLLM_DailyAccumulatedCostLabel".Translate(
             Settings.DailyAccumulatedTokens.ToString("N0", CultureInfo.InvariantCulture),
@@ -114,20 +145,7 @@ public static class BudgetSettingsDrawer
             Settings.DailyAccumulatedCost = 0f;
             Settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             Settings.SaveTelemetry();
-            Messages.Message("RimLLM_MsgDailyCostReset".Translate(), MessageTypeDefOf.TaskCompletion, false);
-        }
-
-        // 檢查變更並寫入（僅在釋放滑鼠或非 GUI 呼叫時寫入，避免拖曳滑桿時每幀觸發同步磁碟 I/O）
-        bool changed = prevDailyLimit != Settings.DailyTokenBudgetLimit ||
-            prevPolicy != Settings.BudgetPolicy ||
-            prevEnableAntiAbuse != Settings.EnableAntiAbuse ||
-            prevMaxRequests != Settings.MaxRequestsPerWindow ||
-            prevWindow != Settings.ThrottlingWindowSeconds ||
-            prevCooldown != Settings.CoolDownDurationSeconds;
-
-        if (RimLLMUIStyle.ShouldSaveSettings(changed))
-        {
-            Settings.Write();
+            Messages.Message("RimLLM_MsgDailyCostReset".Translate(), MessageTypeDefOf.TaskCompletion, historical: false);
         }
     }
 

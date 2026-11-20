@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -51,7 +52,7 @@ internal static class LocalOpenAIEndpoint
     public static string? GetBaseUrl(string modId)
     {
         int port = EnsureStarted();
-        return port == 0 ? null : $"http://127.0.0.1:{port}/m/{modId}/v1";
+        return port == 0 ? null : string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/m/{modId}/v1");
     }
 
     /// <summary>是否為框架自己先前寫入的位址（埠號每次啟動不同，需要更新時才認得出來）。</summary>
@@ -76,7 +77,7 @@ internal static class LocalOpenAIEndpoint
             {
                 int port = FindFreePort();
                 var listener = new HttpListener();
-                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                listener.Prefixes.Add(string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/"));
                 try
                 {
                     listener.Start();
@@ -84,14 +85,14 @@ internal static class LocalOpenAIEndpoint
                 catch (Exception ex)
                 {
                     listener.Close();
-                    Log.Warning($"[RimLLM] Local endpoint failed to listen on port {port}: {ex.Message}");
+                    Log.Warning(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Local endpoint failed to listen on port {port}: {ex.Message}"));
                     continue;
                 }
 
                 _listener = listener;
                 _port = port;
                 _ = Task.Run(() => AcceptLoopAsync(listener));
-                Log.Message($"[RimLLM] Local OpenAI-compatible endpoint listening on 127.0.0.1:{port}");
+                Log.Message(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Local OpenAI-compatible endpoint listening on 127.0.0.1:{port}"));
                 return _port;
             }
             return 0;
@@ -204,7 +205,7 @@ internal static class LocalOpenAIEndpoint
         }
 
         modId = Uri.UnescapeDataString(segments[1]);
-        endpoint = string.Join("/", segments, 3, segments.Length - 3);
+        endpoint = string.Join('/', segments, 3, segments.Length - 3);
         return true;
     }
 

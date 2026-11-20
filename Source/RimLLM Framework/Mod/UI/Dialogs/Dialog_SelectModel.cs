@@ -27,7 +27,7 @@ public class Dialog_SelectModel : Window
     private readonly string? _vendor;
 
     public Dialog_SelectModel(List<string> models, Action<string> onSelected)
-        : this(models, onSelected, null)
+        : this(models, onSelected, providerId: null)
     {
     }
 
@@ -167,7 +167,7 @@ public class Dialog_SelectModel : Window
                 string model = filteredModels[i];
                 Rect rowRect = new(4f, i * rowHeight + 4f, contentWidth - 8f, rowHeight - 2f);
 
-                if (Widgets.ButtonText(rowRect, model, true, true, true))
+                if (Widgets.ButtonText(rowRect, model, drawBackground: true, doMouseoverSound: true, active: true))
                 {
                     _onSelected?.Invoke(model);
                     Close();

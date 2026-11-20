@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.ClientModel;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -11,7 +12,7 @@ using RimLLM_Framework.Core;
 namespace RimLLM_Framework.Manager;
 
 /// <summary>封裝 GenerateAsync / StreamAsync 的核心請求參數，避免方法參數過多觸發 S107。</summary>
-internal record GenerationParams(
+internal sealed record GenerationParams(
     IChatClient Client,
     IEnumerable<ChatMessage> Messages,
     ChatOptions? Options,
@@ -69,7 +70,7 @@ internal static class RimLLMChatClientExecutor
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new RimLLMException(LLMError.Timeout, $"{providerId} request timed out after {timeoutSeconds} seconds.", ex);
+            throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} request timed out after {timeoutSeconds} seconds."), ex);
         }
 
         // 回應原樣交還。ResponseId、CreatedAt、ConversationId、RawRepresentation 這些
@@ -156,36 +157,11 @@ internal static class RimLLMChatClientExecutor
         {
             try
             {
-                await foreach (ChatResponseUpdate update in client.GetStreamingResponseAsync(
+                IAsyncEnumerable<ChatResponseUpdate> updates = client.GetStreamingResponseAsync(
                     builtMessages,
                     BuildOptions(options, model, useNativeSchema, customizeOptions),
-                    linkedCts.Token).ConfigureAwait(false))
-                {
-                    // 收到任何更新即重設閒置計時器，避免長回應被整體逾時誤殺。
-                    if (update?.Contents == null)
-                    {
-                        timeoutCts.CancelAfter(idleTimeout);
-                        continue;
-                    }
-
-                    // 處理這個 update 的期間（含等待消費端）暫停計時，處理完再重新起算。
-                    timeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
-
-                    // 只做記帳，不改寫內容：判斷這次串流是否真的產出過東西，
-                    // 並收集用量。推理內容維持 MEAI 原生的 TextReasoningContent，
-                    // 不再被合成成 <think> 文字——那是呈現層的事。
-                    streamState.Inspect(update.Contents);
-
-                    // 原樣轉發：呼叫端收到的就是 provider 產生的那個 update，
-                    // ResponseId、FinishReason、UsageContent 一律不經改寫。
-                    // 回呼改為可 await 版本，讓有界 channel 的寫入背壓得以生效。
-                    if (onUpdateReceived != null)
-                    {
-                        await onUpdateReceived(update).ConfigureAwait(false);
-                    }
-
-                    timeoutCts.CancelAfter(idleTimeout);
-                }
+                    linkedCts.Token);
+                await PumpStreamAsync(updates, timeoutCts, idleTimeout, streamState, onUpdateReceived, linkedCts.Token).ConfigureAwait(false);
             }
             catch (ClientResultException ex)
             {
@@ -197,7 +173,7 @@ internal static class RimLLMChatClientExecutor
             }
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new RimLLMException(LLMError.Timeout, $"{providerId} stream idle timeout: no new content for {timeoutSeconds} seconds.", ex);
+                throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} stream idle timeout: no new content for {timeoutSeconds} seconds."), ex);
             }
             finally
             {
@@ -210,6 +186,50 @@ internal static class RimLLMChatClientExecutor
             }
         }
 
+        EnsureStreamAnswered(streamState, providerId);
+    }
+
+    /// <summary>逐一轉發串流更新；每個更新處理期間暫停閒置計時，處理完再重新起算。</summary>
+    private static async Task PumpStreamAsync(
+        IAsyncEnumerable<ChatResponseUpdate> updates,
+        CancellationTokenSource timeoutCts,
+        TimeSpan idleTimeout,
+        StreamTrackingState streamState,
+        Func<ChatResponseUpdate, Task> onUpdateReceived,
+        CancellationToken cancellationToken)
+    {
+        await foreach (ChatResponseUpdate update in updates.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            // 收到任何更新即重設閒置計時器，避免長回應被整體逾時誤殺。
+            if (update?.Contents == null)
+            {
+                timeoutCts.CancelAfter(idleTimeout);
+                continue;
+            }
+
+            // 處理這個 update 的期間（含等待消費端）暫停計時，處理完再重新起算。
+            timeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
+
+            // 只做記帳，不改寫內容：判斷這次串流是否真的產出過東西，
+            // 並收集用量。推理內容維持 MEAI 原生的 TextReasoningContent，
+            // 不再被合成成 <think> 文字——那是呈現層的事。
+            streamState.Inspect(update.Contents);
+
+            // 原樣轉發：呼叫端收到的就是 provider 產生的那個 update，
+            // ResponseId、FinishReason、UsageContent 一律不經改寫。
+            // 回呼改為可 await 版本，讓有界 channel 的寫入背壓得以生效。
+            if (onUpdateReceived != null)
+            {
+                await onUpdateReceived(update).ConfigureAwait(false);
+            }
+
+            timeoutCts.CancelAfter(idleTimeout);
+        }
+    }
+
+    /// <summary>串流結束後確認有產出內容與答案，否則轉成對應的錯誤。</summary>
+    private static void EnsureStreamAnswered(StreamTrackingState streamState, string providerId)
+    {
         if (!streamState.AnyOutput)
         {
             // 空串流幾乎都是連線被中斷，屬可重試錯誤；用 InvalidResponse 會讓 fallback 失效。
@@ -306,7 +326,7 @@ internal static class RimLLMChatClientExecutor
                 {
                     list[firstSystemIndex] = new ChatMessage(ChatRole.System, cachedContext);
                 }
-                else if (!existing.Contains(cachedContext))
+                else if (!existing.Contains(cachedContext, StringComparison.Ordinal))
                 {
                     // 附加在既有系統提示詞之後。先前這裡是「前置一份已經含有既有內容的
                     // 字串」，結果同一段系統提示詞會在訊息裡出現兩次。

@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -161,7 +162,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         if (RimLLMLog.Enabled)
         {
             RimLLMLog.Message(state.AttemptOnCurrent > 0
-                ? $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName}), retrying attempt {state.AttemptOnCurrent + 1}..."
+                ? string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName}), retrying attempt {state.AttemptOnCurrent + 1}...")
                 : $"[RimLLM] Attempting to call provider: {candidate.ProviderId} (Model: {candidate.ModelName})");
         }
 
@@ -238,7 +239,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
 
             if (RimLLMLog.Enabled)
             {
-                RimLLMLog.Warning($"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) call failed: {RimLLMLog.SanitizeForLog(state.LastException?.Message, 300)}. Retrying in {delay:F1} seconds...");
+                RimLLMLog.Warning(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) call failed: {RimLLMLog.SanitizeForLog(state.LastException?.Message, 300)}. Retrying in {delay:F1} seconds..."));
             }
             if (delay > 0f)
             {
@@ -265,7 +266,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             {
                 RimLLMLog.Warning(waitTooLong
                     ? $"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) asked to wait longer than the retry limit. Fallbacking to the next entry."
-                    : $"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry.");
+                    : string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Provider {candidate.ProviderId} (Model: {candidate.ModelName}) reached maximum retries ({maxRetries}). Fallbacking to the next entry."));
             }
         }
 
@@ -297,7 +298,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             LatencyMs = state.Total.ElapsedMilliseconds
         });
 
-        bool streaming = RimLLMChatOptions.ReadAdditional(options, StreamingKey, false);
+        bool streaming = RimLLMChatOptions.ReadAdditional(options, StreamingKey, fallback: false);
         string? lastError = RimLLMLog.SanitizeForLog(state.LastException?.Message, 300);
         string message = streaming
             ? $"All fallback attempts failed, unable to establish stream connection. Last error: {lastError}"
@@ -348,39 +349,12 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
                 // 冷卻中的目標被 RecordSuccess 清掉連續失敗數而立刻復活。
                 if (attempt.ResponseCompleted)
                 {
-                    _healthLedger.RecordSuccess(healthKey, elapsedMs);
-                    _usageTracker.RecordLog(new RimLLMManager.RequestLogEntry
-                    {
-                        Timestamp = state.StartTime,
-                        ModId = _modId,
-                        Provider = candidate.ProviderId,
-                        Model = candidate.ModelName,
-                        Success = true,
-                        ErrorMessage = null,
-                        LatencyMs = elapsedMs,
-                        PromptTokens = state.LastUsage.Prompt,
-                        CompletionTokens = state.LastUsage.Completion
-                    });
+                    RecordAttemptSuccess(state, candidate, healthKey, elapsedMs);
                 }
             }
             else
             {
-                state.LastException = attempt.Exception;
-                state.LastAttemptMs = elapsedMs;
-                state.SawRetryableFailureOnCurrent |=
-                    RimLLMFallbackPipeline.IsRetryableException(attempt.Exception);
-
-                // 終結更新代表基底類別不會再選下一個候選（例如串流已吐出內容），
-                // 此時 SelectClientAsync 不會再被呼叫，結算只能在這裡做。
-                if (isTerminal)
-                {
-                    SettleCandidate(state, healthKey);
-                    // 呼叫端取消不是供應商的失敗，不計入成功率。
-                    if (attempt.Exception is not OperationCanceledException)
-                    {
-                        RecordCandidateFailure(state, candidate);
-                    }
-                }
+                RecordAttemptFailure(state, candidate, healthKey, elapsedMs, attempt.Exception, isTerminal);
             }
         }
         catch (Exception ex)
@@ -394,11 +368,53 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         return default;
     }
 
+    private void RecordAttemptSuccess(RequestState state, RimLLMFallbackPipeline.ResolvedCandidate candidate, string healthKey, long elapsedMs)
+    {
+        _healthLedger.RecordSuccess(healthKey, elapsedMs);
+        _usageTracker.RecordLog(new RimLLMManager.RequestLogEntry
+        {
+            Timestamp = state.StartTime,
+            ModId = _modId,
+            Provider = candidate.ProviderId,
+            Model = candidate.ModelName,
+            Success = true,
+            ErrorMessage = null,
+            LatencyMs = elapsedMs,
+            PromptTokens = state.LastUsage.Prompt,
+            CompletionTokens = state.LastUsage.Completion
+        });
+    }
+
+    private void RecordAttemptFailure(
+        RequestState state,
+        RimLLMFallbackPipeline.ResolvedCandidate candidate,
+        string healthKey,
+        long elapsedMs,
+        Exception exception,
+        bool isTerminal)
+    {
+        state.LastException = exception;
+        state.LastAttemptMs = elapsedMs;
+        state.SawRetryableFailureOnCurrent |= RimLLMFallbackPipeline.IsRetryableException(exception);
+
+        // 終結更新代表基底類別不會再選下一個候選（例如串流已吐出內容），
+        // 此時 SelectClientAsync 不會再被呼叫，結算只能在這裡做。
+        if (isTerminal)
+        {
+            SettleCandidate(state, healthKey);
+            // 呼叫端取消不是供應商的失敗，不計入成功率。
+            if (exception is not OperationCanceledException)
+            {
+                RecordCandidateFailure(state, candidate);
+            }
+        }
+    }
+
     public override object? GetService(Type serviceType, object? serviceKey = null)
     {
         if (serviceType == typeof(ChatClientMetadata))
         {
-            return new ChatClientMetadata("RimLLM", null, null);
+            return new ChatClientMetadata("RimLLM", providerUri: null, defaultModelId: null);
         }
         // 讓上層無論包了幾層 DelegatingChatClient，都還能認出這是框架的堆疊。
         if (serviceType == typeof(RimLLMFailoverChatClient))

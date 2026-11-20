@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
@@ -173,7 +173,7 @@ public class RimLLMManager
     {
         if (!_fallbackPipeline.TryResolveCandidates(
                 preferredModelId,
-                null,
+                minFallbackLevel: null,
                 includeCoolingDown: true,
                 out List<RimLLMFallbackPipeline.ResolvedCandidate>? candidates,
                 out failureReason,
@@ -327,20 +327,20 @@ public class RimLLMManager
         }
     }
 
-    public async Task<TestResult> TestProviderAsync(string providerId)
+    public Task<TestResult> TestProviderAsync(string providerId)
     {
         if (!TryGetProvider(providerId, out ILLMProvider? provider))
         {
-            return new TestResult
+            return Task.FromResult(new TestResult
             {
                 Success = false,
                 Provider = providerId,
                 ErrorMessage = $"Unknown provider ID: {providerId}",
                 ErrorCode = LLMError.ProviderOffline
-            };
+            });
         }
 
-        return await provider.TestConnectionAsync().ConfigureAwait(false);
+        return provider.TestConnectionAsync();
     }
 
     /// <summary>
@@ -356,6 +356,7 @@ public class RimLLMManager
         return await TestProviderAsync(providerId).ConfigureAwait(false);
     }
 
+    #pragma warning disable VSTHRD202 // 保留 async：未知供應商的例外要放進 Task，不在呼叫當下同步拋出。
     public async Task<List<string>> FetchProviderModelsAsync(string providerId)
     {
         if (!TryGetProvider(providerId, out ILLMProvider? provider))
@@ -365,6 +366,7 @@ public class RimLLMManager
 
         return await provider.FetchAvailableModelsAsync().ConfigureAwait(false);
     }
+    #pragma warning restore VSTHRD202
 
     /// <summary>
     /// 同 <see cref="FetchProviderModelsAsync"/>，另附上下文上限：優先採用供應商 API 回報的值，
@@ -384,7 +386,7 @@ public class RimLLMManager
 
         ModelCatalog catalog = provider is OpenAIProvider openAiProvider && !OverridesModelList(provider)
             ? await openAiProvider.FetchModelCatalogAsync().ConfigureAwait(false)
-            : new ModelCatalog(await provider.FetchAvailableModelsAsync().ConfigureAwait(false), null);
+            : new ModelCatalog(await provider.FetchAvailableModelsAsync().ConfigureAwait(false), contextWindows: null);
 
         // 供應商 API 已回報每個模型的上限時不等 models.dev：下載照樣完成並留在快取，但不拖慢這次重新整理
         if (modelsDevTask != null

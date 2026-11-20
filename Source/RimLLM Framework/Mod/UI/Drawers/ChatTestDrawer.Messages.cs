@@ -28,7 +28,7 @@ public static partial class ChatTestDrawer
 
         public string Serialize()
         {
-            return $"model={ModelId ?? ""}|ms={ElapsedMs}|tok={TotalTokens}|p={PromptTokens}|c={CompletionTokens}|est={(IsEstimatedTokens ? 1 : 0)}";
+            return string.Create(CultureInfo.InvariantCulture, $"model={ModelId ?? ""}|ms={ElapsedMs}|tok={TotalTokens}|p={PromptTokens}|c={CompletionTokens}|est={(IsEstimatedTokens ? 1 : 0)}");
         }
 
         private static readonly char[] PipeSeparator = ['|'];
@@ -40,7 +40,7 @@ public static partial class ChatTestDrawer
             var parts = raw.Split(PipeSeparator);
             foreach (var part in parts)
             {
-                int eq = part.IndexOf('=');
+                int eq = part.IndexOf('=', StringComparison.Ordinal);
                 if (eq <= 0) continue;
                 string key = part.Substring(0, eq).Trim();
                 string val = part.Substring(eq + 1).Trim();
@@ -99,7 +99,7 @@ public static partial class ChatTestDrawer
     internal static string BuildMarkdownBody(string reasoning, string answer)
     {
         if (string.IsNullOrEmpty(reasoning)) return MarkdownBodyMarker + answer;
-        return MarkdownBodyMarker + ReasoningMarkerPrefix + reasoning.Length + ReasoningMarkerSuffix + reasoning + answer;
+        return MarkdownBodyMarker + ReasoningMarkerPrefix + reasoning.Length.ToString(CultureInfo.InvariantCulture) + ReasoningMarkerSuffix + reasoning + answer;
     }
 
     /// <summary><see cref="BuildMarkdownBody"/> 的反向：拆出推理內容與答案。標記不完整時整段視為答案。</summary>
@@ -113,7 +113,10 @@ public static partial class ChatTestDrawer
         int suffixStart = answer.IndexOf(ReasoningMarkerSuffix, lengthStart, StringComparison.Ordinal);
         if (suffixStart < 0) return;
         if (!int.TryParse(answer.AsSpan(lengthStart, suffixStart - lengthStart), System.Globalization.NumberStyles.None,
-                CultureInfo.InvariantCulture, out int length)) return;
+                CultureInfo.InvariantCulture, out int length))
+        {
+            return;
+        }
 
         int contentStart = suffixStart + ReasoningMarkerSuffix.Length;
         if (length > answer.Length - contentStart) return;
@@ -149,17 +152,17 @@ public static partial class ChatTestDrawer
         // 長期留存於 Player.log。已移除（稽核 SEC-002）。
 
         // 1. 處理已閉合的 <think>...</think> 或 <thought>...</thought> -> 標記為灰色
-        string result = Regex.Replace(text, @"<(think|thought)>([\s\S]*?)</\1>", m => WrapClosedThought(m.Groups[2].Value), RegexOptions.None, TimeSpan.FromSeconds(1));
+        string result = ClosedThoughtTag.Replace(text, m => WrapClosedThought(m.Groups["body"].Value));
 
         // 2. 處理未閉合的 <think> 或 <thought>（串流中常遇到） -> 將後續全部標記為灰色
-        var matchUnclosedXml = Regex.Match(result, @"<(think|thought)>(?![\s\S]*</\1>)", RegexOptions.None, TimeSpan.FromSeconds(1));
+        var matchUnclosedXml = UnclosedThoughtTag.Match(result);
         if (matchUnclosedXml.Success)
         {
             result = WrapTrailingThought(result, matchUnclosedXml.Index, matchUnclosedXml.Length);
         }
 
         // 3. 處理已閉合的 markdown 思考區塊 ```thought...``` -> 標記為灰色
-        result = Regex.Replace(result, @"```thought([\s\S]*?)```", m => WrapClosedThought(m.Groups[1].Value), RegexOptions.None, TimeSpan.FromSeconds(1));
+        result = ThoughtFence.Replace(result, m => WrapClosedThought(m.Groups["body"].Value));
 
         // 4. 處理未閉合的 markdown 思考區塊 ```thought （串流中常遇到）-> 將後續全部標記為灰色
         int markdownMarker = result.IndexOf(MarkdownThoughtMarker, StringComparison.Ordinal);
@@ -273,7 +276,7 @@ public static partial class ChatTestDrawer
         if (entry.StartsWith("<b>[我]:</b>", StringComparison.Ordinal) || entry.StartsWith("<b>[Me]:</b>", StringComparison.Ordinal))
         {
             int endTag = entry.IndexOf("</b>", StringComparison.Ordinal);
-            label = entry.Substring(0, endTag + 4).Replace("<b>", "").Replace("</b>", "").Trim();
+            label = entry.Substring(0, endTag + 4).Replace("<b>", "", StringComparison.Ordinal).Replace("</b>", "", StringComparison.Ordinal).Trim();
             body = entry.Substring(endTag + 4).TrimStart(SpaceTrimChars);
             return true;
         }
@@ -281,7 +284,7 @@ public static partial class ChatTestDrawer
         if (entry.StartsWith("<b>[AI]:</b>", StringComparison.Ordinal))
         {
             int endTag = entry.IndexOf("</b>", StringComparison.Ordinal);
-            label = entry.Substring(0, endTag + 4).Replace("<b>", "").Replace("</b>", "").Trim();
+            label = entry.Substring(0, endTag + 4).Replace("<b>", "", StringComparison.Ordinal).Replace("</b>", "", StringComparison.Ordinal).Trim();
             body = entry.Substring(endTag + 4).TrimStart(SpaceTrimChars);
             return false;
         }
@@ -318,6 +321,13 @@ public static partial class ChatTestDrawer
         var timeout = TimeSpan.FromSeconds(1);
         string cleaned = Regex.Replace(text, @"<!--rimllm-meta:[\s\S]*?-->", "", RegexOptions.IgnoreCase, timeout);
         cleaned = Regex.Replace(cleaned, @"</?(?:b|i|size|color|material|quad)(?:=[^>]*)?>", "", RegexOptions.IgnoreCase, timeout);
-        return Regex.Replace(cleaned, @"＜(/?(?:b|i|size|color|material|quad)(?:=[^＞]*)?)＞", "<$1>", RegexOptions.IgnoreCase, timeout);
+        return Regex.Replace(cleaned, @"＜(?<tag>/?(?:b|i|size|color|material|quad)(?:=[^＞]*)?)＞", "<${tag}>", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture, timeout);
     }
+
+    [GeneratedRegex(@"```thought(?<body>[\s\S]*?)```", RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex ThoughtFence { get; }
+    [GeneratedRegex(@"<(?<tag>think|thought)>(?<body>[\s\S]*?)</\k<tag>>", RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex ClosedThoughtTag { get; }
+    [GeneratedRegex(@"<(?<tag>think|thought)>(?![\s\S]*</\k<tag>>)", RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex UnclosedThoughtTag { get; }
 }

@@ -63,7 +63,7 @@ internal static class RimLLMStartupNotices
             try
             {
                 TaggedString text = argument == null ? translationKey.Translate() : translationKey.Translate(argument);
-                Messages.Message(text, MessageTypeDefOf.CautionInput, false);
+                Messages.Message(text, MessageTypeDefOf.CautionInput, historical: false);
             }
             catch (Exception ex)
             {
@@ -100,6 +100,7 @@ internal static class RimLLMStartupNotices
 /// 靜態建構子放在通知類別上的話，載入設定時第一次 Post 就會提前觸發它。
 /// </summary>
 [StaticConstructorOnStartup]
+[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All)]
 internal static class RimLLMStartupNoticeFlusher
 {
     static RimLLMStartupNoticeFlusher()

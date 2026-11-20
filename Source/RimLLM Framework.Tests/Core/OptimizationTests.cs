@@ -122,7 +122,7 @@ public class OptimizationTests
 
         var policy = BuildPipeline(settings, ledger, tracker, providers);
 
-        var candidates = policy.ResolveCandidates(null, null);
+        var candidates = policy.ResolveCandidates(preferredModelId: null, minFallbackLevel: null);
 
         ClassicAssert.AreEqual("gpt-4o-mini", candidates[0].ModelName);
     }
@@ -140,7 +140,7 @@ public class OptimizationTests
 
         var policy = BuildPipeline(settings, ledger, tracker, providers);
 
-        var candidates = policy.ResolveCandidates(null, null);
+        var candidates = policy.ResolveCandidates(preferredModelId: null, minFallbackLevel: null);
 
         ClassicAssert.AreEqual("gpt-4o", candidates[0].ModelName);
     }
@@ -256,7 +256,7 @@ public class OptimizationTests
         var manager = new RimLLMManager(settings);
 
         int flakyCalls = 0;
-        var bDone = new System.Threading.ManualResetEventSlim(false);
+        var bDone = new System.Threading.ManualResetEventSlim(initialState: false);
         bool bFinishedBeforeRetry = false;
         manager.RegisterProvider(new MockTestProvider
         {
@@ -283,9 +283,9 @@ public class OptimizationTests
         Task<ChatResponse> b = client.GetResponseAsync(NewMessages("B"));
 
         ClassicAssert.IsTrue(b.Wait(5000), "B 不該被 A 的退避卡住");
-        ClassicAssert.AreEqual("B-ok", b.Result.Text);
+        ClassicAssert.AreEqual("B-ok", b.GetAwaiter().GetResult().Text);
         ClassicAssert.IsTrue(a.Wait(10000));
-        ClassicAssert.AreEqual("A-ok", a.Result.Text);
+        ClassicAssert.AreEqual("A-ok", a.GetAwaiter().GetResult().Text);
         ClassicAssert.IsTrue(bFinishedBeforeRetry, "B 必須在 A 重試之前就拿到名額並完成");
     }
 
@@ -308,8 +308,8 @@ public class OptimizationTests
         RimLLMGuardChatClient second = new(
             new MockCustomChatClient(), settings, store, "same.mod", new RimLLMUsageTracker(settings));
 
-        first.GetResponseAsync(NewMessages()).GetAwaiter().GetResult();
-        second.GetResponseAsync(NewMessages()).GetAwaiter().GetResult();
+        await first.GetResponseAsync(NewMessages());
+        await second.GetResponseAsync(NewMessages());
 
         // 第 3 次跨越視窗上限——不論它是由哪一個 client 發出的。
         await Assert.ThrowsAsync<RimLLMException>(async () => await second.GetResponseAsync(NewMessages()));
@@ -328,13 +328,13 @@ public class OptimizationTests
         var providers = new Dictionary<string, ILLMProvider>(StringComparer.OrdinalIgnoreCase);
         var policy = BuildPipeline(settings, ledger, tracker, providers);
 
-        bool ok = policy.TryResolveCandidates(null, null, false, out var candidates, out string reason);
+        bool ok = policy.TryResolveCandidates(preferredModelId: null, minFallbackLevel: null, includeCoolingDown: false, out var candidates, out string reason);
 
         ClassicAssert.IsFalse(ok);
         ClassicAssert.IsNull(candidates);
         ClassicAssert.IsNotEmpty(reason);
         // 拋版語意維持不變，仍擲出 ProviderOffline。
-        await Assert.ThrowsAsync<RimLLMException>(async () => { policy.ResolveCandidates(null, null); await Task.CompletedTask; });
+        await Assert.ThrowsAsync<RimLLMException>(async () => { policy.ResolveCandidates(preferredModelId: null, minFallbackLevel: null); await Task.CompletedTask; });
     }
 
     [Test]
@@ -348,7 +348,7 @@ public class OptimizationTests
         settings.FallbackChain = ["openai:gpt-4o-mini"];
         var policy = BuildPipeline(settings, ledger, tracker, providers);
 
-        bool ok = policy.TryResolveCandidates(null, null, false, out var candidates, out string reason);
+        bool ok = policy.TryResolveCandidates(preferredModelId: null, minFallbackLevel: null, includeCoolingDown: false, out var candidates, out string reason);
 
         ClassicAssert.IsTrue(ok);
         ClassicAssert.IsNull(reason);
@@ -362,7 +362,7 @@ public class OptimizationTests
         settings.FallbackChain = [];
         var manager = new RimLLMManager(settings);
 
-        bool ok = manager.TryGetEffectiveCapabilities(null, out var caps, out string reason);
+        bool ok = manager.TryGetEffectiveCapabilities(preferredModelId: null, out var caps, out string reason);
 
         ClassicAssert.IsFalse(ok);
         ClassicAssert.IsNull(caps);
@@ -381,8 +381,8 @@ public class OptimizationTests
 
         // 含指標時遮罩語意不變。
         string redacted = RimLLMLog.SanitizeForLog("request failed, api_key=SECRETVALUE123", 500);
-        ClassicAssert.IsFalse(redacted.Contains("SECRETVALUE123"));
-        ClassicAssert.IsTrue(redacted.Contains("[redacted]"));
+        ClassicAssert.IsFalse(redacted.Contains("SECRETVALUE123", StringComparison.Ordinal));
+        ClassicAssert.IsTrue(redacted.Contains("[redacted]", StringComparison.Ordinal));
     }
 
     [Test]
@@ -451,16 +451,16 @@ public class OptimizationTests
     public void GetOrCreateOptionsReusesOrCreatesOptions()
     {
         // Case 1: baseFactory 為 null
-        var opts1 = OpenAIPatchExtensions.GetOrCreateOptions(null, null);
+        var opts1 = OpenAIPatchExtensions.GetOrCreateOptions(baseFactory: null, client: null);
         ClassicAssert.IsNotNull(opts1);
 
         // Case 2: baseFactory 回傳現有 options
         var existing = new OpenAI.Chat.ChatCompletionOptions();
-        var opts2 = OpenAIPatchExtensions.GetOrCreateOptions(client => existing, null);
+        var opts2 = OpenAIPatchExtensions.GetOrCreateOptions(client => existing, client: null);
         ClassicAssert.AreSame(existing, opts2);
 
         // Case 3: baseFactory 回傳非 ChatCompletionOptions 物件
-        var opts3 = OpenAIPatchExtensions.GetOrCreateOptions(client => "not-options", null);
+        var opts3 = OpenAIPatchExtensions.GetOrCreateOptions(client => "not-options", client: null);
         ClassicAssert.IsNotNull(opts3);
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -242,8 +243,8 @@ public sealed class ReviewFindingsRegressionTests
 
         RimLLMException ex = await Assert.CatchAsync<RimLLMException>(() => RimLLMChatClientExecutor.StreamAsync(
             new GenerationParams(
-                client, [new ChatMessage(ChatRole.User, "hi")], null, "model", false, "P1", 30f, CancellationToken.None),
-            null));
+                client, [new ChatMessage(ChatRole.User, "hi")], Options: null, "model", UseNativeSchema: false, "P1", 30f, CancellationToken.None),
+            onUpdateReceived: null));
 
         ClassicAssert.AreEqual(LLMError.InvalidResponse, ex.Error);
         StringAssert.Contains("MaxOutputTokens", ex.Message);
@@ -263,9 +264,9 @@ public sealed class ReviewFindingsRegressionTests
             new GenerationParams(
                 client,
                 [new ChatMessage(ChatRole.User, "hi")],
-                null,
+                Options: null,
                 "model",
-                false,
+                UseNativeSchema: false,
                 "P1",
                 0.1f,
                 CancellationToken.None),
@@ -285,8 +286,8 @@ public sealed class ReviewFindingsRegressionTests
 
         RimLLMException ex = await Assert.CatchAsync<RimLLMException>(() => RimLLMChatClientExecutor.StreamAsync(
             new GenerationParams(
-                client, [new ChatMessage(ChatRole.User, "hi")], null, "model", false, "P1", 0.1f, CancellationToken.None),
-            null));
+                client, [new ChatMessage(ChatRole.User, "hi")], Options: null, "model", UseNativeSchema: false, "P1", 0.1f, CancellationToken.None),
+            onUpdateReceived: null));
 
         ClassicAssert.AreEqual(LLMError.Timeout, ex.Error);
     }
@@ -496,7 +497,7 @@ public sealed class ReviewFindingsRegressionTests
 
         for (int i = 0; i < RimLLMThrottleStore.MaxTrackedModIds; i++)
         {
-            store.CheckAntiAbuse("rotated." + i);
+            store.CheckAntiAbuse("rotated." + i.ToString(CultureInfo.InvariantCulture));
         }
         // 輪替要落到下一個時間窗；等待過期 mod ID 被淘汰，計數低於上限即視為完成。
         store.CheckAntiAbuse("rotated.next");
@@ -517,7 +518,7 @@ public sealed class ReviewFindingsRegressionTests
 
     private static RimLLMManager BuildManager(MockSettings settings, params ScriptedProvider[] providers)
     {
-        settings.FallbackChain = providers.Select(p => p.ProviderId + ":model").ToList();
+        settings.FallbackChain = [.. providers.Select(p => p.ProviderId + ":model")];
         var manager = new RimLLMManager(settings);
         foreach (ScriptedProvider provider in providers)
         {
@@ -602,7 +603,7 @@ public sealed class ReviewFindingsRegressionTests
         {
             Interlocked.Increment(ref _provider.RequestCount);
             _provider.LastOptions = options;
-            _provider.LastMessages = messages.ToList();
+            _provider.LastMessages = [.. messages];
             return Task.FromResult(_provider.Responder != null
                 ? _provider.Responder(options)
                 : new ChatResponse(new ChatMessage(ChatRole.Assistant, _provider.ProviderId)));
@@ -646,8 +647,8 @@ public sealed class ReviewFindingsRegressionTests
             int port = ((IPEndPoint)probe.LocalEndpoint).Port;
             probe.Stop();
 
-            Endpoint = $"http://127.0.0.1:{port}/v1";
-            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            Endpoint = string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/v1");
+            _listener.Prefixes.Add(string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/"));
             _listener.Start();
             _ = Task.Run(ServeAsync);
         }

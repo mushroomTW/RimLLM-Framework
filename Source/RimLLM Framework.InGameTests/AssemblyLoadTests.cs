@@ -13,6 +13,9 @@ namespace RimLLM_Framework.InGameTests;
 /// headless 測試走 NuGet 解析看不到這類問題。
 /// </summary>
 [TestFixture(TestType.MainMenu)]
+[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All)]
+// DevTools 只註冊有一個公開建構式的類別：不能宣告私有建構式或改成 static，測試方法因此是實例方法。
+#pragma warning disable CA1822, MA0038 // 測試方法不存取實例資料，但必須是實例方法
 internal sealed class AssemblyLoadTests
 {
     [Test]
@@ -45,7 +48,9 @@ internal sealed class AssemblyLoadTests
     [Test]
     public void StaticMethodSignaturesResolveForDebugActionScan()
     {
+#pragma warning disable S3011 // 故意掃描非公開靜態方法，重現遊戲 DebugAction 掃描的行為
         const BindingFlags flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+#pragma warning restore S3011
         var failures = new List<string>();
         foreach (Assembly assembly in TestHelpers.FrameworkContent.assemblies.loadedAssemblies)
         {
@@ -55,7 +60,7 @@ internal sealed class AssemblyLoadTests
                 {
                     try
                     {
-                        method.IsDefined(typeof(DebugActionAttribute), true);
+                        method.IsDefined(typeof(DebugActionAttribute), inherit: true);
                     }
                     catch (TypeLoadException ex)
                     {
@@ -67,3 +72,4 @@ internal sealed class AssemblyLoadTests
         TestHelpers.AssertNone(failures, "static method signatures that fail to resolve");
     }
 }
+#pragma warning restore CA1822, MA0038

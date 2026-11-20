@@ -16,7 +16,7 @@ public class SetupStatusTests
     {
         ClassicAssert.AreEqual(SetupState.NotConnected, SetupStatus.Evaluate(new List<string>(), _ => true, out string entry));
         ClassicAssert.IsNull(entry);
-        ClassicAssert.AreEqual(SetupState.NotConnected, SetupStatus.Evaluate(null, _ => true, out _));
+        ClassicAssert.AreEqual(SetupState.NotConnected, SetupStatus.Evaluate(chain: null, _ => true, out _));
     }
 
     [Test]

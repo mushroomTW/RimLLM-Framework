@@ -26,7 +26,7 @@ public class DecisionServiceErrorTests
 
     private static TypeSafeApiException ApiError(HttpStatusCode status, TimeSpan? retryAfter = null)
     {
-        return TypeSafeApiException.Create(status, null, NoHeaders, "req-1", retryAfter);
+        return TypeSafeApiException.Create(status, body: null, NoHeaders, "req-1", retryAfter);
     }
 
     /// <summary>反覆建立含一題 Noul 的決策計畫；空計畫會被 SDK 拒收，不是要測的路徑。</summary>
@@ -65,7 +65,7 @@ public class DecisionServiceErrorTests
     public void TimeoutException_MapsToTimeout()
     {
         // TypeSafeTimeoutException 繼承 TypeSafeConnectionException，不能被當成網路錯誤。
-        var timeout = (RimLLMException)Translate(new TypeSafeTimeoutException("deadline", null));
+        var timeout = (RimLLMException)Translate(new TypeSafeTimeoutException("deadline", innerException: null));
         ClassicAssert.AreEqual(LLMError.Timeout, timeout.Error);
         ClassicAssert.IsNotNull(timeout.InnerException);
     }

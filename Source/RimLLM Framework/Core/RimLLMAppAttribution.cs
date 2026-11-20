@@ -55,7 +55,7 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
 
         var sharedUrls = candidates
             .GroupBy(c => UrlKey(c.Attribution.Url), StringComparer.OrdinalIgnoreCase)
-            .Where(g => g.Count() > 1)
+            .Where(g => g.Skip(1).Any())
             .Select(g => g.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         sharedUrls.Add(UrlKey(Framework.Url));

@@ -46,7 +46,7 @@ internal static class DecisionTestDoubles
                 RequestUris.Add(request.RequestUri);
                 AuthorizationHeaders.Add(
                     request.Headers.TryGetValues("Authorization", out IEnumerable<string> values)
-                        ? string.Join(",", values)
+                        ? string.Join(',', values)
                         : "");
             }
 

@@ -85,7 +85,7 @@ public static class RimLLMUIStyle
             if (wordWrap.HasValue) Text.WordWrap = wordWrap.Value;
         }
 
-        public void Dispose()
+        public readonly void Dispose()
         {
             Text.Anchor = _anchor;
             Text.Font = _font;
@@ -144,7 +144,7 @@ public static class RimLLMUIStyle
     /// </summary>
     public static List<string> FilterModels(IEnumerable<string> models, string filter)
     {
-        return FilterModels(models, filter, null);
+        return FilterModels(models, filter, vendor: null);
     }
 
     /// <summary>
@@ -172,7 +172,7 @@ public static class RimLLMUIStyle
             if (string.IsNullOrEmpty(model)) continue;
             if (matchAll
                 || model.Contains(needle, StringComparison.OrdinalIgnoreCase)
-                || (vendor != null && !model.Contains('/') && MatchesVendorPrefixed(vendor, model, needle)))
+                || (vendor != null && !model.Contains('/', StringComparison.Ordinal) && MatchesVendorPrefixed(vendor, model, needle)))
             {
                 result.Add(model);
             }
@@ -188,7 +188,7 @@ public static class RimLLMUIStyle
     private static bool MatchesVendorPrefixed(string vendor, string model, string needle)
     {
         if (vendor.Contains(needle, StringComparison.OrdinalIgnoreCase)) return true;
-        int slash = needle.IndexOf('/');
+        int slash = needle.IndexOf('/', StringComparison.Ordinal);
         return slash >= 0
                && vendor.AsSpan().EndsWith(needle.AsSpan(0, slash), StringComparison.OrdinalIgnoreCase)
                && model.AsSpan().StartsWith(needle.AsSpan(slash + 1), StringComparison.OrdinalIgnoreCase);
@@ -215,7 +215,7 @@ public static class RimLLMUIStyle
     /// </summary>
     public static List<string> FilterModelsCached(string cacheKey, int version, string filter, Func<IList<string>> sourceProvider)
     {
-        return FilterModelsCached(cacheKey, version, filter, sourceProvider, null);
+        return FilterModelsCached(cacheKey, version, filter, sourceProvider, vendor: null);
     }
 
     /// <summary>

@@ -71,7 +71,7 @@ internal static class ScAutoCompatPatch
             object? config;
             try
             {
-                config = strictLoad.Invoke(null, null);
+                config = strictLoad.Invoke(null, parameters: null);
             }
             catch (TargetInvocationException)
             {
@@ -84,7 +84,7 @@ internal static class ScAutoCompatPatch
                 return;
             }
 
-            baseUrl.SetValue(config, baseUrl.GetValue(createDefault.Invoke(null, null)));
+            baseUrl.SetValue(config, baseUrl.GetValue(createDefault.Invoke(null, parameters: null)));
             save.Invoke(null, [config, string.Empty, false]);
             RefreshNativeSettingsDraft(AccessTools.Method(store, "LoadForEditing"));
             CompatSeedUtil.LogReverted(DisplayName);
@@ -127,7 +127,7 @@ internal static class ScAutoCompatPatch
             {
                 try
                 {
-                    object? existing = strictLoad.Invoke(null, null);
+                    object? existing = strictLoad.Invoke(null, parameters: null);
                     string? existingUrl = existing == null ? null : (string?)AccessTools.Property(existing.GetType(), "BaseUrl").GetValue(existing);
                     if (!string.IsNullOrWhiteSpace(existingUrl) && !LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, ScAutoCompatPatch.PackageId))
                     {
@@ -142,7 +142,7 @@ internal static class ScAutoCompatPatch
                 }
             }
 
-            object config = load.Invoke(null, null) ?? throw new InvalidOperationException("ApiConfigurationStore.LoadForEditing 沒有回傳設定。");
+            object config = load.Invoke(null, parameters: null) ?? throw new InvalidOperationException("ApiConfigurationStore.LoadForEditing 沒有回傳設定。");
             Type configType = config.GetType();
 
             AccessTools.Property(configType, "BaseUrl").SetValue(config, endpointUrl);
@@ -176,6 +176,6 @@ internal static class ScAutoCompatPatch
             return;
         }
 
-        draft.SetValue(instance, loadForEditing.Invoke(null, null));
+        draft.SetValue(instance, loadForEditing.Invoke(null, parameters: null));
     }
 }

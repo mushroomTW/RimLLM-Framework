@@ -125,12 +125,12 @@ internal static class ModelChipGrid
             new(setAsLabelKey.Translate(), () =>
             {
                 applyModel(model);
-                Messages.Message(modelLabelKey.Translate() + model, MessageTypeDefOf.TaskCompletion, false);
+                Messages.Message(modelLabelKey.Translate() + model, MessageTypeDefOf.TaskCompletion, historical: false);
             }),
             new("RimLLM_ClickToCopyMenu".Translate(), () =>
             {
                 GUIUtility.systemCopyBuffer = model;
-                Messages.Message("RimLLM_CopiedToClipboard".Translate(model), MessageTypeDefOf.TaskCompletion, false);
+                Messages.Message("RimLLM_CopiedToClipboard".Translate(model), MessageTypeDefOf.TaskCompletion, historical: false);
             })
         };
         Find.WindowStack.Add(new FloatMenu(options));

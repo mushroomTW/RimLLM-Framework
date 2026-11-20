@@ -95,7 +95,7 @@ public static class ProviderIds
     {
         if (string.IsNullOrEmpty(fallbackEntry)) return null;
 
-        int colonIndex = fallbackEntry.IndexOf(':');
+        int colonIndex = fallbackEntry.IndexOf(':', StringComparison.Ordinal);
         return colonIndex > 0 ? fallbackEntry.Substring(0, colonIndex) : fallbackEntry;
     }
 
@@ -113,7 +113,7 @@ public static class ProviderIds
         modelName = null;
         if (string.IsNullOrEmpty(entry)) return false;
 
-        int colonIndex = entry.IndexOf(':');
+        int colonIndex = entry.IndexOf(':', StringComparison.Ordinal);
         if (colonIndex <= 0 || colonIndex >= entry.Length - 1) return false;
 
         providerId = entry.Substring(0, colonIndex);

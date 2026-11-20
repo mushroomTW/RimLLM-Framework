@@ -69,7 +69,7 @@ public class ChatTestDrawerTests
         ClassicAssert.AreEqual("gemini-2.5-flash", formatted);
 
         ClassicAssert.AreEqual("", ChatTestDrawer.FormatModelDisplayName(""));
-        ClassicAssert.AreEqual("", ChatTestDrawer.FormatModelDisplayName(null));
+        ClassicAssert.AreEqual("", ChatTestDrawer.FormatModelDisplayName(modelId: null));
     }
 
     [Test]

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +18,7 @@ namespace RimLLM_Framework.Manager;
 internal sealed class RimLLMAttributionChatClient(IChatClient innerClient, RimLLMAppAttribution? attribution)
     : DelegatingChatClient(innerClient)
 {
+    #pragma warning disable VSTHRD202 // 保留 async：AsyncLocal 歸屬只在本方法的執行內容生效，直接回傳 Task 會把值漏給呼叫端。
     public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
@@ -26,6 +27,7 @@ internal sealed class RimLLMAttributionChatClient(IChatClient innerClient, RimLL
         RimLLMAppAttribution.Current = attribution;
         return await base.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
     }
+    #pragma warning restore VSTHRD202
 
     public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,

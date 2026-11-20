@@ -16,7 +16,7 @@ namespace RimLLM_Framework.Manager;
 /// 佇列無從得知它何時結束——把名額交給呼叫端以 using 持有，是唯一能同時
 /// 涵蓋串流與非串流的形狀。
 /// </remarks>
-internal class RimLLMRequestQueue
+internal sealed class RimLLMRequestQueue
 {
     private readonly IRimLLMSettings _settings;
     private readonly Lock _queueLock = new();
@@ -64,7 +64,7 @@ internal class RimLLMRequestQueue
 
         public void Dispose()
         {
-            RimLLMRequestQueue? queue = Interlocked.Exchange(ref _queue, null);
+            RimLLMRequestQueue? queue = Interlocked.Exchange(ref _queue, value: null);
             if (queue == null) return; // 重複釋放不可重複歸還名額
 
             lock (queue._queueLock)

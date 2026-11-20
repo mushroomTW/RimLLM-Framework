@@ -31,9 +31,9 @@ public sealed class PipelineReviewRegressionTests
             new GenerationParams(
                 client,
                 [new ChatMessage(ChatRole.User, "billable prompt")],
-                null,
+                Options: null,
                 "mock-model",
-                false,
+                UseNativeSchema: false,
                 "Mock",
                 10f,
                 cancellation.Token),
@@ -44,8 +44,8 @@ public sealed class PipelineReviewRegressionTests
             },
             onUsage: value => usage.Add(value));
 
-        await updateReceived.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        cancellation.Cancel();
+        await updateReceived.Task.WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        await cancellation.CancelAsync();
 
         await Assert.CatchAsync<OperationCanceledException>(async () => await stream);
         ClassicAssert.AreEqual(1, usage.Count);
@@ -61,13 +61,13 @@ public sealed class PipelineReviewRegressionTests
             new GenerationParams(
                 new FailingAfterPartialUpdateClient(),
                 [new ChatMessage(ChatRole.User, "billable prompt")],
-                null,
+                Options: null,
                 "mock-model",
-                false,
+                UseNativeSchema: false,
                 "Mock",
                 10f,
                 CancellationToken.None),
-            null,
+            onUpdateReceived: null,
             onUsage: value => usage.Add(value));
 
         RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
@@ -85,13 +85,13 @@ public sealed class PipelineReviewRegressionTests
             new GenerationParams(
                 new PartialStreamClient(),
                 [new ChatMessage(ChatRole.User, "billable prompt")],
-                null,
+                Options: null,
                 "mock-model",
-                false,
+                UseNativeSchema: false,
                 "Mock",
                 0.1f,
                 CancellationToken.None),
-            null,
+            onUpdateReceived: null,
             onUsage: value => usage.Add(value));
 
         RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
@@ -112,20 +112,20 @@ public sealed class PipelineReviewRegressionTests
             new GenerationParams(
                 client,
                 [new ChatMessage(ChatRole.User, "not yet billable")],
-                null,
+                Options: null,
                 "mock-model",
-                false,
+                UseNativeSchema: false,
                 "Mock",
                 10f,
                 cancellation.Token),
-            null,
+            onUpdateReceived: null,
             onUsage: value => usage.Add(value));
 
-        await client.StreamStarted.WaitAsync(TimeSpan.FromSeconds(2));
-        cancellation.Cancel();
+        await client.StreamStarted.WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None);
+        await cancellation.CancelAsync();
 
         await Assert.CatchAsync<OperationCanceledException>(async () =>
-            await stream.WaitAsync(TimeSpan.FromSeconds(2)));
+            await stream.WaitAsync(TimeSpan.FromSeconds(2), CancellationToken.None));
         ClassicAssert.IsEmpty(usage);
     }
 
@@ -140,7 +140,7 @@ public sealed class PipelineReviewRegressionTests
         float delay = RimLLMFallbackPipeline.ResolveRetryDelay(0f, 0, retryAfter);
 
         ClassicAssert.AreEqual(120f, delay);
-        ClassicAssert.AreEqual(60f, RimLLMFallbackPipeline.ResolveRetryDelay(100f, 0, null));
+        ClassicAssert.AreEqual(60f, RimLLMFallbackPipeline.ResolveRetryDelay(100f, 0, ex: null));
     }
 
     [TestCase(false)]
@@ -183,18 +183,14 @@ public sealed class PipelineReviewRegressionTests
         var settings = new MockSettings { RoutingStrategy = 2 };
         var pipeline = CreatePipeline(settings, out _);
 
-        string[][] actual = Enumerable.Range(0, 4)
-            .Select(_ => pipeline.ResolveCandidates(null, null).Select(c => c.ProviderId).ToArray())
-            .ToArray();
+        string[][] actual = [.. Enumerable.Range(0, 4).Select(_ => pipeline.ResolveCandidates(preferredModelId: null, minFallbackLevel: null).Select(c => c.ProviderId).ToArray())];
 
         CollectionAssert.AreEqual(expected, actual[0]);
         CollectionAssert.AreEqual(expectedFirstRotation, actual[1]);
         CollectionAssert.AreEqual(expectedSecondRotation, actual[2]);
         CollectionAssert.AreEqual(actual[0], actual[3]);
 
-        string[][] preferred = Enumerable.Range(0, 2)
-            .Select(_ => pipeline.ResolveCandidates("P3:m3", null).Select(c => c.ProviderId).ToArray())
-            .ToArray();
+        string[][] preferred = [.. Enumerable.Range(0, 2).Select(_ => pipeline.ResolveCandidates("P3:m3", minFallbackLevel: null).Select(c => c.ProviderId).ToArray())];
 
         ClassicAssert.AreEqual("P3", preferred[0][0]);
         ClassicAssert.AreEqual("P3", preferred[1][0]);
@@ -213,7 +209,7 @@ public sealed class PipelineReviewRegressionTests
 
         for (int i = 0; i < 4; i++)
         {
-            ClassicAssert.IsTrue(manager.TryGetEffectiveCapabilities(null, out _, out _));
+            ClassicAssert.IsTrue(manager.TryGetEffectiveCapabilities(preferredModelId: null, out _, out _));
         }
 
         await manager.CreateChatClient("test.round-robin.capabilities")
@@ -230,7 +226,7 @@ public sealed class PipelineReviewRegressionTests
         FieldInfo pumpField = typeof(RimLLMDispatcher).GetField("_hasPump", BindingFlags.NonPublic | BindingFlags.Static);
         bool previousPump = (bool)pumpField.GetValue(null);
         RimLLMDispatcher.ResetQueueForTests();
-        pumpField.SetValue(null, true);
+        pumpField.SetValue(null, value: true);
 
         try
         {
@@ -246,9 +242,9 @@ public sealed class PipelineReviewRegressionTests
                 cancellation.Token);
 
             await WaitForQueuedAction();
-            cancellation.Cancel();
+            await cancellation.CancelAsync();
 
-            Task completed = await Task.WhenAny(request, Task.Delay(TimeSpan.FromSeconds(2)));
+            Task completed = await Task.WhenAny(request, Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None));
             ClassicAssert.AreSame(request, completed, "Cancellation should release the queued waiter without waiting for a Unity frame.");
             await Assert.CatchAsync<OperationCanceledException>(async () => await request);
 
@@ -283,7 +279,7 @@ public sealed class PipelineReviewRegressionTests
 
     private static RimLLMManager BuildManager(MockSettings settings, params RoutingProvider[] providers)
     {
-        settings.FallbackChain = providers.Select(p => p.ProviderId + ":model").ToList();
+        settings.FallbackChain = [.. providers.Select(p => p.ProviderId + ":model")];
         SetProvidersEnabled(settings, providers);
         var manager = new RimLLMManager(settings);
         foreach (RoutingProvider provider in providers)
@@ -433,7 +429,7 @@ public sealed class PipelineReviewRegressionTests
             ChatOptions options = null,
             CancellationToken cancellationToken = default)
         {
-            ReceivedMessages = messages.ToArray();
+            ReceivedMessages = [.. messages];
             return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "ok")));
         }
 
@@ -442,7 +438,7 @@ public sealed class PipelineReviewRegressionTests
             ChatOptions options = null,
             CancellationToken cancellationToken = default)
         {
-            ReceivedMessages = messages.ToArray();
+            ReceivedMessages = [.. messages];
             return OneUpdate(cancellationToken);
         }
 

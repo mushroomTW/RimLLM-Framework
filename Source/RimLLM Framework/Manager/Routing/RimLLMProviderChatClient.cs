@@ -89,7 +89,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                         messages,
                         options,
                         _model,
-                        true,
+                        UseNativeSchema: true,
                         _provider.ProviderId,
                         _settings.ApiTimeout,
                         cancellationToken) { UsageTracker = _usageTracker },
@@ -126,7 +126,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                 ApplyJsonSchemaInstructions(messages, responseType, options),
                 DowngradeCallerSchema(options),
                 _model,
-                false,
+                UseNativeSchema: false,
                 _provider.ProviderId,
                 _settings.ApiTimeout,
                 cancellationToken) { UsageTracker = _usageTracker },
@@ -150,7 +150,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
         if (serviceType == typeof(ChatClientMetadata))
         {
             // 回報實際的候選身分，而不是框架的 "RimLLM"——這一層底下就是真正的供應商了。
-            return new ChatClientMetadata(_provider.ProviderId, null, _model);
+            return new ChatClientMetadata(_provider.ProviderId, providerUri: null, _model);
         }
         if (serviceType == typeof(ILLMProvider)) return _provider;
         return serviceType.IsInstanceOfType(this) ? this : null;
@@ -358,15 +358,15 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             messageBuilder.Append(current.Message).Append('\n');
         }
         string message = messageBuilder.ToString().ToLowerInvariant();
-        bool mentionsSchema = message.Contains("schema") ||
-                              message.Contains("response_format") ||
-                              message.Contains("response format") ||
-                              message.Contains("structured output");
-        bool looksLikeRejection = message.Contains("400") ||
-                                  message.Contains("invalid") ||
-                                  message.Contains("unsupported") ||
-                                  message.Contains("not support") ||
-                                  message.Contains("unrecognized");
+        bool mentionsSchema = message.Contains("schema", StringComparison.Ordinal) ||
+                              message.Contains("response_format", StringComparison.Ordinal) ||
+                              message.Contains("response format", StringComparison.Ordinal) ||
+                              message.Contains("structured output", StringComparison.Ordinal);
+        bool looksLikeRejection = message.Contains("400", StringComparison.Ordinal) ||
+                                  message.Contains("invalid", StringComparison.Ordinal) ||
+                                  message.Contains("unsupported", StringComparison.Ordinal) ||
+                                  message.Contains("not support", StringComparison.Ordinal) ||
+                                  message.Contains("unrecognized", StringComparison.Ordinal);
         return mentionsSchema && looksLikeRejection;
     }
 

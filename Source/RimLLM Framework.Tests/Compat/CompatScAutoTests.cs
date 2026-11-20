@@ -172,7 +172,7 @@ public class CompatScAutoTests
         var client = new OpenAICompatClient(fake);
 
         string json = await client.CompleteAsync(
-            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":0.5,\"max_tokens\":99}", true, CancellationToken.None);
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":0.5,\"max_tokens\":99}", chatProtocol: true, CancellationToken.None);
 
         ClassicAssert.AreEqual("hi", fake.ReceivedMessages.Single().Single().Text);
         ClassicAssert.AreEqual(99, fake.ReceivedOptions.Single().MaxOutputTokens);
@@ -186,7 +186,7 @@ public class CompatScAutoTests
     {
         var fake = new CapturingChatClient { ResponseFactory = () => new ChatResponse(new ChatMessage(ChatRole.Assistant, "x")) };
 
-        await new OpenAICompatClient(fake).CompleteAsync("{\"input\":\"hi\"}", false, CancellationToken.None);
+        await new OpenAICompatClient(fake).CompleteAsync("{\"input\":\"hi\"}", chatProtocol: false, CancellationToken.None);
 
         ClassicAssert.AreEqual(OpenAICompatClient.DefaultMaxOutputTokens, fake.ReceivedOptions.Single().MaxOutputTokens);
     }
@@ -197,7 +197,7 @@ public class CompatScAutoTests
         var fake = new CapturingChatClient { ResponseException = new RimLLMException(LLMError.RateLimit, "slow down") };
 
         string json = await new OpenAICompatClient(fake).CompleteAsync(
-            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", true, CancellationToken.None);
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", chatProtocol: true, CancellationToken.None);
 
         using JsonDocument doc = JsonDocument.Parse(json);
         JsonElement error = doc.RootElement.GetProperty("error");
@@ -210,7 +210,7 @@ public class CompatScAutoTests
     {
         var fake = new CapturingChatClient();
 
-        string json = await new OpenAICompatClient(fake).CompleteAsync("garbage", true, CancellationToken.None);
+        string json = await new OpenAICompatClient(fake).CompleteAsync("garbage", chatProtocol: true, CancellationToken.None);
 
         using (JsonDocument doc = JsonDocument.Parse(json))
         {
@@ -224,9 +224,9 @@ public class CompatScAutoTests
     {
         var fake = new CapturingChatClient { ResponseException = new OperationCanceledException() };
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
         await Assert.ThrowsAsync<OperationCanceledException>(() => new OpenAICompatClient(fake).CompleteAsync(
-            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", true, cts.Token));
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}", chatProtocol: true, cts.Token));
     }
 
     // ---------- 本機端點的輔助判斷 ----------
@@ -241,7 +241,7 @@ public class CompatScAutoTests
     [TestCase("parse", 400)]
     public void Endpoint_ErrorJson_MapsToHttpStatus(string errorType, int expected)
     {
-        string json = OpenAICompatClient.BuildErrorJson(errorType, "x", true);
+        string json = OpenAICompatClient.BuildErrorJson(errorType, "x", chatProtocol: true);
         ClassicAssert.IsTrue(LocalOpenAIEndpoint.TryGetErrorStatus(json, out int status));
         ClassicAssert.AreEqual(expected, status);
     }
@@ -249,7 +249,7 @@ public class CompatScAutoTests
     [Test]
     public void Endpoint_SuccessJson_IsNotAnError()
     {
-        ClassicAssert.IsFalse(LocalOpenAIEndpoint.TryGetErrorStatus(OpenAICompatClient.BuildSuccessJson("ok", true), out _));
+        ClassicAssert.IsFalse(LocalOpenAIEndpoint.TryGetErrorStatus(OpenAICompatClient.BuildSuccessJson("ok", chatProtocol: true), out _));
     }
 
     [TestCase("http://127.0.0.1:5123/m/ow1r.scauto/v1", true)]

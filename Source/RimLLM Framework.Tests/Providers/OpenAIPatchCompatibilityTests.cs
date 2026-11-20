@@ -48,7 +48,7 @@ public sealed class OpenAIPatchCompatibilityTests
         options.Patch.Set(OpenAIPatchPaths.ResponseFormat, Encoding.UTF8.GetBytes("{\"type\":\"json_object\"}"));
         options.Patch.Set(OpenAIPatchPaths.ReasoningEffort, "high");
         options.Patch.Set(OpenAIPatchPaths.Thinking, Encoding.UTF8.GetBytes("{\"type\":\"enabled\"}"));
-        options.Patch.Set(OpenAIPatchPaths.EnableThinking, true);
+        options.Patch.Set(OpenAIPatchPaths.EnableThinking, value: true);
         options.Patch.Set(OpenAIPatchPaths.Models, Encoding.UTF8.GetBytes("[\"a\",\"b\"]"));
         options.Patch.Remove(OpenAIPatchPaths.StreamOptions);
         options.Patch.Remove(OpenAIPatchPaths.Reasoning);

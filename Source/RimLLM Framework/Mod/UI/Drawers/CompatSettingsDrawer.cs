@@ -132,7 +132,7 @@ public static class CompatSettingsDrawer
         {
             var options = new List<FloatMenuOption>
             {
-                new("RimLLM_CompatModelDefault".Translate(), () => SavePin(row.Target, null))
+                new("RimLLM_CompatModelDefault".Translate(), () => SavePin(row.Target, entry: null))
             };
             foreach (string entry in Settings.FallbackChain)
             {
@@ -149,7 +149,7 @@ public static class CompatSettingsDrawer
     {
         Settings.SetCompatModelPin(target.ModId, entry);
         Settings.Write();
-        target.OnTakeoverToggled(true);
+        target.OnTakeoverToggled(enabled: true);
     }
 
     public static void DrawCompatSettings(Listing_Standard listing)

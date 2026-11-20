@@ -101,15 +101,15 @@ public class RimLLMChatOptions : ChatOptions
         ReadAdditional(options, PriorityKey, 0);
 
     internal static string? GetMinFallbackLevel(ChatOptions? options) =>
-        ReadAdditional<string?>(options, MinFallbackLevelKey, null);
+        ReadAdditional<string?>(options, MinFallbackLevelKey, fallback: null);
 
     internal static string? GetCachedContext(ChatOptions? options) =>
-        ReadAdditional<string?>(options, CachedContextKey, null);
+        ReadAdditional<string?>(options, CachedContextKey, fallback: null);
 
     internal static bool GetDisableReasoning(ChatOptions? options) =>
-        ReadAdditional(options, DisableReasoningKey, false);
+        ReadAdditional(options, DisableReasoningKey, fallback: false);
 
     internal static System.Type? GetResponseType(ChatOptions? options) =>
-        ReadAdditional<System.Type?>(options, ResponseTypeKey, null);
+        ReadAdditional<System.Type?>(options, ResponseTypeKey, fallback: null);
 
 }

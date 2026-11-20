@@ -309,7 +309,7 @@ public class GeminiDecisionTests
                 ? ""
                 : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             string googKey = request.Headers.TryGetValues("x-goog-api-key", out IEnumerable<string> values)
-                ? string.Join(",", values)
+                ? string.Join(',', values)
                 : null;
             Requests.Add(new CapturedRequest(
                 request.RequestUri, request.Headers.Authorization?.ToString(), googKey, body));

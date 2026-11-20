@@ -32,16 +32,16 @@ public class CompatRimTalkTests
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled("never.registered"));
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(null));
 
-        settings.SetCompatTakeoverEnabled(RimTalkCompatPatch.PackageId, true);
+        settings.SetCompatTakeoverEnabled(RimTalkCompatPatch.PackageId, enabled: true);
         ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(RimTalkCompatPatch.PackageId));
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled("never.registered"));
 
-        settings.SetCompatTakeoverEnabled(RimTalkCompatPatch.PackageId, false);
+        settings.SetCompatTakeoverEnabled(RimTalkCompatPatch.PackageId, enabled: false);
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(RimTalkCompatPatch.PackageId));
 
         // 空鍵不得寫入也不得擲例外
-        settings.SetCompatTakeoverEnabled(null, true);
-        settings.SetCompatTakeoverEnabled(string.Empty, true);
+        settings.SetCompatTakeoverEnabled(modId: null, enabled: true);
+        settings.SetCompatTakeoverEnabled(string.Empty, enabled: true);
     }
 
 

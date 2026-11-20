@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ClientModel.Primitives;
 using System.Globalization;
 using System.IO;
@@ -26,7 +26,7 @@ public class EmbeddingReviewRegressionTests
         "\"usage\":{\"prompt_tokens\":10,\"total_tokens\":10}}";
 
     [Test]
-    public async Task EmbeddingWithoutAChosenModelRejectsBeforeSendingRequest()
+    public Task EmbeddingWithoutAChosenModelRejectsBeforeSendingRequest()
     {
         // 沒有預設模型：玩家沒選 Embedding 模型就拒絕送出，不替玩家挑一個。
         var settings = CreateEmbeddingSettings();
@@ -34,7 +34,7 @@ public class EmbeddingReviewRegressionTests
         var manager = new RimLLMManager(settings);
         var handler = SuccessfulEmbeddingHandler();
 
-        await WithEmbeddingTransportAsync(handler, async () =>
+        return WithEmbeddingTransportAsync(handler, async () =>
         {
             var generator = manager.CreateEmbeddingGenerator("test.embed.nomodel");
             await Assert.ThrowsAsync<RimLLMException>(async () =>
@@ -42,11 +42,11 @@ public class EmbeddingReviewRegressionTests
                 await generator.GenerateAsync(values).ConfigureAwait(false);
             });
             ClassicAssert.AreEqual(0, handler.RequestCount, "沒選模型時不應送出 HTTP 請求。");
-        }).ConfigureAwait(false);
+        });
     }
 
     [Test]
-    public async Task EmbeddingFacadeHardBlockRejectsBeforeSendingRequest()
+    public Task EmbeddingFacadeHardBlockRejectsBeforeSendingRequest()
     {
         var settings = CreateEmbeddingSettings();
         settings.DailyTokenBudgetLimit = 1;
@@ -55,7 +55,7 @@ public class EmbeddingReviewRegressionTests
         var manager = new RimLLMManager(settings);
         var handler = SuccessfulEmbeddingHandler();
 
-        await WithEmbeddingTransportAsync(handler, async () =>
+        return WithEmbeddingTransportAsync(handler, async () =>
         {
             var generator = manager.CreateEmbeddingGenerator("test.embed.budget.hardblock");
             RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
@@ -65,7 +65,7 @@ public class EmbeddingReviewRegressionTests
 
             ClassicAssert.AreEqual(LLMError.QuotaExceeded, exception.Error);
             ClassicAssert.AreEqual(0, handler.RequestCount, "超出 HardBlock 預算時不應送出 HTTP 請求。");
-        }).ConfigureAwait(false);
+        });
     }
 
     [Test]
@@ -116,7 +116,7 @@ public class EmbeddingReviewRegressionTests
         var service = new RimLLMEmbeddingService(settings);
         var handler = SuccessfulEmbeddingHandler();
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
 
         await WithEmbeddingTransportAsync(handler, async () =>
         {
@@ -136,7 +136,7 @@ public class EmbeddingReviewRegressionTests
         var settings = CreateEmbeddingSettings();
         var service = new RimLLMEmbeddingService(settings);
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
 
         OperationCanceledException modelListException = await Assert.CatchAsync<OperationCanceledException>(async () =>
         {
@@ -190,7 +190,7 @@ public class EmbeddingReviewRegressionTests
             await service.FetchAvailableModelsAsync(
                 "OpenAI", modelListServer.Endpoint.ToString(), "test-key", modelListCancellation.Token).ConfigureAwait(false);
         });
-        await modelListServer.Completion.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        await modelListServer.Completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false);
         ClassicAssert.IsNotNull(modelListException);
         ClassicAssert.AreEqual(1, modelListServer.AcceptedConnections);
 
@@ -250,6 +250,26 @@ public class EmbeddingReviewRegressionTests
         await server.Completion.ConfigureAwait(false);
         ClassicAssert.AreEqual(LLMError.Timeout, modelListException.Error);
         ClassicAssert.AreEqual(1, server.AcceptedConnections);
+    }
+
+    [Test]
+    [SetCulture("de-DE")]
+    public Task EmbeddingTimeoutMessageIgnoresPlayerCulture()
+    {
+        // 德文的小數點是逗號；錯誤訊息會進日誌與呼叫端，秒數要固定成 0.1。
+        var settings = CreateEmbeddingSettings();
+        settings.ApiTimeout = 0.1f;
+        var service = new RimLLMEmbeddingService(settings);
+        var handler = DelayedEmbeddingHandler();
+
+        return WithEmbeddingTransportAsync(handler, async () =>
+        {
+            RimLLMException exception = await Assert.ThrowsAsync<RimLLMException>(async () =>
+            {
+                await service.ComputeEmbeddingsAsync(values).ConfigureAwait(false);
+            });
+            StringAssert.Contains("after 0.1 seconds", exception.Message);
+        });
     }
 
     [Test]
@@ -385,7 +405,7 @@ public class EmbeddingReviewRegressionTests
             _listener = new TcpListener(IPAddress.Loopback, 0);
             _listener.Start();
             int port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-            Endpoint = new Uri($"http://127.0.0.1:{port}/v1");
+            Endpoint = new Uri(string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/v1"));
             Completion = RespondOnceAsync();
         }
 
@@ -396,19 +416,19 @@ public class EmbeddingReviewRegressionTests
                 using var acceptTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 using TcpClient client = await _listener.AcceptTcpClientAsync(acceptTimeout.Token).ConfigureAwait(false);
                 Interlocked.Increment(ref _acceptedConnections);
-                using NetworkStream stream = client.GetStream();
+                await using NetworkStream stream = client.GetStream();
                 using var requestTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 if (!await ReadCompleteRequestAsync(stream, requestTimeout.Token).ConfigureAwait(false))
                 {
                     return;
                 }
 
-                await Task.Delay(_responseDelay).ConfigureAwait(false);
+                await Task.Delay(_responseDelay, CancellationToken.None).ConfigureAwait(false);
                 byte[] body = Encoding.UTF8.GetBytes(_responseBody);
                 byte[] headers = Encoding.ASCII.GetBytes(
                     $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");
-                await stream.WriteAsync(headers.AsMemory()).ConfigureAwait(false);
-                await stream.WriteAsync(body.AsMemory()).ConfigureAwait(false);
+                await stream.WriteAsync(headers.AsMemory(), CancellationToken.None).ConfigureAwait(false);
+                await stream.WriteAsync(body.AsMemory(), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception exception) when (
                 exception is IOException || exception is SocketException || exception is ObjectDisposedException || exception is OperationCanceledException)
@@ -433,7 +453,7 @@ public class EmbeddingReviewRegressionTests
             bool expectContinue = false;
             foreach (string line in header.ToString().Split(separator, StringSplitOptions.None))
             {
-                int colon = line.IndexOf(':');
+                int colon = line.IndexOf(':', StringComparison.Ordinal);
                 if (colon <= 0) continue;
 
                 string name = line.Substring(0, colon).Trim();
@@ -473,7 +493,7 @@ public class EmbeddingReviewRegressionTests
                 string sizeLine = await ReadLineAsync(stream, cancellationToken).ConfigureAwait(false);
                 if (sizeLine == null) return false;
 
-                int extension = sizeLine.IndexOf(';');
+                int extension = sizeLine.IndexOf(';', StringComparison.Ordinal);
                 string sizeText = extension >= 0 ? sizeLine.Substring(0, extension) : sizeLine;
                 if (!int.TryParse(sizeText, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int size)) return false;
                 if (size == 0)

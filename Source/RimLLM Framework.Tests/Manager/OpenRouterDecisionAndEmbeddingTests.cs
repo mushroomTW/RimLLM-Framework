@@ -173,7 +173,7 @@ public class OpenRouterDecisionAndEmbeddingTests
     {
         var settings = new MockSettings();
         RimLLMEmbeddingModelList list = await NewManager(settings).EmbeddingService
-            .FetchAvailableModelsAsync(RimLLMEmbeddingService.OpenRouterProvider, null, "sk-or-test");
+            .FetchAvailableModelsAsync(RimLLMEmbeddingService.OpenRouterProvider, endpoint: null, "sk-or-test");
 
         ClassicAssert.AreEqual("https://openrouter.ai/api/v1/embeddings/models", _handler.Requests[0].Uri.ToString());
         ClassicAssert.IsTrue(list.Filtered);

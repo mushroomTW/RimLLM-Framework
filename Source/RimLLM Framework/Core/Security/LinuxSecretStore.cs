@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -31,7 +32,7 @@ internal sealed partial class LinuxSecretStore : ISecretStore
     public void Write(string account, byte[] key)
     {
         using var call = new SecretCall(account);
-        int success = secret_password_storev_sync(IntPtr.Zero, call.Attributes, null, "RimLLM Framework storage key",
+        int success = secret_password_storev_sync(IntPtr.Zero, call.Attributes, collection: null, "RimLLM Framework storage key",
             Convert.ToBase64String(key), call.Cancellable, out IntPtr error);
         CheckError(error);
         if (success == 0) throw new CryptographicException("Secret Service did not store the storage key.");
@@ -52,7 +53,7 @@ internal sealed partial class LinuxSecretStore : ISecretStore
         {
             // 原生訊息不帶進日誌，避免服務提供者將敏感內容寫入錯誤文字。
             int code = Marshal.ReadInt32(error, sizeof(uint));
-            throw new CryptographicException($"Secret Service failed (code {code}). Ensure the session D-Bus and an unlocked keyring are available.");
+            throw new CryptographicException(string.Create(CultureInfo.InvariantCulture, $"Secret Service failed (code {code}). Ensure the session D-Bus and an unlocked keyring are available."));
         }
         finally { g_error_free(error); }
     }

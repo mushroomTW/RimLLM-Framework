@@ -25,12 +25,12 @@ public class RimLLMEmbeddingClientTests
         var manager = new RimLLMManager(settings);
         var generator = manager.CreateEmbeddingGenerator("test.embed.metadata.mod");
 
-        var metadata = generator.GetService(typeof(EmbeddingGeneratorMetadata), null) as EmbeddingGeneratorMetadata;
+        var metadata = generator.GetService(typeof(EmbeddingGeneratorMetadata), serviceKey: null) as EmbeddingGeneratorMetadata;
         ClassicAssert.IsNotNull(metadata);
         ClassicAssert.AreEqual("Google", metadata.ProviderName);
         ClassicAssert.AreEqual("text-embedding-004", metadata.DefaultModelId);
 
-        ClassicAssert.AreSame(generator, generator.GetService(generator.GetType(), null));
+        ClassicAssert.AreSame(generator, generator.GetService(generator.GetType(), serviceKey: null));
         // 具名查詢不屬於這一層，維持 null。
         ClassicAssert.IsNull(generator.GetService(typeof(EmbeddingGeneratorMetadata), "some-key"));
     }
@@ -88,7 +88,7 @@ public class RimLLMEmbeddingClientTests
         {
             await generator.GenerateAsync(singleInput).ConfigureAwait(false);
         });
-        ClassicAssert.IsTrue(ex1.Message.Contains("No embedding provider is configured"));
+        ClassicAssert.IsTrue(ex1.Message.Contains("No embedding provider is configured", StringComparison.Ordinal));
 
         // 第二次呼叫：超出 MaxRequestsPerWindow (1)，預期直接拋出 RateLimit 防濫用例外
         var ex2 = await Assert.ThrowsAsync<RimLLMException>(async () =>

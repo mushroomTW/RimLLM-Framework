@@ -26,7 +26,7 @@ internal sealed class RecordingHttpHandler(Func<Uri, string> respond) : HttpMess
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<string, IEnumerable<string>> header in request.Headers)
         {
-            headers[header.Key] = string.Join(",", header.Value);
+            headers[header.Key] = string.Join(',', header.Value);
         }
         lock (Requests)
         {

@@ -179,7 +179,7 @@ public class RimLLMUsageTracker
             _requestLogs.Enqueue(entry);
             Interlocked.Increment(ref _logCount);
             TrimLogs();
-            _settings.RequestLogs = new List<RimLLMManager.RequestLogEntry>(_requestLogs.ToArray());
+            _settings.RequestLogs = new List<RimLLMManager.RequestLogEntry>([.. _requestLogs]);
             CountOutcome(entry.Provider, entry.Success);
             // Snapshot 與 dirty 標記同鎖更新，讓背景寫入及關閉 flush 都能看見最新日誌。
             schedule = MarkTelemetryDirtyLocked(immediate: !entry.Success);
@@ -232,14 +232,14 @@ public class RimLLMUsageTracker
             _lastTelemetrySaveTime = now;
             _telemetrySaveDeferred = false;
             _telemetrySaveScheduleVersion++;
-            return new TelemetrySaveSchedule(true, false, TimeSpan.Zero, _telemetrySaveScheduleVersion);
+            return new TelemetrySaveSchedule(queueNow: true, queueLater: false, TimeSpan.Zero, _telemetrySaveScheduleVersion);
         }
 
         if (!_telemetrySaveDeferred)
         {
             _telemetrySaveDeferred = true;
             long version = ++_telemetrySaveScheduleVersion;
-            return new TelemetrySaveSchedule(false, true, TelemetrySaveInterval - elapsed, version);
+            return new TelemetrySaveSchedule(queueNow: false, queueLater: true, TelemetrySaveInterval - elapsed, version);
         }
 
         return default;
@@ -648,7 +648,7 @@ public class RimLLMUsageTracker
             string text = LanguageDatabase.activeLanguage != null
                 ? translationKey.Translate().ToString()
                 : fallbackText;
-            Messages.Message(text, MessageTypeDefOf.CautionInput, false);
+            Messages.Message(text, MessageTypeDefOf.CautionInput, historical: false);
         }
         catch (Exception ex)
         {

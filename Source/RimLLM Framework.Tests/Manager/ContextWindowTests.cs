@@ -63,7 +63,7 @@ public class ContextWindowTests
         RimLLMProvider.Initialize(new RimLLMManager(settings));
 
         ClassicAssert.AreEqual(200000, RimLLMProvider.GetContextWindow("OpenRouter:vendor/model"));
-        ClassicAssert.IsNull(RimLLMProvider.GetContextWindow(null));
+        ClassicAssert.IsNull(RimLLMProvider.GetContextWindow(modelId: null));
         ClassicAssert.IsNull(RimLLMProvider.GetContextWindow(""));
         ClassicAssert.IsNull(RimLLMProvider.GetContextWindow("OpenRouter"));
         ClassicAssert.IsNull(RimLLMProvider.GetContextWindow("OpenRouter:"));
@@ -93,7 +93,7 @@ public class ContextWindowTests
     [Test]
     public void ParseContextWindowsToleratesUnexpectedShapes()
     {
-        CollectionAssert.IsEmpty(OpenAIProvider.ParseContextWindows(null));
+        CollectionAssert.IsEmpty(OpenAIProvider.ParseContextWindows(json: null));
         CollectionAssert.IsEmpty(OpenAIProvider.ParseContextWindows("not json"));
         CollectionAssert.IsEmpty(OpenAIProvider.ParseContextWindows(@"{""data"":{}}"));
         CollectionAssert.IsEmpty(OpenAIProvider.ParseContextWindows(@"{""data"":[{""context_length"":""128k""}]}"));
@@ -197,8 +197,8 @@ public class ContextWindowTests
         var settings = new RimLLMFrameworkSettings();
         settings.SetProviderVisionSupport("OpenAI", new Dictionary<string, bool> { ["gpt-4o"] = true, ["o-text"] = false });
 
-        ClassicAssert.AreEqual(true, settings.GetVisionSupport("OpenAI", "gpt-4o"));
-        ClassicAssert.AreEqual(false, settings.GetVisionSupport("OpenAI", "o-text"));
+        ClassicAssert.AreEqual(expected: true, settings.GetVisionSupport("OpenAI", "gpt-4o"));
+        ClassicAssert.AreEqual(expected: false, settings.GetVisionSupport("OpenAI", "o-text"));
         ClassicAssert.IsNull(settings.GetVisionSupport("OpenAI", "unknown"));
         ClassicAssert.IsNull(settings.GetVisionSupport("DeepSeek", "gpt-4o"));
     }

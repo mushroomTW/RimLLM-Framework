@@ -14,6 +14,7 @@ namespace RimLLM_Framework.InGameTests;
 /// 遊戲的 XML 解析器拒收、或 key 被當成佔位符，只有遊戲內看得到。
 /// </summary>
 [TestFixture(TestType.MainMenu)]
+[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All)]
 internal sealed class TranslationTests
 {
     [Test]
@@ -72,7 +73,7 @@ internal sealed class TranslationTests
             string ownRoot = TestHelpers.FrameworkContent.RootDir.Replace('\\', '/');
             foreach (string error in language.loadErrors)
             {
-                bool ownPath = error.Replace('\\', '/').IndexOf(ownRoot, StringComparison.OrdinalIgnoreCase) >= 0;
+                bool ownPath = error.Replace('\\', '/').Contains(ownRoot, StringComparison.OrdinalIgnoreCase);
                 bool ownDuplicate = ownKeys.Any(k => error.StartsWith($"Duplicate keyed translation key: {k} ", StringComparison.Ordinal));
                 if (ownPath || ownDuplicate)
                 {

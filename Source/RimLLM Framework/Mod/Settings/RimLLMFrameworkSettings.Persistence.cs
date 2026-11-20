@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Core;
@@ -305,7 +306,7 @@ public partial class RimLLMFrameworkSettings
         if (SanitizeBudgetPolicy(storedPolicy) != storedPolicy)
         {
             RimLLMLog.Warning(
-                $"[RimLLM] Unsupported budget policy {storedPolicy} in settings; reset to HardBlock (0).");
+                string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Unsupported budget policy {storedPolicy} in settings; reset to HardBlock (0)."));
             RimLLMStartupNotices.Post("RimLLM_MsgBudgetPolicyReset");
         }
         this.BudgetPolicy = SanitizeBudgetPolicy(storedPolicy);

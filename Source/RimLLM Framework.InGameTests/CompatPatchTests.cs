@@ -11,6 +11,7 @@ namespace RimLLM_Framework.InGameTests;
 /// modcompatchecker.main、ow1r.scauto 為伴隨 Mod 再跑一次。
 /// </summary>
 [TestFixture(TestType.MainMenu)]
+[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All)]
 internal sealed class CompatPatchTests
 {
     [Test]

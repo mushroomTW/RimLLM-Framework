@@ -156,7 +156,7 @@ public static class ModelSettingsDrawer
 
         if (options.Count == 0)
         {
-            options.Add(new FloatMenuOption("RimLLM_NoEnabledProviders".Translate(), null));
+            options.Add(new FloatMenuOption("RimLLM_NoEnabledProviders".Translate(), action: null));
         }
         Find.WindowStack.Add(new FloatMenu(options));
     }
@@ -165,21 +165,21 @@ public static class ModelSettingsDrawer
     {
         if (string.IsNullOrEmpty(addModelName))
         {
-            Messages.Message("RimLLM_MsgSelectModelFirst".Translate(), MessageTypeDefOf.RejectInput, false);
+            Messages.Message("RimLLM_MsgSelectModelFirst".Translate(), MessageTypeDefOf.RejectInput, historical: false);
             return;
         }
         string entry = $"{addProviderId}:{addModelName}";
         var chain = Settings.FallbackChain;
         if (chain.Contains(entry))
         {
-            Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, false);
+            Messages.Message("RimLLM_MsgModelExists".Translate(), MessageTypeDefOf.RejectInput, historical: false);
         }
         else
         {
             chain.Add(entry);
             Settings.FallbackChain = chain;
             Settings.Write();
-            Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, false);
+            Messages.Message("RimLLM_MsgModelAdded".Translate(entry), MessageTypeDefOf.PositiveEvent, historical: false);
         }
     }
 

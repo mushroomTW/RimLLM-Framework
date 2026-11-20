@@ -1,6 +1,7 @@
 using System;
 using System.ClientModel.Primitives;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -166,7 +167,7 @@ public class ServiceFailoverTests
         var hosts = new List<string>();
         var handler = RoutingHandler(hosts, failingHost: "api.openai.com");
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
 
         await WithTransportAsync(handler, async () =>
         {
@@ -224,12 +225,12 @@ public class ServiceFailoverTests
         });
         var reportedProviders = new List<string>();
         var texts = new List<string>();
-        for (int i = 0; i < RimLLMEmbeddingService.MaxEmbeddingBatchSize + 1; i++) texts.Add("t" + i);
+        for (int i = 0; i < RimLLMEmbeddingService.MaxEmbeddingBatchSize + 1; i++) texts.Add("t" + i.ToString(CultureInfo.InvariantCulture));
 
         await WithTransportAsync(handler, async () =>
         {
             await new RimLLMEmbeddingService(settings).ComputeEmbeddingsAsync(
-                texts, null, batch => reportedProviders.Add(batch[0].ProviderId));
+                texts, generationOptions: null, batch => reportedProviders.Add(batch[0].ProviderId));
         });
 
         // 主供應商第一批成功、第二批失敗：它的批次不能先回報用量，否則整次重算後會被重複計入。

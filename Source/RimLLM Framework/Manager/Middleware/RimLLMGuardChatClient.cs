@@ -44,7 +44,7 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        List<ChatMessage> bufferedMessages = messages.ToList();
+        List<ChatMessage> bufferedMessages = [.. messages];
         Guard(bufferedMessages);
         using RimLLMUsageTracker.BudgetReservation reservation = ReserveBudget(bufferedMessages, options);
         return await base.GetResponseAsync(bufferedMessages, options, cancellationToken).ConfigureAwait(false);
@@ -55,7 +55,7 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        List<ChatMessage> bufferedMessages = messages.ToList();
+        List<ChatMessage> bufferedMessages = [.. messages];
 
         // 防濫用檢查維持在取得列舉器時執行。預算 reservation 延到第一次列舉，
         // 避免呼叫端建立串流後從未列舉，永久占住每日額度。

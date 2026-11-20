@@ -32,7 +32,7 @@ public class RimLLMEmbeddingResult
     /// <param name="vector">特徵向量陣列。</param>
     /// <param name="inputTokenCount">輸入 Token 數。</param>
     public RimLLMEmbeddingResult(float[] vector, long? inputTokenCount)
-        : this(vector, inputTokenCount, null, null)
+        : this(vector, inputTokenCount, modelId: null, providerId: null)
     {
     }
 

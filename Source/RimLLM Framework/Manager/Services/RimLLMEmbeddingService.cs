@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -136,7 +137,7 @@ public class RimLLMEmbeddingService
     /// </exception>
     public Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(IEnumerable<string> texts, CancellationToken cancellationToken = default)
     {
-        return ComputeEmbeddingsCoreAsync(texts, null, null, cancellationToken);
+        return ComputeEmbeddingsCoreAsync(texts, generationOptions: null, onBatchCompleted: null, cancellationToken);
     }
 
     internal Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(
@@ -144,7 +145,7 @@ public class RimLLMEmbeddingService
         Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions,
         CancellationToken cancellationToken = default)
     {
-        return ComputeEmbeddingsCoreAsync(texts, generationOptions, null, cancellationToken);
+        return ComputeEmbeddingsCoreAsync(texts, generationOptions, onBatchCompleted: null, cancellationToken);
     }
 
     internal Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(
@@ -156,6 +157,7 @@ public class RimLLMEmbeddingService
         return ComputeEmbeddingsCoreAsync(texts, generationOptions, onBatchCompleted, cancellationToken);
     }
 
+    #pragma warning disable VSTHRD202 // 保留 async：參數驗證與設定錯誤的例外要放進 Task，不在呼叫當下同步拋出。
     private async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsCoreAsync(
         IEnumerable<string> texts,
         Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions,
@@ -169,7 +171,7 @@ public class RimLLMEmbeddingService
         var results = new List<RimLLMEmbeddingResult>(inputs.Count);
         if (inputs.Count == 0) return results;
 
-        if (inputs.Any(string.IsNullOrEmpty))
+        if (inputs.Exists(string.IsNullOrEmpty))
             throw new ArgumentException("Text to embed cannot be empty.", nameof(texts));
 
         string provider = _settings.EmbeddingProvider;
@@ -219,6 +221,7 @@ public class RimLLMEmbeddingService
                 }
             }).ConfigureAwait(false);
     }
+    #pragma warning restore VSTHRD202
 
     /// <summary>本機供應商（LocalAPI_*）是玩家自架的服務，可以不填金鑰；雲端供應商少了金鑰就送不出去。</summary>
     private static bool RequiresApiKey(string provider)
@@ -352,7 +355,7 @@ public class RimLLMEmbeddingService
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             // 呼叫端沒有取消，代表是 ApiTimeout 觸發的逾時。
-            throw new RimLLMException(LLMError.Timeout, $"Embedding request timed out after {ctx.TimeoutSeconds} seconds.", ex);
+            throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"Embedding request timed out after {ctx.TimeoutSeconds} seconds."), ex);
         }
         catch (OperationCanceledException)
         {
@@ -411,27 +414,11 @@ public class RimLLMEmbeddingService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
         try
         {
-            switch (provider)
-            {
-                case "Google":
-                    return await FetchGoogleEmbeddingModelsAsync(root, effectiveApiKey, linkedCts.Token).ConfigureAwait(false);
-                case "LocalAPI_Ollama":
-                    return await FetchOllamaEmbeddingModelsAsync(root, linkedCts.Token).ConfigureAwait(false);
-                case "LocalAPI_OpenAI":
-                    return await FetchLocalEmbeddingModelsAsync(root, effectiveApiKey, linkedCts.Token).ConfigureAwait(false);
-                case OpenRouterProvider:
-                    // OpenRouter 的 /models 有數百個對話模型；/embeddings/models 只列 embedding 模型，不必再靠名稱猜。
-                    return new RimLLMEmbeddingModelList(
-                        await FetchOpenAiCompatibleModelsAsync(effectiveApiKey, root + "/embeddings", linkedCts.Token).ConfigureAwait(false),
-                        filtered: true);
-                default:
-                    List<string> ids = await FetchOpenAiCompatibleModelsAsync(effectiveApiKey, root, linkedCts.Token).ConfigureAwait(false);
-                    return new RimLLMEmbeddingModelList(ids.FindAll(LooksLikeEmbeddingModel), filtered: true);
-            }
+            return await FetchModelsForProviderAsync(provider, root, effectiveApiKey, linkedCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new RimLLMException(LLMError.Timeout, $"Embedding model list request timed out after {timeoutSeconds} seconds.", ex);
+            throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"Embedding model list request timed out after {timeoutSeconds} seconds."), ex);
         }
         catch (OperationCanceledException)
         {
@@ -455,6 +442,29 @@ public class RimLLMEmbeddingService
         catch (Exception ex)
         {
             throw WrapUnknownEmbeddingError("Embedding model list", ex);
+        }
+    }
+
+    /// <summary>依供應商選擇能分辨 embedding 模型的清單端點。</summary>
+    private static async Task<RimLLMEmbeddingModelList> FetchModelsForProviderAsync(
+        string provider, string root, string apiKey, CancellationToken cancellationToken)
+    {
+        switch (provider)
+        {
+            case "Google":
+                return await FetchGoogleEmbeddingModelsAsync(root, apiKey, cancellationToken).ConfigureAwait(false);
+            case "LocalAPI_Ollama":
+                return await FetchOllamaEmbeddingModelsAsync(root, cancellationToken).ConfigureAwait(false);
+            case "LocalAPI_OpenAI":
+                return await FetchLocalEmbeddingModelsAsync(root, apiKey, cancellationToken).ConfigureAwait(false);
+            case OpenRouterProvider:
+                // OpenRouter 的 /models 有數百個對話模型；/embeddings/models 只列 embedding 模型，不必再靠名稱猜。
+                return new RimLLMEmbeddingModelList(
+                    await FetchOpenAiCompatibleModelsAsync(apiKey, root + "/embeddings", cancellationToken).ConfigureAwait(false),
+                    filtered: true);
+            default:
+                List<string> ids = await FetchOpenAiCompatibleModelsAsync(apiKey, root, cancellationToken).ConfigureAwait(false);
+                return new RimLLMEmbeddingModelList(ids.FindAll(LooksLikeEmbeddingModel), filtered: true);
         }
     }
 
@@ -575,7 +585,7 @@ public class RimLLMEmbeddingService
                 if (totalModels > names.Count)
                 {
                     Core.RimLLMLog.Warning(
-                        $"[RimLLM] Ollama model library has {totalModels} entries; only the first {names.Count} were probed (MaxOllamaModelsToProbe={MaxOllamaModelsToProbe}). Models beyond this limit will not appear in the list.");
+                        string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Ollama model library has {totalModels} entries; only the first {names.Count} were probed (MaxOllamaModelsToProbe={MaxOllamaModelsToProbe}). Models beyond this limit will not appear in the list."));
                 }
             }
         }
@@ -701,7 +711,7 @@ public class RimLLMEmbeddingService
         {
             throw LLMErrorMapper.CreateException(
                 (int)response.StatusCode,
-                $"{request.RequestUri?.AbsolutePath} responded {(int)response.StatusCode}: {Core.RimLLMLog.SanitizeForLog(body, 200)}",
+                string.Create(CultureInfo.InvariantCulture, $"{request.RequestUri?.AbsolutePath} responded {(int)response.StatusCode}: {Core.RimLLMLog.SanitizeForLog(body, 200)}"),
                 detectionText: body);
         }
         return JsonDocument.Parse(body);
@@ -769,13 +779,13 @@ public class RimLLMEmbeddingService
         try
         {
             List<RimLLMEmbeddingResult> results = await ComputeOpenAiCompatibleEmbeddingsAsync(
-                new EmbeddingBatchContext(model, provider, effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider), timeoutSeconds, null),
+                new EmbeddingBatchContext(model, provider, effectiveApiKey, endpoint, ResolveDefaultEndpoint(provider), timeoutSeconds, generationOptions: null),
                 [text], linkedCts.Token).ConfigureAwait(false);
             return results[0];
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new RimLLMException(LLMError.Timeout, $"Embedding connection test timed out after {timeoutSeconds} seconds.", ex);
+            throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"Embedding connection test timed out after {timeoutSeconds} seconds."), ex);
         }
         catch (OperationCanceledException)
         {
@@ -892,7 +902,7 @@ public class RimLLMEmbeddingService
     {
         if (string.IsNullOrEmpty(modelId)) return false;
         string lower = modelId.ToLowerInvariant();
-        return Array.Exists(EmbeddingNameHints, hint => lower.Contains(hint));
+        return Array.Exists(EmbeddingNameHints, hint => lower.Contains(hint, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -918,7 +928,7 @@ public class RimLLMEmbeddingService
         {
             throw new RimLLMException(
                 LLMError.InvalidResponse,
-                $"The OpenAI-compatible embedding response contained {embeddings?.Count ?? 0} vector(s) for {texts.Count} input(s).");
+                string.Create(CultureInfo.InvariantCulture, $"The OpenAI-compatible embedding response contained {embeddings?.Count ?? 0} vector(s) for {texts.Count} input(s)."));
         }
 
         var vectors = new List<float[]>(embeddings.Count);

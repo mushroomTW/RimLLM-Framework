@@ -68,7 +68,7 @@ internal static class SetupStatus
             return RimLLMProvider.TryGetManager(out var manager) && manager.IsProviderEnabled(providerId);
         }
         if (!settings.IsProviderEnabled(providerId)) return false;
-        return !ProviderIds.RequiresApiKey(providerId, settings.GetEndpoint(providerId, null))
+        return !ProviderIds.RequiresApiKey(providerId, settings.GetEndpoint(providerId, defaultVal: null))
             || !string.IsNullOrEmpty(settings.GetApiKey(providerId));
     }
 

@@ -32,13 +32,13 @@ public class ProviderTests
 
         // 1. 測試單一模型
         var messages = new List<ChatMessage> { new(ChatRole.User, "hello") };
-        provider.GenerateAsync(messages, null, "model-a").GetAwaiter().GetResult();
+        provider.GenerateAsync(messages, options: null, "model-a").GetAwaiter().GetResult();
         var payloadSingle = JsonNode.Parse(provider.InterceptedPayload).AsObject();
         ClassicAssert.AreEqual("model-a", (string)payloadSingle["model"]);
         ClassicAssert.IsNull(payloadSingle["models"]);
 
         // 2. 測試多個模型 (逗號分隔)
-        provider.GenerateAsync(messages, null, "model-a, model-b , model-c").GetAwaiter().GetResult();
+        provider.GenerateAsync(messages, options: null, "model-a, model-b , model-c").GetAwaiter().GetResult();
         var payloadMultiple = JsonNode.Parse(provider.InterceptedPayload).AsObject();
         ClassicAssert.IsNull(payloadMultiple["model"]);
         ClassicAssert.IsNotNull(payloadMultiple["models"]);
@@ -56,7 +56,7 @@ public class ProviderTests
     {
         using IChatClient client = provider.CreateChatClient(model);
         ChatResponse response = RimLLMChatClientExecutor.GenerateAsync(
-            new GenerationParams(client, messages, null, model, false, provider.ProviderId, 30f, System.Threading.CancellationToken.None)
+            new GenerationParams(client, messages, Options: null, model, UseNativeSchema: false, provider.ProviderId, 30f, System.Threading.CancellationToken.None)
             {
                 UsageTracker = tracker
             }).GetAwaiter().GetResult();
@@ -175,7 +175,7 @@ public class ProviderTests
 
         var provider = new TestGeminiProvider(mockSettings);
         var messages = new List<ChatMessage> { new(ChatRole.User, "hello") };
-        string response = provider.GenerateAsync(messages, null, "gemini-2.5-flash").GetAwaiter().GetResult();
+        string response = provider.GenerateAsync(messages, options: null, "gemini-2.5-flash").GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual("ok", response);
         ClassicAssert.IsTrue(
@@ -248,7 +248,7 @@ public class ProviderTests
 
         var provider = new TestPlayer2Provider(mockSettings);
         var messages = new List<ChatMessage> { new(ChatRole.User, "hello") };
-        string response = provider.GenerateAsync(messages, null, Player2Provider.DefaultModelName).GetAwaiter().GetResult();
+        string response = provider.GenerateAsync(messages, options: null, Player2Provider.DefaultModelName).GetAwaiter().GetResult();
 
         ClassicAssert.AreEqual("ok", response);
         ClassicAssert.IsTrue(
@@ -290,7 +290,7 @@ public class ProviderTests
     {
         // 本機 App 模式免金鑰，雲端（api.player2.game）需 p2Key；其餘供應商不受端點影響。
         ClassicAssert.IsFalse(ProviderIds.RequiresApiKey(ProviderIds.Player2, Player2Provider.LocalDefaultEndpoint));
-        ClassicAssert.IsFalse(ProviderIds.RequiresApiKey(ProviderIds.Player2, null));
+        ClassicAssert.IsFalse(ProviderIds.RequiresApiKey(ProviderIds.Player2, endpoint: null));
         ClassicAssert.IsFalse(ProviderIds.RequiresApiKey(ProviderIds.Player2, "http://localhost:4315/v1/"));
         ClassicAssert.IsTrue(ProviderIds.RequiresApiKey(ProviderIds.Player2, "https://api.player2.game/v1"));
         ClassicAssert.IsTrue(ProviderIds.RequiresApiKey(ProviderIds.Player2, "https://api.player2.game/v1/chat/completions"));
@@ -927,7 +927,7 @@ public class MockSettings : IRimLLMSettings
     {
         if (string.IsNullOrEmpty(modelName)) return 0;
         if (ModelLevelOverrides.TryGetValue(modelName, out var level)) return level;
-        int colonIndex = modelName.IndexOf(':');
+        int colonIndex = modelName.IndexOf(':', StringComparison.Ordinal);
         if (colonIndex >= 0 && colonIndex < modelName.Length - 1
             && ModelLevelOverrides.TryGetValue(modelName.Substring(colonIndex + 1), out level))
         {
@@ -1049,12 +1049,12 @@ public class CapturingHttpMessageHandler : System.Net.Http.HttpMessageHandler
         ScriptedResponses.Add(new System.Collections.Generic.KeyValuePair<System.Net.HttpStatusCode, string>(status, body));
     }
 
-    protected override System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage> SendAsync(
+    protected override async System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage> SendAsync(
         System.Net.Http.HttpRequestMessage request,
         System.Threading.CancellationToken cancellationToken)
     {
         string body = request.Content != null
-            ? request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult()
+            ? await request.Content.ReadAsStringAsync(cancellationToken)
             : null;
         RequestBodies.Add(body ?? string.Empty);
         RequestUrls.Add(request.RequestUri != null ? request.RequestUri.ToString() : null);
@@ -1074,7 +1074,7 @@ public class CapturingHttpMessageHandler : System.Net.Http.HttpMessageHandler
             responseBody ?? string.Empty,
             System.Text.Encoding.UTF8,
             ResponseContentType);
-        return System.Threading.Tasks.Task.FromResult(response);
+        return response;
     }
 }
 

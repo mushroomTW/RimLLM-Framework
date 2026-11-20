@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
@@ -276,7 +277,7 @@ public class SchemaBuilderTests
     {
         int size = RimLLMSchemaBuilder.BuildJson(typeof(ComplexTestDataStructure)).Length;
 
-        ClassicAssert.Less(size, MaxRecursiveSchemaLength, "遞迴型別的 schema 體積退步。size=" + size);
+        ClassicAssert.Less(size, MaxRecursiveSchemaLength, "遞迴型別的 schema 體積退步。size=" + size.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <summary>
@@ -291,7 +292,7 @@ public class SchemaBuilderTests
         ClassicAssert.LessOrEqual(
             depth,
             RimLLMSchemaBuilder.OpenAIMaxSchemaDepth,
-            "巢狀層數不得超過服務端上限。實際：" + depth);
+            "巢狀層數不得超過服務端上限。實際：" + depth.ToString(CultureInfo.InvariantCulture));
     }
 
     private static int MeasureNextChainDepth(JsonObject schema)

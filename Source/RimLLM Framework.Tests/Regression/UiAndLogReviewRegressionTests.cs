@@ -58,11 +58,11 @@ public class UiAndLogReviewRegressionTests
         RimLLMDispatcher.ResetQueueForTests();
         try
         {
-            pump.SetValue(null, true);
+            pump.SetValue(null, value: true);
             history.Clear();
             history.Add("old placeholder");
             ctsField.SetValue(null, requestCts);
-            loading.SetValue(null, true);
+            loading.SetValue(null, value: true);
             void EnqueueOldCallback()
             {
                 if (error)
@@ -78,7 +78,7 @@ public class UiAndLogReviewRegressionTests
             }
             if (!enqueueAfterCancel) EnqueueOldCallback();
 
-            drawer.GetMethod("CancelActiveChatRequest", flags).Invoke(null, null);
+            drawer.GetMethod("CancelActiveChatRequest", flags).Invoke(null, parameters: null);
             history.Clear();
             if (!clearOnly) history.Add("new request placeholder");
             loading.SetValue(null, !clearOnly);

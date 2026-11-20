@@ -56,7 +56,7 @@ internal static class RimTalkCompatPatch
         try
         {
             Type settingsHolder = AccessTools.TypeByName("RimTalk.Settings");
-            object? settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, null);
+            object? settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, parameters: null);
             object? local = settings == null ? null : CompatSeedUtil.GetMember(settings, "LocalConfig");
             if (settings == null || local == null
                 || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(local, BaseUrlMember) as string, RimTalkCompatPatch.PackageId))
@@ -66,9 +66,9 @@ internal static class RimTalkCompatPatch
 
             CompatSeedUtil.SetMember(local, BaseUrlMember, string.Empty);
             CompatSeedUtil.SetMember(local, "CustomModelName", string.Empty);
-            CompatSeedUtil.SetMember(settings, "UseSimpleConfig", true);
-            CompatSeedUtil.SetMember(settings, "UseCloudProviders", true);
-            AccessTools.Method(settings.GetType(), "Write", Type.EmptyTypes)?.Invoke(settings, null);
+            CompatSeedUtil.SetMember(settings, "UseSimpleConfig", value: true);
+            CompatSeedUtil.SetMember(settings, "UseCloudProviders", value: true);
+            AccessTools.Method(settings.GetType(), "Write", Type.EmptyTypes)?.Invoke(settings, parameters: null);
             CompatSeedUtil.LogReverted(DisplayName);
         }
         catch (Exception ex)
@@ -93,7 +93,7 @@ internal static class RimTalkCompatPatch
             }
 
             Type settingsHolder = AccessTools.TypeByName("RimTalk.Settings");
-            object? settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, null);
+            object? settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, parameters: null);
             object? local = settings == null ? null : CompatSeedUtil.GetMember(settings, "LocalConfig");
             if (settings == null || local == null)
             {
@@ -109,7 +109,7 @@ internal static class RimTalkCompatPatch
             }
 
             // 簡易模式或雲端清單已有可用設定（玩家自己的金鑰），不切走；GetActiveConfig 是它自己判斷「可用」的邏輯。
-            object? active = AccessTools.Method(settings.GetType(), "GetActiveConfig", Type.EmptyTypes)?.Invoke(settings, null);
+            object? active = AccessTools.Method(settings.GetType(), "GetActiveConfig", Type.EmptyTypes)?.Invoke(settings, parameters: null);
             if (active != null && !ReferenceEquals(active, local))
             {
                 CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
@@ -125,15 +125,15 @@ internal static class RimTalkCompatPatch
                 FieldInfo provider = AccessTools.Field(local.GetType(), "Provider")
                     ?? throw new MissingFieldException(local.GetType().FullName, "Provider");
                 provider.SetValue(local, Enum.Parse(provider.FieldType, "Local"));
-                CompatSeedUtil.SetMember(local, "IsEnabled", true);
+                CompatSeedUtil.SetMember(local, "IsEnabled", value: true);
                 CompatSeedUtil.SetMember(local, "ApiKey", string.Empty);
 
                 // 切到本機模式：它在簡易模式與雲端清單開啟時不會看 LocalConfig。
-                CompatSeedUtil.SetMember(settings, "UseSimpleConfig", false);
-                CompatSeedUtil.SetMember(settings, "UseCloudProviders", false);
+                CompatSeedUtil.SetMember(settings, "UseSimpleConfig", value: false);
+                CompatSeedUtil.SetMember(settings, "UseCloudProviders", value: false);
             }
 
-            AccessTools.Method(settings.GetType(), "Write", Type.EmptyTypes)?.Invoke(settings, null);
+            AccessTools.Method(settings.GetType(), "Write", Type.EmptyTypes)?.Invoke(settings, parameters: null);
         }
         catch (Exception ex)
         {

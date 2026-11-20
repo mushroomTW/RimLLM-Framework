@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -42,7 +42,7 @@ internal static class ProviderFallbackChainControls
         // 先剔除再算順位與調換，畫面上的順位才和實際嘗試的順序一致。
         if (hasActive)
         {
-            chain = chain.Where(id => !string.Equals(id, activeProviderId, StringComparison.Ordinal)).ToList();
+            chain = [.. chain.Where(id => !string.Equals(id, activeProviderId, StringComparison.Ordinal))];
         }
 
         // 摘要列：啟用中的供應商 → 備援 1 → 備援 2…
@@ -111,7 +111,7 @@ internal static class ProviderFallbackChainControls
             return "RimLLM_FallbackChainNeedsActive".Translate();
         }
 
-        List<string> backups = chain.Where(id => !string.Equals(id, activeProviderId, StringComparison.Ordinal)).ToList();
+        List<string> backups = [.. chain.Where(id => !string.Equals(id, activeProviderId, StringComparison.Ordinal))];
         if (backups.Count == 0)
         {
             return "RimLLM_FallbackChainEmpty".Translate(displayName(activeProviderId));
@@ -119,5 +119,44 @@ internal static class ProviderFallbackChainControls
 
         string path = string.Join(" → ", new[] { activeProviderId }.Concat(backups).Select(displayName));
         return "RimLLM_FallbackChainSummary".Translate(path);
+    }
+
+    /// <summary>
+    /// 「啟用此供應商」核取方塊與啟用徽章。啟用中的供應商是鏈的第一環，啟用時一併移出備援清單。
+    /// 標籤鍵依 <paramref name="kind"/> 組成：RimLLM_Enable{kind}Provider、RimLLM_{kind}ActiveBadge。
+    /// </summary>
+    /// <param name="listing">目前的版面。</param>
+    /// <param name="providerId">中欄目前選取的供應商。</param>
+    /// <param name="isActive">此供應商目前是否為啟用中的供應商。</param>
+    /// <param name="kind">設定分頁類別，例如 Decision、Embedding。</param>
+    /// <param name="setActive">切換時呼叫：true 表示啟用此供應商，false 表示停用。</param>
+    /// <param name="getChain">讀取備援鏈（複本）。</param>
+    /// <param name="setChain">寫回備援鏈。</param>
+    internal static void DrawActiveToggle(
+        Listing_Standard listing,
+        string providerId,
+        bool isActive,
+        string kind,
+        Action<bool> setActive,
+        Func<List<string>> getChain,
+        Action<List<string>> setChain)
+    {
+        bool oldActive = isActive;
+        listing.CheckboxLabeled(("RimLLM_Enable" + kind + "Provider").Translate(), ref isActive);
+        if (isActive != oldActive)
+        {
+            setActive(isActive);
+            if (isActive)
+            {
+                List<string> chain = getChain();
+                if (chain.Remove(providerId)) setChain(chain);
+            }
+        }
+
+        if (isActive)
+        {
+            listing.Label(("RimLLM_" + kind + "ActiveBadge").Translate());
+        }
+        listing.Gap(4f);
     }
 }

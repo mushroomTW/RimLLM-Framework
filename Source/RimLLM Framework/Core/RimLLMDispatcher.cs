@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading;
 using UnityEngine;
 
@@ -109,9 +110,9 @@ public class RimLLMDispatcher : MonoBehaviour
         // Register 可能在 token 已取消時同步執行 callback。
         if (Volatile.Read(ref state) == 2)
         {
-            #pragma warning disable VSTHRD103 // 同步方法回傳 tcs.Task，無法 await DisposeAsync；登記只需解除，不會阻塞
+            #pragma warning disable VSTHRD103, MA0042 // 同步方法回傳 tcs.Task，無法 await DisposeAsync；登記只需解除，不會阻塞
             registration.Dispose();
-            #pragma warning restore VSTHRD103
+            #pragma warning restore VSTHRD103, MA0042
             return tcs.Task;
         }
 
@@ -129,16 +130,7 @@ public class RimLLMDispatcher : MonoBehaviour
 
             try
             {
-                T result = await func().ConfigureAwait(true);
-                tcs.TrySetResult(result);
-            }
-            catch (OperationCanceledException oce)
-            {
-                tcs.TrySetCanceled(oce.CancellationToken);
-            }
-            catch (Exception ex)
-            {
-                tcs.TrySetException(ex);
+                await CompleteFromAsync(func, tcs).ConfigureAwait(true);
             }
             finally
             {
@@ -178,6 +170,27 @@ public class RimLLMDispatcher : MonoBehaviour
         return tcs.Task;
     }
 
+    /// <summary>在目前的同步內容執行 func，並把結果、取消或例外轉交給 tcs；不會拋出。</summary>
+    private static async System.Threading.Tasks.Task CompleteFromAsync<T>(
+        Func<System.Threading.Tasks.Task<T>> func,
+        System.Threading.Tasks.TaskCompletionSource<T> tcs)
+    {
+        try
+        {
+            // 保留同步內容，func 的續行才會回到主線程。
+            T result = await func().ConfigureAwait(true);
+            tcs.TrySetResult(result);
+        }
+        catch (OperationCanceledException oce)
+        {
+            tcs.TrySetCanceled(oce.CancellationToken);
+        }
+        catch (Exception ex)
+        {
+            tcs.TrySetException(ex);
+        }
+    }
+
     /// <summary>
     /// 排入一個「有人在等結果」的委派。與 <see cref="EnqueueOnMainThread"/> 的差別在於：
     /// 佇列溢位而被丟棄時會讓對應的 <paramref name="tcs"/> 失敗，避免等待端永遠掛住。
@@ -211,7 +224,7 @@ public class RimLLMDispatcher : MonoBehaviour
     internal static bool TryEnqueueBounded(Action action)
     {
         if (action == null) return false;
-        return TryEnqueueBounded(new QueuedAction(action, null));
+        return TryEnqueueBounded(new QueuedAction(action, onDropped: null));
     }
 
     private static bool TryEnqueueBounded(QueuedAction item)
@@ -231,7 +244,7 @@ public class RimLLMDispatcher : MonoBehaviour
             int totalDropped = Interlocked.Increment(ref _droppedCount);
             if (totalDropped % 100 == 1)
             {
-                RimLLMLog.Warning($"[RimLLM] Main-thread queue reached its limit of {MaxQueuedActions}; {totalDropped} callbacks dropped so far.");
+                RimLLMLog.Warning(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Main-thread queue reached its limit of {MaxQueuedActions}; {totalDropped} callbacks dropped so far."));
             }
         }
 
@@ -250,12 +263,12 @@ public class RimLLMDispatcher : MonoBehaviour
             _onDropped = onDropped;
         }
 
-        public void Run()
+        public readonly void Run()
         {
             _run?.Invoke();
         }
 
-        public void NotifyDropped()
+        public readonly void NotifyDropped()
         {
             _onDropped?.Invoke();
         }
@@ -326,9 +339,9 @@ public class RimLLMDispatcher : MonoBehaviour
     /// 靜態欄位的寫入改由 <see cref="SetPumpActive"/> 負責，避免執行個體方法直接改動靜態狀態。
     /// </remarks>
     #pragma warning disable CA1822, S2325 // Awake 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
-    private void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
+    private static void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
-        SetPumpActive(true);
+        SetPumpActive(active: true);
     }
     #pragma warning restore CA1822, S2325
 
@@ -336,7 +349,7 @@ public class RimLLMDispatcher : MonoBehaviour
     /// 每幀清空佇列。Unity 訊息方法必須是執行個體方法，理由同 <see cref="Awake"/>。
     /// </summary>
     #pragma warning disable CA1822, S2325 // Update 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
-    private void Update() // NOSONAR：Unity 訊息方法必須是執行個體方法
+    private static void Update() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
         // 每幀受項目數與時間預算雙重限制，避免長回應的大量 chunk 在單一幀內全部執行造成卡頓。
         DrainWithBudget(MaxActionsPerFrame, FrameBudgetMs);
@@ -345,13 +358,13 @@ public class RimLLMDispatcher : MonoBehaviour
 
     private void OnDestroy()
     {
-        SetPumpActive(false);
+        SetPumpActive(active: false);
 
         // 先把剩餘項目排乾，避免關閉時遺失遙測寫入等重要回呼。
         int drained = DrainWithBudget(int.MaxValue, long.MaxValue);
         if (drained > 0)
         {
-            RimLLMLog.Message($"[RimLLM] Dispatcher drained {drained} pending callbacks before shutdown.");
+            RimLLMLog.Message(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Dispatcher drained {drained} pending callbacks before shutdown."));
         }
 
         ReleaseInstance(this);

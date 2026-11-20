@@ -16,7 +16,7 @@ public class ModelPricingTests
     [TearDown]
     public void ClearCatalogRates()
     {
-        ModelPricing.SetCatalogRates(null);
+        ModelPricing.SetCatalogRates(ratesByProvider: null);
     }
 
     [Test]

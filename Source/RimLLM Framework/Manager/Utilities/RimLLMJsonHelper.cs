@@ -16,9 +16,8 @@ namespace RimLLM_Framework.Manager;
 /// JSON 的靜態處理與格式修復輔助工具。
 /// 包含結構化資料的 JSON 補齊、Regex 修復以及 Dummy 物件生成（用於產生 schema 快取）。
 /// </summary>
-public static class RimLLMJsonHelper
+public static partial class RimLLMJsonHelper
 {
-    private static readonly Regex JsonBlockRegex = new(@"(\{.*\}|\[.*\])", RegexOptions.Compiled | RegexOptions.Singleline, TimeSpan.FromSeconds(1));
     private static readonly ConcurrentDictionary<Type, string> SampleJsonCache = new();
 
     // 全框架共用的 JSON 引擎與寬容設定（原 RimLLMJson，已併入此檔）。
@@ -165,7 +164,7 @@ public static class RimLLMJsonHelper
     {
         if (json.StartsWith("```", StringComparison.Ordinal))
         {
-            int startIndex = json.IndexOf('\n');
+            int startIndex = json.IndexOf('\n', StringComparison.Ordinal);
             json = startIndex != -1 ? json.Substring(startIndex + 1) : json.Substring(3);
         }
         if (json.EndsWith("```", StringComparison.Ordinal))
@@ -223,8 +222,14 @@ public static class RimLLMJsonHelper
 
     private static bool HandleCloserChar(char c, List<char> expectedClosers)
     {
-        if (c == '{') expectedClosers.Add('}');
-        else if (c == '[') expectedClosers.Add(']');
+        if (c == '{')
+        {
+            expectedClosers.Add('}');
+        }
+        else if (c == '[')
+        {
+            expectedClosers.Add(']');
+        }
         else if (c == '}' || c == ']')
         {
             if (expectedClosers.Count == 0 || expectedClosers[expectedClosers.Count - 1] != c)
@@ -521,7 +526,7 @@ public static class RimLLMJsonHelper
             {
                 try
                 {
-                    prop.SetValue(instance, CreateDummyInstance(prop.PropertyType, new HashSet<Type>(visitedTypes)), null);
+                    prop.SetValue(instance, CreateDummyInstance(prop.PropertyType, new HashSet<Type>(visitedTypes)), index: null);
                 }
                 catch { RimLLMLog.Warning($"[RimLLM] Dummy instance property skipped: {prop.Name}"); }
             }
@@ -788,7 +793,7 @@ public static class RimLLMJsonHelper
             foreach (object entry in enumerable)
             {
                 PropertyInfo? valueProperty = entry?.GetType().GetProperty("Value");
-                if (valueProperty != null) yield return valueProperty.GetValue(entry, null);
+                if (valueProperty != null) yield return valueProperty.GetValue(entry, index: null);
             }
         }
     }
@@ -805,9 +810,15 @@ public static class RimLLMJsonHelper
             foreach (JsonElement candidate in type.EnumerateArray())
             {
                 if (candidate.ValueKind == JsonValueKind.String &&
-                    string.Equals(candidate.GetString(), "null", StringComparison.Ordinal)) return true;
+                    string.Equals(candidate.GetString(), "null", StringComparison.Ordinal))
+                {
+                    return true;
+                }
             }
         }
         return false;
     }
+
+    [GeneratedRegex(@"(\{.*\}|\[.*\])", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex JsonBlockRegex { get; }
 }

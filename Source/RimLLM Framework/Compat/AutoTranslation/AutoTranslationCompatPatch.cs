@@ -202,7 +202,7 @@ internal static class AutoTranslationCompatPatch
         if (!ours)
         {
             // 讓翻譯器立即以新設定就緒並成為目前使用的翻譯器，不必重開遊戲。
-            AccessTools.Method(translator.GetType(), "Prepare", Type.EmptyTypes)?.Invoke(translator, null);
+            AccessTools.Method(translator.GetType(), "Prepare", Type.EmptyTypes)?.Invoke(translator, parameters: null);
             AccessTools.Field(members.ManagerType, "CurrentTranslator")?.SetValue(null, translator);
         }
 

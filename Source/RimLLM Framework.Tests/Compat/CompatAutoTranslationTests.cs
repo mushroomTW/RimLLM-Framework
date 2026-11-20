@@ -30,9 +30,9 @@ public class CompatAutoTranslationTests
         var settings = new RimLLMFrameworkSettings();
 
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId));
-        settings.SetCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId, true);
+        settings.SetCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId, enabled: true);
         ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId));
-        settings.SetCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId, false);
+        settings.SetCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId, enabled: false);
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId));
     }
 

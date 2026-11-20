@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
@@ -176,44 +176,7 @@ public static partial class ChatTestDrawer
 
         try
         {
-            using var client = RimLLMProvider.CreateChatClient(ServiceConsumerList.DebugChatModId);
-            var messages = new List<ChatMessage> { new(ChatRole.User, userPrompt) };
-            var options = new RimLLMChatOptions
-            {
-                MaxOutputTokens = 4096,
-                Temperature = 0.7f,
-                DisableReasoning = false,
-                Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null,
-                ModelId = pinnedModel
-            };
-
-            var enumerator = client.GetStreamingResponseAsync(messages, options, requestToken).GetAsyncEnumerator(requestToken);
-            try
-            {
-                while (await enumerator.MoveNextAsync().ConfigureAwait(false))
-                {
-                    var update = enumerator.Current;
-                    renderState.RecordUsage(update);
-                    renderState.Append(update);
-                }
-            }
-            finally
-            {
-                await enumerator.DisposeAsync().ConfigureAwait(false);
-            }
-
-            string reasoningText;
-            string answerText;
-            lock (renderState.ReplyLock)
-            {
-                renderState.StreamCompleted = true;
-                reasoningText = renderState.Reasoning.ToString();
-                answerText = renderState.Answer.ToString();
-            }
-
-            renderState.Stopwatch.Stop();
-            var finalMeta = BuildFinalChatMeta(userPrompt, reasoningText + answerText, renderState);
-            UpdateAiHistoryEntry(requestGeneration, aiHistoryIndex, BuildMarkdownBody(reasoningText, answerText), meta: finalMeta, persist: true);
+            await StreamChatAsync(userPrompt, pinnedModel, renderState).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
         {
@@ -229,6 +192,49 @@ public static partial class ChatTestDrawer
             lock (renderState.ReplyLock) { renderState.StreamCompleted = true; }
             requestCts.Dispose();
         }
+    }
+
+    /// <summary>送出串流請求並把更新寫進 renderState；完成後把最終內容寫回對話紀錄。</summary>
+    private static async Task StreamChatAsync(string userPrompt, string? pinnedModel, StreamRenderState renderState)
+    {
+        using var client = RimLLMProvider.CreateChatClient(ServiceConsumerList.DebugChatModId);
+        var messages = new List<ChatMessage> { new(ChatRole.User, userPrompt) };
+        var options = new RimLLMChatOptions
+        {
+            MaxOutputTokens = 4096,
+            Temperature = 0.7f,
+            DisableReasoning = false,
+            Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null,
+            ModelId = pinnedModel
+        };
+
+        var enumerator = client.GetStreamingResponseAsync(messages, options, renderState.RequestToken).GetAsyncEnumerator(renderState.RequestToken);
+        try
+        {
+            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+            {
+                var update = enumerator.Current;
+                renderState.RecordUsage(update);
+                renderState.Append(update);
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+        }
+
+        string reasoningText;
+        string answerText;
+        lock (renderState.ReplyLock)
+        {
+            renderState.StreamCompleted = true;
+            reasoningText = renderState.Reasoning.ToString();
+            answerText = renderState.Answer.ToString();
+        }
+
+        renderState.Stopwatch.Stop();
+        var finalMeta = BuildFinalChatMeta(userPrompt, reasoningText + answerText, renderState);
+        UpdateAiHistoryEntry(renderState.RequestGeneration, renderState.AiHistoryIndex, BuildMarkdownBody(reasoningText, answerText), meta: finalMeta, persist: true);
     }
 
     private static ChatEntryMeta BuildFinalChatMeta(string userPrompt, string fullReply, StreamRenderState state)

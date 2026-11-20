@@ -113,7 +113,7 @@ public class RimLLMChatClientTests
         var manager = CreateManager();
         var client = CreateClient(manager, "test.getservice.mod");
 
-        var metadata = client.GetService(typeof(ChatClientMetadata), null) as ChatClientMetadata;
+        var metadata = client.GetService(typeof(ChatClientMetadata), serviceKey: null) as ChatClientMetadata;
         ClassicAssert.IsNotNull(metadata);
         ClassicAssert.AreEqual("RimLLM", metadata.ProviderName);
     }

@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -98,14 +99,7 @@ public class RimLLMFallbackPipeline
         bool preferredFirst = MovePreferredModelToFrontIfUsable(effectiveChain, preferredModelId, apiKeyCache);
 
         // 1. 解析所有符合資格的供應商候選
-        var resolved = new List<ResolvedCandidate>();
-        foreach (string entry in effectiveChain)
-        {
-            if (TryGetEligibleCandidate(entry, minFallbackLevel, apiKeyCache, out string? pId, out ILLMProvider? p, out string? mName))
-            {
-                resolved.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
-            }
-        }
+        List<ResolvedCandidate> resolved = ResolveEligible(effectiveChain, minFallbackLevel, apiKeyCache);
 
         if (resolved.Count == 0)
         {
@@ -135,6 +129,34 @@ public class RimLLMFallbackPipeline
             activeCandidates.RemoveAt(0);
         }
 
+        ApplyRoutingStrategy(activeCandidates, advanceRoundRobin);
+
+        if (pinnedPreferred.HasValue)
+        {
+            activeCandidates.Insert(0, pinnedPreferred.Value);
+        }
+
+        candidates = activeCandidates;
+        failureReason = null;
+        return true;
+    }
+
+    private List<ResolvedCandidate> ResolveEligible(List<string> chain, string? minFallbackLevel, Dictionary<string, string> apiKeyCache)
+    {
+        var resolved = new List<ResolvedCandidate>();
+        foreach (string entry in chain)
+        {
+            if (TryGetEligibleCandidate(entry, minFallbackLevel, apiKeyCache, out string? pId, out ILLMProvider? p, out string? mName))
+            {
+                resolved.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
+            }
+        }
+        return resolved;
+    }
+
+    /// <summary>依設定的路由策略就地重排候選。</summary>
+    private void ApplyRoutingStrategy(List<ResolvedCandidate> activeCandidates, bool advanceRoundRobin)
+    {
         switch (_settings.RoutingStrategy)
         {
             case 1: // MinLatency (最小延遲優先)
@@ -163,15 +185,6 @@ public class RimLLMFallbackPipeline
             default: // 0 = PriorityFailover：保留原始 fallbackChain 順序
                 break;
         }
-
-        if (pinnedPreferred.HasValue)
-        {
-            activeCandidates.Insert(0, pinnedPreferred.Value);
-        }
-
-        candidates = activeCandidates;
-        failureReason = null;
-        return true;
     }
 
 
@@ -366,7 +379,7 @@ public class RimLLMFallbackPipeline
             {
                 if (RimLLMLog.Enabled)
                 {
-                    RimLLMLog.Message($"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel}).");
+                    RimLLMLog.Message(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Skipped fallback entry '{entry}' because its model level ({currentModelLevel}) is lower than MinFallbackLevel ({minLevel})."));
                 }
                 return false;
             }
@@ -425,7 +438,7 @@ public class RimLLMFallbackPipeline
         // 擲出 ArgumentOutOfRangeException。這不是呼叫參數有問題，同模型重試通常會成功，
         // 必須在下方的 ArgumentException 判定之前放行。
         if (ex is ArgumentOutOfRangeException &&
-            ex.Message.Contains("Unknown ChatFinishReason value"))
+            ex.Message.Contains("Unknown ChatFinishReason value", StringComparison.Ordinal))
         {
             return true;
         }

@@ -86,13 +86,12 @@ internal sealed class OpenRouterDecisionsAdapterHandler : DelegatingHandler
                 return body;
             }
 
-            string[] refused = answers
+            string[] refused = [.. answers
                 .Where(a => a.Value is JsonObject answer &&
                             answer["type"] is JsonValue type &&
                             type.TryGetValue(out string? name) &&
                             name == RefusalType)
-                .Select(a => a.Key)
-                .ToArray();
+                .Select(a => a.Key)];
             if (refused.Length == 0)
             {
                 return body;

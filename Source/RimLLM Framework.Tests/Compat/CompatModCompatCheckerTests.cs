@@ -32,9 +32,9 @@ public class CompatModCompatCheckerTests
         var settings = new RimLLMFrameworkSettings();
 
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId));
-        settings.SetCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId, true);
+        settings.SetCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId, enabled: true);
         ClassicAssert.IsTrue(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId));
-        settings.SetCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId, false);
+        settings.SetCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId, enabled: false);
         ClassicAssert.IsFalse(settings.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId));
     }
 

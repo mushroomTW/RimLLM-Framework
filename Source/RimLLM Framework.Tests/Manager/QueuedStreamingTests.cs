@@ -52,13 +52,13 @@ public sealed class QueuedStreamingTests
 
         var pending = enumerator.MoveNextAsync().AsTask();
         ClassicAssert.IsFalse(pending.IsCompleted);
-        (cancelMethodToken ? methodCancellation : consumerCancellation).Cancel();
+        await (cancelMethodToken ? methodCancellation : consumerCancellation).CancelAsync();
         await Assert.CatchAsync<OperationCanceledException>(async () =>
-            await pending.WaitAsync(TimeSpan.FromSeconds(3)));
+            await pending.WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None));
         ClassicAssert.AreEqual(0, inner.Starts, "排隊取消不能啟動供應商。");
 
         occupied.Dispose();
-        using var next = await queue.AcquireSlotAsync(0, default).WaitAsync(TimeSpan.FromSeconds(3));
+        using var next = await queue.AcquireSlotAsync(0, default).WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None);
     }
 
     [Test]
@@ -68,17 +68,17 @@ public sealed class QueuedStreamingTests
         using var cancellation = new CancellationTokenSource();
         var inner = new ProbeStreamClient();
         using var client = new RimLLMRequestQueueChatClient(inner, queue);
-        await using var enumerator = client.GetStreamingResponseAsync([])
+        await using var enumerator = client.GetStreamingResponseAsync([], cancellationToken: CancellationToken.None)
             .GetAsyncEnumerator(cancellation.Token);
 
         ClassicAssert.IsTrue(await enumerator.MoveNextAsync());
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
         await Assert.CatchAsync<OperationCanceledException>(async () =>
-            await enumerator.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3)));
+            await enumerator.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None));
         await enumerator.DisposeAsync();
 
         ClassicAssert.IsTrue(inner.EnumeratorDisposed);
-        using var next = await queue.AcquireSlotAsync(0, default).WaitAsync(TimeSpan.FromSeconds(3));
+        using var next = await queue.AcquireSlotAsync(0, default).WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None);
     }
 
     private sealed class ProbeStreamClient : IChatClient

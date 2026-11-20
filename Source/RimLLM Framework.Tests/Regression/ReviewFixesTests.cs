@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,7 +49,7 @@ public class ReviewFixesTests
         var ex = Assert.Throws<InvalidOperationException>(() =>
             RimLLMJsonHelper.ValidateStructuredObject(container));
         ClassicAssert.IsNotNull(ex);
-        ClassicAssert.IsTrue(ex.Message.Contains("RequiredField"), $"實際訊息：{ex.Message}");
+        ClassicAssert.IsTrue(ex.Message.Contains("RequiredField", StringComparison.Ordinal), $"實際訊息：{ex.Message}");
     }
 
     [Test]
@@ -131,7 +132,7 @@ public class ReviewFixesTests
             ClassicAssert.AreEqual(1, generated.Count);
             ClassicAssert.AreEqual("text-embedding-3-small", generated[0].ModelId, "向量應標上實際使用的模型");
 
-            var metadata = generator.GetService(typeof(EmbeddingGeneratorMetadata), null) as EmbeddingGeneratorMetadata;
+            var metadata = generator.GetService(typeof(EmbeddingGeneratorMetadata), serviceKey: null) as EmbeddingGeneratorMetadata;
             ClassicAssert.IsNotNull(metadata);
             ClassicAssert.AreEqual("OpenAI", metadata.ProviderName);
         }
@@ -162,9 +163,9 @@ public class ReviewFixesTests
             new GenerationParams(
                 client,
                 new List<ChatMessage> { new(ChatRole.User, "hello") },
-                null,
+                Options: null,
                 "gpt-test",
-                false,
+                UseNativeSchema: false,
                 "OpenAI",
                 30f,
                 CancellationToken.None),
@@ -192,14 +193,14 @@ public class ReviewFixesTests
             new GenerationParams(
                 client,
                 new List<ChatMessage> { new(ChatRole.User, "hello") },
-                null,
+                Options: null,
                 "gpt-test",
-                false,
+                UseNativeSchema: false,
                 "OpenAI",
                 30f,
                 CancellationToken.None)
             { UsageTracker = tracker },
-            null).GetAwaiter().GetResult();
+            onUpdateReceived: null).GetAwaiter().GetResult();
 
         // 逐塊累加的估算必須等於對整段文字一次估算的結果，且不得封頂。
         ClassicAssert.AreEqual(
@@ -214,7 +215,7 @@ public class ReviewFixesTests
         for (int i = 0; i < 5000; i++)
         {
             client.StreamUpdates.Add(new ChatResponseUpdate(
-                ChatRole.Assistant, [new TextContent("chunk-" + i)]));
+                ChatRole.Assistant, [new TextContent("chunk-" + i.ToString(CultureInfo.InvariantCulture))]));
         }
 
         var received = new List<ChatResponseUpdate>();
@@ -222,9 +223,9 @@ public class ReviewFixesTests
             new GenerationParams(
                 client,
                 new List<ChatMessage> { new(ChatRole.User, "hello") },
-                null,
+                Options: null,
                 "gpt-test",
-                false,
+                UseNativeSchema: false,
                 "OpenAI",
                 30f,
                 CancellationToken.None),
@@ -264,7 +265,7 @@ public class ReviewFixesTests
 
         var ex = Assert.Throws<InvalidOperationException>(() =>
             RimLLMJsonHelper.ValidateStructuredObject(container));
-        ClassicAssert.IsTrue(ex.Message.Contains("null"), $"實際訊息：{ex.Message}");
+        ClassicAssert.IsTrue(ex.Message.Contains("null", StringComparison.Ordinal), $"實際訊息：{ex.Message}");
     }
 
     [Test]

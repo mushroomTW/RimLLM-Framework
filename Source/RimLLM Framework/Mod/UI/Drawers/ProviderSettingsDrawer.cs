@@ -134,7 +134,7 @@ public static class ProviderSettingsDrawer
             statusColor = RimLLMUIStyle.Muted;
         }
         // 端點相關是因為 Player2 有雙模式：判斷需代入實際端點（未設定時傳 null，視為本機模式）。
-        else if (ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, null)) && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
+        else if (ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, defaultVal: null)) && string.IsNullOrEmpty(Settings.GetApiKey(providerId)))
         {
             statusText = "RimLLM_StatusNoApiKey".Translate();
             statusColor = RimLLMUIStyle.Warning;

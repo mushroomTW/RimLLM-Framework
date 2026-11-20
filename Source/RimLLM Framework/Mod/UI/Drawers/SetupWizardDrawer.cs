@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
@@ -182,7 +183,7 @@ public static class SetupWizardDrawer
                 color = RimLLMUIStyle.Muted;
             using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
             {
-                Widgets.Label(cell, $"<color=#{ColorUtility.ToHtmlStringRGB(color)}>{$"RimLLM_SetupStep{i}".Translate()}</color>");
+                Widgets.Label(cell, $"<color=#{ColorUtility.ToHtmlStringRGB(color)}>{string.Create(CultureInfo.CurrentCulture, $"RimLLM_SetupStep{i}").Translate()}</color>");
             }
         }
     }
@@ -276,7 +277,7 @@ public static class SetupWizardDrawer
 
     private static bool NeedsKey(string providerId)
     {
-        return ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, null));
+        return ProviderIds.RequiresApiKey(providerId, Settings.GetEndpoint(providerId, defaultVal: null));
     }
 
     /// <summary>繪製單一金鑰輸入欄位，回傳是否已輸入金鑰（決定「下一步」是否可用）。</summary>
@@ -459,12 +460,12 @@ public static class SetupWizardDrawer
     {
         if (busy)
         {
-            DrawOptionalRow(listing, name, "RimLLM_SetupProgressFetch".Translate(), null, null);
+            DrawOptionalRow(listing, name, "RimLLM_SetupProgressFetch".Translate(), buttonLabel: null, onClick: null);
             return;
         }
         if (models.Count == 0)
         {
-            DrawOptionalRow(listing, name, "RimLLM_SetupOptionalNoModels".Translate(), null, null);
+            DrawOptionalRow(listing, name, "RimLLM_SetupOptionalNoModels".Translate(), buttonLabel: null, onClick: null);
             return;
         }
         DrawOptionalRow(listing, name, DescribePick(current, "RimLLM_SetupOptionalSkip"), "RimLLM_SetupChooseModelBtn".Translate(), () =>
@@ -481,7 +482,7 @@ public static class SetupWizardDrawer
     /// </summary>
     private static void StartFetchModels(string providerId)
     {
-        Settings.SetProviderEnabled(providerId, true);
+        Settings.SetProviderEnabled(providerId, enabled: true);
         Settings.Write();
 
         int generation = ++_fetchGeneration;
@@ -524,7 +525,7 @@ public static class SetupWizardDrawer
                 LocalEndpointProbe.Target? hit = await LocalEndpointProbe.FindReachableAsync(GenericProviderSubTabDrawer.LocalTargets).ConfigureAwait(false);
                 if (hit == null)
                 {
-                    await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_LocalNotFound", null)).ConfigureAwait(false);
+                    await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_LocalNotFound", detail: null)).ConfigureAwait(false);
                     return;
                 }
                 await FinishFetch(generation, () =>
@@ -569,12 +570,12 @@ public static class SetupWizardDrawer
     }
 
     /// <summary>回到主線程執行；這段期間玩家若回上一步重新抓取，就丟掉這次的結果。</summary>
-    private static async Task<bool> FinishFetch(int generation, Action action)
+    private static Task<bool> FinishFetch(int generation, Action action)
     {
-        return await Finish(() =>
+        return Finish(() =>
         {
             if (generation == _fetchGeneration) action();
-        }).ConfigureAwait(false);
+        });
     }
 
     /// <summary>Embedding 金鑰留空時服務會沿用對話金鑰，所以第二步貼的金鑰就能抓清單。</summary>
@@ -620,7 +621,7 @@ public static class SetupWizardDrawer
             try
             {
                 var fetched = await service.FetchModelsAsync(args.Endpoint, args.Model, args.ApiKey).ConfigureAwait(false);
-                models = fetched.Where(model => model != null && !string.IsNullOrEmpty(model.Name)).Select(model => model.Name).ToList();
+                models = [.. fetched.Where(model => model != null && !string.IsNullOrEmpty(model.Name)).Select(model => model.Name)];
             }
             catch (Exception ex)
             {
@@ -695,7 +696,7 @@ public static class SetupWizardDrawer
         if (!_busy && _outcome == Outcome.None)
         {
             listing.Gap(10f);
-            DrawNavRow(listing, showBack: true, null, false, null);
+            DrawNavRow(listing, showBack: true, nextLabel: null, canNext: false, onNext: null);
         }
     }
 
@@ -972,13 +973,13 @@ public static class SetupWizardDrawer
         // 日誌用的清理會把換行轉成字面的 \r\n；顯示給玩家時還原成空白，不然畫面上會出現一串反斜線
         _failDetail = string.IsNullOrEmpty(detail)
             ? null
-            : (RimLLMLog.SanitizeForLog(detail, 400) ?? string.Empty).Replace("\\r\\n", " ").Replace("\\n", " ").Replace("\\r", " ");
+            : (RimLLMLog.SanitizeForLog(detail, 400) ?? string.Empty).Replace("\\r\\n", " ", StringComparison.Ordinal).Replace("\\n", " ", StringComparison.Ordinal).Replace("\\r", " ", StringComparison.Ordinal);
         _outcome = Outcome.Failed;
         _busy = false;
     }
 
     /// <summary>把動作排到主線程執行，並等它跑完再繼續下一個階段。</summary>
-    private static async Task<bool> Finish(Action action)
+    private static Task<bool> Finish(Action action)
     {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         RimLLMDispatcher.EnqueueOnMainThread(() =>
@@ -994,7 +995,7 @@ public static class SetupWizardDrawer
                 tcs.SetException(ex);
             }
         });
-        return await tcs.Task.ConfigureAwait(false);
+        return tcs.Task;
     }
 
     // ── 共用小元件 ──────────────────────────────────

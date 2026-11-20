@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
@@ -86,6 +86,7 @@ public sealed class RimLLMDecisionClient
     /// 端點與金鑰取自該供應商在設定中保存的值；<paramref name="providerId"/> 為空時用啟用中的供應商。
     /// 模型清單查詢不消耗推論額度，也不計入每日預算。
     /// </summary>
+    #pragma warning disable VSTHRD202 // 保留 async：AsyncLocal 歸屬不可漏給呼叫端，濫用檢查的例外也要放進 Task。
     public async Task<IReadOnlyList<string>> FetchModelsAsync(
         string providerId,
         CancellationToken cancellationToken = default)
@@ -98,6 +99,7 @@ public sealed class RimLLMDecisionClient
             .FetchDecisionModelsAsync(providerId, cancellationToken)
             .ConfigureAwait(false);
     }
+    #pragma warning restore VSTHRD202
 
     /// <summary>
     /// 把供應商回報的 token 記入用量帳本。

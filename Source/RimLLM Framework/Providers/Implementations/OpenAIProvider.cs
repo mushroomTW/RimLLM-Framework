@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -230,7 +231,7 @@ public class OpenAIProvider : ILLMProvider
     private static string NormalizeModelName(string modelName)
     {
         if (string.IsNullOrEmpty(modelName)) return string.Empty;
-        string name = modelName.Contains('/') ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
+        string name = modelName.Contains('/', StringComparison.Ordinal) ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
         return name.ToLowerInvariant();
     }
 
@@ -372,7 +373,7 @@ public class OpenAIProvider : ILLMProvider
 
         return requestOptions is RimLLMChatOptions rimOptions
             ? rimOptions.DisableReasoning
-            : RimLLMChatOptions.ReadAdditional(requestOptions, RimLLMChatOptions.DisableReasoningKey, false);
+            : RimLLMChatOptions.ReadAdditional(requestOptions, RimLLMChatOptions.DisableReasoningKey, fallback: false);
     }
 
     /// <summary>
@@ -616,7 +617,7 @@ public class OpenAIProvider : ILLMProvider
             // 送出的是「關閉」指令時，學到的只是「這個模型關不掉」，不是「不吃思考參數」——
             // 兩者混記的話，連線測試（一律要求關閉）的一次 400 就會讓該模型整個 session
             // 都收不到玩家設定的強度。
-            if (RimLLMChatOptions.ReadAdditional<string?>(sentOptions, SentEffortLiteralKey, null) == "none")
+            if (RimLLMChatOptions.ReadAdditional<string?>(sentOptions, SentEffortLiteralKey, fallback: null) == "none")
             {
                 if (RimLLMReasoningSupport.MarkDisableUnsupported(ProviderId, model))
                 {
@@ -693,19 +694,8 @@ public class OpenAIProvider : ILLMProvider
 
         try
         {
-            var messages = new List<ChatMessage> { new(ChatRole.User, "ping") };
-            // 輸出上限不能壓到極低：思考型模型會先把額度花在內部推理上，
-            // 額度用盡時回傳的 content 是空的，連線其實正常卻會被判成「回傳空白內容」。
-            // 因此給足額度並明確要求關閉思考，讓測試只反映「連線與金鑰是否可用」。
-            var options = new ChatOptions { MaxOutputTokens = 256 };
-            options.AdditionalProperties = new AdditionalPropertiesDictionary
-            {
-                ["rimllm_disable_reasoning"] = true
-            };
             string testModel = model.Trim();
-
-            using IChatClient client = CreateChatClient(testModel);
-            await client.GetResponseAsync(messages, options, timeoutCts.Token).ConfigureAwait(false);
+            await PingAsync(testModel, timeoutCts.Token).ConfigureAwait(false);
             stopwatch.Stop();
 
             result.Success = true;
@@ -714,30 +704,44 @@ public class OpenAIProvider : ILLMProvider
         }
         catch (RimLLMException ex)
         {
-            stopwatch.Stop();
-            result.Success = false;
-            result.ErrorMessage = ex.Message;
-            result.ErrorCode = ex.Error;
-            result.LatencyMs = stopwatch.ElapsedMilliseconds;
+            MarkFailed(result, stopwatch, ex.Message, ex.Error);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
-            stopwatch.Stop();
-            result.Success = false;
-            result.ErrorMessage = $"Connection test timed out after {timeoutSeconds} seconds.";
-            result.ErrorCode = LLMError.Timeout;
-            result.LatencyMs = stopwatch.ElapsedMilliseconds;
+            MarkFailed(result, stopwatch, string.Create(CultureInfo.InvariantCulture, $"Connection test timed out after {timeoutSeconds} seconds."), LLMError.Timeout);
         }
         catch (Exception ex)
         {
-            stopwatch.Stop();
-            result.Success = false;
-            result.ErrorMessage = RimLLMLog.SanitizeForLog(ex.Message, 300);
-            result.ErrorCode = LLMError.Unknown;
-            result.LatencyMs = stopwatch.ElapsedMilliseconds;
+            MarkFailed(result, stopwatch, RimLLMLog.SanitizeForLog(ex.Message, 300), LLMError.Unknown);
         }
 
         return result;
+    }
+
+    /// <summary>送一則極短訊息；只要沒有拋出就代表連線與金鑰可用。</summary>
+    private async Task PingAsync(string testModel, System.Threading.CancellationToken cancellationToken)
+    {
+        var messages = new List<ChatMessage> { new(ChatRole.User, "ping") };
+        // 輸出上限不能壓到極低：思考型模型會先把額度花在內部推理上，
+        // 額度用盡時回傳的 content 是空的，連線其實正常卻會被判成「回傳空白內容」。
+        // 因此給足額度並明確要求關閉思考，讓測試只反映「連線與金鑰是否可用」。
+        var options = new ChatOptions { MaxOutputTokens = 256 };
+        options.AdditionalProperties = new AdditionalPropertiesDictionary
+        {
+            ["rimllm_disable_reasoning"] = true
+        };
+
+        using IChatClient client = CreateChatClient(testModel);
+        await client.GetResponseAsync(messages, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void MarkFailed(TestResult result, Stopwatch stopwatch, string? message, LLMError error)
+    {
+        stopwatch.Stop();
+        result.Success = false;
+        result.ErrorMessage = message;
+        result.ErrorCode = error;
+        result.LatencyMs = stopwatch.ElapsedMilliseconds;
     }
 
     /// <summary>
@@ -817,7 +821,7 @@ public class OpenAIProvider : ILLMProvider
         {
             throw new RimLLMException(
                 LLMError.Timeout,
-                $"Fetching {ProviderId} models list timed out after {timeoutSeconds} seconds.",
+                string.Create(CultureInfo.InvariantCulture, $"Fetching {ProviderId} models list timed out after {timeoutSeconds} seconds."),
                 ex);
         }
         catch (Exception ex)

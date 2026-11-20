@@ -14,11 +14,11 @@ public partial class MarkdownTests
 {
     /// <summary>比對 rich text 標籤名稱的樣式。</summary>
     [GeneratedRegex("</?([a-zA-Z]+)")]
-    private static partial Regex RichTextTagRegex();
+    private static partial Regex RichTextTagRegex { get; }
 
     /// <summary>行內碼與程式碼區塊共用的顏色標籤樣式。</summary>
     [GeneratedRegex("<color=#4ec9b0>")]
-    private static partial Regex CodeColorTagRegex();
+    private static partial Regex CodeColorTagRegex { get; }
 
     [Test]
     public void BoldAndItalicBecomeRichTextTags()
@@ -72,7 +72,7 @@ public partial class MarkdownTests
         // 程式碼內的星號不是語法，必須原樣保留。
         string result = RimLLMMarkdown.ToRichText("看 `a * b * c` 這段");
         StringAssert.Contains("a * b * c", result);
-        ClassicAssert.IsFalse(result.Contains("<i>"), "行內程式碼裡的星號不該被當成斜體。");
+        ClassicAssert.IsFalse(result.Contains("<i>", System.StringComparison.Ordinal), "行內程式碼裡的星號不該被當成斜體。");
     }
 
     [Test]
@@ -80,8 +80,8 @@ public partial class MarkdownTests
     {
         string result = RimLLMMarkdown.ToRichText("```csharp\nint x = 1;\n```");
         StringAssert.Contains("int x = 1;", result);
-        ClassicAssert.IsFalse(result.Contains("```"), "圍籬本身不該顯示出來。");
-        ClassicAssert.IsFalse(result.Contains("csharp"), "語言標記不該顯示出來。");
+        ClassicAssert.IsFalse(result.Contains("```", System.StringComparison.Ordinal), "圍籬本身不該顯示出來。");
+        ClassicAssert.IsFalse(result.Contains("csharp", System.StringComparison.Ordinal), "語言標記不該顯示出來。");
     }
 
     [Test]
@@ -97,7 +97,7 @@ public partial class MarkdownTests
     {
         string result = RimLLMMarkdown.ToRichText("```\n# 這不是標題\n```");
         StringAssert.Contains("# 這不是標題", result);
-        ClassicAssert.IsFalse(result.Contains("<size="), "程式碼區塊內不該套用標題樣式。");
+        ClassicAssert.IsFalse(result.Contains("<size=", System.StringComparison.Ordinal), "程式碼區塊內不該套用標題樣式。");
     }
 
     [Test]
@@ -105,7 +105,7 @@ public partial class MarkdownTests
     {
         string result = RimLLMMarkdown.ToRichText("[說明](https://example.com)");
         StringAssert.Contains("說明", result);
-        ClassicAssert.IsFalse(result.Contains("https://example.com"), "舊版 rich text 不能點擊，網址只是噪音。");
+        ClassicAssert.IsFalse(result.Contains("https://example.com", System.StringComparison.Ordinal), "舊版 rich text 不能點擊，網址只是噪音。");
     }
 
     [Test]
@@ -114,7 +114,7 @@ public partial class MarkdownTests
         // 刻意不支援底線斜體，就是為了避免這種誤判。
         string result = RimLLMMarkdown.ToRichText("欄位 some_field_name 保持原樣");
         StringAssert.Contains("some_field_name", result);
-        ClassicAssert.IsFalse(result.Contains("<i>"));
+        ClassicAssert.IsFalse(result.Contains("<i>", System.StringComparison.Ordinal));
     }
 
     [Test]
@@ -142,8 +142,8 @@ public partial class MarkdownTests
 
         StringAssert.Contains("＜color=red＞外部標記＜/color＞", result);
         StringAssert.Contains("＜size=999＞過大文字＜/size＞", result);
-        ClassicAssert.IsFalse(result.Contains("<color=red>"));
-        ClassicAssert.IsFalse(result.Contains("<size=999>"));
+        ClassicAssert.IsFalse(result.Contains("<color=red>", System.StringComparison.Ordinal));
+        ClassicAssert.IsFalse(result.Contains("<size=999>", System.StringComparison.Ordinal));
     }
 
     [Test]
@@ -153,7 +153,7 @@ public partial class MarkdownTests
         string result = RimLLMMarkdown.EscapeUntrustedUnityTags(input);
 
         StringAssert.Contains("＜color=silver＞供應商內容＜/color＞", result);
-        ClassicAssert.IsFalse(result.Contains("<color=silver>"));
+        ClassicAssert.IsFalse(result.Contains("<color=silver>", System.StringComparison.Ordinal));
     }
 
     [Test]
@@ -162,8 +162,8 @@ public partial class MarkdownTests
         string result = RimLLMMarkdown.ToRichText("<div>HTML</div> a > b");
 
         StringAssert.Contains("a > b", result);
-        ClassicAssert.IsFalse(result.Contains("<div>"));
-        ClassicAssert.IsFalse(result.Contains("</div>"));
+        ClassicAssert.IsFalse(result.Contains("<div>", System.StringComparison.Ordinal));
+        ClassicAssert.IsFalse(result.Contains("</div>", System.StringComparison.Ordinal));
     }
 
     [Test]
@@ -172,8 +172,8 @@ public partial class MarkdownTests
         string result = RimLLMMarkdown.ToRichText(
             "&lt;color=red&gt;外部標記&lt;/color&gt;");
 
-        ClassicAssert.IsFalse(result.Contains("<color=red>"));
-        ClassicAssert.IsFalse(result.Contains("</color>"));
+        ClassicAssert.IsFalse(result.Contains("<color=red>", System.StringComparison.Ordinal));
+        ClassicAssert.IsFalse(result.Contains("</color>", System.StringComparison.Ordinal));
     }
 
     [Test]
@@ -182,7 +182,7 @@ public partial class MarkdownTests
         // 舊版 IMGUI 只認得 b/i/size/color/material/quad，其餘標籤會被原樣印出來。
         string result = RimLLMMarkdown.ToRichText(
             "# 標題\n- 項目 **粗** *斜* `碼`\n> 引用\n\n---\n\n[連結](https://example.com)");
-        foreach (Match match in RichTextTagRegex().Matches(result))
+        foreach (Match match in RichTextTagRegex.Matches(result))
         {
             string tag = match.Groups[1].Value.ToLowerInvariant();
             ClassicAssert.IsTrue(
@@ -195,7 +195,7 @@ public partial class MarkdownTests
     public void EmptyInputIsReturnedUnchanged()
     {
         ClassicAssert.AreEqual("", RimLLMMarkdown.ToRichText(""));
-        ClassicAssert.IsNull(RimLLMMarkdown.ToRichText(null));
+        ClassicAssert.IsNull(RimLLMMarkdown.ToRichText(markdown: null));
     }
 
     [Test]
@@ -230,7 +230,7 @@ public partial class MarkdownTests
         StringAssert.Contains("＜b＞bold＜/b＞ ＜color=red＞x＜/color＞ <span>ok</span>", result);
         StringAssert.Contains("＜i＞x＜/i＞", result);
         // 只有程式碼區塊自己的 <color> 包裝與行內碼的包裝是真正的標籤
-        ClassicAssert.AreEqual(2, CodeColorTagRegex().Count(result));
+        ClassicAssert.AreEqual(2, CodeColorTagRegex.Count(result));
     }
 
     [Test]
@@ -254,7 +254,7 @@ public partial class MarkdownTests
         const string input = "這是一個使用 C++ 實作**快速排序法 (Quick Sort) **的完整範例。";
         string result = RimLLMMarkdown.ToRichText(input);
         StringAssert.Contains("<b>快速排序法 (Quick Sort)</b>", result);
-        ClassicAssert.IsFalse(result.Contains("**"), "原始星號不應殘留。");
+        ClassicAssert.IsFalse(result.Contains("**", System.StringComparison.Ordinal), "原始星號不應殘留。");
     }
 
     [Test]
@@ -263,7 +263,7 @@ public partial class MarkdownTests
         const string input = "以下是用 C++ 實作**快速排序法（Quick Sort）**的程式碼";
         string result = RimLLMMarkdown.ToRichText(input);
         StringAssert.Contains("<b>快速排序法（Quick Sort）</b>", result);
-        ClassicAssert.IsFalse(result.Contains("**"), "原始星號不應殘留。");
+        ClassicAssert.IsFalse(result.Contains("**", System.StringComparison.Ordinal), "原始星號不應殘留。");
     }
 
     [Test]
@@ -311,8 +311,8 @@ public partial class MarkdownTests
     {
         // 舊版管線讓 |----|----| 這一列原樣輸出，正是使用者看到的雜訊。
         string result = RimLLMMarkdown.ToRichText("| a | b |\n|:----|----:|\n| 1 | 2 |");
-        ClassicAssert.IsFalse(result.Contains("-----"), "分隔線不應出現在輸出。");
-        ClassicAssert.IsFalse(result.Contains("|:"), "對齊冒號不應殘留。");
+        ClassicAssert.IsFalse(result.Contains("-----", System.StringComparison.Ordinal), "分隔線不應出現在輸出。");
+        ClassicAssert.IsFalse(result.Contains("|:", System.StringComparison.Ordinal), "對齊冒號不應殘留。");
         StringAssert.Contains("<color=#9aa0a6>a｜b</color>", result);
         StringAssert.Contains("• 1｜2", result);
     }
@@ -326,7 +326,7 @@ public partial class MarkdownTests
         string result = RimLLMMarkdown.ToRichText(input);
 
         StringAssert.Contains("醫療 10**；射擊 12**；智識 9*", result);
-        ClassicAssert.IsFalse(result.Contains("<b>"), "欄位內不應產生粗體標籤。");
+        ClassicAssert.IsFalse(result.Contains("<b>", System.StringComparison.Ordinal), "欄位內不應產生粗體標籤。");
     }
 
     [Test]
@@ -505,7 +505,7 @@ public partial class MarkdownTests
         StringAssert.Contains("<color=#4ec9b0>", result);
         StringAssert.Contains("| a | b |", result);
         StringAssert.Contains("|---|---|", result);
-        ClassicAssert.IsFalse(result.Contains("<color=#9aa0a6>"), "圍籬內不應出現表格欄名。");
+        ClassicAssert.IsFalse(result.Contains("<color=#9aa0a6>", System.StringComparison.Ordinal), "圍籬內不應出現表格欄名。");
         ClassicAssert.AreEqual(result.Split("<color=").Length - 1, result.Split("</color>").Length - 1,
             "color 標籤必須成對，否則後續文字會被染色。");
     }
@@ -517,7 +517,7 @@ public partial class MarkdownTests
         string result = RimLLMMarkdown.ToRichText(input);
 
         StringAssert.Contains("<color=#4ec9b0>", result);
-        ClassicAssert.IsFalse(result.Contains("<color=#9aa0a6>"), "縮排程式碼不應被當成表格。");
+        ClassicAssert.IsFalse(result.Contains("<color=#9aa0a6>", System.StringComparison.Ordinal), "縮排程式碼不應被當成表格。");
     }
 
     [Test]
@@ -529,7 +529,7 @@ public partial class MarkdownTests
         string result = RimLLMMarkdown.ToRichText(input);
 
         StringAssert.Contains("<color=#4ec9b0>", result);
-        ClassicAssert.IsFalse(result.Contains("<color=#9aa0a6>"), "縮排行不應被當成表格。");
+        ClassicAssert.IsFalse(result.Contains("<color=#9aa0a6>", System.StringComparison.Ordinal), "縮排行不應被當成表格。");
     }
 
     [Test]
@@ -548,7 +548,7 @@ public partial class MarkdownTests
         const string input = "| 道具 | 備註 |\n|---|---|\n| 劍 | a \\| b |";
         string result = RimLLMMarkdown.ToRichText(input);
         StringAssert.Contains("a | b", result);
-        ClassicAssert.IsFalse(result.Contains("a \\| b"), "跳脫反斜線不應殘留。");
+        ClassicAssert.IsFalse(result.Contains("a \\| b", System.StringComparison.Ordinal), "跳脫反斜線不應殘留。");
     }
 
     [Test]
@@ -557,7 +557,7 @@ public partial class MarkdownTests
         ClassicAssert.AreEqual("醫療 10**；射擊 12**；智識 9*", RimLLMMarkdown.CellToRichText(" 醫療 10**；射擊 12**；智識 9* "));
         ClassicAssert.AreEqual("<b>Cole</b>", RimLLMMarkdown.CellToRichText("**Cole**"));
         ClassicAssert.AreEqual("a | b ＜i＞", RimLLMMarkdown.CellToRichText("a \\| b <i>"));
-        ClassicAssert.AreEqual(string.Empty, RimLLMMarkdown.CellToRichText(null));
+        ClassicAssert.AreEqual(string.Empty, RimLLMMarkdown.CellToRichText(cellMarkdown: null));
     }
 
     [Test]

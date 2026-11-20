@@ -87,12 +87,12 @@ internal static class LocalEndpointProbe
                 if (hit != null)
                 {
                     onFound(hit);
-                    Messages.Message("RimLLM_MsgDetectSuccess".Translate(hit.Name), MessageTypeDefOf.PositiveEvent, false);
+                    Messages.Message("RimLLM_MsgDetectSuccess".Translate(hit.Name), MessageTypeDefOf.PositiveEvent, historical: false);
                 }
                 else
                 {
                     onMissing();
-                    Messages.Message("RimLLM_MsgDetectFailed".Translate(), MessageTypeDefOf.RejectInput, false);
+                    Messages.Message("RimLLM_MsgDetectFailed".Translate(), MessageTypeDefOf.RejectInput, historical: false);
                 }
             });
         });

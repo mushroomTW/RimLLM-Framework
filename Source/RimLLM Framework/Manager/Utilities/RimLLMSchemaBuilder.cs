@@ -437,7 +437,7 @@ public static class RimLLMSchemaBuilder
         if (schema == null || attributeSource == null) return;
         if (schema[SchemaDescription] != null) return;
 
-        object[] attributes = attributeSource.GetCustomAttributes(typeof(DescriptionAttribute), true);
+        object[] attributes = attributeSource.GetCustomAttributes(typeof(DescriptionAttribute), inherit: true);
         if (attributes.Length == 0) return;
 
         string description = ((DescriptionAttribute)attributes[0]).Description;
@@ -574,7 +574,7 @@ public static class RimLLMSchemaBuilder
             if (current is not JsonObject container) return null;
 
             // RFC 6901 的轉義：~1 代表 '/'，~0 代表 '~'。順序不可顛倒。
-            string segment = rawSegment.Replace("~1", "/").Replace("~0", "~");
+            string segment = rawSegment.Replace("~1", "/", StringComparison.Ordinal).Replace("~0", "~", StringComparison.Ordinal);
             current = container[segment];
             if (current == null) return null;
         }
@@ -653,7 +653,10 @@ public static class RimLLMSchemaBuilder
         foreach (JsonNode? value in values)
         {
             if (value != null && value.GetValueKind() == JsonValueKind.String &&
-                string.Equals(value.GetValue<string>(), name, StringComparison.Ordinal)) return true;
+                string.Equals(value.GetValue<string>(), name, StringComparison.Ordinal))
+            {
+                return true;
+            }
         }
         return false;
     }
@@ -682,7 +685,10 @@ public static class RimLLMSchemaBuilder
         if (HasOpenEndedMap(node[SchemaItems] as JsonObject)) return true;
 
         if (node[SchemaProperties] is JsonObject properties &&
-            properties.Any(p => HasOpenEndedMap(p.Value as JsonObject))) return true;
+            properties.Any(p => HasOpenEndedMap(p.Value as JsonObject)))
+        {
+            return true;
+        }
 
         return false;
     }

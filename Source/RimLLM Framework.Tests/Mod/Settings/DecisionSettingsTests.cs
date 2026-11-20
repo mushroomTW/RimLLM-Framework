@@ -94,7 +94,7 @@ public class DecisionSettingsTests
         // 不得擅自把來路不明的供應商換成別家已啟用（避免「TypeSafe 已啟用、無金鑰」的幽靈設定）。
         ClassicAssert.AreEqual(
             RimLLMDecisionProviderCatalog.Disabled,
-            RimLLMFrameworkSettings.SanitizeDecisionProvider(null));
+            RimLLMFrameworkSettings.SanitizeDecisionProvider(stored: null));
         ClassicAssert.AreEqual(
             RimLLMDecisionProviderCatalog.Disabled,
             RimLLMFrameworkSettings.SanitizeDecisionProvider(""));

@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 using Verse;
 
@@ -71,47 +72,11 @@ public static class FallbackSettingsDrawer
         Rect deleteRect = new(itemRect.x + itemRect.width - 40f, itemRect.y, 30f, itemRect.height);
 
         // 繪製順序標記與名稱
-        Widgets.Label(labelRect, $" {i + 1}. <color=cyan>{entry}</color>");
+        Widgets.Label(labelRect, string.Create(CultureInfo.CurrentCulture, $" {i + 1}. <color=cyan>{entry}</color>"));
 
-        // 上移按鈕
-        if (i > 0)
-        {
-            if (Widgets.ButtonText(upRect, "▲"))
-            {
-                string temp = chain[i];
-                chain[i] = chain[i - 1];
-                chain[i - 1] = temp;
-                Settings.FallbackChain = chain;
-                Settings.Write();
-                return true;
-            }
-        }
-        else
-        {
-            GUI.color = Color.gray;
-            Widgets.ButtonText(upRect, "▲");
-            GUI.color = Color.white;
-        }
-
-        // 下移按鈕
-        if (i < chain.Count - 1)
-        {
-            if (Widgets.ButtonText(downRect, "▼"))
-            {
-                string temp = chain[i];
-                chain[i] = chain[i + 1];
-                chain[i + 1] = temp;
-                Settings.FallbackChain = chain;
-                Settings.Write();
-                return true;
-            }
-        }
-        else
-        {
-            GUI.color = Color.gray;
-            Widgets.ButtonText(downRect, "▼");
-            GUI.color = Color.white;
-        }
+        // 上移、下移按鈕
+        if (DrawMoveButton(upRect, "▲", chain, i, i - 1)) return true;
+        if (DrawMoveButton(downRect, "▼", chain, i, i + 1)) return true;
 
         // 刪除按鈕
         if (Widgets.ButtonText(deleteRect, "X"))
@@ -122,6 +87,27 @@ public static class FallbackSettingsDrawer
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 繪製把項目與 <paramref name="target"/> 位置互換的按鈕；目標超出範圍時畫成停用的灰色按鈕。
+    /// 回傳 true 表示已互換並寫入設定。
+    /// </summary>
+    private static bool DrawMoveButton(Rect rect, string glyph, List<string> chain, int index, int target)
+    {
+        if (target < 0 || target >= chain.Count)
+        {
+            GUI.color = Color.gray;
+            Widgets.ButtonText(rect, glyph);
+            GUI.color = Color.white;
+            return false;
+        }
+
+        if (!Widgets.ButtonText(rect, glyph)) return false;
+        (chain[index], chain[target]) = (chain[target], chain[index]);
+        Settings.FallbackChain = chain;
+        Settings.Write();
+        return true;
     }
 
     /// <summary>

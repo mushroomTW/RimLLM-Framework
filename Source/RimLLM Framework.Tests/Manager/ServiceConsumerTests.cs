@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.Extensions.AI;
 using NUnit.Framework;
@@ -57,7 +58,7 @@ public class ServiceConsumerTests
 
         for (int i = 0; i < RimLLMUsageTracker.MaxCallerModIds + 50; i++)
         {
-            tracker.RecordCaller("rotating." + i);
+            tracker.RecordCaller("rotating." + i.ToString(CultureInfo.InvariantCulture));
         }
 
         ClassicAssert.AreEqual(RimLLMUsageTracker.MaxCallerModIds, tracker.CallerModIdCount);
@@ -104,8 +105,8 @@ public class ServiceConsumerTests
         ClassicAssert.IsNull(unresolved.PackageId);
 
         // 尚未呼叫的排最後。
-        ClassicAssert.AreEqual("Idle Mod", rows.Last().Name);
-        CollectionAssert.IsEmpty(rows.Last().CalledModIds);
+        ClassicAssert.AreEqual("Idle Mod", rows[^1].Name);
+        CollectionAssert.IsEmpty(rows[^1].CalledModIds);
     }
 
     /// <summary>只排除框架自己的兩個工具 modId，以 RimLLM. 開頭的第三方模組仍要列出。</summary>

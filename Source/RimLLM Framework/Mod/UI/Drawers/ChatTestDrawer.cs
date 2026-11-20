@@ -283,7 +283,7 @@ public static partial class ChatTestDrawer
             if (!chatLoading && Widgets.ButtonText(copyBtnRect, copyLabel))
             {
                 GUIUtility.systemCopyBuffer = StripRichTextForClipboard(layout.Body);
-                Messages.Message("RimLLM_CopiedToClipboard".Translate("AI"), MessageTypeDefOf.TaskCompletion, false);
+                Messages.Message("RimLLM_CopiedToClipboard".Translate("AI"), MessageTypeDefOf.TaskCompletion, historical: false);
             }
 
             if (layout.Meta != null)
@@ -400,7 +400,7 @@ public static partial class ChatTestDrawer
             }
             if (entries.Count == 0)
             {
-                options.Add(new FloatMenuOption("RimLLM_ModelsEmptyWarning".Translate(), null));
+                options.Add(new FloatMenuOption("RimLLM_ModelsEmptyWarning".Translate(), action: null));
             }
             Find.WindowStack.Add(new FloatMenu(options));
         }
@@ -453,7 +453,7 @@ public static partial class ChatTestDrawer
         SplitMarkdownBody(body, out string? reasoning, out string? answer);
         string formatted = (FormatReasoning(reasoning, !string.IsNullOrEmpty(answer)) + (FormatThinkProcess(answer) ?? string.Empty)).Trim();
         int answerStart = 0;
-        if (formatted.Contains("<color=silver>" + ThinkingLabel))
+        if (formatted.Contains("<color=silver>" + ThinkingLabel, StringComparison.Ordinal))
         {
             answerStart = formatted.Length;
         }
@@ -533,7 +533,7 @@ public static partial class ChatTestDrawer
         if (Widgets.ButtonInvisible(modelRect))
         {
             GUIUtility.systemCopyBuffer = modelId;
-            Messages.Message("RimLLM_CopiedToClipboard".Translate(modelId), MessageTypeDefOf.TaskCompletion, false);
+            Messages.Message("RimLLM_CopiedToClipboard".Translate(modelId), MessageTypeDefOf.TaskCompletion, historical: false);
         }
 
         curX += modelW;
@@ -700,9 +700,9 @@ public static partial class ChatTestDrawer
         {
             layout.ModelDisplay = FormatModelDisplayName(meta.ModelId);
 
-            string timeStr = meta.ElapsedMs < 1000 ? $"{meta.ElapsedMs}ms" : $"{(meta.ElapsedMs / 1000f):F1}s";
+            string timeStr = meta.ElapsedMs < 1000 ? string.Create(CultureInfo.CurrentCulture, $"{meta.ElapsedMs}ms") : string.Create(CultureInfo.CurrentCulture, $"{(meta.ElapsedMs / 1000f):F1}s");
             string tokenPrefix = meta.IsEstimatedTokens ? "~" : "";
-            string tokenStr = meta.TotalTokens > 0 ? $"{tokenPrefix}{meta.TotalTokens:N0} tok" : "";
+            string tokenStr = meta.TotalTokens > 0 ? string.Create(CultureInfo.CurrentCulture, $"{tokenPrefix}{meta.TotalTokens:N0} tok") : "";
             layout.StatText = string.IsNullOrEmpty(tokenStr)
                 ? $"<color=#64748b>{timeStr}</color>"
                 : $"<color=#64748b>{timeStr}</color>  <color=#475569>•</color>  <color=#64748b>{tokenStr}</color>";

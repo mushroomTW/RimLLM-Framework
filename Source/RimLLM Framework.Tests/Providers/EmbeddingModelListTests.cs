@@ -57,7 +57,7 @@ public class EmbeddingModelListTests
     [Test]
     public void NullInputYieldsEmptyList()
     {
-        ClassicAssert.AreEqual(0, RimLLMEmbeddingService.OrderEmbeddingCandidatesFirst(null).Count);
+        ClassicAssert.AreEqual(0, RimLLMEmbeddingService.OrderEmbeddingCandidatesFirst(modelIds: null).Count);
     }
 
     [Test]

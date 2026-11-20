@@ -58,7 +58,7 @@ public class ProviderSdkIntegrationTests
             Assert.Fail(
                 "Microsoft.Extensions.AI.dll 反射載入失敗：" +
                 string.Join(
-                    "\n",
+                    '\n',
                     Array.ConvertAll(
                         exception.LoaderExceptions,
                         loaderException => loaderException?.Message ?? "未知載入例外")));
@@ -133,7 +133,7 @@ public class ProviderSdkIntegrationTests
         ClassicAssert.AreEqual(
             "https://example.invalid/v1",
             OpenAIProvider.NormalizeEndpoint(" https://example.invalid/v1/chat/completions/ "));
-        ClassicAssert.IsNull(OpenAIProvider.NormalizeEndpoint(null));
+        ClassicAssert.IsNull(OpenAIProvider.NormalizeEndpoint(endpoint: null));
     }
 
     /// <summary>檢查實際出貨資產的 TFM，避免意外重新引入舊 Framework/Mono 組建。</summary>
@@ -158,7 +158,11 @@ public class ProviderSdkIntegrationTests
             if (constructor.Parent.Kind != System.Reflection.Metadata.HandleKind.TypeReference) continue;
             var type = reader.GetTypeReference((System.Reflection.Metadata.TypeReferenceHandle)constructor.Parent);
             if (reader.GetString(type.Namespace) != "System.Runtime.Versioning" ||
-                reader.GetString(type.Name) != "TargetFrameworkAttribute") continue;
+                reader.GetString(type.Name) != "TargetFrameworkAttribute")
+            {
+                continue;
+            }
+
             var value = reader.GetBlobReader(attribute.Value);
             ClassicAssert.AreEqual(1, value.ReadUInt16());
             framework = value.ReadSerializedString();
@@ -234,7 +238,7 @@ public class ProviderSdkIntegrationTests
 
         // modId 仍為必填，因為防濫用節流與遙測歸屬都以它為鍵。
         Assert.Throws<ArgumentException>(() => RimLLMProvider.CreateChatClient(string.Empty));
-        Assert.Throws<ArgumentException>(() => RimLLMProvider.CreateEmbeddingGenerator(null));
+        Assert.Throws<ArgumentException>(() => RimLLMProvider.CreateEmbeddingGenerator(modId: null));
     }
 
 }

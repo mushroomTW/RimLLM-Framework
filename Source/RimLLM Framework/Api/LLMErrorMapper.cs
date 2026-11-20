@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ClientModel;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -131,21 +131,21 @@ public static class LLMErrorMapper
                 // 擲出 Status 為 0 的 ClientResultException，內層才是 HttpRequestException。
                 // 這是網路層失敗，歸成 Unknown 會讓 Embedding／決策備援不換家、設定精靈也顯示不出「離線」。
                 return Create(LLMError.NetworkError,
-                    $"Could not reach the provider: {friendlyMessage}", null, innerException);
+                    $"Could not reach the provider: {friendlyMessage}", retryAfter: null, innerException);
 
             case 401:
             case 403:
                 return Create(LLMError.InvalidKey,
-                    $"Invalid API key or authorization failed: {friendlyMessage}", null, innerException);
+                    $"Invalid API key or authorization failed: {friendlyMessage}", retryAfter: null, innerException);
 
             case 402:
                 return Create(LLMError.QuotaExceeded,
-                    $"Payment required, please check your account balance: {friendlyMessage}", null, innerException);
+                    $"Payment required, please check your account balance: {friendlyMessage}", retryAfter: null, innerException);
 
             case 404:
                 // 模型或端點不存在屬於不可重試錯誤，重試只會空耗延遲。
                 return Create(LLMError.ModelNotFound,
-                    $"Model or endpoint not found: {friendlyMessage}", null, innerException);
+                    $"Model or endpoint not found: {friendlyMessage}", retryAfter: null, innerException);
 
             case 408:
                 return Create(LLMError.Timeout,
@@ -154,27 +154,10 @@ public static class LLMErrorMapper
             case 400:
             case 413:
             case 422:
-                // 請求本身有問題，以同一份 payload 重試必然再次失敗。
-                RimLLMException rejected = Create(ResolveRejectionError(statusCode, probe),
-                    $"The request was rejected by the provider: {friendlyMessage}", null, innerException);
-                rejected.IsSchemaRejection = LooksLikeSchemaRejection(probe);
-                rejected.IsReasoningRejection = LooksLikeReasoningRejection(probe);
-                rejected.IsTemperatureRejection = LooksLikeTemperatureRejection(probe);
-                rejected.IsMaxTokensRejection = LooksLikeMaxTokensRejection(probe);
-                return rejected;
+                return MapRejection(statusCode, probe, friendlyMessage, innerException);
 
             case 429:
-                if (ContainsIgnoreCase(probe, "quota") || ContainsIgnoreCase(probe, "insufficient"))
-                {
-                    RimLLMException quota = Create(LLMError.QuotaExceeded,
-                        "API insufficient quota (insufficient_quota), please check your account balance.", retryAfter, innerException);
-                    // 訊息只提到 "quota" 的多半是每分鐘配額（Gemini 免費層），等一下就恢復；
-                    // 明確寫 insufficient 的才是額度用完。
-                    quota.IsBalanceExhausted = ContainsIgnoreCase(probe, "insufficient");
-                    return quota;
-                }
-                return Create(LLMError.RateLimit,
-                    $"Rate limit triggered: {friendlyMessage}", retryAfter, innerException);
+                return MapTooManyRequests(probe, friendlyMessage, retryAfter, innerException);
         }
 
         if (statusCode.HasValue && statusCode.Value >= 500)
@@ -183,7 +166,35 @@ public static class LLMErrorMapper
                 $"Internal server error: {friendlyMessage}", retryAfter, innerException);
         }
 
-        return Create(LLMError.Unknown, $"API request failed: {friendlyMessage}", null, innerException);
+        return Create(LLMError.Unknown, $"API request failed: {friendlyMessage}", retryAfter: null, innerException);
+    }
+
+    /// <summary>400／413／422：請求本身有問題，以同一份 payload 重試必然再次失敗；標記可降級重打的拒絕類型。</summary>
+    private static RimLLMException MapRejection(int? statusCode, string probe, string friendlyMessage, Exception? innerException)
+    {
+        RimLLMException rejected = Create(ResolveRejectionError(statusCode, probe),
+            $"The request was rejected by the provider: {friendlyMessage}", retryAfter: null, innerException);
+        rejected.IsSchemaRejection = LooksLikeSchemaRejection(probe);
+        rejected.IsReasoningRejection = LooksLikeReasoningRejection(probe);
+        rejected.IsTemperatureRejection = LooksLikeTemperatureRejection(probe);
+        rejected.IsMaxTokensRejection = LooksLikeMaxTokensRejection(probe);
+        return rejected;
+    }
+
+    /// <summary>429：區分配額不足與一般速率限制。</summary>
+    private static RimLLMException MapTooManyRequests(string probe, string friendlyMessage, TimeSpan? retryAfter, Exception? innerException)
+    {
+        if (ContainsIgnoreCase(probe, "quota") || ContainsIgnoreCase(probe, "insufficient"))
+        {
+            RimLLMException quota = Create(LLMError.QuotaExceeded,
+                "API insufficient quota (insufficient_quota), please check your account balance.", retryAfter, innerException);
+            // 訊息只提到 "quota" 的多半是每分鐘配額（Gemini 免費層），等一下就恢復；
+            // 明確寫 insufficient 的才是額度用完。
+            quota.IsBalanceExhausted = ContainsIgnoreCase(probe, "insufficient");
+            return quota;
+        }
+        return Create(LLMError.RateLimit,
+            $"Rate limit triggered: {friendlyMessage}", retryAfter, innerException);
     }
 
     /// <summary>

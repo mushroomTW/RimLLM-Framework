@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -121,28 +122,26 @@ public class ToolCallingTests
                         ModelId = "ToolMock:mock-model"
                     });
                 }
-                else
+
+                // 第二輪檢查前一輪的 FunctionResult
+                var lastMsg = messages.LastOrDefault();
+                string resultVal = "unknown";
+                if (lastMsg?.Contents != null)
                 {
-                    // 第二輪檢查前一輪的 FunctionResult
-                    var lastMsg = messages.LastOrDefault();
-                    string resultVal = "unknown";
-                    if (lastMsg?.Contents != null)
+                    foreach (var c in lastMsg.Contents)
                     {
-                        foreach (var c in lastMsg.Contents)
+                        if (c is FunctionResultContent frc)
                         {
-                            if (c is FunctionResultContent frc)
-                            {
-                                resultVal = frc.Result?.ToString();
-                            }
+                            resultVal = frc.Result?.ToString();
                         }
                     }
-                    var finalMsg = new ChatMessage(ChatRole.Assistant, $"The sum is {resultVal}");
-                    return Task.FromResult(new ChatResponse(finalMsg)
-                    {
-                        FinishReason = ChatFinishReason.Stop,
-                        ModelId = "ToolMock:mock-model"
-                    });
                 }
+                var finalMsg = new ChatMessage(ChatRole.Assistant, $"The sum is {resultVal}");
+                return Task.FromResult(new ChatResponse(finalMsg)
+                {
+                    FinishReason = ChatFinishReason.Stop,
+                    ModelId = "ToolMock:mock-model"
+                });
             }
         };
         manager.RegisterProvider(toolProvider);
@@ -242,7 +241,7 @@ public class ToolCallingTests
                 round++;
                 if (round < 3)
                 {
-                    var call = new FunctionCallContent("call_" + round, "Ping", new Dictionary<string, object>());
+                    var call = new FunctionCallContent("call_" + round.ToString(CultureInfo.InvariantCulture), "Ping", new Dictionary<string, object>());
                     return Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, [call]))
                     {
                         FinishReason = ChatFinishReason.ToolCalls
@@ -278,13 +277,13 @@ public class ToolCallingTests
         var manager = BuildManager(settings, new MockToolCallingProvider());
         var client = manager.CreateChatClient("test.throttle.cooldown");
 
-        client.GetResponseAsync(UserSays("a")).GetAwaiter().GetResult();
+        await client.GetResponseAsync(UserSays("a"));
         await Assert.ThrowsAsync<RimLLMException>(() => client.GetResponseAsync(UserSays("a"))); // 進入冷卻
 
         var continuation = new List<ChatMessage>
         {
             new(ChatRole.User, "a"),
-            new(ChatRole.Assistant, [new FunctionCallContent("c1", "Ping", null)]),
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "Ping", arguments: null)]),
             new(ChatRole.Tool, [new FunctionResultContent("c1", "pong")])
         };
         ClassicAssert.IsTrue(RimLLMGuardChatClient.IsToolLoopContinuation(continuation));
@@ -402,16 +401,16 @@ public class ToolCallingTests
         };
         var manager = BuildManager(settings, withTools, noTools);
 
-        LLMProviderCapabilities effective = manager.GetEffectiveCapabilities(null);
+        LLMProviderCapabilities effective = manager.GetEffectiveCapabilities(preferredModelId: null);
         ClassicAssert.IsFalse(effective.SupportsFunctionCalling, "任一候選不支援即視為不可依賴");
         ClassicAssert.IsTrue(effective.SupportsStreaming);
 
         // 只剩支援工具的候選時，交集就是它自己。
         settings.FallbackChain = ["WithTools:m"];
-        ClassicAssert.IsTrue(manager.GetEffectiveCapabilities(null).SupportsFunctionCalling);
+        ClassicAssert.IsTrue(manager.GetEffectiveCapabilities(preferredModelId: null).SupportsFunctionCalling);
 
         settings.FallbackChain = [];
-        var ex = Assert.Throws<RimLLMException>(() => manager.GetEffectiveCapabilities(null));
+        var ex = Assert.Throws<RimLLMException>(() => manager.GetEffectiveCapabilities(preferredModelId: null));
         ClassicAssert.AreEqual(LLMError.ProviderOffline, ex.Error);
     }
 

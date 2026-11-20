@@ -306,7 +306,7 @@ public class DispatcherAndCircuitBreakerTests
             GenerateHandler = (msgs, opts, model) =>
             {
                 requestedPromptReceived = System.Linq.Enumerable.FirstOrDefault(msgs, m => m.Role == ChatRole.User)?.Text;
-                requestedSystemPromptReceived = string.Join("\n", System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(System.Linq.Enumerable.Where(msgs, m => m.Role == ChatRole.System), m => m.Text)));
+                requestedSystemPromptReceived = string.Join('\n', System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(System.Linq.Enumerable.Where(msgs, m => m.Role == ChatRole.System), m => m.Text)));
                 // 回傳合法的 JSON 字串，並刻意帶有 markdown 標記與尾隨逗號以測試 JSON 修復器
                 return System.Threading.Tasks.Task.FromResult("```json\n{\n  \"Value\": 42,\n  \"Message\": \"Hello Cache\",\n}\n```");
             }
@@ -328,8 +328,8 @@ public class DispatcherAndCircuitBreakerTests
         ClassicAssert.IsNotNull(resultObject);
         ClassicAssert.AreEqual(42, resultObject.Value);
         ClassicAssert.AreEqual("Hello Cache", resultObject.Message);
-        ClassicAssert.IsTrue(requestedSystemPromptReceived.Contains("Value"));
-        ClassicAssert.IsTrue(requestedSystemPromptReceived.Contains("Base System Prompt"));
+        ClassicAssert.IsTrue(requestedSystemPromptReceived.Contains("Value", StringComparison.Ordinal));
+        ClassicAssert.IsTrue(requestedSystemPromptReceived.Contains("Base System Prompt", StringComparison.Ordinal));
     }
 
     [Test]
@@ -432,7 +432,7 @@ public class DispatcherAndCircuitBreakerTests
         cts.Cancel();
 
         // 驗證 task2 被標記為已取消
-        Assert.Throws<AggregateException>(() => task2.Wait());
+        Assert.Throws<AggregateException>(() => task2.Wait(System.Threading.CancellationToken.None));
         ClassicAssert.IsTrue(task2.IsCanceled);
 
         // 釋放第 1 個
@@ -665,13 +665,13 @@ public class DispatcherAndCircuitBreakerTests
 
         ClassicAssert.IsNotEmpty(json);
         ClassicAssert.AreNotEqual("{}", json);
-        ClassicAssert.IsTrue(json.Contains("\"Name\":\"string\""), "應該遞迴產生 string 欄位的 dummy 資料");
-        ClassicAssert.IsTrue(json.Contains("\"Age\":0"), "應該遞迴展開 int 欄位的 dummy 資料");
-        ClassicAssert.IsTrue(json.Contains("\"IsActive\":false"), "應該遞迴展開 bool 欄位的 dummy 資料");
-        ClassicAssert.IsTrue(json.Contains("\"Skills\":[\"string\"]"), "應該產生 List 的範例陣列元素");
-        ClassicAssert.IsTrue(json.Contains("\"Mapping\":{\"string\":0}"), "應該產生 Dictionary 的範例鍵值對");
-        ClassicAssert.IsTrue(json.Contains("\"Nested\":{"), "應該遞迴展開 Nested 屬性");
-        ClassicAssert.IsTrue(json.Contains("\"SelfRef\":null"), "循環引用欄位在偵測到之後應截斷為 null，避免 StackOverflow");
+        ClassicAssert.IsTrue(json.Contains("\"Name\":\"string\"", StringComparison.Ordinal), "應該遞迴產生 string 欄位的 dummy 資料");
+        ClassicAssert.IsTrue(json.Contains("\"Age\":0", StringComparison.Ordinal), "應該遞迴展開 int 欄位的 dummy 資料");
+        ClassicAssert.IsTrue(json.Contains("\"IsActive\":false", StringComparison.Ordinal), "應該遞迴展開 bool 欄位的 dummy 資料");
+        ClassicAssert.IsTrue(json.Contains("\"Skills\":[\"string\"]", StringComparison.Ordinal), "應該產生 List 的範例陣列元素");
+        ClassicAssert.IsTrue(json.Contains("\"Mapping\":{\"string\":0}", StringComparison.Ordinal), "應該產生 Dictionary 的範例鍵值對");
+        ClassicAssert.IsTrue(json.Contains("\"Nested\":{", StringComparison.Ordinal), "應該遞迴展開 Nested 屬性");
+        ClassicAssert.IsTrue(json.Contains("\"SelfRef\":null", StringComparison.Ordinal), "循環引用欄位在偵測到之後應截斷為 null，避免 StackOverflow");
     }
 
     [Test]
@@ -1029,7 +1029,7 @@ public class DispatcherAndCircuitBreakerTests
             RimLLMEmbeddingService.NormalizeEmbeddingEndpoint("http://localhost:11434/api/embed"));
         ClassicAssert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(""),
             "空字串應回傳 null，讓呼叫端改用預設端點");
-        ClassicAssert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(null));
+        ClassicAssert.IsNull(RimLLMEmbeddingService.NormalizeEmbeddingEndpoint(endpoint: null));
     }
 
     [Test]
@@ -1040,7 +1040,7 @@ public class DispatcherAndCircuitBreakerTests
 
         var ex = Assert.Throws<RimLLMException>(() =>
             service.ComputeEmbeddingAsync("hello").GetAwaiter().GetResult());
-        ClassicAssert.IsTrue(ex.Message.Contains("No embedding provider is configured"), "停用狀態下不產生向量，應明確拋出錯誤");
+        ClassicAssert.IsTrue(ex.Message.Contains("No embedding provider is configured", StringComparison.Ordinal), "停用狀態下不產生向量，應明確拋出錯誤");
     }
 
     [Test]
@@ -1235,7 +1235,7 @@ public class DispatcherAndCircuitBreakerTests
     [Test]
     public void TestChatInputWhitespaceOnlyIsRejected()
     {
-        ClassicAssert.IsFalse(ChatTestDrawer.ShouldSendChatInput(null));
+        ClassicAssert.IsFalse(ChatTestDrawer.ShouldSendChatInput(rawInput: null));
         ClassicAssert.IsFalse(ChatTestDrawer.ShouldSendChatInput(""));
         ClassicAssert.IsFalse(ChatTestDrawer.ShouldSendChatInput("   \t \n "),
             "僅含空白的聊天輸入不應送出請求");

@@ -52,7 +52,9 @@ internal static class RimLLMSecureKeyStore
             string reference = File.ReadAllText(path, Encoding.UTF8);
             if (!reference.StartsWith(ReferencePrefix, StringComparison.Ordinal) ||
                 !Guid.TryParseExact(reference[ReferencePrefix.Length..], "N", out _))
+            {
                 throw new CryptographicException("Stored keyring reference is invalid.");
+            }
 
             // 指向的秘密遺失時不可重建，否則原有密文會永久失去對應金鑰。
             return ValidateKey(store.Read(reference[ReferencePrefix.Length..]));

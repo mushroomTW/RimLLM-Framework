@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Markdig;
 using Markdig.Extensions.EmphasisExtras;
 using Markdig.Extensions.Tables;
@@ -28,7 +29,7 @@ public static class RimLLMMarkdown
     private const string BoldOpenMarker = "\uE000";
     private const string BoldCloseMarker = "\uE001";
     /// <summary>欄位分隔符。用全形直線而非 ASCII <c>|</c>，讓渲染結果一眼看出是欄位分隔而非殘留的 markdown。</summary>
-    private const string CellSeparator = "｜";
+    private const char CellSeparator = '｜';
     private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
     private static readonly int[] HeadingSizes = [20, 17, 15];
@@ -41,7 +42,7 @@ public static class RimLLMMarkdown
         .Build();
 
     private static readonly System.Text.RegularExpressions.Regex BoldPattern =
-        new(@"\*\*\s*([^\*\n]+?)\s*\*\*", System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
+        new(@"\*\*\s*(?<text>[^\*\n]+?)\s*\*\*", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.ExplicitCapture, RegexTimeout);
 
     /// <summary>
     /// 粗體預轉換不得碰的區域：``` 或 ~~~ 圍籬（含串流中尚未閉合的尾巴）、行內碼、四空格／tab 縮排的程式碼行。
@@ -49,10 +50,10 @@ public static class RimLLMMarkdown
     /// </summary>
     private static readonly System.Text.RegularExpressions.Regex ProtectedRegion =
         new(
-            @"(?:^|(?<=\n))(`{3,}|~{3,})[\s\S]*?(?:\n\1[ \t]*(?=\r?\n|\z)|\z)" +
+            @"(?:^|(?<=\n))(?<fence>`{3,}|~{3,})[\s\S]*?(?:\n\k<fence>[ \t]*(?=\r?\n|\z)|\z)" +
             @"|`+[^`\n]*`+" +
             @"|(?:^|(?<=\n))(?:[ ]{4}|\t)[^\n]*",
-            System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
+            System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.ExplicitCapture, RegexTimeout);
 
     /// <summary>
     /// 表格欄位的行內語法。星號開頭不得緊接文字或數字，<c>射擊 12**；智識 9**</c> 這類語意標記才不會被配成一組。
@@ -68,7 +69,7 @@ public static class RimLLMMarkdown
             System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
 
     private static readonly System.Text.RegularExpressions.Regex UnityTagPattern =
-        new(@"<(/?(?:b|i|size|color|material|quad)(?:=[^>]*)?)>", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled, RegexTimeout);
+        new(@"<(?<tag>/?(?:b|i|size|color|material|quad)(?:=[^>]*)?)>", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.ExplicitCapture, RegexTimeout);
 
     private static readonly System.Text.RegularExpressions.Regex RawHtmlTagPattern =
         new(
@@ -102,11 +103,11 @@ public static class RimLLMMarkdown
         foreach ((int start, int end) in spans)
         {
             if (start < last) continue;
-            sb.Append(BoldPattern.Replace(markdown.Substring(last, start - last), BoldOpenMarker + "$1" + BoldCloseMarker));
+            sb.Append(BoldPattern.Replace(markdown.Substring(last, start - last), BoldOpenMarker + "${text}" + BoldCloseMarker));
             sb.Append(markdown, start, end - start);
             last = end;
         }
-        sb.Append(BoldPattern.Replace(markdown.Substring(last), BoldOpenMarker + "$1" + BoldCloseMarker));
+        sb.Append(BoldPattern.Replace(markdown.Substring(last), BoldOpenMarker + "${text}" + BoldCloseMarker));
         return sb.ToString();
     }
 
@@ -118,7 +119,7 @@ public static class RimLLMMarkdown
     private static List<(int Start, int End)> CollectTableSpans(string markdown)
     {
         var spans = new List<(int, int)>();
-        if (markdown.IndexOf('|') < 0) return spans;
+        if (markdown.IndexOf('|', StringComparison.Ordinal) < 0) return spans;
 
         CollectTableSpans(Markdown.Parse(markdown, Pipeline), spans);
         return spans;
@@ -141,14 +142,14 @@ public static class RimLLMMarkdown
     /// </summary>
     public static string EscapeCode(string text)
     {
-        if (string.IsNullOrEmpty(text) || text.IndexOf('<') < 0) return text;
-        return UnityTagPattern.Replace(text, "＜$1＞");
+        if (string.IsNullOrEmpty(text) || text.IndexOf('<', StringComparison.Ordinal) < 0) return text;
+        return UnityTagPattern.Replace(text, "＜${tag}＞");
     }
 
 
     private static string SanitizeUnityTags(string markdown, bool preserveTrustedColorWrapper)
     {
-        if (string.IsNullOrEmpty(markdown) || markdown.IndexOf('<') < 0)
+        if (string.IsNullOrEmpty(markdown) || markdown.IndexOf('<', StringComparison.Ordinal) < 0)
         {
             return markdown;
         }
@@ -210,8 +211,8 @@ public static class RimLLMMarkdown
         renderer.Render(document);
 
         return sb.ToString()
-            .Replace(BoldOpenMarker, "<b>")
-            .Replace(BoldCloseMarker, "</b>")
+            .Replace(BoldOpenMarker, "<b>", StringComparison.Ordinal)
+            .Replace(BoldCloseMarker, "</b>", StringComparison.Ordinal)
             .TrimEnd('\r', '\n');
     }
 
@@ -224,8 +225,8 @@ public static class RimLLMMarkdown
     public static string CellToRichText(string cellMarkdown)
     {
         if (string.IsNullOrEmpty(cellMarkdown)) return cellMarkdown ?? string.Empty;
-        string raw = cellMarkdown.Trim().Replace("\\|", "|");
-        string escaped = CellLineBreak.Replace(raw.Replace("<", "＜").Replace(">", "＞"), m => m.Value[0] == '`' ? m.Value : "\n");
+        string raw = cellMarkdown.Trim().Replace("\\|", "|", StringComparison.Ordinal);
+        string escaped = CellLineBreak.Replace(raw.Replace('<', '＜').Replace('>', '＞'), m => m.Value[0] == '`' ? m.Value : "\n");
         return RenderCellInlines(escaped);
     }
 
@@ -282,9 +283,9 @@ public static class RimLLMMarkdown
         {
             string raw = _source.Substring(cell.Span.Start, cell.Span.Length).Trim();
             // 取的是原始切片，因此 \| 要自己還原；跳脫直線若不還原會變成多餘的反斜線。
-            raw = raw.Replace("\\|", "|");
+            raw = raw.Replace("\\|", "|", StringComparison.Ordinal);
             // 先跳脫角括號再轉換，否則轉換插入的標籤會被一併跳脫。
-            return RenderCellInlines(raw.Replace("<", "＜").Replace(">", "＞"));
+            return RenderCellInlines(raw.Replace('<', '＜').Replace('>', '＞'));
         }
 
         public void Render(MarkdownDocument document)
@@ -399,7 +400,7 @@ public static class RimLLMMarkdown
             }
 
             string content = subSb.ToString().TrimEnd('\r', '\n');
-            string[] lines = content.Replace("\r\n", "\n").Split(NewlineSeparator);
+            string[] lines = content.Replace("\r\n", "\n", StringComparison.Ordinal).Split(NewlineSeparator);
             for (int i = 0; i < lines.Length; i++)
             {
                 if (i > 0) _sb.Append('\n');
@@ -427,7 +428,7 @@ public static class RimLLMMarkdown
 
         private void RenderListItem(ListItemBlock listItem)
         {
-            RenderListItemInternal(listItem, false, 1);
+            RenderListItemInternal(listItem, isOrdered: false, 1);
         }
 
         /// <summary>表格第一行在原始文字中的行首位置；Span.Start 指向第一個非空白字元。</summary>
@@ -454,7 +455,7 @@ public static class RimLLMMarkdown
         private void RenderTableAsCode(Table table)
         {
             int lineStart = TableLineStart(table);
-            string raw = _source.Substring(lineStart, table.Span.End - lineStart).Replace("\r\n", "\n");
+            string raw = _source.Substring(lineStart, table.Span.End - lineStart).Replace("\r\n", "\n", StringComparison.Ordinal);
             string[] lines = raw.Split('\n');
 
             _sb.Append(ColorTagOpen).Append(CodeColor).Append('>');
@@ -507,12 +508,11 @@ public static class RimLLMMarkdown
             if (row.IsHeader)
             {
                 _sb.Append(ColorTagOpen).Append(MutedColor).Append('>')
-                   .Append(string.Join(CellSeparator, cells))
-                   .Append(ColorTagClose);
+                   .AppendJoin(CellSeparator, cells).Append(ColorTagClose);
             }
             else
             {
-                _sb.Append("• ").Append(string.Join(CellSeparator, cells));
+                _sb.Append("• ").AppendJoin(CellSeparator, cells);
             }
         }
 
@@ -578,7 +578,7 @@ public static class RimLLMMarkdown
 
         private static string SanitizeRawHtml(string text)
         {
-            if (string.IsNullOrEmpty(text) || text.IndexOf('<') < 0)
+            if (string.IsNullOrEmpty(text) || text.IndexOf('<', StringComparison.Ordinal) < 0)
             {
                 return text;
             }
@@ -635,7 +635,7 @@ public static class RimLLMMarkdown
                     break;
                 case HtmlEntityInline entity:
                     // 解碼後的 < > 不可直接輸出：&lt;b&gt; 會變成真正的 Unity 標籤。
-                    _sb.Append(entity.Transcoded.ToString().Replace("<", "＜").Replace(">", "＞"));
+                    _sb.Append(entity.Transcoded.ToString().Replace('<', '＜').Replace('>', '＞'));
                     break;
                 case AutolinkInline autolink:
                     _sb.Append(ColorTagOpen).Append(LinkColor).Append('>')

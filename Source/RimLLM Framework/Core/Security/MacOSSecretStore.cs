@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -84,7 +85,7 @@ internal sealed partial class MacOSSecretStore : ISecretStore
     private static void CheckStatus(int status)
     {
         if (status != 0)
-            throw new CryptographicException($"Keychain access failed (OSStatus {status}). Ensure the login keychain is unlocked and RimWorld is allowed access.");
+            throw new CryptographicException(string.Create(CultureInfo.InvariantCulture, $"Keychain access failed (OSStatus {status}). Ensure the login keychain is unlocked and RimWorld is allowed access."));
     }
 
     private sealed partial class CFHandle(IntPtr handle) : IDisposable

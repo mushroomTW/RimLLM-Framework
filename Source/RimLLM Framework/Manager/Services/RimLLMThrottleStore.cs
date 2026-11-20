@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager;
@@ -53,16 +54,26 @@ internal sealed class RimLLMThrottleStore
         DateTime now = DateTime.UtcNow;
         if (_coolDownUntil.TryGetValue(modId, out DateTime cdTime) && now < cdTime)
         {
-            throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' is in anti-abuse cooldown until {cdTime.ToLocalTime()}.");
+            throw new RimLLMException(LLMError.RateLimit, string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Mod '{modId}' is in anti-abuse cooldown until {cdTime.ToLocalTime()}."));
         }
 
+        CheckGlobalCeiling(now);
+
+        if (!countTowardWindow) return;
+
+        CountModRequest(modId, now);
+    }
+
+    /// <summary>共享 API 安全上限：所有 Mod 合計的請求數超過上限時進入全域冷卻。</summary>
+    private void CheckGlobalCeiling(DateTime now)
+    {
         lock (_globalLock)
         {
             if (now < _globalCoolDownUntil)
             {
                 throw new RimLLMException(
                     LLMError.RateLimit,
-                    $"[RimLLM] Shared API anti-abuse cooldown is active until {_globalCoolDownUntil.ToLocalTime()}.");
+                    string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Shared API anti-abuse cooldown is active until {_globalCoolDownUntil.ToLocalTime()}."));
             }
 
             DateTime globalLimit = now.AddSeconds(-_settings.ThrottlingWindowSeconds);
@@ -75,20 +86,22 @@ internal sealed class RimLLMThrottleStore
                 if (RimLLMLog.Enabled)
                 {
                     RimLLMLog.Warning(
-                        $"[RimLLM] Shared API anti-abuse limit reached ({globalMaxRequests} requests). " +
-                        $"Cooling down until {_globalCoolDownUntil.ToLocalTime()}.");
+                        string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Shared API anti-abuse limit reached ({globalMaxRequests} requests). ") +
+                        string.Create(CultureInfo.InvariantCulture, $"Cooling down until {_globalCoolDownUntil.ToLocalTime()}."));
                 }
                 throw new RimLLMException(
                     LLMError.RateLimit,
                     $"[RimLLM] Shared API anti-abuse limit reached. " +
-                    $"Cooling down until {_globalCoolDownUntil.ToLocalTime()}.");
+                    string.Create(CultureInfo.InvariantCulture, $"Cooling down until {_globalCoolDownUntil.ToLocalTime()}."));
             }
 
             _globalRequestTimestamps.Add(now);
         }
+    }
 
-        if (!countTowardWindow) return;
-
+    /// <summary>把這次呼叫計入 per-Mod 時間視窗；超過上限時讓該 Mod 進入冷卻。</summary>
+    private void CountModRequest(string modId, DateTime now)
+    {
         if (_requestTimestamps.Count >= MaxTrackedModIds)
         {
             PruneExpired(now);
@@ -107,9 +120,9 @@ internal sealed class RimLLMThrottleStore
                 _coolDownUntil[modId] = cdUntil;
                 if (RimLLMLog.Enabled)
                 {
-                    RimLLMLog.Warning($"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
+                    RimLLMLog.Warning(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}."));
                 }
-                throw new RimLLMException(LLMError.RateLimit, $"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}.");
+                throw new RimLLMException(LLMError.RateLimit, string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Mod '{modId}' triggered anti-abuse throttling limit. Cooling down until {cdUntil.ToLocalTime()}."));
             }
         }
     }

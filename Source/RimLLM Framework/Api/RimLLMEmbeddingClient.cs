@@ -168,7 +168,7 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
         {
             return new EmbeddingGeneratorMetadata(
                 _manager.Settings.EmbeddingProvider,
-                null,
+                providerUri: null,
                 _manager.Settings.EmbeddingModel);
         }
         return serviceType.IsInstanceOfType(this) ? this : null;

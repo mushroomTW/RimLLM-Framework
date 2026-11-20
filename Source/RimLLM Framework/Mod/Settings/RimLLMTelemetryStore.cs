@@ -494,8 +494,8 @@ public class RimLLMTelemetryStore
         string restorePath = path + ".restore.tmp";
         try
         {
-            File.Copy(backupPath, restorePath, true);
-            ReplaceAtomically(restorePath, path, null);
+            File.Copy(backupPath, restorePath, overwrite: true);
+            ReplaceAtomically(restorePath, path, backupPath: null);
             return true;
         }
         catch (Exception ex)

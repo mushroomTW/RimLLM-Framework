@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -161,28 +161,7 @@ public static class DecisionSettingsDrawer
 
         // 不在這裡把選取項目拉回「目前啟用」的供應商：玩家需要能先選另一個供應商、
         // 填好金鑰與模型，再勾選啟用。啟用狀態只由下面的核取方塊改變。
-        bool isCurrentlyActive = string.Equals(Settings.DecisionProvider, providerId, StringComparison.Ordinal);
-        bool oldActive = isCurrentlyActive;
-        listing.CheckboxLabeled("RimLLM_EnableDecisionProvider".Translate(), ref isCurrentlyActive);
-        if (isCurrentlyActive != oldActive)
-        {
-            Settings.DecisionProvider = isCurrentlyActive
-                ? providerId
-                : RimLLMDecisionProviderCatalog.Disabled;
-            if (isCurrentlyActive)
-            {
-                // 啟用中的供應商是鏈的第一環，不再同時留在備援清單裡。
-                List<string> chain = Settings.DecisionFallbackChain;
-                if (chain.Remove(providerId)) Settings.DecisionFallbackChain = chain;
-            }
-            Settings.Write();
-        }
-
-        if (isCurrentlyActive)
-        {
-            listing.Label("RimLLM_DecisionActiveBadge".Translate());
-        }
-        listing.Gap(4f);
+        DrawActiveToggle(listing, providerId);
 
         Rect expRect = listing.GetRect(44f);
         using (RimLLMUIStyle.With(font: GameFont.Tiny))
@@ -218,6 +197,22 @@ public static class DecisionSettingsDrawer
         listing.Gap(8f);
         DrawConnectionTest(listing, providerId);
         listing.GapLine(4f);
+    }
+
+    private static void DrawActiveToggle(Listing_Standard listing, string providerId)
+    {
+        ProviderFallbackChainControls.DrawActiveToggle(
+            listing,
+            providerId,
+            string.Equals(Settings.DecisionProvider, providerId, StringComparison.Ordinal),
+            "Decision",
+            active =>
+            {
+                Settings.DecisionProvider = active ? providerId : RimLLMDecisionProviderCatalog.Disabled;
+                Settings.Write();
+            },
+            () => Settings.DecisionFallbackChain,
+            chain => { Settings.DecisionFallbackChain = chain; Settings.Write(); });
     }
 
     private static void DrawApiKeySection(Listing_Standard listing, string providerId)
@@ -309,33 +304,7 @@ public static class DecisionSettingsDrawer
         }
         else
         {
-            ModelChipGrid.DrawFilterBar(listing, "RimLLM_DecisionFetchedModelsHint", ModelFilters, providerId);
-
-            List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
-                "decision:" + providerId,
-                Settings.ModelListVersion,
-                ModelFilters.TryGetValue(providerId, out string? filter) ? filter : "",
-                () => Settings.GetModelList(modelListKey));
-
-            Rect scrollRect = listing.GetRect(200f);
-            Widgets.DrawMenuSection(scrollRect);
-
-            if (visibleModels.Count == 0)
-            {
-                using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
-                {
-                    Widgets.Label(scrollRect, $"{ColorTagOpen}grey>" + "RimLLM_NoMatchingModels".Translate() + ColorTagClose);
-                }
-            }
-            else
-            {
-                ModelChipGrid.DrawGrid(scrollRect, providerId, visibleModels, ModelScrollPositions, model =>
-                    ModelChipGrid.ShowModelMenu(model, "RimLLM_DecisionSetAsModel", "RimLLM_DecisionModelLabel", picked =>
-                    {
-                        Settings.SetDecisionModel(providerId, picked);
-                        Settings.Write();
-                    }));
-            }
+            DrawFetchedModels(listing, providerId, modelListKey);
         }
 
         listing.Gap(6f);
@@ -349,6 +318,38 @@ public static class DecisionSettingsDrawer
                 : "RimLLM_FetchStatusNotRun".Translate().ToString(),
             () => StartFetchDecisionModels(providerId),
             buttonWidth: 200f);
+    }
+
+    /// <summary>已抓回的模型：篩選列與可點選的模型方塊。</summary>
+    private static void DrawFetchedModels(Listing_Standard listing, string providerId, string modelListKey)
+    {
+        ModelChipGrid.DrawFilterBar(listing, "RimLLM_DecisionFetchedModelsHint", ModelFilters, providerId);
+
+        List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
+            "decision:" + providerId,
+            Settings.ModelListVersion,
+            ModelFilters.TryGetValue(providerId, out string? filter) ? filter : "",
+            () => Settings.GetModelList(modelListKey));
+
+        Rect scrollRect = listing.GetRect(200f);
+        Widgets.DrawMenuSection(scrollRect);
+
+        if (visibleModels.Count == 0)
+        {
+            using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+            {
+                Widgets.Label(scrollRect, $"{ColorTagOpen}grey>" + "RimLLM_NoMatchingModels".Translate() + ColorTagClose);
+            }
+        }
+        else
+        {
+            ModelChipGrid.DrawGrid(scrollRect, providerId, visibleModels, ModelScrollPositions, model =>
+                ModelChipGrid.ShowModelMenu(model, "RimLLM_DecisionSetAsModel", "RimLLM_DecisionModelLabel", picked =>
+                {
+                    Settings.SetDecisionModel(providerId, picked);
+                    Settings.Write();
+                }));
+        }
     }
 
     private static void StartFetchDecisionModels(string providerId)
@@ -370,12 +371,11 @@ public static class DecisionSettingsDrawer
 
                 applyResult = () =>
                 {
-                    List<string> names = models
+                    List<string> names = [.. models
                         .Select(entry => entry.Name)
                         .Where(name => !string.IsNullOrWhiteSpace(name))
                         .Distinct(StringComparer.Ordinal)
-                        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                        .ToList();
+                        .Order(StringComparer.OrdinalIgnoreCase)];
 
                     if (names.Count == 0)
                     {

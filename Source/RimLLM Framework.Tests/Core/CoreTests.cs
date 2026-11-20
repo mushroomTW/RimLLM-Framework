@@ -33,7 +33,7 @@ public class CoreTests
         EncryptionUtility.ResetSecureKeyForTests();
         try
         {
-            Directory.Delete(_encryptionKeyDirectory, true);
+            Directory.Delete(_encryptionKeyDirectory, recursive: true);
         }
         catch
         {
@@ -117,20 +117,20 @@ public class CoreTests
         foreach (var kvp in secrets)
         {
             string sanitized = RimLLMLog.SanitizeForLog($"request failed with key {kvp.Value}");
-            ClassicAssert.IsFalse(sanitized.Contains(kvp.Value),
+            ClassicAssert.IsFalse(sanitized.Contains(kvp.Value, StringComparison.Ordinal),
                 $"日誌遮罩必須涵蓋全部供應商的金鑰格式（{kvp.Key} 未被遮罩）");
         }
 
         string bearer = RimLLMLog.SanitizeForLog("Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345");
-        ClassicAssert.IsFalse(bearer.Contains("abcdefghijklmnopqrstuvwxyz012345"), "Bearer token 必須被遮罩");
+        ClassicAssert.IsFalse(bearer.Contains("abcdefghijklmnopqrstuvwxyz012345", StringComparison.Ordinal), "Bearer token 必須被遮罩");
     }
 
     [Test]
     public void TestSanitizeForLogTruncatesAndEscapesNewlines()
     {
         string sanitized = RimLLMLog.SanitizeForLog("line1\r\nline2", 500);
-        ClassicAssert.IsFalse(sanitized.Contains('\n'), "換行必須被跳脫以防日誌注入");
-        ClassicAssert.IsTrue(sanitized.Contains("\\r\\n"));
+        ClassicAssert.IsFalse(sanitized.Contains('\n', StringComparison.Ordinal), "換行必須被跳脫以防日誌注入");
+        ClassicAssert.IsTrue(sanitized.Contains("\\r\\n", StringComparison.Ordinal));
 
         string longText = new('x', 600);
         ClassicAssert.IsTrue(RimLLMLog.SanitizeForLog(longText, 100).Length <= 103, "超長內容必須被截斷");
