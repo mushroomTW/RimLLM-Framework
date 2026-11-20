@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using Microsoft.Extensions.AI;
 
@@ -37,14 +35,14 @@ public class RimLLMChatOptions : ChatOptions
     }
 
     /// <summary>最低相容模型等級（High/Medium/Low 或 3/2/1），供 Fallback 決定降級下限。</summary>
-    public string MinFallbackLevel
+    public string? MinFallbackLevel
     {
         get => GetMinFallbackLevel(this);
         set => WriteAdditional(MinFallbackLevelKey, value);
     }
 
     /// <summary>可重複使用的大型穩定上下文（如世界觀規則、輸出 Schema）。會併入系統訊息，讓具備服務端 prompt caching 的供應商能重複利用相同前綴。</summary>
-    public string CachedContext
+    public string? CachedContext
     {
         get => GetCachedContext(this);
         set => WriteAdditional(CachedContextKey, value);
@@ -72,7 +70,7 @@ public class RimLLMChatOptions : ChatOptions
     }
 
     /// <summary>寫入框架私有欄位，必要時延遲建立 AdditionalProperties。</summary>
-    private void WriteAdditional(string key, object value)
+    private void WriteAdditional(string key, object? value)
     {
         if (AdditionalProperties == null)
         {
@@ -90,7 +88,7 @@ public class RimLLMChatOptions : ChatOptions
     internal static T ReadAdditional<T>(ChatOptions options, string key, T fallback)
     {
         return options?.AdditionalProperties != null &&
-               options.AdditionalProperties.TryGetValue(key, out object value) &&
+               options.AdditionalProperties.TryGetValue(key, out object? value) &&
                value is T typed
             ? typed
             : fallback;
@@ -102,16 +100,16 @@ public class RimLLMChatOptions : ChatOptions
     internal static int GetPriority(ChatOptions options) =>
         ReadAdditional(options, PriorityKey, 0);
 
-    internal static string GetMinFallbackLevel(ChatOptions options) =>
-        ReadAdditional<string>(options, MinFallbackLevelKey, null);
+    internal static string? GetMinFallbackLevel(ChatOptions options) =>
+        ReadAdditional<string?>(options, MinFallbackLevelKey, null);
 
-    internal static string GetCachedContext(ChatOptions options) =>
-        ReadAdditional<string>(options, CachedContextKey, null);
+    internal static string? GetCachedContext(ChatOptions options) =>
+        ReadAdditional<string?>(options, CachedContextKey, null);
 
     internal static bool GetDisableReasoning(ChatOptions options) =>
         ReadAdditional(options, DisableReasoningKey, false);
 
-    internal static System.Type GetResponseType(ChatOptions options) =>
-        ReadAdditional<System.Type>(options, ResponseTypeKey, null);
+    internal static System.Type? GetResponseType(ChatOptions options) =>
+        ReadAdditional<System.Type?>(options, ResponseTypeKey, null);
 
 }

@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,7 +20,7 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
     private readonly string _modId;
 
     /// <summary>此 Mod 的 OpenRouter 應用歸屬，於每次呼叫時放進 <see cref="RimLLMAppAttribution.Current"/>。</summary>
-    private readonly RimLLMAppAttribution _attribution;
+    private readonly RimLLMAppAttribution? _attribution;
 
     internal RimLLMEmbeddingClient(RimLLMManager manager, string modId)
     {
@@ -33,7 +31,7 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
 
     public async Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
         IEnumerable<string> values,
-        EmbeddingGenerationOptions options = null,
+        EmbeddingGenerationOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(values);
@@ -102,7 +100,7 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
     /// 決定回傳向量要標記的模型：優先採用服務捕捉到的實際模型，其次為呼叫端覆寫，
     /// 最後才退回目前設定。順序不可顛倒，理由見 <see cref="GenerateAsync"/> 內的說明。
     /// </summary>
-    private string ResolveModelId(IReadOnlyList<RimLLMEmbeddingResult> results, EmbeddingGenerationOptions options)
+    private string ResolveModelId(IReadOnlyList<RimLLMEmbeddingResult> results, EmbeddingGenerationOptions? options)
     {
         if (results.Count > 0)
         {
@@ -153,16 +151,15 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
     private static long? SumInputTokens(IReadOnlyList<RimLLMEmbeddingResult> results)
     {
         long? total = null;
-        foreach (long tokenCount in results
-                     .Where(result => result.InputTokenCount.HasValue)
-                     .Select(result => result.InputTokenCount.Value))
+        foreach (RimLLMEmbeddingResult result in results)
         {
+            if (result.InputTokenCount is not { } tokenCount) continue;
             total = SaturatingMath.Add(total ?? 0L, tokenCount);
         }
         return total;
     }
 
-    public object GetService(Type serviceType, object serviceKey = null)
+    public object? GetService(Type serviceType, object? serviceKey = null)
     {
         ArgumentNullException.ThrowIfNull(serviceType);
         if (serviceKey != null) return null;

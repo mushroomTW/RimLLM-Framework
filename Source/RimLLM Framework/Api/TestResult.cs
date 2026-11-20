@@ -1,5 +1,3 @@
-#nullable disable
-
 namespace RimLLM_Framework;
 
 /// <summary>
@@ -15,12 +13,12 @@ public class TestResult
     /// <summary>
     /// 實際連線的供應商 ID。
     /// </summary>
-    public string Provider { get; set; }
+    public string? Provider { get; set; }
 
     /// <summary>
     /// 回應此測試的模型名稱。
     /// </summary>
-    public string Model { get; set; }
+    public string? Model { get; set; }
 
     /// <summary>
     /// 連線往返延遲時間 (單位：毫秒)。
@@ -30,7 +28,7 @@ public class TestResult
     /// <summary>
     /// 錯誤訊息 (如果測試失敗)。
     /// </summary>
-    public string ErrorMessage { get; set; }
+    public string? ErrorMessage { get; set; }
 
     /// <summary>
     /// 對應的統一錯誤碼。

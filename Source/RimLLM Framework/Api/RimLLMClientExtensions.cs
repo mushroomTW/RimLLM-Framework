@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -26,7 +24,7 @@ public static class RimLLMClientExtensions
     public static bool WereToolsStripped(this ChatResponse response)
     {
         return response?.AdditionalProperties != null &&
-               response.AdditionalProperties.TryGetValue(ToolsStrippedKey, out object value) &&
+               response.AdditionalProperties.TryGetValue(ToolsStrippedKey, out object? value) &&
                value is bool flag && flag;
     }
 
@@ -34,7 +32,7 @@ public static class RimLLMClientExtensions
     public static bool WereToolsStripped(this ChatResponseUpdate update)
     {
         return update?.AdditionalProperties != null &&
-               update.AdditionalProperties.TryGetValue(ToolsStrippedKey, out object value) &&
+               update.AdditionalProperties.TryGetValue(ToolsStrippedKey, out object? value) &&
                value is bool flag && flag;
     }
 
@@ -52,7 +50,7 @@ public static class RimLLMClientExtensions
     public static Task<T> GetResponseObjectAsync<T>(
         this IChatClient client,
         IEnumerable<ChatMessage> messages,
-        RimLLMChatOptions options = null,
+        RimLLMChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -75,7 +73,7 @@ public static class RimLLMClientExtensions
     private static async Task<T> FrameworkPathAsync<T>(
         IChatClient client,
         IEnumerable<ChatMessage> messages,
-        RimLLMChatOptions options,
+        RimLLMChatOptions? options,
         CancellationToken cancellationToken)
     {
         ChatOptions effective = (options ?? new RimLLMChatOptions()).Clone();
@@ -90,7 +88,7 @@ public static class RimLLMClientExtensions
             .ConfigureAwait(false);
 
         string raw = response?.Text ?? string.Empty;
-        return RimLLMProvider.TryGetManager(out RimLLMManager manager)
+        return RimLLMProvider.TryGetManager(out RimLLMManager? manager)
             ? RimLLMJsonHelper.DeserializeStructured<T>(raw, manager.Settings)
             : RimLLMJsonHelper.DeserializeAndValidate<T>(raw);
     }
@@ -98,7 +96,7 @@ public static class RimLLMClientExtensions
     private static async Task<T> SimplifiedPathAsync<T>(
         IChatClient client,
         IEnumerable<ChatMessage> messages,
-        RimLLMChatOptions options,
+        RimLLMChatOptions? options,
         CancellationToken cancellationToken)
     {
         // 與框架路徑一樣先複製：ResponseFormat 是寫在副本上的，不能改到呼叫端手上那份。

@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.ClientModel;
 using System.Net.Http;
@@ -19,10 +17,10 @@ public static class LLMErrorMapper
     /// 交由 <see cref="RetryConditionHeaderValue"/> 一併處理，避免各路徑各自實作而漏掉日期格式。
     /// 無法解析或已過期時回傳 null。
     /// </summary>
-    public static TimeSpan? ParseRetryAfter(string headerValue)
+    public static TimeSpan? ParseRetryAfter(string? headerValue)
     {
         if (string.IsNullOrWhiteSpace(headerValue)) return null;
-        return RetryConditionHeaderValue.TryParse(headerValue, out RetryConditionHeaderValue parsed)
+        return RetryConditionHeaderValue.TryParse(headerValue, out RetryConditionHeaderValue? parsed)
             ? ToDelay(parsed)
             : null;
     }
@@ -59,8 +57,8 @@ public static class LLMErrorMapper
         int? statusCode,
         string friendlyMessage,
         TimeSpan? retryAfter = null,
-        Exception innerException = null,
-        string detectionText = null)
+        Exception? innerException = null,
+        string? detectionText = null)
     {
         RimLLMException exception = MapStatusCode(statusCode, friendlyMessage, retryAfter, innerException, detectionText);
         exception.HttpStatusCode = statusCode;
@@ -74,7 +72,7 @@ public static class LLMErrorMapper
     /// </summary>
     /// <param name="exception">SDK 拋出的例外。</param>
     /// <param name="messagePrefix">附加在顯示訊息前的來源說明（例如 "Embedding API: "）。</param>
-    internal static RimLLMException FromClientResultException(ClientResultException exception, string messagePrefix = null)
+    internal static RimLLMException FromClientResultException(ClientResultException exception, string? messagePrefix = null)
     {
         string body = ReadResponseBody(exception);
         string fullMessage = string.IsNullOrEmpty(body) ? exception.Message : $"{exception.Message} {body}";
@@ -93,7 +91,7 @@ public static class LLMErrorMapper
     {
         try
         {
-            string body = exception.GetRawResponse()?.Content?.ToString();
+            string? body = exception.GetRawResponse()?.Content?.ToString();
             return string.IsNullOrWhiteSpace(body) ? string.Empty : body;
         }
         catch
@@ -107,7 +105,7 @@ public static class LLMErrorMapper
     {
         try
         {
-            return exception.GetRawResponse()?.Headers.TryGetValue("Retry-After", out string value) == true
+            return exception.GetRawResponse()?.Headers.TryGetValue("Retry-After", out string? value) == true
                 ? ParseRetryAfter(value)
                 : null;
         }
@@ -121,8 +119,8 @@ public static class LLMErrorMapper
         int? statusCode,
         string friendlyMessage,
         TimeSpan? retryAfter,
-        Exception innerException,
-        string detectionText)
+        Exception? innerException,
+        string? detectionText)
     {
         string probe = detectionText ?? friendlyMessage;
 
@@ -302,7 +300,7 @@ public static class LLMErrorMapper
                haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static RimLLMException Create(LLMError error, string message, TimeSpan? retryAfter, Exception innerException)
+    private static RimLLMException Create(LLMError error, string message, TimeSpan? retryAfter, Exception? innerException)
     {
         RimLLMException exception = innerException == null
             ? new RimLLMException(error, message)

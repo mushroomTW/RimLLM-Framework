@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -24,7 +22,7 @@ public sealed class RimLLMDecisionClient
     private readonly string _modId;
 
     /// <summary>此 Mod 的 OpenRouter 應用歸屬，於每次呼叫時放進 <see cref="RimLLMAppAttribution.Current"/>。</summary>
-    private readonly RimLLMAppAttribution _attribution;
+    private readonly RimLLMAppAttribution? _attribution;
 
     internal RimLLMDecisionClient(RimLLMManager manager, string modId)
     {
@@ -42,7 +40,7 @@ public sealed class RimLLMDecisionClient
     public async Task<QuestionSetResult> EvaluateAsync(
         string state,
         QuestionSet plan,
-        string model = null,
+        string? model = null,
         CancellationToken cancellationToken = default)
     {
         _manager.UsageTracker.RecordCaller(_modId);
@@ -69,7 +67,7 @@ public sealed class RimLLMDecisionClient
         string state,
         QuestionSet plan,
         string providerId,
-        string model = null,
+        string? model = null,
         CancellationToken cancellationToken = default)
     {
         _manager.UsageTracker.RecordCaller(_modId);
@@ -142,8 +140,8 @@ public sealed class RimLLMDecisionClient
             reservation.RecordUsage(
                 evaluation.ProviderId,
                 modelId,
-                usage.InputTokens > int.MaxValue ? int.MaxValue : (int)usage.InputTokens,
-                usage.OutputTokens > int.MaxValue ? int.MaxValue : (int)usage.OutputTokens);
+                Math.Min(usage.InputTokens ?? 0, int.MaxValue),
+                Math.Min(usage.OutputTokens ?? 0, int.MaxValue));
         }
 
         return result;

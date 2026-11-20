@@ -396,45 +396,45 @@ virtual RimLLM_Framework.Providers.OpenAIProvider.ReasoningFormat.get -> RimLLM_
 virtual RimLLM_Framework.Providers.OpenAIProvider.RequiresApiKey.get -> bool
 virtual RimLLM_Framework.Providers.OpenAIProvider.SupportsDisablingReasoning.get -> bool
 virtual RimLLM_Framework.Providers.OpenAIProvider.SupportsNativeJsonSchemaPayload.get -> bool
-~RimLLM_Framework.IRimLLMSettings.DailyBudgetResetDate.get -> string
-~RimLLM_Framework.IRimLLMSettings.DailyBudgetResetDate.set -> void
-~RimLLM_Framework.IRimLLMSettings.DecisionApiKey.get -> string
-~RimLLM_Framework.IRimLLMSettings.DecisionApiKey.set -> void
-~RimLLM_Framework.IRimLLMSettings.DecisionEndpoint.get -> string
-~RimLLM_Framework.IRimLLMSettings.DecisionEndpoint.set -> void
-~RimLLM_Framework.IRimLLMSettings.DecisionFallbackChain.get -> System.Collections.Generic.List<string>
-~RimLLM_Framework.IRimLLMSettings.DecisionModel.get -> string
-~RimLLM_Framework.IRimLLMSettings.DecisionModel.set -> void
-~RimLLM_Framework.IRimLLMSettings.DecisionProvider.get -> string
-~RimLLM_Framework.IRimLLMSettings.DecisionProvider.set -> void
-~RimLLM_Framework.IRimLLMSettings.EmbeddingApiKey.get -> string
-~RimLLM_Framework.IRimLLMSettings.EmbeddingApiKey.set -> void
-~RimLLM_Framework.IRimLLMSettings.EmbeddingEndpoint.get -> string
-~RimLLM_Framework.IRimLLMSettings.EmbeddingEndpoint.set -> void
-~RimLLM_Framework.IRimLLMSettings.EmbeddingFallbackChain.get -> System.Collections.Generic.List<string>
-~RimLLM_Framework.IRimLLMSettings.EmbeddingModel.get -> string
-~RimLLM_Framework.IRimLLMSettings.EmbeddingModel.set -> void
-~RimLLM_Framework.IRimLLMSettings.EmbeddingProvider.get -> string
-~RimLLM_Framework.IRimLLMSettings.EmbeddingProvider.set -> void
-~RimLLM_Framework.IRimLLMSettings.FallbackChain.get -> System.Collections.Generic.List<string>
-~RimLLM_Framework.IRimLLMSettings.GetActiveApiKey(string providerId) -> string
-~RimLLM_Framework.IRimLLMSettings.GetApiKey(string providerId) -> string
-~RimLLM_Framework.IRimLLMSettings.GetContextWindow(string providerId, string modelName) -> int?
-~RimLLM_Framework.IRimLLMSettings.GetDecisionApiKey(string providerId) -> string
-~RimLLM_Framework.IRimLLMSettings.GetDecisionEndpoint(string providerId) -> string
-~RimLLM_Framework.IRimLLMSettings.GetDecisionModel(string providerId) -> string
-~RimLLM_Framework.IRimLLMSettings.GetDefaultModel(string providerId, string defaultVal) -> string
-~RimLLM_Framework.IRimLLMSettings.GetEmbeddingApiKey(string providerId) -> string
-~RimLLM_Framework.IRimLLMSettings.GetEmbeddingEndpoint(string providerId) -> string
-~RimLLM_Framework.IRimLLMSettings.GetEmbeddingModel(string providerId) -> string
-~RimLLM_Framework.IRimLLMSettings.GetEndpoint(string providerId, string defaultVal) -> string
-~RimLLM_Framework.IRimLLMSettings.GetModelLevelOverride(string modelName) -> int
-~RimLLM_Framework.IRimLLMSettings.GetModelList(string providerId) -> System.Collections.Generic.List<string>
-~RimLLM_Framework.IRimLLMSettings.GetVisionSupport(string providerId, string modelName) -> bool?
-~RimLLM_Framework.IRimLLMSettings.IsProviderEnabled(string providerId) -> bool
-~RimLLM_Framework.IRimLLMSettings.RequestLogs.get -> System.Collections.Generic.List<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry>
-~RimLLM_Framework.IRimLLMSettings.RequestLogs.set -> void
-~RimLLM_Framework.IRimLLMSettings.SetModelList(string providerId, System.Collections.Generic.List<string> models) -> void
+RimLLM_Framework.IRimLLMSettings.DailyBudgetResetDate.get -> string!
+RimLLM_Framework.IRimLLMSettings.DailyBudgetResetDate.set -> void
+RimLLM_Framework.IRimLLMSettings.DecisionApiKey.get -> string!
+RimLLM_Framework.IRimLLMSettings.DecisionApiKey.set -> void
+RimLLM_Framework.IRimLLMSettings.DecisionEndpoint.get -> string!
+RimLLM_Framework.IRimLLMSettings.DecisionEndpoint.set -> void
+RimLLM_Framework.IRimLLMSettings.DecisionFallbackChain.get -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.IRimLLMSettings.DecisionModel.get -> string!
+RimLLM_Framework.IRimLLMSettings.DecisionModel.set -> void
+RimLLM_Framework.IRimLLMSettings.DecisionProvider.get -> string!
+RimLLM_Framework.IRimLLMSettings.DecisionProvider.set -> void
+RimLLM_Framework.IRimLLMSettings.EmbeddingApiKey.get -> string!
+RimLLM_Framework.IRimLLMSettings.EmbeddingApiKey.set -> void
+RimLLM_Framework.IRimLLMSettings.EmbeddingEndpoint.get -> string!
+RimLLM_Framework.IRimLLMSettings.EmbeddingEndpoint.set -> void
+RimLLM_Framework.IRimLLMSettings.EmbeddingFallbackChain.get -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.IRimLLMSettings.EmbeddingModel.get -> string!
+RimLLM_Framework.IRimLLMSettings.EmbeddingModel.set -> void
+RimLLM_Framework.IRimLLMSettings.EmbeddingProvider.get -> string!
+RimLLM_Framework.IRimLLMSettings.EmbeddingProvider.set -> void
+RimLLM_Framework.IRimLLMSettings.FallbackChain.get -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.IRimLLMSettings.GetActiveApiKey(string! providerId) -> string!
+RimLLM_Framework.IRimLLMSettings.GetApiKey(string! providerId) -> string!
+RimLLM_Framework.IRimLLMSettings.GetContextWindow(string! providerId, string! modelName) -> int?
+RimLLM_Framework.IRimLLMSettings.GetDecisionApiKey(string! providerId) -> string!
+RimLLM_Framework.IRimLLMSettings.GetDecisionEndpoint(string! providerId) -> string!
+RimLLM_Framework.IRimLLMSettings.GetDecisionModel(string! providerId) -> string!
+RimLLM_Framework.IRimLLMSettings.GetDefaultModel(string! providerId, string! defaultVal) -> string!
+RimLLM_Framework.IRimLLMSettings.GetEmbeddingApiKey(string! providerId) -> string!
+RimLLM_Framework.IRimLLMSettings.GetEmbeddingEndpoint(string! providerId) -> string!
+RimLLM_Framework.IRimLLMSettings.GetEmbeddingModel(string! providerId) -> string!
+RimLLM_Framework.IRimLLMSettings.GetEndpoint(string! providerId, string! defaultVal) -> string!
+RimLLM_Framework.IRimLLMSettings.GetModelLevelOverride(string! modelName) -> int
+RimLLM_Framework.IRimLLMSettings.GetModelList(string! providerId) -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.IRimLLMSettings.GetVisionSupport(string! providerId, string! modelName) -> bool?
+RimLLM_Framework.IRimLLMSettings.IsProviderEnabled(string! providerId) -> bool
+RimLLM_Framework.IRimLLMSettings.RequestLogs.get -> System.Collections.Generic.List<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry!>!
+RimLLM_Framework.IRimLLMSettings.RequestLogs.set -> void
+RimLLM_Framework.IRimLLMSettings.SetModelList(string! providerId, System.Collections.Generic.List<string!>! models) -> void
 ~RimLLM_Framework.Manager.RimLLMEmbeddingResult.ModelId.get -> string
 ~RimLLM_Framework.Manager.RimLLMEmbeddingResult.ProviderId.get -> string
 ~RimLLM_Framework.Manager.RimLLMEmbeddingResult.RimLLMEmbeddingResult(float[] vector, long? inputTokenCount) -> void
@@ -592,19 +592,19 @@ virtual RimLLM_Framework.Providers.OpenAIProvider.SupportsNativeJsonSchemaPayloa
 ~RimLLM_Framework.Providers.OpenRouterProvider.OpenRouterProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
 ~RimLLM_Framework.Providers.QwenProvider.QwenProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
 ~RimLLM_Framework.Providers.ZaiProvider.ZaiProvider(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.RimLLMChatOptions.CachedContext.get -> string
-~RimLLM_Framework.RimLLMChatOptions.CachedContext.set -> void
-~RimLLM_Framework.RimLLMChatOptions.MinFallbackLevel.get -> string
-~RimLLM_Framework.RimLLMChatOptions.MinFallbackLevel.set -> void
-~RimLLM_Framework.RimLLMDecisionClient.EvaluateAsync(string state, TypeSafeAI.QuestionSet plan, string model = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TypeSafeAI.QuestionSetResult>
-~RimLLM_Framework.RimLLMDecisionClient.EvaluateWithProviderAsync(string state, TypeSafeAI.QuestionSet plan, string providerId, string model = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TypeSafeAI.QuestionSetResult>
-~RimLLM_Framework.RimLLMDecisionClient.FetchModelsAsync(string providerId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string>>
-~RimLLM_Framework.TestResult.ErrorMessage.get -> string
-~RimLLM_Framework.TestResult.ErrorMessage.set -> void
-~RimLLM_Framework.TestResult.Model.get -> string
-~RimLLM_Framework.TestResult.Model.set -> void
-~RimLLM_Framework.TestResult.Provider.get -> string
-~RimLLM_Framework.TestResult.Provider.set -> void
+RimLLM_Framework.RimLLMChatOptions.CachedContext.get -> string?
+RimLLM_Framework.RimLLMChatOptions.CachedContext.set -> void
+RimLLM_Framework.RimLLMChatOptions.MinFallbackLevel.get -> string?
+RimLLM_Framework.RimLLMChatOptions.MinFallbackLevel.set -> void
+RimLLM_Framework.RimLLMDecisionClient.EvaluateAsync(string! state, TypeSafeAI.QuestionSet! plan, string? model = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TypeSafeAI.QuestionSetResult!>!
+RimLLM_Framework.RimLLMDecisionClient.EvaluateWithProviderAsync(string! state, TypeSafeAI.QuestionSet! plan, string! providerId, string? model = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TypeSafeAI.QuestionSetResult!>!
+RimLLM_Framework.RimLLMDecisionClient.FetchModelsAsync(string! providerId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+RimLLM_Framework.TestResult.ErrorMessage.get -> string?
+RimLLM_Framework.TestResult.ErrorMessage.set -> void
+RimLLM_Framework.TestResult.Model.get -> string?
+RimLLM_Framework.TestResult.Model.set -> void
+RimLLM_Framework.TestResult.Provider.get -> string?
+RimLLM_Framework.TestResult.Provider.set -> void
 ~const RimLLM_Framework.Manager.RimLLMEmbeddingService.DisabledProviderId = "Disabled" -> string
 ~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Clef = "Clef" -> string
 ~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Disabled = "Disabled" -> string
@@ -623,20 +623,20 @@ virtual RimLLM_Framework.Providers.OpenAIProvider.SupportsNativeJsonSchemaPayloa
 ~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.TypeSafe = "TypeSafe" -> string
 ~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Unsloth = "Unsloth" -> string
 ~const RimLLM_Framework.Mod.RimLLMFrameworkSettings.DisabledProvider = "Disabled" -> string
-~const RimLLM_Framework.ProviderIds.DeepSeek = "DeepSeek" -> string
-~const RimLLM_Framework.ProviderIds.Gemini = "Gemini" -> string
-~const RimLLM_Framework.ProviderIds.Grok = "Grok" -> string
-~const RimLLM_Framework.ProviderIds.Groq = "Groq" -> string
-~const RimLLM_Framework.ProviderIds.Kimi = "Kimi" -> string
-~const RimLLM_Framework.ProviderIds.MiniMax = "MiniMax" -> string
-~const RimLLM_Framework.ProviderIds.Nvidia = "Nvidia" -> string
-~const RimLLM_Framework.ProviderIds.OpenAI = "OpenAI" -> string
-~const RimLLM_Framework.ProviderIds.OpenAICompatible = "OpenAICompatible" -> string
-~const RimLLM_Framework.ProviderIds.OpenRouter = "OpenRouter" -> string
-~const RimLLM_Framework.ProviderIds.Player2 = "Player2" -> string
-~const RimLLM_Framework.ProviderIds.Qwen = "Qwen" -> string
-~const RimLLM_Framework.ProviderIds.Zai = "Z.ai" -> string
-~const RimLLM_Framework.RimLLMChatOptions.FallbackModelId = "fallback" -> string
+const RimLLM_Framework.ProviderIds.DeepSeek = "DeepSeek" -> string!
+const RimLLM_Framework.ProviderIds.Gemini = "Gemini" -> string!
+const RimLLM_Framework.ProviderIds.Grok = "Grok" -> string!
+const RimLLM_Framework.ProviderIds.Groq = "Groq" -> string!
+const RimLLM_Framework.ProviderIds.Kimi = "Kimi" -> string!
+const RimLLM_Framework.ProviderIds.MiniMax = "MiniMax" -> string!
+const RimLLM_Framework.ProviderIds.Nvidia = "Nvidia" -> string!
+const RimLLM_Framework.ProviderIds.OpenAI = "OpenAI" -> string!
+const RimLLM_Framework.ProviderIds.OpenAICompatible = "OpenAICompatible" -> string!
+const RimLLM_Framework.ProviderIds.OpenRouter = "OpenRouter" -> string!
+const RimLLM_Framework.ProviderIds.Player2 = "Player2" -> string!
+const RimLLM_Framework.ProviderIds.Qwen = "Qwen" -> string!
+const RimLLM_Framework.ProviderIds.Zai = "Z.ai" -> string!
+const RimLLM_Framework.RimLLMChatOptions.FallbackModelId = "fallback" -> string!
 ~override RimLLM_Framework.Mod.RimLLMFrameworkMod.SettingsCategory() -> string
 ~override RimLLM_Framework.Providers.KimiProvider.MapEffortLiteral(Microsoft.Extensions.AI.ReasoningEffort effort) -> string
 ~override RimLLM_Framework.Providers.OpenAICompatibleProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions requestOptions, string model, Microsoft.Extensions.AI.ChatOptions options) -> void
@@ -656,15 +656,15 @@ virtual RimLLM_Framework.Providers.OpenAIProvider.SupportsNativeJsonSchemaPayloa
 ~static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<System.Threading.Tasks.Task<T>> func) -> System.Threading.Tasks.Task<T>
 ~static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<System.Threading.Tasks.Task<T>> func, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<T>
 ~static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<T> func) -> System.Threading.Tasks.Task<T>
-~static RimLLM_Framework.LLMErrorMapper.ContainsIgnoreCase(string haystack, string needle) -> bool
-~static RimLLM_Framework.LLMErrorMapper.CreateException(int? statusCode, string friendlyMessage, System.TimeSpan? retryAfter = null, System.Exception innerException = null, string detectionText = null) -> RimLLM_Framework.RimLLMException
-~static RimLLM_Framework.LLMErrorMapper.LooksLikeContentPolicyRejection(string message) -> bool
-~static RimLLM_Framework.LLMErrorMapper.LooksLikeContextWindowRejection(string message) -> bool
-~static RimLLM_Framework.LLMErrorMapper.LooksLikeMaxTokensRejection(string message) -> bool
-~static RimLLM_Framework.LLMErrorMapper.LooksLikeReasoningRejection(string message) -> bool
-~static RimLLM_Framework.LLMErrorMapper.LooksLikeSchemaRejection(string message) -> bool
-~static RimLLM_Framework.LLMErrorMapper.LooksLikeTemperatureRejection(string message) -> bool
-~static RimLLM_Framework.LLMErrorMapper.ParseRetryAfter(string headerValue) -> System.TimeSpan?
+static RimLLM_Framework.LLMErrorMapper.ContainsIgnoreCase(string! haystack, string! needle) -> bool
+static RimLLM_Framework.LLMErrorMapper.CreateException(int? statusCode, string! friendlyMessage, System.TimeSpan? retryAfter = null, System.Exception? innerException = null, string? detectionText = null) -> RimLLM_Framework.RimLLMException!
+static RimLLM_Framework.LLMErrorMapper.LooksLikeContentPolicyRejection(string! message) -> bool
+static RimLLM_Framework.LLMErrorMapper.LooksLikeContextWindowRejection(string! message) -> bool
+static RimLLM_Framework.LLMErrorMapper.LooksLikeMaxTokensRejection(string! message) -> bool
+static RimLLM_Framework.LLMErrorMapper.LooksLikeReasoningRejection(string! message) -> bool
+static RimLLM_Framework.LLMErrorMapper.LooksLikeSchemaRejection(string! message) -> bool
+static RimLLM_Framework.LLMErrorMapper.LooksLikeTemperatureRejection(string! message) -> bool
+static RimLLM_Framework.LLMErrorMapper.ParseRetryAfter(string? headerValue) -> System.TimeSpan?
 ~static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetDefaultEndpointOrEmpty(string provider) -> string
 ~static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetMainProviderIdForEmbedding(string embeddingProvider) -> string
 ~static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetModelListKey(string embeddingProvider) -> string
@@ -726,31 +726,31 @@ virtual RimLLM_Framework.Providers.OpenAIProvider.SupportsNativeJsonSchemaPayloa
 ~static RimLLM_Framework.Mod.RimLLMUIStyle.TruncateCached(string text, float width) -> string
 ~static RimLLM_Framework.Mod.ServiceConsumersDrawer.DrawServiceConsumers(Verse.Listing_Standard listing) -> void
 ~static RimLLM_Framework.Mod.SetupWizardDrawer.DrawSetupWizard(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.ProviderIds.HasChinaEndpoint(string providerId) -> bool
-~static RimLLM_Framework.ProviderIds.HasCustomEndpoint(string providerId) -> bool
-~static RimLLM_Framework.ProviderIds.IsPlayer2CloudEndpoint(string endpoint) -> bool
-~static RimLLM_Framework.ProviderIds.ParseProviderId(string fallbackEntry) -> string
-~static RimLLM_Framework.ProviderIds.RequiresApiKey(string providerId, string endpoint) -> bool
-~static RimLLM_Framework.ProviderIds.TrySplitModelId(string entry, out string providerId, out string modelName) -> bool
+static RimLLM_Framework.ProviderIds.HasChinaEndpoint(string! providerId) -> bool
+static RimLLM_Framework.ProviderIds.HasCustomEndpoint(string! providerId) -> bool
+static RimLLM_Framework.ProviderIds.IsPlayer2CloudEndpoint(string! endpoint) -> bool
+static RimLLM_Framework.ProviderIds.ParseProviderId(string! fallbackEntry) -> string?
+static RimLLM_Framework.ProviderIds.RequiresApiKey(string! providerId, string! endpoint) -> bool
+static RimLLM_Framework.ProviderIds.TrySplitModelId(string! entry, out string? providerId, out string? modelName) -> bool
 ~static RimLLM_Framework.Providers.OpenAIProvider.CreateOpenAiChatClient(string apiKey, string model, string endpoint = null) -> Microsoft.Extensions.AI.IChatClient
 ~static RimLLM_Framework.Providers.OpenAIProvider.IsOpenAiReasoningModel(string modelName) -> bool
 ~static RimLLM_Framework.Providers.OpenAIProvider.NormalizeEndpoint(string endpoint) -> string
-~static RimLLM_Framework.RimLLMChatOptions.IsFallbackModelId(string modelId) -> bool
-~static RimLLM_Framework.RimLLMClientExtensions.GetResponseObjectAsync<T>(this Microsoft.Extensions.AI.IChatClient client, System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, RimLLM_Framework.RimLLMChatOptions options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T>
-~static RimLLM_Framework.RimLLMClientExtensions.WereToolsStripped(this Microsoft.Extensions.AI.ChatResponse response) -> bool
-~static RimLLM_Framework.RimLLMClientExtensions.WereToolsStripped(this Microsoft.Extensions.AI.ChatResponseUpdate update) -> bool
-~static RimLLM_Framework.RimLLMProvider.CreateChatClient(string modId) -> Microsoft.Extensions.AI.IChatClient
-~static RimLLM_Framework.RimLLMProvider.CreateDecisionService(string modId) -> RimLLM_Framework.RimLLMDecisionClient
-~static RimLLM_Framework.RimLLMProvider.CreateEmbeddingGenerator(string modId) -> Microsoft.Extensions.AI.IEmbeddingGenerator<string, Microsoft.Extensions.AI.Embedding<float>>
-~static RimLLM_Framework.RimLLMProvider.FetchProviderModelsAsync(string providerId) -> System.Threading.Tasks.Task<System.Collections.Generic.List<string>>
-~static RimLLM_Framework.RimLLMProvider.GetContextWindow(string modelId) -> int?
-~static RimLLM_Framework.RimLLMProvider.GetDecisionAvailability() -> RimLLM_Framework.DecisionAvailability
-~static RimLLM_Framework.RimLLMProvider.GetEffectiveCapabilities(string preferredModelId = null) -> RimLLM_Framework.LLMProviderCapabilities
-~static RimLLM_Framework.RimLLMProvider.GetFallbackChain() -> System.Collections.Generic.List<string>
-~static RimLLM_Framework.RimLLMProvider.GetRegisteredProviderIds() -> System.Collections.Generic.List<string>
-~static RimLLM_Framework.RimLLMProvider.RegisterProvider(RimLLM_Framework.Providers.ILLMProvider provider) -> void
-~static RimLLM_Framework.RimLLMProvider.SupportsVision(string modelId) -> bool?
-~static RimLLM_Framework.RimLLMProvider.TestProviderAsync(string providerId) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult>
+static RimLLM_Framework.RimLLMChatOptions.IsFallbackModelId(string! modelId) -> bool
+static RimLLM_Framework.RimLLMClientExtensions.GetResponseObjectAsync<T>(this Microsoft.Extensions.AI.IChatClient! client, System.Collections.Generic.IEnumerable<Microsoft.Extensions.AI.ChatMessage!>! messages, RimLLM_Framework.RimLLMChatOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T>!
+static RimLLM_Framework.RimLLMClientExtensions.WereToolsStripped(this Microsoft.Extensions.AI.ChatResponse! response) -> bool
+static RimLLM_Framework.RimLLMClientExtensions.WereToolsStripped(this Microsoft.Extensions.AI.ChatResponseUpdate! update) -> bool
+static RimLLM_Framework.RimLLMProvider.CreateChatClient(string! modId) -> Microsoft.Extensions.AI.IChatClient!
+static RimLLM_Framework.RimLLMProvider.CreateDecisionService(string! modId) -> RimLLM_Framework.RimLLMDecisionClient!
+static RimLLM_Framework.RimLLMProvider.CreateEmbeddingGenerator(string! modId) -> Microsoft.Extensions.AI.IEmbeddingGenerator<string!, Microsoft.Extensions.AI.Embedding<float>!>!
+static RimLLM_Framework.RimLLMProvider.FetchProviderModelsAsync(string! providerId) -> System.Threading.Tasks.Task<System.Collections.Generic.List<string!>!>!
+static RimLLM_Framework.RimLLMProvider.GetContextWindow(string! modelId) -> int?
+static RimLLM_Framework.RimLLMProvider.GetDecisionAvailability() -> RimLLM_Framework.DecisionAvailability!
+static RimLLM_Framework.RimLLMProvider.GetEffectiveCapabilities(string? preferredModelId = null) -> RimLLM_Framework.LLMProviderCapabilities!
+static RimLLM_Framework.RimLLMProvider.GetFallbackChain() -> System.Collections.Generic.List<string!>!
+static RimLLM_Framework.RimLLMProvider.GetRegisteredProviderIds() -> System.Collections.Generic.List<string!>!
+static RimLLM_Framework.RimLLMProvider.RegisterProvider(RimLLM_Framework.Providers.ILLMProvider! provider) -> void
+static RimLLM_Framework.RimLLMProvider.SupportsVision(string! modelId) -> bool?
+static RimLLM_Framework.RimLLMProvider.TestProviderAsync(string! providerId) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult!>!
 ~static readonly RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.All -> System.Collections.Generic.IReadOnlyList<RimLLM_Framework.Manager.Services.RimLLMDecisionProvider>
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.FetchStatus -> System.Collections.Generic.Dictionary<string, string>
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.Fetching -> System.Collections.Generic.Dictionary<string, bool>
@@ -759,7 +759,7 @@ virtual RimLLM_Framework.Providers.OpenAIProvider.SupportsNativeJsonSchemaPayloa
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.RevealedKeys -> System.Collections.Generic.Dictionary<string, bool>
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.TestStatus -> System.Collections.Generic.Dictionary<string, string>
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.Testing -> System.Collections.Generic.Dictionary<string, bool>
-~static readonly RimLLM_Framework.ProviderIds.BuiltIn -> System.Collections.Generic.IReadOnlyList<string>
+static readonly RimLLM_Framework.ProviderIds.BuiltIn -> System.Collections.Generic.IReadOnlyList<string!>!
 ~virtual RimLLM_Framework.Providers.OpenAIProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions requestOptions, string model, Microsoft.Extensions.AI.ChatOptions options) -> void
 ~virtual RimLLM_Framework.Providers.OpenAIProvider.Capabilities.get -> RimLLM_Framework.LLMProviderCapabilities
 ~virtual RimLLM_Framework.Providers.OpenAIProvider.CreateChatClient(string model) -> Microsoft.Extensions.AI.IChatClient

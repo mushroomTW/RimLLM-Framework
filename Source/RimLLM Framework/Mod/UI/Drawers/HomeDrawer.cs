@@ -191,7 +191,7 @@ public static class HomeDrawer
 
     private static void DrawReadyDetails(Listing_Standard listing, string activeEntry)
     {
-        string model = ProviderIds.TrySplitModelId(activeEntry, out string providerId, out string explicitModel)
+        string model = ProviderIds.TrySplitModelId(activeEntry, out string? providerId, out string? explicitModel)
             ? explicitModel
             : "RimLLM_HomeDefaultModel".Translate().ToString();
 

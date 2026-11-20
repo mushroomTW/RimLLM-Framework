@@ -1,7 +1,6 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace RimLLM_Framework;
 
@@ -92,7 +91,7 @@ public static class ProviderIds
     /// 從 Fallback Chain 條目取出供應商識別碼。
     /// 條目格式為 "ProviderId" 或 "ProviderId:ModelName"；空字串回傳 null。
     /// </summary>
-    public static string ParseProviderId(string fallbackEntry)
+    public static string? ParseProviderId(string fallbackEntry)
     {
         if (string.IsNullOrEmpty(fallbackEntry)) return null;
 
@@ -108,7 +107,7 @@ public static class ProviderIds
     /// <param name="entry">備援鏈條目或複合模型識別碼。</param>
     /// <param name="providerId">供應商識別碼（規則同 <see cref="ParseProviderId"/>）；空字串時為 null。</param>
     /// <param name="modelName">模型名稱；未指定模型時為 null。</param>
-    public static bool TrySplitModelId(string entry, out string providerId, out string modelName)
+    public static bool TrySplitModelId(string entry, out string? providerId, [NotNullWhen(true)] out string? modelName)
     {
         providerId = ParseProviderId(entry);
         modelName = null;
