@@ -427,7 +427,7 @@ RimLLM_Framework.IRimLLMSettings.GetDefaultModel(string! providerId, string! def
 RimLLM_Framework.IRimLLMSettings.GetEmbeddingApiKey(string! providerId) -> string!
 RimLLM_Framework.IRimLLMSettings.GetEmbeddingEndpoint(string! providerId) -> string!
 RimLLM_Framework.IRimLLMSettings.GetEmbeddingModel(string! providerId) -> string!
-RimLLM_Framework.IRimLLMSettings.GetEndpoint(string! providerId, string! defaultVal) -> string!
+RimLLM_Framework.IRimLLMSettings.GetEndpoint(string! providerId, string? defaultVal) -> string?
 RimLLM_Framework.IRimLLMSettings.GetModelLevelOverride(string! modelName) -> int
 RimLLM_Framework.IRimLLMSettings.GetModelList(string! providerId) -> System.Collections.Generic.List<string!>!
 RimLLM_Framework.IRimLLMSettings.GetVisionSupport(string! providerId, string! modelName) -> bool?
@@ -487,92 +487,92 @@ RimLLM_Framework.Manager.Services.RimLLMDecisionService.FetchModelsAsync(System.
 RimLLM_Framework.Manager.Services.RimLLMDecisionService.FetchModelsAsync(string! endpoint, string! model, string! apiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TypeSafeAI.ModelInfo!>!>!
 RimLLM_Framework.Manager.Services.RimLLMDecisionService.RimLLMDecisionService(RimLLM_Framework.IRimLLMSettings! settings) -> void
 RimLLM_Framework.Manager.Services.RimLLMDecisionService.TestConnectionAsync(string! endpoint, string! model, string! apiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-~RimLLM_Framework.Mod.Dialog_SelectModel.Dialog_SelectModel(System.Collections.Generic.List<string> models, System.Action<string> onSelected) -> void
-~RimLLM_Framework.Mod.Dialog_SelectModel.Dialog_SelectModel(System.Collections.Generic.List<string> models, System.Action<string> onSelected, string providerId) -> void
-~RimLLM_Framework.Mod.Dialog_SetContextWindow.Dialog_SetContextWindow(string entry, int currentTokens, System.Action<int> onConfirmed) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkMod.RimLLMFrameworkMod(Verse.ModContentPack content) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.ChatHistory.get -> System.Collections.Generic.List<string>
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.ChatHistory.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DailyBudgetResetDate.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DailyBudgetResetDate.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionApiKey.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionApiKey.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionEndpoint.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionEndpoint.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionFallbackChain.get -> System.Collections.Generic.List<string>
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionFallbackChain.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionModel.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionModel.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionProvider.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionProvider.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingApiKey.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingApiKey.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingEndpoint.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingEndpoint.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingFallbackChain.get -> System.Collections.Generic.List<string>
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingFallbackChain.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingModel.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingModel.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingProvider.get -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingProvider.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.FallbackChain.get -> System.Collections.Generic.List<string>
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.FallbackChain.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetActiveApiKey(string providerId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetApiKey(string providerId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetCompatModelPin(string modId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetContextWindow(string providerId, string modelName) -> int?
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetContextWindowOverride(string entry) -> int
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionApiKey(string providerId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionEndpoint(string providerId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionEndpointRaw(string provider) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionModel(string providerId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionModelRaw(string provider) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDefaultModel(string providerId, string defaultVal) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingApiKey(string providerId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingEndpoint(string providerId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingEndpointRaw(string provider) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingModel(string providerId) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingModelRaw(string provider) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEndpoint(string providerId, string defaultVal) -> string
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetFetchedContextWindow(string providerId, string modelName) -> int?
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetModelCount(string providerId) -> int
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetModelLevelOverride(string modelName) -> int
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetModelList(string providerId) -> System.Collections.Generic.List<string>
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetVisionSupport(string providerId, string modelName) -> bool?
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.IsChinaMode(string providerId) -> bool
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.IsCompatTakeoverEnabled(string modId) -> bool
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.IsProviderEnabled(string providerId) -> bool
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.RemoveFallbackEntry(string entry) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.RequestLogs.get -> System.Collections.Generic.List<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry>
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.RequestLogs.set -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetApiKey(string providerId, string val) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetChinaMode(string providerId, bool val) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetCompatModelPin(string modId, string entry) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetCompatTakeoverEnabled(string modId, bool enabled) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetContextWindowOverride(string entry, int tokens) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetDecisionApiKey(string provider, string key) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetDecisionEndpoint(string provider, string endpoint) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetDecisionModel(string provider, string model) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetEmbeddingApiKey(string provider, string key) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetEmbeddingEndpoint(string provider, string endpoint) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetEmbeddingModel(string provider, string model) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetEndpoint(string providerId, string val) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetModelLevelOverride(string modelName, int level) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetModelList(string providerId, System.Collections.Generic.List<string> models) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetProviderContextWindows(string providerId, System.Collections.Generic.Dictionary<string, int> contextWindows) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetProviderEnabled(string providerId, bool enabled) -> void
-~RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetProviderVisionSupport(string providerId, System.Collections.Generic.Dictionary<string, bool> support) -> void
-~RimLLM_Framework.Mod.RimLLMMarkdownSegment.RimLLMMarkdownSegment(string markdown, System.Collections.Generic.IReadOnlyList<string[]> rows) -> void
-~RimLLM_Framework.Mod.RimLLMMarkdownTable.Cells.get -> string[][]
-~RimLLM_Framework.Mod.RimLLMMarkdownTable.ColumnWidths.get -> float[]
-~RimLLM_Framework.Mod.RimLLMMarkdownTable.PlainText.get -> string
-~RimLLM_Framework.Mod.RimLLMMarkdownTable.RowHeights.get -> float[]
-~RimLLM_Framework.Mod.RimLLMTelemetryStore.ChatHistory.get -> System.Collections.Generic.List<string>
-~RimLLM_Framework.Mod.RimLLMTelemetryStore.ChatHistory.set -> void
-~RimLLM_Framework.Mod.RimLLMTelemetryStore.DailyBudgetResetDate.get -> string
-~RimLLM_Framework.Mod.RimLLMTelemetryStore.DailyBudgetResetDate.set -> void
-~RimLLM_Framework.Mod.RimLLMTelemetryStore.RequestLogs.get -> System.Collections.Generic.List<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry>
-~RimLLM_Framework.Mod.RimLLMTelemetryStore.RequestLogs.set -> void
+RimLLM_Framework.Mod.Dialog_SelectModel.Dialog_SelectModel(System.Collections.Generic.List<string!>! models, System.Action<string!>! onSelected) -> void
+RimLLM_Framework.Mod.Dialog_SelectModel.Dialog_SelectModel(System.Collections.Generic.List<string!>! models, System.Action<string!>! onSelected, string? providerId) -> void
+RimLLM_Framework.Mod.Dialog_SetContextWindow.Dialog_SetContextWindow(string! entry, int currentTokens, System.Action<int>! onConfirmed) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkMod.RimLLMFrameworkMod(Verse.ModContentPack! content) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.ChatHistory.get -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.ChatHistory.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DailyBudgetResetDate.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DailyBudgetResetDate.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionApiKey.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionApiKey.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionEndpoint.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionEndpoint.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionFallbackChain.get -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionFallbackChain.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionModel.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionModel.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionProvider.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.DecisionProvider.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingApiKey.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingApiKey.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingEndpoint.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingEndpoint.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingFallbackChain.get -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingFallbackChain.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingModel.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingModel.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingProvider.get -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.EmbeddingProvider.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.FallbackChain.get -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.FallbackChain.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetActiveApiKey(string! providerId) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetApiKey(string! providerId) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetCompatModelPin(string! modId) -> string?
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetContextWindow(string! providerId, string! modelName) -> int?
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetContextWindowOverride(string! entry) -> int
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionApiKey(string! providerId) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionEndpoint(string! providerId) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionEndpointRaw(string! provider) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionModel(string! providerId) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDecisionModelRaw(string! provider) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDefaultModel(string! providerId, string! defaultVal) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingApiKey(string! providerId) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingEndpoint(string! providerId) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingEndpointRaw(string! provider) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingModel(string! providerId) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEmbeddingModelRaw(string! provider) -> string!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetEndpoint(string! providerId, string? defaultVal) -> string?
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetFetchedContextWindow(string! providerId, string! modelName) -> int?
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetModelCount(string! providerId) -> int
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetModelLevelOverride(string! modelName) -> int
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetModelList(string! providerId) -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetVisionSupport(string! providerId, string! modelName) -> bool?
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.IsChinaMode(string! providerId) -> bool
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.IsCompatTakeoverEnabled(string! modId) -> bool
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.IsProviderEnabled(string! providerId) -> bool
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.RemoveFallbackEntry(string! entry) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.RequestLogs.get -> System.Collections.Generic.List<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry!>!
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.RequestLogs.set -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetApiKey(string! providerId, string! val) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetChinaMode(string! providerId, bool val) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetCompatModelPin(string! modId, string? entry) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetCompatTakeoverEnabled(string! modId, bool enabled) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetContextWindowOverride(string! entry, int tokens) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetDecisionApiKey(string! provider, string! key) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetDecisionEndpoint(string! provider, string? endpoint) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetDecisionModel(string! provider, string! model) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetEmbeddingApiKey(string! provider, string! key) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetEmbeddingEndpoint(string! provider, string? endpoint) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetEmbeddingModel(string! provider, string! model) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetEndpoint(string! providerId, string? val) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetModelLevelOverride(string! modelName, int level) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetModelList(string! providerId, System.Collections.Generic.List<string!>! models) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetProviderContextWindows(string! providerId, System.Collections.Generic.Dictionary<string!, int>! contextWindows) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetProviderEnabled(string! providerId, bool enabled) -> void
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.SetProviderVisionSupport(string! providerId, System.Collections.Generic.Dictionary<string!, bool>! support) -> void
+RimLLM_Framework.Mod.RimLLMMarkdownSegment.RimLLMMarkdownSegment(string! markdown, System.Collections.Generic.IReadOnlyList<string![]!>? rows) -> void
+RimLLM_Framework.Mod.RimLLMMarkdownTable.Cells.get -> string![]![]!
+RimLLM_Framework.Mod.RimLLMMarkdownTable.ColumnWidths.get -> float[]!
+RimLLM_Framework.Mod.RimLLMMarkdownTable.PlainText.get -> string!
+RimLLM_Framework.Mod.RimLLMMarkdownTable.RowHeights.get -> float[]!
+RimLLM_Framework.Mod.RimLLMTelemetryStore.ChatHistory.get -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.Mod.RimLLMTelemetryStore.ChatHistory.set -> void
+RimLLM_Framework.Mod.RimLLMTelemetryStore.DailyBudgetResetDate.get -> string!
+RimLLM_Framework.Mod.RimLLMTelemetryStore.DailyBudgetResetDate.set -> void
+RimLLM_Framework.Mod.RimLLMTelemetryStore.RequestLogs.get -> System.Collections.Generic.List<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry!>!
+RimLLM_Framework.Mod.RimLLMTelemetryStore.RequestLogs.set -> void
 RimLLM_Framework.Providers.DeepSeekProvider.DeepSeekProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
 RimLLM_Framework.Providers.GeminiProvider.GeminiProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
 RimLLM_Framework.Providers.GrokProvider.GrokProvider(RimLLM_Framework.IRimLLMSettings! settings) -> void
@@ -622,7 +622,7 @@ const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Span = "Sp
 const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Tev = "Tev" -> string!
 const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.TypeSafe = "TypeSafe" -> string!
 const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Unsloth = "Unsloth" -> string!
-~const RimLLM_Framework.Mod.RimLLMFrameworkSettings.DisabledProvider = "Disabled" -> string
+const RimLLM_Framework.Mod.RimLLMFrameworkSettings.DisabledProvider = "Disabled" -> string!
 const RimLLM_Framework.ProviderIds.DeepSeek = "DeepSeek" -> string!
 const RimLLM_Framework.ProviderIds.Gemini = "Gemini" -> string!
 const RimLLM_Framework.ProviderIds.Grok = "Grok" -> string!
@@ -637,7 +637,7 @@ const RimLLM_Framework.ProviderIds.Player2 = "Player2" -> string!
 const RimLLM_Framework.ProviderIds.Qwen = "Qwen" -> string!
 const RimLLM_Framework.ProviderIds.Zai = "Z.ai" -> string!
 const RimLLM_Framework.RimLLMChatOptions.FallbackModelId = "fallback" -> string!
-~override RimLLM_Framework.Mod.RimLLMFrameworkMod.SettingsCategory() -> string
+override RimLLM_Framework.Mod.RimLLMFrameworkMod.SettingsCategory() -> string!
 override RimLLM_Framework.Providers.KimiProvider.MapEffortLiteral(Microsoft.Extensions.AI.ReasoningEffort effort) -> string?
 override RimLLM_Framework.Providers.OpenAICompatibleProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions? requestOptions, string! model, Microsoft.Extensions.AI.ChatOptions! options) -> void
 override RimLLM_Framework.Providers.OpenAICompatibleProvider.DefaultEndpoint.get -> string!
@@ -647,10 +647,10 @@ override RimLLM_Framework.Providers.OpenAIProvider.OpenAIChatClientAdapter.GetSt
 override RimLLM_Framework.Providers.OpenRouterProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions? requestOptions, string! model, Microsoft.Extensions.AI.ChatOptions! options) -> void
 override RimLLM_Framework.Providers.OpenRouterProvider.DefaultEndpoint.get -> string!
 override RimLLM_Framework.Providers.OpenRouterProvider.ProviderId.get -> string!
-~readonly RimLLM_Framework.Mod.RimLLMMarkdownSegment.Markdown -> string
-~readonly RimLLM_Framework.Mod.RimLLMMarkdownSegment.Rows -> System.Collections.Generic.IReadOnlyList<string[]>
+readonly RimLLM_Framework.Mod.RimLLMMarkdownSegment.Markdown -> string!
+readonly RimLLM_Framework.Mod.RimLLMMarkdownSegment.Rows -> System.Collections.Generic.IReadOnlyList<string![]!>?
 readonly RimLLM_Framework.Providers.OpenAIProvider.Settings -> RimLLM_Framework.IRimLLMSettings!
-static RimLLM_Framework.Core.EncryptionUtility.Decrypt(string! cipherText) -> string?
+static RimLLM_Framework.Core.EncryptionUtility.Decrypt(string? cipherText) -> string?
 static RimLLM_Framework.Core.EncryptionUtility.Encrypt(string! plainText) -> string!
 static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThread(System.Action! action) -> void
 static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<System.Threading.Tasks.Task<T>!>! func) -> System.Threading.Tasks.Task<T>!
@@ -686,51 +686,51 @@ static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Get(strin
 static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.GetDefaultEndpoint(string! providerId) -> string!
 static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.TryGet(string! providerId, out RimLLM_Framework.Manager.Services.RimLLMDecisionProvider? provider) -> bool
 static RimLLM_Framework.Manager.Services.RimLLMDecisionService.GetModelListKey(string! providerId) -> string!
-~static RimLLM_Framework.Mod.ChatTestDrawer.DrawChatTestSettings(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.ChatTestDrawer.Initialize(RimLLM_Framework.Mod.RimLLMFrameworkSettings settings) -> void
-~static RimLLM_Framework.Mod.CompatSettingsDrawer.DrawCompatSettings(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.DebugSettingsDrawer.DrawDebugSettings(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.DecisionSettingsDrawer.ActiveDecisionSubTab.get -> string
-~static RimLLM_Framework.Mod.DecisionSettingsDrawer.ActiveDecisionSubTab.set -> void
-~static RimLLM_Framework.Mod.DecisionSettingsDrawer.DrawRightDetailContent(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.DecisionSettingsDrawer.GetProviderDisplayName(string providerId) -> string
-~static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.ActiveEmbeddingSubTab.get -> string
-~static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.ActiveEmbeddingSubTab.set -> void
-~static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.DrawEmbeddingSettings(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.DrawRightDetailContent(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.GetProviderDisplayName(string providerId) -> string
-~static RimLLM_Framework.Mod.GenericProviderSubTabDrawer.DrawGenericProviderSettings(Verse.Listing_Standard listing, string providerId) -> void
-~static RimLLM_Framework.Mod.ModelSettingsDrawer.DrawModelSettings(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.ProviderSettingsDrawer.ActiveProviderSubTab.get -> string
-~static RimLLM_Framework.Mod.ProviderSettingsDrawer.ActiveProviderSubTab.set -> void
-~static RimLLM_Framework.Mod.ProviderSettingsDrawer.DrawRightDetailContent(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDefaultDecisionEndpoint(string provider) -> string
-~static RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDefaultEmbeddingEndpoint(string provider) -> string
-~static RimLLM_Framework.Mod.RimLLMMarkdown.CellToRichText(string cellMarkdown) -> string
-~static RimLLM_Framework.Mod.RimLLMMarkdown.EscapeCode(string text) -> string
-~static RimLLM_Framework.Mod.RimLLMMarkdown.ToRichText(string markdown) -> string
-~static RimLLM_Framework.Mod.RimLLMMarkdownTable.FitColumns(float[] natural, float width) -> float[]
-~static RimLLM_Framework.Mod.RimLLMMarkdownTable.Layout(System.Collections.Generic.IReadOnlyList<string[]> rows, float width, System.Func<string, string> renderCell = null) -> RimLLM_Framework.Mod.RimLLMMarkdownTable
-~static RimLLM_Framework.Mod.RimLLMMarkdownTable.Split(string markdown) -> System.Collections.Generic.List<RimLLM_Framework.Mod.RimLLMMarkdownSegment>
-~static RimLLM_Framework.Mod.RimLLMSettingsUI.Initialize(RimLLM_Framework.Mod.RimLLMFrameworkSettings settings) -> void
-~static RimLLM_Framework.Mod.RimLLMUIStyle.DrawHint(Verse.Listing_Standard listing, string text) -> void
-~static RimLLM_Framework.Mod.RimLLMUIStyle.DrawMaskableKeyField(UnityEngine.Rect inputRect, UnityEngine.Rect revealRect, string value, ref bool revealed) -> string
-~static RimLLM_Framework.Mod.RimLLMUIStyle.DrawRatioBar(UnityEngine.Rect rect, float fillPercent, UnityEngine.Color track, UnityEngine.Color fill, string label) -> void
-~static RimLLM_Framework.Mod.RimLLMUIStyle.DrawStatusRow(UnityEngine.Rect rowRect, UnityEngine.Color statusColor, string title, string badge, UnityEngine.Color tint, float rightInset = 0) -> bool
-~static RimLLM_Framework.Mod.RimLLMUIStyle.FilterModels(System.Collections.Generic.IEnumerable<string> models, string filter) -> System.Collections.Generic.List<string>
-~static RimLLM_Framework.Mod.RimLLMUIStyle.FilterModels(System.Collections.Generic.IEnumerable<string> models, string filter, string vendor) -> System.Collections.Generic.List<string>
-~static RimLLM_Framework.Mod.RimLLMUIStyle.FilterModelsCached(string cacheKey, int version, string filter, System.Func<System.Collections.Generic.IList<string>> sourceProvider) -> System.Collections.Generic.List<string>
-~static RimLLM_Framework.Mod.RimLLMUIStyle.FilterModelsCached(string cacheKey, int version, string filter, System.Func<System.Collections.Generic.IList<string>> sourceProvider, string vendor) -> System.Collections.Generic.List<string>
-~static RimLLM_Framework.Mod.RimLLMUIStyle.GetModelVendor(string providerId) -> string
-~static RimLLM_Framework.Mod.RimLLMUIStyle.MaskApiKey(string apiKey) -> string
-~static RimLLM_Framework.Mod.RimLLMUIStyle.TruncateCached(string text, float width) -> string
-~static RimLLM_Framework.Mod.ServiceConsumersDrawer.DrawServiceConsumers(Verse.Listing_Standard listing) -> void
-~static RimLLM_Framework.Mod.SetupWizardDrawer.DrawSetupWizard(Verse.Listing_Standard listing) -> void
+static RimLLM_Framework.Mod.ChatTestDrawer.DrawChatTestSettings(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.ChatTestDrawer.Initialize(RimLLM_Framework.Mod.RimLLMFrameworkSettings! settings) -> void
+static RimLLM_Framework.Mod.CompatSettingsDrawer.DrawCompatSettings(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.DebugSettingsDrawer.DrawDebugSettings(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.DecisionSettingsDrawer.ActiveDecisionSubTab.get -> string!
+static RimLLM_Framework.Mod.DecisionSettingsDrawer.ActiveDecisionSubTab.set -> void
+static RimLLM_Framework.Mod.DecisionSettingsDrawer.DrawRightDetailContent(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.DecisionSettingsDrawer.GetProviderDisplayName(string! providerId) -> string!
+static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.ActiveEmbeddingSubTab.get -> string!
+static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.ActiveEmbeddingSubTab.set -> void
+static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.DrawEmbeddingSettings(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.DrawRightDetailContent(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.EmbeddingSettingsDrawer.GetProviderDisplayName(string! providerId) -> string!
+static RimLLM_Framework.Mod.GenericProviderSubTabDrawer.DrawGenericProviderSettings(Verse.Listing_Standard! listing, string! providerId) -> void
+static RimLLM_Framework.Mod.ModelSettingsDrawer.DrawModelSettings(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.ProviderSettingsDrawer.ActiveProviderSubTab.get -> string!
+static RimLLM_Framework.Mod.ProviderSettingsDrawer.ActiveProviderSubTab.set -> void
+static RimLLM_Framework.Mod.ProviderSettingsDrawer.DrawRightDetailContent(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDefaultDecisionEndpoint(string! provider) -> string!
+static RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetDefaultEmbeddingEndpoint(string! provider) -> string!
+static RimLLM_Framework.Mod.RimLLMMarkdown.CellToRichText(string! cellMarkdown) -> string!
+static RimLLM_Framework.Mod.RimLLMMarkdown.EscapeCode(string! text) -> string!
+static RimLLM_Framework.Mod.RimLLMMarkdown.ToRichText(string? markdown) -> string?
+static RimLLM_Framework.Mod.RimLLMMarkdownTable.FitColumns(float[]! natural, float width) -> float[]!
+static RimLLM_Framework.Mod.RimLLMMarkdownTable.Layout(System.Collections.Generic.IReadOnlyList<string![]!>! rows, float width, System.Func<string!, string!>? renderCell = null) -> RimLLM_Framework.Mod.RimLLMMarkdownTable!
+static RimLLM_Framework.Mod.RimLLMMarkdownTable.Split(string! markdown) -> System.Collections.Generic.List<RimLLM_Framework.Mod.RimLLMMarkdownSegment>!
+static RimLLM_Framework.Mod.RimLLMSettingsUI.Initialize(RimLLM_Framework.Mod.RimLLMFrameworkSettings! settings) -> void
+static RimLLM_Framework.Mod.RimLLMUIStyle.DrawHint(Verse.Listing_Standard! listing, string! text) -> void
+static RimLLM_Framework.Mod.RimLLMUIStyle.DrawMaskableKeyField(UnityEngine.Rect inputRect, UnityEngine.Rect revealRect, string! value, ref bool revealed) -> string!
+static RimLLM_Framework.Mod.RimLLMUIStyle.DrawRatioBar(UnityEngine.Rect rect, float fillPercent, UnityEngine.Color track, UnityEngine.Color fill, string! label) -> void
+static RimLLM_Framework.Mod.RimLLMUIStyle.DrawStatusRow(UnityEngine.Rect rowRect, UnityEngine.Color statusColor, string! title, string! badge, UnityEngine.Color tint, float rightInset = 0) -> bool
+static RimLLM_Framework.Mod.RimLLMUIStyle.FilterModels(System.Collections.Generic.IEnumerable<string!>! models, string! filter) -> System.Collections.Generic.List<string!>!
+static RimLLM_Framework.Mod.RimLLMUIStyle.FilterModels(System.Collections.Generic.IEnumerable<string!>! models, string! filter, string? vendor) -> System.Collections.Generic.List<string!>!
+static RimLLM_Framework.Mod.RimLLMUIStyle.FilterModelsCached(string! cacheKey, int version, string! filter, System.Func<System.Collections.Generic.IList<string!>!>! sourceProvider) -> System.Collections.Generic.List<string!>!
+static RimLLM_Framework.Mod.RimLLMUIStyle.FilterModelsCached(string! cacheKey, int version, string! filter, System.Func<System.Collections.Generic.IList<string!>!>! sourceProvider, string? vendor) -> System.Collections.Generic.List<string!>!
+static RimLLM_Framework.Mod.RimLLMUIStyle.GetModelVendor(string? providerId) -> string?
+static RimLLM_Framework.Mod.RimLLMUIStyle.MaskApiKey(string! apiKey) -> string!
+static RimLLM_Framework.Mod.RimLLMUIStyle.TruncateCached(string! text, float width) -> string!
+static RimLLM_Framework.Mod.ServiceConsumersDrawer.DrawServiceConsumers(Verse.Listing_Standard! listing) -> void
+static RimLLM_Framework.Mod.SetupWizardDrawer.DrawSetupWizard(Verse.Listing_Standard! listing) -> void
 static RimLLM_Framework.ProviderIds.HasChinaEndpoint(string! providerId) -> bool
 static RimLLM_Framework.ProviderIds.HasCustomEndpoint(string! providerId) -> bool
-static RimLLM_Framework.ProviderIds.IsPlayer2CloudEndpoint(string! endpoint) -> bool
+static RimLLM_Framework.ProviderIds.IsPlayer2CloudEndpoint(string? endpoint) -> bool
 static RimLLM_Framework.ProviderIds.ParseProviderId(string! fallbackEntry) -> string?
-static RimLLM_Framework.ProviderIds.RequiresApiKey(string! providerId, string! endpoint) -> bool
+static RimLLM_Framework.ProviderIds.RequiresApiKey(string! providerId, string? endpoint) -> bool
 static RimLLM_Framework.ProviderIds.TrySplitModelId(string! entry, out string? providerId, out string? modelName) -> bool
 static RimLLM_Framework.Providers.OpenAIProvider.CreateOpenAiChatClient(string! apiKey, string! model, string? endpoint = null) -> Microsoft.Extensions.AI.IChatClient!
 static RimLLM_Framework.Providers.OpenAIProvider.IsOpenAiReasoningModel(string! modelName) -> bool
@@ -752,13 +752,13 @@ static RimLLM_Framework.RimLLMProvider.RegisterProvider(RimLLM_Framework.Provide
 static RimLLM_Framework.RimLLMProvider.SupportsVision(string! modelId) -> bool?
 static RimLLM_Framework.RimLLMProvider.TestProviderAsync(string! providerId) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult!>!
 static readonly RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.All -> System.Collections.Generic.IReadOnlyList<RimLLM_Framework.Manager.Services.RimLLMDecisionProvider!>!
-~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.FetchStatus -> System.Collections.Generic.Dictionary<string, string>
-~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.Fetching -> System.Collections.Generic.Dictionary<string, bool>
-~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.ModelFilters -> System.Collections.Generic.Dictionary<string, string>
-~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.ModelScrollPositions -> System.Collections.Generic.Dictionary<string, UnityEngine.Vector2>
-~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.RevealedKeys -> System.Collections.Generic.Dictionary<string, bool>
-~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.TestStatus -> System.Collections.Generic.Dictionary<string, string>
-~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.Testing -> System.Collections.Generic.Dictionary<string, bool>
+static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.FetchStatus -> System.Collections.Generic.Dictionary<string!, string!>!
+static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.Fetching -> System.Collections.Generic.Dictionary<string!, bool>!
+static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.ModelFilters -> System.Collections.Generic.Dictionary<string!, string!>!
+static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.ModelScrollPositions -> System.Collections.Generic.Dictionary<string!, UnityEngine.Vector2>!
+static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.RevealedKeys -> System.Collections.Generic.Dictionary<string!, bool>!
+static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.TestStatus -> System.Collections.Generic.Dictionary<string!, string!>!
+static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.Testing -> System.Collections.Generic.Dictionary<string!, bool>!
 static readonly RimLLM_Framework.ProviderIds.BuiltIn -> System.Collections.Generic.IReadOnlyList<string!>!
 virtual RimLLM_Framework.Providers.OpenAIProvider.BuildChatOptions(Microsoft.Extensions.AI.ChatOptions? requestOptions, string! model, Microsoft.Extensions.AI.ChatOptions! options) -> void
 virtual RimLLM_Framework.Providers.OpenAIProvider.Capabilities.get -> RimLLM_Framework.LLMProviderCapabilities!

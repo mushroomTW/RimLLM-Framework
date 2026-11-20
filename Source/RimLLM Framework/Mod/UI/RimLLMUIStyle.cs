@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -136,9 +134,9 @@ public static class RimLLMUIStyle
     };
 
     /// <summary>供應商的模型廠商名，供 <see cref="FilterModels(IEnumerable{string}, string, string)"/> 使用；沒有單一廠商時為 null。</summary>
-    public static string GetModelVendor(string providerId)
+    public static string? GetModelVendor(string? providerId)
     {
-        return providerId != null && ModelVendors.TryGetValue(providerId, out string vendor) ? vendor : null;
+        return providerId != null && ModelVendors.TryGetValue(providerId, out string? vendor) ? vendor : null;
     }
 
     /// <summary>
@@ -159,13 +157,13 @@ public static class RimLLMUIStyle
     /// 直連供應商的模型 ID 不帶廠商前綴（Gemini 是 <c>gemini-2.5-flash</c>，OpenRouter 是 <c>google/gemini-2.5-flash</c>），
     /// 不帶前綴的 ID 會視同 <c>{vendor}/{id}</c> 比對，以廠商名搜尋才不會一筆都找不到。
     /// </param>
-    public static List<string> FilterModels(IEnumerable<string> models, string filter, string vendor)
+    public static List<string> FilterModels(IEnumerable<string> models, string filter, string? vendor)
     {
         var result = new List<string>();
         if (models == null) return result;
 
         bool matchAll = string.IsNullOrEmpty(filter) || filter.Trim().Length == 0;
-        string needle = matchAll ? null : filter.Trim();
+        string needle = matchAll ? string.Empty : filter.Trim();
 
         // 以不分大小寫的比對取代逐筆 ToLowerInvariant：這段每幀對數百筆模型名跑一次，
         // 每筆各配置一個小寫副本只是白白製造 GC 壓力。
@@ -204,9 +202,9 @@ public static class RimLLMUIStyle
     private sealed class FilteredModelsEntry
     {
         public int Version;
-        public string Filter;
-        public string Vendor;
-        public List<string> Result;
+        public required string Filter;
+        public required string? Vendor;
+        public required List<string> Result;
     }
 
     private static readonly Dictionary<string, FilteredModelsEntry> FilteredModelsCache =
@@ -226,12 +224,12 @@ public static class RimLLMUIStyle
     /// <paramref name="sourceProvider"/> 只在需要重算時才被呼叫，讓呼叫端連清單複製都能省下。
     /// </summary>
     public static List<string> FilterModelsCached(
-        string cacheKey, int version, string filter, Func<IList<string>> sourceProvider, string vendor)
+        string cacheKey, int version, string filter, Func<IList<string>> sourceProvider, string? vendor)
     {
         ArgumentNullException.ThrowIfNull(sourceProvider);
         filter = filter ?? string.Empty;
 
-        if (FilteredModelsCache.TryGetValue(cacheKey ?? string.Empty, out FilteredModelsEntry entry) &&
+        if (FilteredModelsCache.TryGetValue(cacheKey ?? string.Empty, out FilteredModelsEntry? entry) &&
             entry.Version == version &&
             string.Equals(entry.Filter, filter, StringComparison.Ordinal) &&
             string.Equals(entry.Vendor, vendor, StringComparison.Ordinal))
@@ -284,7 +282,7 @@ public static class RimLLMUIStyle
         if (string.IsNullOrEmpty(text)) return text;
 
         long bucket = ((long)Text.Font << 32) | (uint)Mathf.RoundToInt(width);
-        if (!TruncateCaches.TryGetValue(bucket, out Dictionary<string, string> cache))
+        if (!TruncateCaches.TryGetValue(bucket, out Dictionary<string, string>? cache))
         {
             cache = new Dictionary<string, string>(StringComparer.Ordinal);
             TruncateCaches[bucket] = cache;

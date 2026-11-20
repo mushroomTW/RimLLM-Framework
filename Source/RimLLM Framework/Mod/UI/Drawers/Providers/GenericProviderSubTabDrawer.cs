@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -66,7 +64,7 @@ public static class GenericProviderSubTabDrawer
             string defaultEndpoint = providerId == ProviderIds.Player2
                 ? Player2Provider.LocalDefaultEndpoint
                 : LocalEndpointProbe.LmStudioBaseUrl;
-            string endpoint = Settings.GetEndpoint(providerId, defaultEndpoint);
+            string? endpoint = Settings.GetEndpoint(providerId, defaultEndpoint);
             listing.Label("RimLLM_ApiEndpoint".Translate());
             endpoint = listing.TextEntry(endpoint);
             Settings.SetEndpoint(providerId, endpoint?.Trim());
@@ -181,7 +179,7 @@ public static class GenericProviderSubTabDrawer
         }
 
         // 搜尋列：模型動輒數百筆，沒有過濾等於要在 220px 高的框裡目視搜尋。
-        string filter = ModelFilters.TryGetValue(providerId, out string f) ? f : "";
+        string filter = ModelFilters.TryGetValue(providerId, out string? f) ? f : "";
         Rect searchRowRect = listing.GetRect(28f);
         float searchLabelWidth = Text.CalcSize("RimLLM_Search".Translate() + ": ").x;
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
@@ -307,7 +305,7 @@ public static class GenericProviderSubTabDrawer
             Fetching.TryGetValue(providerId, out bool f) && f,
             "RimLLM_Fetching".Translate(),
             "RimLLM_FetchModelsBtn".Translate(),
-            FetchStatus.TryGetValue(providerId, out string m) ? m : "RimLLM_FetchStatusNotRun".Translate().ToString(),
+            FetchStatus.TryGetValue(providerId, out string? m) ? m : "RimLLM_FetchStatusNotRun".Translate().ToString(),
             () => StartFetchModels(providerId));
     }
 
@@ -394,7 +392,7 @@ public static class GenericProviderSubTabDrawer
     private static void DrawConnectionTest(Listing_Standard listing, string providerId)
     {
         listing.Label("RimLLM_ConnectionTestTitle".Translate());
-        string status = TestStatus.TryGetValue(providerId, out string s) ? s : "RimLLM_TestStatusNotRun".Translate().ToString();
+        string status = TestStatus.TryGetValue(providerId, out string? s) ? s : "RimLLM_TestStatusNotRun".Translate().ToString();
         DrawBusyActionRow(
             listing,
             Testing.TryGetValue(providerId, out bool val) && val,

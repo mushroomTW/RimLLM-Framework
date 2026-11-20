@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -86,7 +84,7 @@ public static class RimLLMMarkdown
     /// <paramref name="extraSpans"/>（表格）後，將一般文本中的 **內容** 預先轉換為
     /// Unity 原生支援的 &lt;b&gt;內容&lt;/b&gt;。
     /// </summary>
-    private static string PreprocessMarkdown(string markdown, List<(int Start, int End)> extraSpans = null)
+    private static string? PreprocessMarkdown(string? markdown, List<(int Start, int End)>? extraSpans = null)
     {
         if (string.IsNullOrEmpty(markdown)) return markdown;
 
@@ -197,7 +195,7 @@ public static class RimLLMMarkdown
     /// <summary>
     /// 將 Markdown 文字轉換為 Unity IMGUI 支援的 rich text。
     /// </summary>
-    public static string ToRichText(string markdown)
+    public static string? ToRichText(string? markdown)
     {
         if (markdown == null) return null;
         if (markdown.Length == 0) return string.Empty;
@@ -205,7 +203,7 @@ public static class RimLLMMarkdown
         string sanitized = SanitizeUnityTags(markdown, preserveTrustedColorWrapper: true);
         // 表格由 Markdig 辨識後，把整張表的範圍一併排除在粗體預轉換之外：
         // 欄位裡的 ** 常是語意標記（熱情等級、版本號），不是粗體。
-        string preprocessed = PreprocessMarkdown(sanitized, CollectTableSpans(sanitized));
+        string preprocessed = PreprocessMarkdown(sanitized, CollectTableSpans(sanitized)) ?? string.Empty;
         MarkdownDocument document = Markdown.Parse(preprocessed, Pipeline);
         var sb = new StringBuilder(preprocessed.Length + 64);
         var renderer = new UnityRichTextRenderer(sb, preprocessed);

@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -37,10 +35,10 @@ public static class DebugSettingsDrawer
     #pragma warning disable S1144 // 透過 System.Text.Json 反序列化器賦值 init 存取子，靜態分析無法偵測，不可移除。
     private sealed class SchemaSelfTestPayload
     {
-        public string Summary { get; init; }
+        public required string Summary { get; init; }
         public int Score { get; init; }
         public int? OptionalScore { get; init; }
-        public List<string> Tags { get; init; }
+        public required List<string> Tags { get; init; }
     }
     #pragma warning restore S1144
 
@@ -130,8 +128,8 @@ public static class DebugSettingsDrawer
 
         // manager 尚未初始化時（載入順序異常、或框架自身載入失敗）不能整段不畫 ——
         // 那會讓面板變成一片空白，看起來像「請求沒有被記錄」。改為退回讀持久化的遙測資料。
-        bool managerAvailable = RimLLMProvider.TryGetManager(out var manager);
-        List<RimLLMManager.RequestLogEntry> logs = managerAvailable
+        bool managerAvailable = RimLLMProvider.TryGetManager(out RimLLMManager? manager);
+        List<RimLLMManager.RequestLogEntry> logs = manager != null
             ? new List<RimLLMManager.RequestLogEntry>(manager.RequestLogs)
             : [];
 
@@ -382,7 +380,7 @@ public static class DebugSettingsDrawer
         {
             bool enabled = Settings.IsProviderEnabled(prov);
             bool hasKey = !string.IsNullOrEmpty(Settings.GetApiKey(prov));
-            string endpoint = Settings.GetEndpoint(prov, "default");
+            string? endpoint = Settings.GetEndpoint(prov, "default");
             sb.AppendLine(CultureInfo.InvariantCulture, $"  {prov}: Enabled={enabled}, HasKey={hasKey}, Endpoint={MaskEndpoint(endpoint)}");
             var models = Settings.GetModelList(prov);
             string modelPreview = models.Count > 20
@@ -423,7 +421,7 @@ public static class DebugSettingsDrawer
         return string.Concat(rawId.AsSpan(0, 4), "****", rawId.AsSpan(rawId.Length - 4));
     }
 
-    private static string MaskEndpoint(string endpoint)
+    private static string? MaskEndpoint(string? endpoint)
     {
         if (string.IsNullOrEmpty(endpoint)) return endpoint;
         try

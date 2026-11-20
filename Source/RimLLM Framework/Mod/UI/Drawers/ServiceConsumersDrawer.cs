@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using RimLLM_Framework.Manager;
@@ -19,9 +17,9 @@ public static class ServiceConsumersDrawer
     /// 宣告依賴的模組（packageId → 名稱）：Mod 清單在執行期不會變動，只算一次。
     /// 只存字串而不存 ModMetaData：該型別帶 Steamworks 欄位，單元測試以反射掃描本組件欄位型別時會載入失敗。
     /// </summary>
-    private static List<KeyValuePair<string, string>> _declaredMods;
+    private static List<KeyValuePair<string, string>>? _declaredMods;
 
-    private static List<ServiceConsumerRow> _rows;
+    private static List<ServiceConsumerRow>? _rows;
 
     /// <summary>上次組列時的呼叫端 modId 數量；集合只增不減，數量變了才重組。</summary>
     private static int _rowsCallerCount = -1;
@@ -61,7 +59,7 @@ public static class ServiceConsumersDrawer
     {
         get
         {
-            RimLLMUsageTracker tracker = RimLLMProvider.TryGetManager(out RimLLMManager manager) ? manager.UsageTracker : null;
+            RimLLMUsageTracker? tracker = RimLLMProvider.TryGetManager(out RimLLMManager? manager) ? manager.UsageTracker : null;
             int callerCount = tracker != null ? tracker.CallerModIdCount : 0;
             if (_rows != null && _rowsCallerCount == callerCount) return _rows;
 
@@ -90,7 +88,7 @@ public static class ServiceConsumersDrawer
 
             var mods = new List<KeyValuePair<string, string>>();
             // PackageIdPlayerFacing 不帶 _steam 後綴；PackageId 在本機與工作坊副本並存時會帶，與依賴宣告永遠比對不上。
-            string ownPackageId = LoadedModManager.GetMod<RimLLMFrameworkMod>()?.Content?.PackageIdPlayerFacing;
+            string? ownPackageId = LoadedModManager.GetMod<RimLLMFrameworkMod>()?.Content?.PackageIdPlayerFacing;
             if (!string.IsNullOrEmpty(ownPackageId))
             {
                 foreach (ModMetaData mod in ModsConfig.ActiveModsInLoadOrder)
@@ -144,10 +142,10 @@ public static class ServiceConsumersDrawer
 /// <summary>「使用中的模組」的一列。</summary>
 internal sealed class ServiceConsumerRow
 {
-    public string Name;
+    public required string? Name;
 
     /// <summary>對不上任何已啟用模組的 modId 為 null。</summary>
-    public string PackageId;
+    public required string? PackageId;
 
     public bool Declared;
 
@@ -193,7 +191,7 @@ internal static class ServiceConsumerList
 
             KeyValuePair<string, string>? mod = resolve(modId);
             string key = mod.HasValue ? mod.Value.Key : modId;
-            if (!byPackageId.TryGetValue(key, out ServiceConsumerRow row))
+            if (!byPackageId.TryGetValue(key, out ServiceConsumerRow? row))
             {
                 row = new ServiceConsumerRow { Name = mod.HasValue ? mod.Value.Value : modId, PackageId = mod?.Key };
                 byPackageId[key] = row;

@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -379,7 +377,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return _apiKeys.TryGetValue(providerId, out string val) ? val : "";
+            return _apiKeys.TryGetValue(providerId, out string? val) ? val : "";
         }
     }
 
@@ -393,7 +391,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            if (!_apiKeys.TryGetValue(providerId, out string raw) || string.IsNullOrEmpty(raw)) return "";
+            if (!_apiKeys.TryGetValue(providerId, out string? raw) || string.IsNullOrEmpty(raw)) return "";
 
             var keys = raw.Split(ApiKeySeparators, StringSplitOptions.RemoveEmptyEntries);
             if (keys.Length == 0) return "";
@@ -418,14 +416,14 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         }
     }
 
-    public string GetEndpoint(string providerId, string defaultVal)
+    public string? GetEndpoint(string providerId, string? defaultVal)
     {
         lock (_settingsLock)
         {
             bool isChina = _chinaModeProviders.TryGetValue(providerId, out bool china) && china;
-            string resolvedDefault = ResolveRegionalDefaultEndpoint(providerId, isChina) ?? defaultVal;
+            string? resolvedDefault = ResolveRegionalDefaultEndpoint(providerId, isChina) ?? defaultVal;
 
-            return _endpoints.TryGetValue(providerId, out string val) && !string.IsNullOrEmpty(val)
+            return _endpoints.TryGetValue(providerId, out string? val) && !string.IsNullOrEmpty(val)
                 ? val
                 : resolvedDefault;
         }
@@ -434,7 +432,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     /// <summary>
     /// 有中國／國際兩組網域的供應商的預設端點。其餘供應商回傳 null，由呼叫端沿用傳入的預設值。
     /// </summary>
-    private static string ResolveRegionalDefaultEndpoint(string providerId, bool isChina)
+    private static string? ResolveRegionalDefaultEndpoint(string providerId, bool isChina)
     {
         return providerId switch
         {
@@ -463,11 +461,11 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         }
     }
 
-    public void SetEndpoint(string providerId, string val)
+    public void SetEndpoint(string providerId, string? val)
     {
         lock (_settingsLock)
         {
-            _endpoints[providerId] = val;
+            _endpoints[providerId] = val ?? string.Empty;
         }
     }
 
@@ -490,16 +488,16 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     }
 
     /// <summary>取得相容 Mod 專用的 "供應商:模型" 條目；未指定回傳 null。</summary>
-    public string GetCompatModelPin(string modId)
+    public string? GetCompatModelPin(string modId)
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(modId) && _compatModelPins.TryGetValue(modId, out string pin) ? pin : null;
+            return !string.IsNullOrEmpty(modId) && _compatModelPins.TryGetValue(modId, out string? pin) ? pin : null;
         }
     }
 
     /// <summary>設定相容 Mod 專用模型；傳入空值代表清除，回到預設備援鏈。</summary>
-    public void SetCompatModelPin(string modId, string entry)
+    public void SetCompatModelPin(string modId, string? entry)
     {
         if (string.IsNullOrEmpty(modId)) return;
         lock (_settingsLock)
@@ -569,8 +567,8 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     /// </summary>
     private void ResetField(FieldInfo field, RimLLMFrameworkSettings defaults)
     {
-        object fresh = field.GetValue(defaults);
-        object current = field.GetValue(this);
+        object? fresh = field.GetValue(defaults);
+        object? current = field.GetValue(this);
         if (current is IDictionary dictionary && fresh is IDictionary freshDictionary)
         {
             dictionary.Clear();
@@ -591,7 +589,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            if (_providerModels.TryGetValue(providerId, out List<string> models))
+            if (_providerModels.TryGetValue(providerId, out List<string>? models))
                 return new List<string>(models); // 回傳複本，保證安全
             return [];
         }
@@ -605,7 +603,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return _providerModels.TryGetValue(providerId, out List<string> models) && models.Count > 0
+            return _providerModels.TryGetValue(providerId, out List<string>? models) && models.Count > 0
                 ? models[0]
                 : defaultVal;
         }
@@ -616,7 +614,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return _providerModels.TryGetValue(providerId, out List<string> models) ? models.Count : 0;
+            return _providerModels.TryGetValue(providerId, out List<string>? models) ? models.Count : 0;
         }
     }
 
@@ -641,9 +639,9 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
             _fallbackChain.RemoveAll(e => e == entry);
             _contextWindowOverrides.Remove(entry);
 
-            if (!ProviderIds.TrySplitModelId(entry, out _, out string modelName)) return;
+            if (!ProviderIds.TrySplitModelId(entry, out _, out string? modelName)) return;
             bool stillUsed = _fallbackChain.Exists(e =>
-                ProviderIds.TrySplitModelId(e, out _, out string otherModel) && otherModel == modelName);
+                ProviderIds.TrySplitModelId(e, out _, out string? otherModel) && otherModel == modelName);
             if (!stillUsed) _modelLevelOverrides.Remove(modelName);
         }
     }
@@ -657,7 +655,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
             {
                 return level;
             }
-            if (ProviderIds.TrySplitModelId(modelName, out _, out string stripped) &&
+            if (ProviderIds.TrySplitModelId(modelName, out _, out string? stripped) &&
                 _modelLevelOverrides.TryGetValue(stripped, out level))
             {
                 return level;
@@ -812,7 +810,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         lock (_settingsLock)
         {
             // 沒有預設模型：玩家沒選就回傳空字串，服務會拒絕送出並提示到設定頁選擇。
-            return !string.IsNullOrEmpty(providerId) && _embeddingModels.TryGetValue(providerId, out string val) ? val ?? "" : "";
+            return !string.IsNullOrEmpty(providerId) && _embeddingModels.TryGetValue(providerId, out string? val) ? val ?? "" : "";
         }
     }
 
@@ -821,7 +819,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(provider) && _embeddingModels.TryGetValue(provider, out string val) ? val ?? "" : "";
+            return !string.IsNullOrEmpty(provider) && _embeddingModels.TryGetValue(provider, out string? val) ? val ?? "" : "";
         }
     }
 
@@ -838,7 +836,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            if (!string.IsNullOrEmpty(providerId) && _embeddingEndpoints.TryGetValue(providerId, out string val) && !string.IsNullOrEmpty(val))
+            if (!string.IsNullOrEmpty(providerId) && _embeddingEndpoints.TryGetValue(providerId, out string? val) && !string.IsNullOrEmpty(val))
                 return val;
             return GetDefaultEmbeddingEndpoint(providerId);
         }
@@ -849,16 +847,16 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(provider) && _embeddingEndpoints.TryGetValue(provider, out string val) ? val ?? "" : "";
+            return !string.IsNullOrEmpty(provider) && _embeddingEndpoints.TryGetValue(provider, out string? val) ? val ?? "" : "";
         }
     }
 
-    public void SetEmbeddingEndpoint(string provider, string endpoint)
+    public void SetEmbeddingEndpoint(string provider, string? endpoint)
     {
         if (string.IsNullOrEmpty(provider)) return;
         lock (_settingsLock)
         {
-            _embeddingEndpoints[provider] = endpoint;
+            _embeddingEndpoints[provider] = endpoint ?? string.Empty;
         }
     }
 
@@ -866,7 +864,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(providerId) && _embeddingApiKeys.TryGetValue(providerId, out string val) ? val : "";
+            return !string.IsNullOrEmpty(providerId) && _embeddingApiKeys.TryGetValue(providerId, out string? val) ? val : "";
         }
     }
 
@@ -889,7 +887,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         lock (_settingsLock)
         {
             // 沒有預設模型：玩家沒選就回傳空字串，送決策前會被擋下。
-            return !string.IsNullOrEmpty(providerId) && _decisionModels.TryGetValue(providerId, out string value)
+            return !string.IsNullOrEmpty(providerId) && _decisionModels.TryGetValue(providerId, out string? value)
                 ? value ?? ""
                 : "";
         }
@@ -900,7 +898,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(provider) && _decisionModels.TryGetValue(provider, out string value)
+            return !string.IsNullOrEmpty(provider) && _decisionModels.TryGetValue(provider, out string? value)
                 ? value ?? ""
                 : "";
         }
@@ -920,7 +918,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         lock (_settingsLock)
         {
             if (!string.IsNullOrEmpty(providerId) &&
-                _decisionEndpoints.TryGetValue(providerId, out string value) &&
+                _decisionEndpoints.TryGetValue(providerId, out string? value) &&
                 !string.IsNullOrEmpty(value))
             {
                 return value;
@@ -934,13 +932,13 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(provider) && _decisionEndpoints.TryGetValue(provider, out string value)
+            return !string.IsNullOrEmpty(provider) && _decisionEndpoints.TryGetValue(provider, out string? value)
                 ? value ?? ""
                 : "";
         }
     }
 
-    public void SetDecisionEndpoint(string provider, string endpoint)
+    public void SetDecisionEndpoint(string provider, string? endpoint)
     {
         if (string.IsNullOrEmpty(provider)) return;
         lock (_settingsLock)
@@ -953,7 +951,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     {
         lock (_settingsLock)
         {
-            return !string.IsNullOrEmpty(providerId) && _decisionApiKeys.TryGetValue(providerId, out string value)
+            return !string.IsNullOrEmpty(providerId) && _decisionApiKeys.TryGetValue(providerId, out string? value)
                 ? value
                 : "";
         }

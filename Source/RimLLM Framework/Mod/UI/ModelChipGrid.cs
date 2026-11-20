@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using RimWorld;
@@ -33,7 +31,7 @@ internal static class ModelChipGrid
         }
         listing.Gap(2f);
 
-        string filter = filters.TryGetValue(providerId, out string current) ? current : "";
+        string filter = filters.TryGetValue(providerId, out string? current) ? current : "";
         Rect searchRowRect = listing.GetRect(28f);
         string searchLabel = "RimLLM_Search".Translate() + ": ";
         float searchLabelWidth = Text.CalcSize(searchLabel).x;

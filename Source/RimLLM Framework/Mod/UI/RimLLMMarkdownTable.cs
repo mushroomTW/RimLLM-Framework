@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,9 +13,9 @@ namespace RimLLM_Framework.Mod;
 public readonly struct RimLLMMarkdownSegment
 {
     public readonly string Markdown;
-    public readonly IReadOnlyList<string[]> Rows;
+    public readonly IReadOnlyList<string[]>? Rows;
 
-    public RimLLMMarkdownSegment(string markdown, IReadOnlyList<string[]> rows)
+    public RimLLMMarkdownSegment(string markdown, IReadOnlyList<string[]>? rows)
     {
         Markdown = markdown;
         Rows = rows;
@@ -43,13 +41,13 @@ public sealed class RimLLMMarkdownTable
     private static readonly GUIContent MeasureContent = new();
 
     /// <summary>已轉成 rich text 的儲存格（第一列為表頭），欄數補齊。</summary>
-    public string[][] Cells { get; private set; }
-    public float[] ColumnWidths { get; private set; }
-    public float[] RowHeights { get; private set; }
+    public string[][] Cells { get; private set; } = [];
+    public float[] ColumnWidths { get; private set; } = [];
+    public float[] RowHeights { get; private set; } = [];
     public float Width { get; private set; }
     public float Height { get; private set; }
     /// <summary>tab 分欄、換行分列的純文字，供複製到剪貼簿。</summary>
-    public string PlainText { get; private set; }
+    public string PlainText { get; private set; } = string.Empty;
 
     /// <summary>
     /// 只切出最外層的表格：引用或清單裡的表格留在文字段，交給 <see cref="RimLLMMarkdown.ToRichText"/> 攤平。
@@ -77,7 +75,7 @@ public sealed class RimLLMMarkdownTable
     /// <paramref name="renderCell"/> 把原始儲存格轉成 rich text，預設為 <see cref="RimLLMMarkdown.CellToRichText"/>；
     /// 呼叫端可藉此套上自己的文字顏色。
     /// </summary>
-    public static RimLLMMarkdownTable Layout(IReadOnlyList<string[]> rows, float width, Func<string, string> renderCell = null)
+    public static RimLLMMarkdownTable Layout(IReadOnlyList<string[]> rows, float width, Func<string, string>? renderCell = null)
     {
         renderCell ??= RimLLMMarkdown.CellToRichText;
         int columns = rows.Count == 0 ? 0 : rows.Max(row => row.Length);

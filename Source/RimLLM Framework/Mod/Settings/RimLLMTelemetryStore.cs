@@ -1,6 +1,5 @@
-#nullable disable
-
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -22,7 +21,7 @@ public class RimLLMTelemetryStore
     private const int MaxChatHistoryEntries = 100;
 
     private readonly System.Threading.Lock _ioLock = new();
-    private string _undecryptableEncryptedChatHistory;
+    private string? _undecryptableEncryptedChatHistory;
     private bool _preserveBackupOnSave;
 
     private readonly System.Threading.Lock _saveQueueLock = new();
@@ -54,15 +53,15 @@ public class RimLLMTelemetryStore
     private sealed class TelemetryDto
     {
         /// <summary>加密後的對話歷史（JSON 陣列序列化後再以 AES 加密）。</summary>
-        public string EncryptedChatHistory;
+        public string? EncryptedChatHistory;
 
-        public List<RimLLMManager.RequestLogEntry> RequestLogs;
+        public List<RimLLMManager.RequestLogEntry> RequestLogs = null!;
         public long TotalPromptTokens;
         public long TotalCompletionTokens;
         public float TotalEstimatedCost;
         public float DailyAccumulatedCost;
         public long DailyAccumulatedTokens;
-        public string DailyBudgetResetDate;
+        public string DailyBudgetResetDate = null!;
     }
 
     private static string GetFilePath()
@@ -76,7 +75,7 @@ public class RimLLMTelemetryStore
     /// </summary>
     /// <param name="action">用途（"load" 或 "save"），僅用於日誌訊息。</param>
     /// <param name="path">解析出的檔案路徑；失敗時為 null。</param>
-    private static bool TryResolveFilePath(string action, out string path)
+    private static bool TryResolveFilePath(string action, [NotNullWhen(true)] out string? path)
     {
         try
         {
@@ -125,7 +124,7 @@ public class RimLLMTelemetryStore
     {
         lock (_ioLock)
         {
-            if (!TryResolveFilePath("load", out string path))
+            if (!TryResolveFilePath("load", out string? path))
             {
                 return;
             }
@@ -238,7 +237,7 @@ public class RimLLMTelemetryStore
         }
     }
 
-    private static List<string> ReadChatHistory(TelemetryDto dto, out string undecryptableEncryptedChatHistory)
+    private static List<string> ReadChatHistory(TelemetryDto dto, out string? undecryptableEncryptedChatHistory)
     {
         undecryptableEncryptedChatHistory = null;
         if (string.IsNullOrEmpty(dto.EncryptedChatHistory))
@@ -246,7 +245,7 @@ public class RimLLMTelemetryStore
             return [];
         }
 
-        string plain = EncryptionUtility.Decrypt(dto.EncryptedChatHistory);
+        string? plain = EncryptionUtility.Decrypt(dto.EncryptedChatHistory);
         if (plain == null)
         {
             // 無法取得原使用者的受保護 key 時，以空歷史起始，但保留密文，
@@ -321,7 +320,7 @@ public class RimLLMTelemetryStore
     {
         lock (_ioLock)
         {
-            if (!TryResolveFilePath("save", out string path))
+            if (!TryResolveFilePath("save", out string? path))
             {
                 return;
             }
@@ -368,7 +367,7 @@ public class RimLLMTelemetryStore
     /// <summary>
     /// 產生要寫出的加密歷史。歷史為空時沿用先前解不開的密文，不可用 null 覆寫。
     /// </summary>
-    private string BuildEncryptedChatHistory()
+    private string? BuildEncryptedChatHistory()
     {
         if (ChatHistory != null && ChatHistory.Count > 0)
         {
@@ -395,7 +394,7 @@ public class RimLLMTelemetryStore
         }
     }
 
-    private static void ReplaceAtomically(string tempPath, string path, string backupPath)
+    private static void ReplaceAtomically(string tempPath, string path, string? backupPath)
     {
         if (!File.Exists(path))
         {
@@ -451,7 +450,7 @@ public class RimLLMTelemetryStore
     /// <summary>
     /// 部分檔案系統不支援 File.Replace 時的退回方案：「先備份再覆寫」。
     /// </summary>
-    private static void ReplaceViaBackup(string tempPath, string path, string backupPath)
+    private static void ReplaceViaBackup(string tempPath, string path, string? backupPath)
     {
         SafeDeleteFile(backupPath);
         TryMoveToBackup(path, backupPath);
@@ -462,11 +461,11 @@ public class RimLLMTelemetryStore
     /// 把現有主檔搬到 .bak。搬不動時仍繼續覆寫主檔；若因此覆寫不了，
     /// 後續的 File.Move 會拋出並由呼叫端記錄，行為與先前一致。
     /// </summary>
-    private static void TryMoveToBackup(string path, string backupPath)
+    private static void TryMoveToBackup(string path, string? backupPath)
     {
         try
         {
-            File.Move(path, backupPath);
+            File.Move(path, backupPath ?? throw new ArgumentNullException(nameof(backupPath)));
         }
         catch (Exception ex)
         {
@@ -478,7 +477,7 @@ public class RimLLMTelemetryStore
     /// 刪除檔案（不存在視為成功）。清理暫存檔失敗只會留下垃圾檔，不影響資料正確性，
     /// 因此僅記錄警告而不拋出，避免蓋掉真正導致失敗的例外。
     /// </summary>
-    private static void SafeDeleteFile(string filePath)
+    private static void SafeDeleteFile(string? filePath)
     {
         try
         {

@@ -1,5 +1,3 @@
-#nullable disable
-
 using System.Collections.Generic;
 using RimLLM_Framework.Compat;
 using UnityEngine;
@@ -35,12 +33,12 @@ public static class CompatSettingsDrawer
     /// </summary>
     private sealed class Row
     {
-        public RimLLMCompatTarget Target;
+        public required RimLLMCompatTarget Target;
         public CompatRowState State;
-        public string Title;
+        public required string Title;
     }
 
-    private static List<Row> _rows;
+    private static List<Row>? _rows;
 
     /// <summary>
     /// 排序：可用（已啟用且掛載成功）→ 掛載失敗 → 已安裝未啟用 → 未安裝。
@@ -118,7 +116,7 @@ public static class CompatSettingsDrawer
     private static void DrawModelPicker(Rect rect, Row row)
     {
         string modId = row.Target.ModId;
-        string pin = Settings.GetCompatModelPin(modId);
+        string? pin = Settings.GetCompatModelPin(modId);
         string shown = string.IsNullOrEmpty(pin) ? (string)"RimLLM_CompatModelDefault".Translate() : pin;
 
         Rect labelRect = new(rect.x + RowPadding, rect.y, 120f, rect.height);
@@ -147,7 +145,7 @@ public static class CompatSettingsDrawer
     }
 
     /// <summary>儲存專用模型，並重新寫入該 Mod 的設定，讓它設定頁顯示的模型名跟著更新。</summary>
-    private static void SavePin(RimLLMCompatTarget target, string entry)
+    private static void SavePin(RimLLMCompatTarget target, string? entry)
     {
         Settings.SetCompatModelPin(target.ModId, entry);
         Settings.Write();

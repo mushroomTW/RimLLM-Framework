@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -316,7 +314,7 @@ public static class DecisionSettingsDrawer
             List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
                 "decision:" + providerId,
                 Settings.ModelListVersion,
-                ModelFilters.TryGetValue(providerId, out string filter) ? filter : "",
+                ModelFilters.TryGetValue(providerId, out string? filter) ? filter : "",
                 () => Settings.GetModelList(modelListKey));
 
             Rect scrollRect = listing.GetRect(200f);
@@ -346,7 +344,7 @@ public static class DecisionSettingsDrawer
             Fetching.TryGetValue(providerId, out bool fetching) && fetching,
             "RimLLM_Fetching".Translate(),
             "RimLLM_FetchModelsBtn".Translate(),
-            FetchStatus.TryGetValue(providerId, out string fetchStatus)
+            FetchStatus.TryGetValue(providerId, out string? fetchStatus)
                 ? fetchStatus
                 : "RimLLM_FetchStatusNotRun".Translate().ToString(),
             () => StartFetchDecisionModels(providerId),
@@ -411,7 +409,7 @@ public static class DecisionSettingsDrawer
             Testing.TryGetValue(providerId, out bool testing) && testing,
             "RimLLM_DecisionTesting".Translate(),
             "RimLLM_DecisionTestBtn".Translate(),
-            TestStatus.TryGetValue(providerId, out string testStatus)
+            TestStatus.TryGetValue(providerId, out string? testStatus)
                 ? testStatus
                 : "RimLLM_TestStatusNotRun".Translate().ToString(),
             () => StartTestDecision(providerId),

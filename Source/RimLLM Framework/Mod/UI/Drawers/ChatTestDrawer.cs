@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -28,7 +26,7 @@ public static partial class ChatTestDrawer
     private static ReasoningEffort? chatReasoningEffort;
     private static bool chatReasoningInitialized;
     /// <summary>對話測試釘選的模型（"Provider:Model"），null 代表自動、沿用備援鏈順序。</summary>
-    private static string chatModelId;
+    private static string? chatModelId;
 
     /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
     private const string ChatInputControlName = "RimLLM_ChatInput";
@@ -42,7 +40,7 @@ public static partial class ChatTestDrawer
     private static readonly char[] SpaceTrimChars = [' '];
 
     /// <summary>目前進行中請求的取消來源，供「清空」按鈕中止長時間回應。</summary>
-    private static System.Threading.CancellationTokenSource chatCts;
+    private static System.Threading.CancellationTokenSource? chatCts;
     // 取消或清除時遞增；回呼在主執行緒真正執行時才檢查，避免舊索引寫入新歷史。
     private static long chatRequestGeneration;
 
@@ -98,7 +96,7 @@ public static partial class ChatTestDrawer
     /// <param name="meta">此則回覆的遙測元資料（用量、模型、延遲等）。</param>
     /// <param name="persist">是否一併寫回遙測並解除載入狀態（串流結束時使用）。</param>
     /// <param name="scrollToBottom">是否把對話框捲到底。</param>
-    private static void UpdateAiHistoryEntry(long requestGeneration, int index, string reply, ChatEntryMeta meta = null, bool persist = false, bool scrollToBottom = true)
+    private static void UpdateAiHistoryEntry(long requestGeneration, int index, string reply, ChatEntryMeta? meta = null, bool persist = false, bool scrollToBottom = true)
     {
         EnqueueChatUpdate(requestGeneration, () =>
         {
@@ -122,7 +120,7 @@ public static partial class ChatTestDrawer
         });
     }
 
-    private static void UpdateChatError(long requestGeneration, int index, string message)
+    private static void UpdateChatError(long requestGeneration, int index, string? message)
     {
         EnqueueChatUpdate(requestGeneration, () =>
         {
@@ -440,8 +438,8 @@ public static partial class ChatTestDrawer
     /// <summary>一段內文：<see cref="Table"/> 不為 null 時是逐格繪製的表格，否則是 <see cref="Rich"/> 文字。</summary>
     private sealed class BubblePart
     {
-        public string Rich;
-        public RimLLMMarkdownTable Table;
+        public string? Rich;
+        public RimLLMMarkdownTable? Table;
         public float Height;
     }
 
@@ -452,7 +450,7 @@ public static partial class ChatTestDrawer
     /// </summary>
     private static List<BubblePart> RenderMarkdownBody(string body, GUIStyle richLabelStyle, float width)
     {
-        SplitMarkdownBody(body, out string reasoning, out string answer);
+        SplitMarkdownBody(body, out string? reasoning, out string? answer);
         string formatted = (FormatReasoning(reasoning, !string.IsNullOrEmpty(answer)) + (FormatThinkProcess(answer) ?? string.Empty)).Trim();
         int answerStart = 0;
         if (formatted.Contains("<color=silver>" + ThinkingLabel))
@@ -469,7 +467,7 @@ public static partial class ChatTestDrawer
         var parts = new List<BubblePart>();
         void AddText(string text)
         {
-            string rich = RimLLMMarkdown.ToRichText(text);
+            string rich = RimLLMMarkdown.ToRichText(text) ?? string.Empty;
             if (string.IsNullOrWhiteSpace(rich)) return;
             parts.Add(new BubblePart { Rich = rich, Height = richLabelStyle.CalcHeight(new GUIContent(rich), width) });
         }
@@ -482,7 +480,7 @@ public static partial class ChatTestDrawer
                 AddText(segment.Markdown);
                 continue;
             }
-            RimLLMMarkdownTable table = RimLLMMarkdownTable.Layout(segment.Rows, width);
+            RimLLMMarkdownTable table = RimLLMMarkdownTable.Layout(segment.Rows ?? [], width);
             parts.Add(new BubblePart { Table = table, Height = table.Height });
         }
         return parts;
@@ -509,9 +507,9 @@ public static partial class ChatTestDrawer
 
     private static void DrawModelBadge(ref float curX, Rect area, BubbleLayout layout, float gap)
     {
-        string modelDisplay = layout.ModelDisplay;
+        string? modelDisplay = layout.ModelDisplay;
         if (string.IsNullOrEmpty(modelDisplay)) return;
-        string modelId = layout.Meta.ModelId;
+        string modelId = layout.Meta?.ModelId ?? string.Empty;
 
         float modelW = Mathf.Min(layout.ModelTextWidth + 6f, area.width * 0.6f);
         Rect modelRect = new(curX, area.y, modelW, area.height);
@@ -573,11 +571,12 @@ public static partial class ChatTestDrawer
 
         if (hovered)
         {
-            ChatEntryMeta meta = layout.Meta;
-            float timeSec = meta.ElapsedMs / 1000f;
-            string statTip = meta.IsEstimatedTokens
-                ? "RimLLM_ChatStatBadgeTooltipEst".Translate(meta.ElapsedMs, timeSec.ToString("F2", CultureInfo.InvariantCulture), meta.TotalTokens.ToString("N0", CultureInfo.InvariantCulture))
-                : "RimLLM_ChatStatBadgeTooltip".Translate(meta.ElapsedMs, timeSec.ToString("F2", CultureInfo.InvariantCulture), meta.TotalTokens.ToString("N0", CultureInfo.InvariantCulture), meta.PromptTokens.ToString("N0", CultureInfo.InvariantCulture), meta.CompletionTokens.ToString("N0", CultureInfo.InvariantCulture));
+            ChatEntryMeta? meta = layout.Meta;
+            if (meta is not { } stat) return;
+            float timeSec = stat.ElapsedMs / 1000f;
+            string statTip = stat.IsEstimatedTokens
+                ? "RimLLM_ChatStatBadgeTooltipEst".Translate(stat.ElapsedMs, timeSec.ToString("F2", CultureInfo.InvariantCulture), stat.TotalTokens.ToString("N0", CultureInfo.InvariantCulture))
+                : "RimLLM_ChatStatBadgeTooltip".Translate(stat.ElapsedMs, timeSec.ToString("F2", CultureInfo.InvariantCulture), stat.TotalTokens.ToString("N0", CultureInfo.InvariantCulture), stat.PromptTokens.ToString("N0", CultureInfo.InvariantCulture), stat.CompletionTokens.ToString("N0", CultureInfo.InvariantCulture));
             TooltipHandler.TipRegion(statRect, statTip);
         }
     }
@@ -588,18 +587,18 @@ public static partial class ChatTestDrawer
     /// </summary>
     private sealed class BubbleLayout
     {
-        public string Entry;
+        public required string Entry;
         public bool IsUser;
-        public string Body;
+        public required string Body;
         /// <summary>原始 Markdown 內文切成的段落；舊紀錄為 null，直接畫 <see cref="Body"/>。</summary>
-        public List<BubblePart> Parts;
-        public ChatEntryMeta Meta;
+        public List<BubblePart>? Parts;
+        public ChatEntryMeta? Meta;
         public float Height;
         public float TextHeight;
-        public string HeaderText;
-        public string ModelDisplay;
+        public required string HeaderText;
+        public string? ModelDisplay;
         public float ModelTextWidth;
-        public string StatText;
+        public string? StatText;
         public float StatTextWidth;
     }
 
@@ -607,7 +606,7 @@ public static partial class ChatTestDrawer
     private static float _layoutCacheWidth = -1f;
     private static GameFont _layoutCacheFont;
 
-    private static GUIStyle _richLabelStyle;
+    private static GUIStyle? _richLabelStyle;
     private static GameFont _richLabelStyleFont;
 
     /// <summary>
@@ -667,8 +666,9 @@ public static partial class ChatTestDrawer
 
     private static BubbleLayout BuildBubbleLayout(string entry, GUIStyle richLabelStyle, float bubbleInnerWidth)
     {
-        bool isUser = ParseMessage(entry, out string label, out string body, out ChatEntryMeta meta);
-        List<BubblePart> parts = null;
+        bool isUser = ParseMessage(entry, out string? label, out string? parsedBody, out ChatEntryMeta? meta);
+        string body = parsedBody ?? string.Empty;
+        List<BubblePart>? parts = null;
         float textHeight;
         if (body.StartsWith(MarkdownBodyMarker, StringComparison.Ordinal))
         {

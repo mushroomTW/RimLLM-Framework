@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using RimLLM_Framework.Manager.Services;
@@ -50,7 +48,7 @@ public static class RimLLMSettingsUI
     public static void Initialize(RimLLMFrameworkSettings settings)
     {
         ChatTestDrawer.Initialize(settings);
-        if (RimLLMDecisionProviderCatalog.TryGet(settings.DecisionProvider, out RimLLMDecisionProvider activeDecisionProvider))
+        if (RimLLMDecisionProviderCatalog.TryGet(settings.DecisionProvider, out RimLLMDecisionProvider? activeDecisionProvider))
         {
             DecisionSettingsDrawer.ActiveDecisionSubTab = activeDecisionProvider.Id;
         }
@@ -145,7 +143,7 @@ public static class RimLLMSettingsUI
             contentRect.width,
             contentRect.height - 26f);
         // 正在看的分頁屬於進階群組時強制展開，否則選中的項目會被折疊藏起來。
-        DetailPage activePage = FindPage(activeMainCategory);
+        DetailPage? activePage = FindPage(activeMainCategory);
         bool expanded = _advancedExpanded || (activePage != null && activePage.Advanced);
 
         float viewHeight = GroupHeaderHeight + CategoryButtonGap;
@@ -178,7 +176,7 @@ public static class RimLLMSettingsUI
         }
     }
 
-    private static void DrawAdvancedGroupHeader(Listing_Standard listing, bool expanded, DetailPage activePage)
+    private static void DrawAdvancedGroupHeader(Listing_Standard listing, bool expanded, DetailPage? activePage)
     {
         listing.Gap(CategoryButtonGap);
         Rect rect = listing.GetRect(GroupHeaderHeight - CategoryButtonGap);
@@ -263,7 +261,7 @@ public static class RimLLMSettingsUI
     /// <summary>跳到決策模型頁；已啟用某家時直接選中那一家。</summary>
     internal static void OpenDecisionPage()
     {
-        if (RimLLMDecisionProviderCatalog.TryGet(RimLLMFrameworkMod.Settings.DecisionProvider, out RimLLMDecisionProvider provider))
+        if (RimLLMDecisionProviderCatalog.TryGet(RimLLMFrameworkMod.Settings.DecisionProvider, out RimLLMDecisionProvider? provider))
         {
             DecisionSettingsDrawer.ActiveDecisionSubTab = provider.Id;
         }
@@ -274,7 +272,7 @@ public static class RimLLMSettingsUI
     {
         Rect contentRect = rect.ContractedBy(8f);
         Rect titleRect = new(contentRect.x, contentRect.y, contentRect.width, 24f);
-        DetailPage page = FindPage(activeMainCategory);
+        DetailPage? page = FindPage(activeMainCategory);
         string titleText = page != null ? page.Title() : string.Empty;
 
         Widgets.Label(titleRect, $"<size=14><b>{titleText}</b></size>");
@@ -335,7 +333,7 @@ public static class RimLLMSettingsUI
 
     private static float GetDetailViewHeight(float width)
     {
-        DetailPage page = FindPage(activeMainCategory);
+        DetailPage? page = FindPage(activeMainCategory);
         return page != null ? page.EstimateHeight(width) : 280f;
     }
 
@@ -347,11 +345,11 @@ public static class RimLLMSettingsUI
     /// </summary>
     private sealed class DetailPage
     {
-        public string Id;
-        public string MenuLabelKey;
-        public Func<string> Title;
-        public Action<Listing_Standard> Draw;
-        public Func<float, float> EstimateHeight;
+        public required string Id;
+        public required string MenuLabelKey;
+        public required Func<string> Title;
+        public required Action<Listing_Standard> Draw;
+        public required Func<float, float> EstimateHeight;
         /// <summary>屬於「進階設定」群組：預設折疊，新玩家不必看。</summary>
         public bool Advanced;
     }
@@ -481,7 +479,7 @@ public static class RimLLMSettingsUI
         }
     ];
 
-    private static DetailPage FindPage(string categoryId)
+    private static DetailPage? FindPage(string categoryId)
     {
         foreach (DetailPage page in Pages)
         {

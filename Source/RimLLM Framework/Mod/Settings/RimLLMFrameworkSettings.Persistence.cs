@@ -1,6 +1,5 @@
-#nullable disable
-
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.AI;
@@ -21,16 +20,17 @@ public partial class RimLLMFrameworkSettings
     /// </summary>
     private sealed class SettingsDto
     {
-        public List<string> FallbackChain;
-        public Dictionary<string, string> EncryptedApiKeys;
-        public Dictionary<string, string> Endpoints;
-        public Dictionary<string, bool> EnabledProviders;
-        public Dictionary<string, List<string>> ProviderModels;
-        public Dictionary<string, bool> ChinaModeProviders;
-        public Dictionary<string, int> ModelLevelOverrides;
-        public Dictionary<string, Dictionary<string, int>> ProviderContextWindows;
-        public Dictionary<string, Dictionary<string, bool>> ProviderVisionSupport;
-        public Dictionary<string, int> ContextWindowOverrides;
+        // 以下欄位由 System.Text.Json 反序列化時以反射填入；宣告時尚未有值，故以 null! 標示（未出現在 JSON 中的欄位保持 null）。
+        public List<string> FallbackChain = null!;
+        public Dictionary<string, string> EncryptedApiKeys = null!;
+        public Dictionary<string, string> Endpoints = null!;
+        public Dictionary<string, bool> EnabledProviders = null!;
+        public Dictionary<string, List<string>> ProviderModels = null!;
+        public Dictionary<string, bool> ChinaModeProviders = null!;
+        public Dictionary<string, int> ModelLevelOverrides = null!;
+        public Dictionary<string, Dictionary<string, int>> ProviderContextWindows = null!;
+        public Dictionary<string, Dictionary<string, bool>> ProviderVisionSupport = null!;
+        public Dictionary<string, int> ContextWindowOverrides = null!;
         public float ApiTimeout;
         public int MaxRetries;
         public float RetryDelay;
@@ -47,17 +47,17 @@ public partial class RimLLMFrameworkSettings
         public bool EnableNativeSchema = true;
         public bool EnableJsonRepair = true;
         public string EmbeddingProvider = DisabledProvider;
-        public Dictionary<string, string> EmbeddingModels;
-        public Dictionary<string, string> EmbeddingEndpoints;
-        public Dictionary<string, string> EncryptedEmbeddingApiKeys;
-        public Dictionary<string, bool> CompatTakeovers;
-        public Dictionary<string, string> CompatModelPins;
+        public Dictionary<string, string> EmbeddingModels = null!;
+        public Dictionary<string, string> EmbeddingEndpoints = null!;
+        public Dictionary<string, string> EncryptedEmbeddingApiKeys = null!;
+        public Dictionary<string, bool> CompatTakeovers = null!;
+        public Dictionary<string, string> CompatModelPins = null!;
         public string DecisionProvider = RimLLMDecisionProviderCatalog.Disabled;
-        public Dictionary<string, string> DecisionModels;
-        public Dictionary<string, string> DecisionEndpoints;
-        public Dictionary<string, string> EncryptedDecisionApiKeys;
-        public List<string> EmbeddingFallbackChain;
-        public List<string> DecisionFallbackChain;
+        public Dictionary<string, string> DecisionModels = null!;
+        public Dictionary<string, string> DecisionEndpoints = null!;
+        public Dictionary<string, string> EncryptedDecisionApiKeys = null!;
+        public List<string> EmbeddingFallbackChain = null!;
+        public List<string> DecisionFallbackChain = null!;
     }
 
     /// <summary>
@@ -125,7 +125,7 @@ public partial class RimLLMFrameworkSettings
         var encryptedKeys = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var kvp in sourceKeys)
         {
-            if (TryEncryptForSave(kvp.Value, out string cipher))
+            if (TryEncryptForSave(kvp.Value, out string? cipher))
             {
                 encryptedKeys[kvp.Key] = cipher;
             }
@@ -265,7 +265,7 @@ public partial class RimLLMFrameworkSettings
         if (encryptedKeys == null) return;
         foreach (var kvp in encryptedKeys)
         {
-            string plain = EncryptionUtility.Decrypt(kvp.Value);
+            string? plain = EncryptionUtility.Decrypt(kvp.Value);
             if (plain != null)
             {
                 targetDecrypted[kvp.Key] = plain;
@@ -421,7 +421,7 @@ public partial class RimLLMFrameworkSettings
     /// 系統鑰匙圈可能鎖定或無法連線，DPAPI 也可能因使用者設定檔不可讀寫而失敗。
     /// 金鑰仍留在記憶體中，加密恢復正常後的下一次存檔就會寫回。
     /// </summary>
-    internal static bool TryEncryptForSave(string plainText, out string cipherText)
+    internal static bool TryEncryptForSave(string plainText, [NotNullWhen(true)] out string? cipherText)
     {
         try
         {

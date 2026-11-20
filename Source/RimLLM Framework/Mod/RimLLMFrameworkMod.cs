@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
@@ -19,7 +17,7 @@ public class RimLLMFrameworkMod : Verse.Mod
     /// <summary>
     /// 全域設定檔實例。
     /// </summary>
-    internal static RimLLMFrameworkSettings Settings { get; private set; }
+    internal static RimLLMFrameworkSettings Settings { get; private set; } = null!; // 由 Mod 建構子（遊戲載入 Mod 時）指派，之後才會被存取。
 
     public RimLLMFrameworkMod(ModContentPack content) : base(content)
     {

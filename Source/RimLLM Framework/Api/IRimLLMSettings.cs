@@ -52,7 +52,7 @@ public interface IRimLLMSettings
     /// <summary>
     /// 獲取指定供應商的 API 端點。
     /// </summary>
-    string GetEndpoint(string providerId, string defaultVal);
+    string? GetEndpoint(string providerId, string? defaultVal);
 
     /// <summary>
     /// 檢查指定供應商是否啟用。

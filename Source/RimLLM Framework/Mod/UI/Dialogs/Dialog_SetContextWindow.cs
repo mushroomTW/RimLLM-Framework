@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using UnityEngine;
 using Verse;
@@ -17,7 +15,7 @@ public class Dialog_SetContextWindow : Window
     private readonly string _entry;
     private readonly Action<int> _onConfirmed;
     private int _tokens;
-    private string _buffer;
+    private string _buffer = string.Empty;
 
     public override Vector2 InitialSize => new(420f, 200f);
 

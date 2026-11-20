@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,7 +27,7 @@ internal static class SetupStatus
     /// <summary>
     /// 依備援鏈判斷設定狀態。<paramref name="firstUsableEntry"/> 為第一個可用的條目（供首頁顯示「目前使用」）。
     /// </summary>
-    internal static SetupState Evaluate(IReadOnlyList<string> chain, Func<string, bool> isProviderUsable, out string firstUsableEntry)
+    internal static SetupState Evaluate(IReadOnlyList<string> chain, Func<string, bool> isProviderUsable, out string? firstUsableEntry)
     {
         firstUsableEntry = null;
         bool hasEntry = false;
@@ -37,7 +35,7 @@ internal static class SetupStatus
         {
             foreach (string entry in chain)
             {
-                string providerId = ProviderIds.ParseProviderId(entry);
+                string? providerId = ProviderIds.ParseProviderId(entry);
                 if (providerId == null) continue;
                 hasEntry = true;
                 if (isProviderUsable(providerId))
@@ -51,7 +49,7 @@ internal static class SetupStatus
     }
 
     /// <summary>以目前的設定判斷狀態。</summary>
-    internal static SetupState Current(out string firstUsableEntry)
+    internal static SetupState Current(out string? firstUsableEntry)
     {
         return Evaluate(RimLLMFrameworkMod.Settings.FallbackChain, IsProviderUsable, out firstUsableEntry);
     }
@@ -78,7 +76,7 @@ internal static class SetupStatus
     /// 對話供應商對應的雲端 Embedding 供應商；這幾家的 Embedding 金鑰留空時會沿用對話金鑰，
     /// 因此精靈可以一鍵開啟。其他供應商（含本機服務，需另外載入向量模型）回傳 null，改請玩家到進階頁設定。
     /// </summary>
-    internal static string OneClickEmbeddingProviderFor(string chatProviderId)
+    internal static string? OneClickEmbeddingProviderFor(string chatProviderId)
     {
         if (chatProviderId == ProviderIds.Gemini) return "Google";
         if (chatProviderId == ProviderIds.OpenAI) return "OpenAI";
@@ -90,7 +88,7 @@ internal static class SetupStatus
     /// 對話供應商對應、可沿用對話金鑰的決策供應商（依目錄的 <see cref="RimLLMDecisionProvider.ChatKeyProviderId"/>）。
     /// 其他決策服務與對話供應商無關，回傳 null，改請玩家到進階頁設定。
     /// </summary>
-    internal static string OneClickDecisionProviderFor(string chatProviderId)
+    internal static string? OneClickDecisionProviderFor(string chatProviderId)
     {
         foreach (RimLLMDecisionProvider provider in RimLLMDecisionProviderCatalog.All)
         {

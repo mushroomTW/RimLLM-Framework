@@ -78,7 +78,7 @@ public class OpenAIProvider : ILLMProvider
         {
             apiKey = PlaceholderApiKey;
         }
-        string endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
+        string? endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
         IChatClient rawClient = CreateOpenAiChatClient(apiKey, model, endpoint);
         return new OpenAIChatClientAdapter(rawClient, this, model);
     }

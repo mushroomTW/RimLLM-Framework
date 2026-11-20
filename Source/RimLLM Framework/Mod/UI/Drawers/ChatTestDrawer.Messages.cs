@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -35,7 +33,7 @@ public static partial class ChatTestDrawer
 
         private static readonly char[] PipeSeparator = ['|'];
 
-        public static ChatEntryMeta Deserialize(string raw)
+        public static ChatEntryMeta? Deserialize(string raw)
         {
             if (string.IsNullOrEmpty(raw)) return null;
             var meta = new ChatEntryMeta();
@@ -105,7 +103,7 @@ public static partial class ChatTestDrawer
     }
 
     /// <summary><see cref="BuildMarkdownBody"/> 的反向：拆出推理內容與答案。標記不完整時整段視為答案。</summary>
-    internal static void SplitMarkdownBody(string body, out string reasoning, out string answer)
+    internal static void SplitMarkdownBody(string body, out string? reasoning, out string? answer)
     {
         reasoning = string.Empty;
         answer = body ?? string.Empty;
@@ -128,7 +126,7 @@ public static partial class ChatTestDrawer
     /// 答案部分仍要經過 <see cref="FormatThinkProcess"/>，因為部分模型（如本機 Ollama/Qwen）
     /// 把 &lt;think&gt; 直接寫在正文裡，那是一般文字，MEAI 不會拆成推理內容。
     /// </summary>
-    private static string FormatReasoning(string reasoning, bool hasAnswer)
+    private static string FormatReasoning(string? reasoning, bool hasAnswer)
     {
         if (string.IsNullOrWhiteSpace(reasoning)) return string.Empty;
         string escaped = RimLLMMarkdown.EscapeUntrustedUnityTags(reasoning);
@@ -137,7 +135,7 @@ public static partial class ChatTestDrawer
             : WrapTrailingThought(escaped, 0, 0);
     }
 
-    private static string FormatThinkProcess(string text)
+    private static string? FormatThinkProcess(string? text)
     {
         if (string.IsNullOrEmpty(text)) return text;
 
@@ -225,7 +223,7 @@ public static partial class ChatTestDrawer
     /// 嘗試剝掉 <paramref name="key"/> 對應的前綴。
     /// 修正前持久化的舊紀錄前綴已被 StripTags 剝成純文字（"[AI]: "），兩種形式都要認得。
     /// </summary>
-    private static bool TryStripPrefix(string entry, string key, out string label, out string body)
+    private static bool TryStripPrefix(string entry, string key, out string? label, out string? body)
     {
         string raw = EntryPrefix(key);
         string plain = raw.StripTags();
@@ -244,7 +242,7 @@ public static partial class ChatTestDrawer
         return false;
     }
 
-    internal static bool ParseMessage(string entry, out string label, out string body, out ChatEntryMeta meta)
+    internal static bool ParseMessage(string entry, out string? label, out string? body, out ChatEntryMeta? meta)
     {
         meta = null;
         if (string.IsNullOrEmpty(entry))
@@ -293,7 +291,7 @@ public static partial class ChatTestDrawer
         return false;
     }
 
-    internal static bool ParseMessage(string entry, out string label, out string body)
+    internal static bool ParseMessage(string entry, out string? label, out string? body)
     {
         return ParseMessage(entry, out label, out body, out _);
     }
@@ -304,7 +302,7 @@ public static partial class ChatTestDrawer
     internal static string FormatModelDisplayName(string modelId)
     {
         if (string.IsNullOrEmpty(modelId)) return string.Empty;
-        return ProviderIds.TrySplitModelId(modelId, out string provider, out string model)
+        return ProviderIds.TrySplitModelId(modelId, out string? provider, out string? model)
             ? $"{provider} • {model}"
             : modelId;
     }

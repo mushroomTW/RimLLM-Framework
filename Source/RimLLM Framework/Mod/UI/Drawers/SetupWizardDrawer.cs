@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,14 +23,14 @@ public static class SetupWizardDrawer
 
     private sealed class Choice
     {
-        public string Id;
+        public required string Id;
         /// <summary>品牌名稱；為 null 時改用 <see cref="NameKey"/> 的翻譯。</summary>
-        public string Name;
-        public string NameKey;
-        public string DescKey;
-        public string TagKey;
+        public string? Name;
+        public string? NameKey;
+        public string? DescKey;
+        public string? TagKey;
         /// <summary>取得金鑰（或下載 App）的網頁；本機 AI 沒有網頁。</summary>
-        public string Url;
+        public string? Url;
 
         public string DisplayName => Name ?? NameKey.Translate().ToString();
     }
@@ -84,28 +82,28 @@ public static class SetupWizardDrawer
     // 精靈預設明文：遮罩模式為唯讀外觀，新手無法在其中貼上金鑰
     private static bool _revealKey = true;
     private static bool _busy;
-    private static string _progressKey;
+    private static string? _progressKey;
     private static Outcome _outcome;
-    private static string _addedEntry;
-    private static string _failKey;
-    private static string _failDetail;
+    private static string? _addedEntry;
+    private static string? _failKey;
+    private static string? _failDetail;
 
     // 第 3 步「選模型」。_fetchGeneration 讓玩家回上一步後，舊的背景抓取結果不會蓋掉新的。
     private static int _fetchGeneration;
     private static bool _modelsBusy;
     private static List<string> _chatModels = [];
     /// <summary><see cref="_chatModels"/> 所屬的供應商，供模型選擇視窗以廠商名篩選。</summary>
-    private static string _chatModelsProvider;
+    private static string? _chatModelsProvider;
     private static string _chatModel = "";
-    private static string _modelsFailKey;
-    private static string _modelsFailDetail;
+    private static string? _modelsFailKey;
+    private static string? _modelsFailDetail;
     /// <summary>能沿用對話金鑰、且目前沒開啟的 Embedding 供應商；null 代表這頁不提供選擇。</summary>
-    private static string _embeddingPickProvider;
+    private static string? _embeddingPickProvider;
     private static bool _embeddingListBusy;
     private static List<string> _embeddingModels = [];
     /// <summary>玩家選的 Embedding 模型；空字串代表不開啟。</summary>
     private static string _embeddingModel = "";
-    private static string _decisionPickProvider;
+    private static string? _decisionPickProvider;
     private static bool _decisionListBusy;
     private static List<string> _decisionModels = [];
     private static string _decisionModel = "";
@@ -113,12 +111,12 @@ public static class SetupWizardDrawer
     // 成功頁「選用」區的 Embedding 一鍵開啟狀態
     private static bool _embeddingBusy;
     private static Outcome _embeddingOutcome;
-    private static string _embeddingFailDetail;
+    private static string? _embeddingFailDetail;
 
     // 成功頁「選用」區的決策模型一鍵開啟狀態
     private static bool _decisionBusy;
     private static Outcome _decisionOutcome;
-    private static string _decisionFailDetail;
+    private static string? _decisionFailDetail;
 
     private const float CardHeight = 64f;
     private const float CardGap = 10f;
@@ -496,9 +494,9 @@ public static class SetupWizardDrawer
         _progressKey = providerId == ProviderIds.OpenAICompatible ? "RimLLM_SetupProgressDetect" : "RimLLM_SetupProgressFetch";
 
         // 玩家已經自己開啟的服務不在這裡改。
-        string embedding = SetupStatus.OneClickEmbeddingProviderFor(providerId);
+        string? embedding = SetupStatus.OneClickEmbeddingProviderFor(providerId);
         _embeddingPickProvider = embedding != null && Settings.EmbeddingProvider == RimLLMFrameworkSettings.DisabledProvider ? embedding : null;
-        string decision = SetupStatus.OneClickDecisionProviderFor(providerId);
+        string? decision = SetupStatus.OneClickDecisionProviderFor(providerId);
         _decisionPickProvider = decision != null && Settings.DecisionProvider == RimLLMDecisionProviderCatalog.Disabled ? decision : null;
         _embeddingModel = "";
         _decisionModel = "";
@@ -523,7 +521,7 @@ public static class SetupWizardDrawer
 
             if (providerId == ProviderIds.OpenAICompatible)
             {
-                LocalEndpointProbe.Target hit = await LocalEndpointProbe.FindReachableAsync(GenericProviderSubTabDrawer.LocalTargets).ConfigureAwait(false);
+                LocalEndpointProbe.Target? hit = await LocalEndpointProbe.FindReachableAsync(GenericProviderSubTabDrawer.LocalTargets).ConfigureAwait(false);
                 if (hit == null)
                 {
                     await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_LocalNotFound", null)).ConfigureAwait(false);
@@ -563,7 +561,7 @@ public static class SetupWizardDrawer
         }
     }
 
-    private static void FailFetch(string key, string detail)
+    private static void FailFetch(string key, string? detail)
     {
         _modelsFailKey = key;
         _modelsFailDetail = string.IsNullOrEmpty(detail) ? null : RimLLMLog.SanitizeForLog(detail, 220);
@@ -785,7 +783,7 @@ public static class SetupWizardDrawer
 
         _ = Task.Run(async () =>
         {
-            string error = null;
+            string? error = null;
             try
             {
                 await service.TestConnectionAsync(args.Endpoint, args.Model, args.ApiKey).ConfigureAwait(false);
@@ -833,7 +831,7 @@ public static class SetupWizardDrawer
     }
 
     /// <summary>「名稱｜狀態｜按鈕」一列。首頁與成功頁共用，<paramref name="onClick"/> 為 null 時不畫按鈕。</summary>
-    internal static void DrawOptionalRow(Listing_Standard listing, string name, string status, string buttonLabel, Action onClick)
+    internal static void DrawOptionalRow(Listing_Standard listing, string? name, string? status, string? buttonLabel, Action? onClick)
     {
         Rect row = listing.GetRect(32f);
         Widgets.DrawLineHorizontal(row.x, row.yMax, row.width);
@@ -868,7 +866,7 @@ public static class SetupWizardDrawer
 
         _ = Task.Run(async () =>
         {
-            string error = null;
+            string? error = null;
             try
             {
                 var service = new RimLLMEmbeddingService(Settings);
@@ -962,19 +960,19 @@ public static class SetupWizardDrawer
             }
             catch (Exception ex)
             {
-                string message = RimLLMLog.SanitizeForLog(ex.Message, 220);
+                string? message = RimLLMLog.SanitizeForLog(ex.Message, 220);
                 await Finish(() => Fail(SetupFailOtherKey, message)).ConfigureAwait(false);
             }
         });
     }
 
-    private static void Fail(string key, string detail)
+    private static void Fail(string key, string? detail)
     {
         _failKey = key;
         // 日誌用的清理會把換行轉成字面的 \r\n；顯示給玩家時還原成空白，不然畫面上會出現一串反斜線
         _failDetail = string.IsNullOrEmpty(detail)
             ? null
-            : RimLLMLog.SanitizeForLog(detail, 400).Replace("\\r\\n", " ").Replace("\\n", " ").Replace("\\r", " ");
+            : (RimLLMLog.SanitizeForLog(detail, 400) ?? string.Empty).Replace("\\r\\n", " ").Replace("\\n", " ").Replace("\\r", " ");
         _outcome = Outcome.Failed;
         _busy = false;
     }
@@ -1011,7 +1009,7 @@ public static class SetupWizardDrawer
     }
 
     /// <summary>底部「上一步／下一步」列。下一步不可按時以灰色顯示，避免玩家以為按了沒反應。</summary>
-    private static void DrawNavRow(Listing_Standard listing, bool showBack, string nextLabel, bool canNext, Action onNext)
+    private static void DrawNavRow(Listing_Standard listing, bool showBack, string? nextLabel, bool canNext, Action? onNext)
     {
         Rect row = listing.GetRect(BigButtonHeight);
         if (showBack && !_busy && Widgets.ButtonText(new Rect(row.x, row.y, 140f, row.height), "RimLLM_SetupBackBtn".Translate()))
@@ -1025,6 +1023,6 @@ public static class SetupWizardDrawer
         if (!canNext) GUI.color = RimLLMUIStyle.Muted;
         bool clicked = Widgets.ButtonText(next, nextLabel, active: canNext);
         GUI.color = Color.white;
-        if (clicked && canNext) onNext();
+        if (clicked && canNext) onNext?.Invoke();
     }
 }

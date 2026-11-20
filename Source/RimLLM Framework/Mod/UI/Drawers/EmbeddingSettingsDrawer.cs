@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -67,7 +65,7 @@ public static class EmbeddingSettingsDrawer
     /// </summary>
     public static string GetProviderDisplayName(string providerId)
     {
-        string fallback = null;
+        string? fallback = null;
         foreach (var entry in MenuEntries)
         {
             if (entry.Value == providerId)
@@ -382,7 +380,7 @@ public static class EmbeddingSettingsDrawer
 
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
-            Widgets.Label(detectStatusRect, DetectStatus.TryGetValue(providerId, out string ds) ? ds : "");
+            Widgets.Label(detectStatusRect, DetectStatus.TryGetValue(providerId, out string? ds) ? ds : "");
         }
     }
 
@@ -482,7 +480,7 @@ public static class EmbeddingSettingsDrawer
             Fetching.TryGetValue(providerId, out bool isF) && isF,
             "RimLLM_Fetching".Translate(),
             "RimLLM_FetchModelsBtn".Translate(),
-            FetchStatus.TryGetValue(providerId, out string fs) ? fs : "RimLLM_FetchStatusNotRun".Translate().ToString(),
+            FetchStatus.TryGetValue(providerId, out string? fs) ? fs : "RimLLM_FetchStatusNotRun".Translate().ToString(),
             () => StartFetchEmbeddingModels(providerId),
             buttonWidth: 200f);
     }
@@ -559,7 +557,7 @@ public static class EmbeddingSettingsDrawer
             Testing.TryGetValue(providerId, out bool isT) && isT,
             "RimLLM_EmbeddingTesting".Translate(),
             "RimLLM_EmbeddingTestBtn".Translate(),
-            TestStatus.TryGetValue(providerId, out string ts) ? ts : "RimLLM_TestStatusNotRun".Translate().ToString(),
+            TestStatus.TryGetValue(providerId, out string? ts) ? ts : "RimLLM_TestStatusNotRun".Translate().ToString(),
             () => StartTestEmbedding(providerId),
             buttonWidth: 200f);
     }

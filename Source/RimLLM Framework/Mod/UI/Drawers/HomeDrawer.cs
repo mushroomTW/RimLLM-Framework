@@ -22,7 +22,7 @@ public static class HomeDrawer
 
     public static void DrawHome(Listing_Standard listing)
     {
-        SetupState state = SetupStatus.Current(out string activeEntry);
+        SetupState state = SetupStatus.Current(out string? activeEntry);
 
         DrawStatusCard(listing, state);
         listing.Gap(14f);
@@ -189,9 +189,9 @@ public static class HomeDrawer
         }
     }
 
-    private static void DrawReadyDetails(Listing_Standard listing, string activeEntry)
+    private static void DrawReadyDetails(Listing_Standard listing, string? activeEntry)
     {
-        string model = ProviderIds.TrySplitModelId(activeEntry, out string? providerId, out string? explicitModel)
+        string model = ProviderIds.TrySplitModelId(activeEntry ?? string.Empty, out string? providerId, out string? explicitModel)
             ? explicitModel
             : "RimLLM_HomeDefaultModel".Translate().ToString();
 

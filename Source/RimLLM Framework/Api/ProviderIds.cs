@@ -53,7 +53,7 @@ public static class ProviderIds
     /// 兩者必須由同一個判斷推導（見 <see cref="Providers.Player2Provider"/>），以免靜態與實例語義分歧。
     /// 端點相關是因為 Player2 有雙模式：本機 App 免金鑰，雲端（api.player2.game）需 p2Key。
     /// </summary>
-    public static bool RequiresApiKey(string providerId, string endpoint)
+    public static bool RequiresApiKey(string providerId, string? endpoint)
     {
         if (providerId == OpenAICompatible) return false;
         if (providerId == Player2) return IsPlayer2CloudEndpoint(endpoint);
@@ -64,7 +64,7 @@ public static class ProviderIds
     /// 是否為 Player2 雲端端點。以 host 子字串判斷而非反向列舉本機位址：
     /// 自架代理的 host 未知，預設視為本地模式不擋，有填金鑰照樣送出。
     /// </summary>
-    public static bool IsPlayer2CloudEndpoint(string endpoint)
+    public static bool IsPlayer2CloudEndpoint(string? endpoint)
     {
         return !string.IsNullOrEmpty(endpoint)
             && endpoint.Contains("api.player2.game", StringComparison.OrdinalIgnoreCase);

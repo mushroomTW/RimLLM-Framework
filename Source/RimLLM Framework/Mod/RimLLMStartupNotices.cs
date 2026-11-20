@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using RimLLM_Framework.Core;
@@ -18,13 +16,13 @@ namespace RimLLM_Framework.Mod;
 internal static class RimLLMStartupNotices
 {
     private static readonly System.Threading.Lock Gate = new();
-    private static readonly List<(string Key, string Argument)> Pending = [];
+    private static readonly List<(string Key, string? Argument)> Pending = [];
     private static bool _ready;
 
     /// <summary>送出通知；遊戲資料尚未就緒時先保留。相同內容只保留一筆。</summary>
     /// <param name="translationKey">翻譯鍵。</param>
     /// <param name="argument">翻譯參數 {0}；沒有時為 null。</param>
-    public static void Post(string translationKey, string argument = null)
+    public static void Post(string translationKey, string? argument = null)
     {
         lock (Gate)
         {
@@ -44,7 +42,7 @@ internal static class RimLLMStartupNotices
     /// <summary>遊戲資料已就緒：送出保留中的通知，之後的通知直接送出。</summary>
     public static void Flush()
     {
-        List<(string Key, string Argument)> notices;
+        List<(string Key, string? Argument)> notices;
         lock (Gate)
         {
             _ready = true;
@@ -52,13 +50,13 @@ internal static class RimLLMStartupNotices
             Pending.Clear();
         }
 
-        foreach ((string key, string argument) in notices)
+        foreach ((string key, string? argument) in notices)
         {
             Show(key, argument);
         }
     }
 
-    private static void Show(string translationKey, string argument)
+    private static void Show(string translationKey, string? argument)
     {
         RimLLMDispatcher.EnqueueOnMainThread(() =>
         {

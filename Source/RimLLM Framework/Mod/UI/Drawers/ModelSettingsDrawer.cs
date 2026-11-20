@@ -1,5 +1,3 @@
-#nullable disable
-
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -60,7 +58,7 @@ public static class ModelSettingsDrawer
         }
         else
         {
-            string entryToRemove = null;
+            string? entryToRemove = null;
             for (int i = 0; i < entries.Count; i++)
             {
                 string entry = entries[i];
@@ -72,7 +70,7 @@ public static class ModelSettingsDrawer
                     entryToRemove = entry;
                 }
 
-                bool hasModelName = ProviderIds.TrySplitModelId(entry, out string providerId, out string modelName);
+                bool hasModelName = ProviderIds.TrySplitModelId(entry, out string? providerId, out string? modelName);
                 float labelWidth = hasModelName ? (itemRect.width - 200f) : (itemRect.width - 50f);
                 Rect labelRect = new(itemRect.x, itemRect.y, labelWidth, itemRect.height);
                 Widgets.Label(labelRect, $" <color=cyan>{entry}</color>");
@@ -82,10 +80,10 @@ public static class ModelSettingsDrawer
 
                 DrawLevelButton(
                     new Rect(itemRect.x + itemRect.width - 115f, itemRect.y, 70f, itemRect.height),
-                    modelName);
+                    modelName ?? string.Empty);
                 DrawContextWindowButton(
                     new Rect(itemRect.x + itemRect.width - 190f, itemRect.y, 70f, itemRect.height),
-                    entry, providerId, modelName);
+                    entry ?? string.Empty, providerId ?? string.Empty, modelName ?? string.Empty);
             }
 
             if (entryToRemove != null)
@@ -236,15 +234,16 @@ public static class ModelSettingsDrawer
         int currentLevel = Settings.GetModelLevelOverride(modelName);
         int index = currentLevel >= 1 && currentLevel <= 3 ? currentLevel : 0;
         string levelLabel = LevelLabelKeys[index].Translate();
+        string levelModel = modelName;
 
         if (Widgets.ButtonText(rect, levelLabel))
         {
             List<FloatMenuOption> options =
             [
-                new("RimLLM_FallbackLevelAuto".Translate(), () => { Settings.SetModelLevelOverride(modelName, 0); Settings.Write(); }),
-                new("RimLLM_FallbackLevelLow".Translate(), () => { Settings.SetModelLevelOverride(modelName, 1); Settings.Write(); }),
-                new("RimLLM_FallbackLevelMedium".Translate(), () => { Settings.SetModelLevelOverride(modelName, 2); Settings.Write(); }),
-                new("RimLLM_FallbackLevelHigh".Translate(), () => { Settings.SetModelLevelOverride(modelName, 3); Settings.Write(); })
+                new("RimLLM_FallbackLevelAuto".Translate(), () => { Settings.SetModelLevelOverride(levelModel, 0); Settings.Write(); }),
+                new("RimLLM_FallbackLevelLow".Translate(), () => { Settings.SetModelLevelOverride(levelModel, 1); Settings.Write(); }),
+                new("RimLLM_FallbackLevelMedium".Translate(), () => { Settings.SetModelLevelOverride(levelModel, 2); Settings.Write(); }),
+                new("RimLLM_FallbackLevelHigh".Translate(), () => { Settings.SetModelLevelOverride(levelModel, 3); Settings.Write(); })
             ];
             Find.WindowStack.Add(new FloatMenu(options));
         }

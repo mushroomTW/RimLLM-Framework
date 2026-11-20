@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -34,12 +32,12 @@ internal static class LocalEndpointProbe
     internal sealed class Target
     {
         /// <summary>顯示名稱（探測成功訊息用）。</summary>
-        public string Name;
+        public required string Name;
         /// <summary>探測成功後寫入設定的端點。</summary>
-        public string BaseUrl;
+        public required string BaseUrl;
         /// <summary>實際送出探測請求的位址。與 BaseUrl 分開是因為 Ollama 原生位址（/api/tags）
         /// 與 OpenAI 相容位址（/v1）不同：探測打前者，寫入後者，呼叫端傳入時就填好兩邊。</summary>
-        public string TestUrl;
+        public required string TestUrl;
     }
 
     // SDK 豁免：只探測本機服務是否在線（含 Ollama 原生 /api/tags），不是 LLM 請求。
@@ -52,7 +50,7 @@ internal static class LocalEndpointProbe
 
     /// <summary>回傳第一個可連通的候選（原樣回傳，不改寫任何欄位），全部失敗則回傳 null。</summary>
     /// <param name="targets">候選端點。</param>
-    internal static async Task<Target> FindReachableAsync(IEnumerable<Target> targets)
+    internal static async Task<Target?> FindReachableAsync(IEnumerable<Target> targets)
     {
         if (targets == null) return null;
         foreach (Target target in targets)
@@ -83,7 +81,7 @@ internal static class LocalEndpointProbe
     {
         _ = Task.Run(async () =>
         {
-            Target hit = await FindReachableAsync(targets).ConfigureAwait(false);
+            Target? hit = await FindReachableAsync(targets).ConfigureAwait(false);
             RimLLMDispatcher.EnqueueOnMainThread(() =>
             {
                 if (hit != null)

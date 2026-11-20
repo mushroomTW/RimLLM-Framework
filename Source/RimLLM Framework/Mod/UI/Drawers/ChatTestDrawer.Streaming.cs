@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -25,12 +23,12 @@ public static partial class ChatTestDrawer
         public long LastRenderTimestamp;
         public bool TrailingRenderScheduled;
         public bool StreamCompleted;
-        public string ActualModelId;
+        public string? ActualModelId;
         public int PromptTokens;
         public int CompletionTokens;
         public int TotalTokens;
         public bool HasExactTokens;
-        public System.Diagnostics.Stopwatch Stopwatch;
+        public required System.Diagnostics.Stopwatch Stopwatch;
         public long RequestGeneration;
         public int AiHistoryIndex;
         public CancellationToken RequestToken;
@@ -128,7 +126,7 @@ public static partial class ChatTestDrawer
                 string localReply = BuildMarkdownBody(Reasoning.ToString(), Answer.ToString());
                 var liveMeta = new ChatEntryMeta
                 {
-                    ModelId = ActualModelId,
+                    ModelId = ActualModelId ?? string.Empty,
                     ElapsedMs = Stopwatch.ElapsedMilliseconds,
                     TotalTokens = TotalTokens,
                     PromptTokens = PromptTokens,
@@ -140,7 +138,7 @@ public static partial class ChatTestDrawer
         }
     }
 
-    private static void StartChatStreaming(string userPrompt, string pinnedModel)
+    private static void StartChatStreaming(string userPrompt, string? pinnedModel)
     {
         CancelActiveChatRequest();
         long requestGeneration = Interlocked.Read(ref chatRequestGeneration);
@@ -162,7 +160,7 @@ public static partial class ChatTestDrawer
 
     private static async Task ExecuteChatStreamingAsync(
         string userPrompt,
-        string pinnedModel,
+        string? pinnedModel,
         long requestGeneration,
         int aiHistoryIndex,
         CancellationTokenSource requestCts,
@@ -250,7 +248,7 @@ public static partial class ChatTestDrawer
 
         return new ChatEntryMeta
         {
-            ModelId = state.ActualModelId,
+            ModelId = state.ActualModelId ?? string.Empty,
             ElapsedMs = state.Stopwatch.ElapsedMilliseconds,
             TotalTokens = totalTokens,
             PromptTokens = promptTokens,

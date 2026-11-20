@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -20,13 +18,13 @@ public class Dialog_SelectModel : Window
     private Vector2 _scrollPosition = Vector2.zero;
 
     /// <summary>過濾結果快取：清單在視窗生命週期內固定，只有過濾字串變了才需要重算。</summary>
-    private string _cachedFilter;
-    private List<string> _cachedFiltered;
+    private string? _cachedFilter;
+    private List<string>? _cachedFiltered;
 
     public override Vector2 InitialSize => new(550f, 650f);
 
     /// <summary>直連供應商的廠商鍵；讓「google」這類廠商名也篩得到不帶前綴的模型 ID。</summary>
-    private readonly string _vendor;
+    private readonly string? _vendor;
 
     public Dialog_SelectModel(List<string> models, Action<string> onSelected)
         : this(models, onSelected, null)
@@ -34,7 +32,7 @@ public class Dialog_SelectModel : Window
     }
 
     /// <param name="providerId">模型清單所屬的框架供應商；用來推得廠商鍵，未知時可為 null。</param>
-    public Dialog_SelectModel(List<string> models, Action<string> onSelected, string providerId)
+    public Dialog_SelectModel(List<string> models, Action<string> onSelected, string? providerId)
     {
         this._vendor = RimLLMUIStyle.GetModelVendor(providerId);
         this._allModels = models ?? [];
