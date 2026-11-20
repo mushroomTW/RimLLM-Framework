@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -24,7 +22,7 @@ public class RimLLMDispatcher : MonoBehaviour
     /// <summary>單一幀執行的時間預算（毫秒）。</summary>
     private const long FrameBudgetMs = 2;
 
-    private static RimLLMDispatcher _instance;
+    private static RimLLMDispatcher? _instance;
     private static readonly Lock InstanceLock = new();
     private static readonly ConcurrentQueue<QueuedAction> ExecutionQueue = new();
     private static int _queuedCount;
@@ -187,7 +185,7 @@ public class RimLLMDispatcher : MonoBehaviour
     private static void EnqueueWaitable<T>(
         Action action,
         System.Threading.Tasks.TaskCompletionSource<T> tcs,
-        Action onDropped = null)
+        Action? onDropped = null)
     {
         if (_hasPump)
         {
@@ -244,9 +242,9 @@ public class RimLLMDispatcher : MonoBehaviour
     private struct QueuedAction
     {
         private readonly Action _run;
-        private readonly Action _onDropped;
+        private readonly Action? _onDropped;
 
-        public QueuedAction(Action run, Action onDropped)
+        public QueuedAction(Action run, Action? onDropped)
         {
             _run = run;
             _onDropped = onDropped;

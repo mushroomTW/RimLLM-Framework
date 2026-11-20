@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -25,7 +23,7 @@ internal sealed partial class LinuxSecretStore : ISecretStore
         {
             CheckError(error);
             // 項目不存在代表尚未建立金鑰；回傳空集合，讓上層以「金鑰無效」統一回報。
-            return value == IntPtr.Zero ? [] : Convert.FromBase64String(Marshal.PtrToStringUTF8(value));
+            return value == IntPtr.Zero ? [] : Convert.FromBase64String(Marshal.PtrToStringUTF8(value) ?? string.Empty);
         }
         finally { if (value != IntPtr.Zero) secret_password_free(value); }
     }
@@ -125,7 +123,7 @@ internal sealed partial class LinuxSecretStore : ISecretStore
     private static partial IntPtr secret_password_lookupv_sync(IntPtr schema, IntPtr attributes, IntPtr cancellable, out IntPtr error);
     [LibraryImport(Secret, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int secret_password_storev_sync(IntPtr schema, IntPtr attributes,
-        string collection, string label, string password, IntPtr cancellable, out IntPtr error);
+        string? collection, string label, string password, IntPtr cancellable, out IntPtr error);
     [LibraryImport(Secret)]
     private static partial int secret_password_clearv_sync(IntPtr schema, IntPtr attributes, IntPtr cancellable, out IntPtr error);
     [LibraryImport(Secret)]

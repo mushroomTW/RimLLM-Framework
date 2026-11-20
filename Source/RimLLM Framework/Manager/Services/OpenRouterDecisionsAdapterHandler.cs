@@ -55,7 +55,7 @@ internal sealed class OpenRouterDecisionsAdapterHandler : DelegatingHandler
             }.Uri;
         }
 
-        RimLLMAppAttribution attribution = RimLLMAppAttribution.Current;
+        RimLLMAppAttribution attribution = RimLLMAppAttribution.Current ?? RimLLMAppAttribution.Framework;
         request.Headers.Remove(OpenRouterAttributionPolicy.RefererHeader);
         request.Headers.Remove(OpenRouterAttributionPolicy.TitleHeader);
         request.Headers.TryAddWithoutValidation(OpenRouterAttributionPolicy.RefererHeader, attribution.Url);

@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Reflection;
 using HarmonyLib;
@@ -58,9 +56,9 @@ internal static class RimTalkCompatPatch
         try
         {
             Type settingsHolder = AccessTools.TypeByName("RimTalk.Settings");
-            object settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, null);
-            object local = settings == null ? null : CompatSeedUtil.GetMember(settings, "LocalConfig");
-            if (local == null
+            object? settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, null);
+            object? local = settings == null ? null : CompatSeedUtil.GetMember(settings, "LocalConfig");
+            if (settings == null || local == null
                 || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(local, BaseUrlMember) as string, RimTalkCompatPatch.PackageId))
             {
                 return;
@@ -87,7 +85,7 @@ internal static class RimTalkCompatPatch
     {
         try
         {
-            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(RimTalkCompatPatch.PackageId);
+            string? baseUrl = LocalOpenAIEndpoint.GetBaseUrl(RimTalkCompatPatch.PackageId);
             if (baseUrl == null)
             {
                 Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
@@ -95,14 +93,14 @@ internal static class RimTalkCompatPatch
             }
 
             Type settingsHolder = AccessTools.TypeByName("RimTalk.Settings");
-            object settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, null);
-            object local = settings == null ? null : CompatSeedUtil.GetMember(settings, "LocalConfig");
-            if (local == null)
+            object? settings = settingsHolder == null ? null : AccessTools.Method(settingsHolder, "Get", Type.EmptyTypes)?.Invoke(null, null);
+            object? local = settings == null ? null : CompatSeedUtil.GetMember(settings, "LocalConfig");
+            if (settings == null || local == null)
             {
                 return;
             }
 
-            string existingUrl = CompatSeedUtil.GetMember(local, "BaseUrl") as string;
+            string? existingUrl = CompatSeedUtil.GetMember(local, "BaseUrl") as string;
             bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, RimTalkCompatPatch.PackageId);
             if (!string.IsNullOrWhiteSpace(existingUrl) && !ours)
             {
@@ -111,7 +109,7 @@ internal static class RimTalkCompatPatch
             }
 
             // 簡易模式或雲端清單已有可用設定（玩家自己的金鑰），不切走；GetActiveConfig 是它自己判斷「可用」的邏輯。
-            object active = AccessTools.Method(settings.GetType(), "GetActiveConfig", Type.EmptyTypes)?.Invoke(settings, null);
+            object? active = AccessTools.Method(settings.GetType(), "GetActiveConfig", Type.EmptyTypes)?.Invoke(settings, null);
             if (active != null && !ReferenceEquals(active, local))
             {
                 CompatSeedUtil.WarnKeptNativeConfig(DisplayName);

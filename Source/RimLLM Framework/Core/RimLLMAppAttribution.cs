@@ -1,6 +1,5 @@
-#nullable disable
-
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -22,7 +21,7 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
     public static readonly RimLLMAppAttribution Framework =
         new("RimLLM Framework", "https://github.com/mushroomTW/RimLLM-Framework");
 
-    private static readonly AsyncLocal<RimLLMAppAttribution> CurrentValue = new();
+    private static readonly AsyncLocal<RimLLMAppAttribution?> CurrentValue = new();
 
     /// <summary>
     /// 目前請求的歸屬，沿非同步呼叫鏈傳到 SDK pipeline policy。未設定時為 <see cref="Framework"/>。
@@ -31,7 +30,7 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
     /// 以 AsyncLocal 傳遞而非經由參數：<see cref="Providers.ILLMProvider.CreateChatClient"/> 是公開介面，
     /// 只帶 model，加參數會破壞外部實作。請只在 async 方法內設定，值才會在該次呼叫結束後還原。
     /// </remarks>
-    public static RimLLMAppAttribution Current
+    public static RimLLMAppAttribution? Current
     {
         get => CurrentValue.Value ?? Framework;
         set => CurrentValue.Value = value;
@@ -46,7 +45,7 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
     /// 共用同一網址的 Mod（或網址與框架相同）會互相覆寫 OpenRouter 上的顯示名稱，因此一律歸屬框架。
     /// </remarks>
     /// <param name="mods">啟用中的 Mod：packageId（不含 _steam 後綴）、名稱與 About.xml 的 url。</param>
-    public static Func<string, RimLLMAppAttribution> CreateResolver(
+    public static Func<string?, RimLLMAppAttribution> CreateResolver(
         IEnumerable<(string PackageId, string Name, string Url)> mods)
     {
         var candidates = mods
@@ -67,7 +66,7 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
             byPackageId[packageId] = sharedUrls.Contains(UrlKey(attribution.Url)) ? Framework : attribution;
         }
 
-        return modId => modId != null && byPackageId.TryGetValue(modId.Trim(), out RimLLMAppAttribution found)
+        return modId => modId != null && byPackageId.TryGetValue(modId.Trim(), out RimLLMAppAttribution? found)
             ? found
             : Framework;
     }
@@ -80,23 +79,23 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
     /// .NET 的 SocketsHttpHandler 預設拒絕非 ASCII 標頭值並擲出例外，
     /// 中文 Mod 名稱若原樣送出，整個請求都會失敗。
     /// </remarks>
-    public static RimLLMAppAttribution FromMetadata(string name, string packageId, string url)
+    public static RimLLMAppAttribution FromMetadata(string? name, string? packageId, string? url)
     {
         url = url?.Trim();
         if (!IsHeaderSafe(url)
-            || !Uri.TryCreate(url, UriKind.Absolute, out Uri uri)
+            || !Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             return Framework;
         }
 
-        string strippedName = name?.StripTags().Trim();
-        string title = IsHeaderSafe(strippedName) ? strippedName : packageId?.Trim();
+        string? strippedName = name?.StripTags().Trim();
+        string? title = IsHeaderSafe(strippedName) ? strippedName : packageId?.Trim();
         return IsHeaderSafe(title) ? new RimLLMAppAttribution(title, url) : Framework;
     }
 
     /// <summary>非空白且只含可列印 ASCII 字元。</summary>
-    private static bool IsHeaderSafe(string value)
+    private static bool IsHeaderSafe([NotNullWhen(true)] string? value)
     {
         return !string.IsNullOrWhiteSpace(value) && value.All(c => c >= 0x20 && c <= 0x7E);
     }

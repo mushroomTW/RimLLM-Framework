@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections;
 using HarmonyLib;
@@ -60,8 +58,8 @@ internal static class ModCompatCheckerCompatPatch
     {
         try
         {
-            object mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
-            object settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
+            object? mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
+            object? settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
             if (settings == null
                 || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(settings, ApiEndpointMember) as string, ModCompatCheckerCompatPatch.PackageId))
             {
@@ -75,7 +73,7 @@ internal static class ModCompatCheckerCompatPatch
             }
             CompatSeedUtil.SetMember(settings, "CustomModelId", string.Empty);
             CompatSeedUtil.SetMember(settings, "SelectedModelIndex", 0);
-            ((Verse.Mod)mod).WriteSettings();
+            ((Verse.Mod?)mod)?.WriteSettings();
             CompatSeedUtil.LogReverted(DisplayName);
         }
         catch (Exception ex)
@@ -92,22 +90,22 @@ internal static class ModCompatCheckerCompatPatch
     {
         try
         {
-            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(ModCompatCheckerCompatPatch.PackageId);
+            string? baseUrl = LocalOpenAIEndpoint.GetBaseUrl(ModCompatCheckerCompatPatch.PackageId);
             if (baseUrl == null)
             {
                 Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
                 return;
             }
 
-            object mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
-            object settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
+            object? mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
+            object? settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
             if (settings == null)
             {
                 return;
             }
 
-            string endpoint = CompatSeedUtil.GetMember(settings, "APIEndpoint") as string;
-            string key = CompatSeedUtil.GetMember(settings, "APIKey") as string;
+            string? endpoint = CompatSeedUtil.GetMember(settings, "APIEndpoint") as string;
+            string? key = CompatSeedUtil.GetMember(settings, "APIKey") as string;
             bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(endpoint, ModCompatCheckerCompatPatch.PackageId);
             if (!string.IsNullOrEmpty(key) && !ours)
             {
@@ -123,7 +121,7 @@ internal static class ModCompatCheckerCompatPatch
                 // 首次寫入才改金鑰與模型選擇；之後只更新埠號與模型名。
                 // 「自訂模型」的索引等於內建模型清單的長度（IsCustomModel 以此判定）。
                 Type modelConfig = AccessTools.TypeByName("ModCompatChecker.AI.ModelConfig");
-                object models = modelConfig == null ? null : AccessTools.Property(modelConfig, "Models")?.GetValue(null);
+                object? models = modelConfig == null ? null : AccessTools.Property(modelConfig, "Models")?.GetValue(null);
                 if (models is not ICollection collection)
                 {
                     throw new MissingMemberException("ModCompatChecker.AI.ModelConfig", "Models");
@@ -133,7 +131,7 @@ internal static class ModCompatCheckerCompatPatch
                 CompatSeedUtil.SetMember(settings, "SelectedModelIndex", collection.Count);
             }
 
-            ((Verse.Mod)mod).WriteSettings();
+            ((Verse.Mod?)mod)?.WriteSettings();
         }
         catch (Exception ex)
         {

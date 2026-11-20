@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Reflection;
 using HarmonyLib;
@@ -62,15 +60,15 @@ internal static class ScAutoCompatPatch
         try
         {
             Type store = AccessTools.TypeByName(Namespace + "ApiConfigurationStore");
-            MethodInfo strictLoad = store == null ? null : AccessTools.Method(store, "Load", Type.EmptyTypes);
-            MethodInfo createDefault = store == null ? null : AccessTools.Method(store, "CreateDefault", Type.EmptyTypes);
-            MethodInfo save = strictLoad == null ? null : AccessTools.Method(store, "Save", [strictLoad.ReturnType, typeof(string), typeof(bool)]);
-            if (save == null || createDefault == null)
+            MethodInfo? strictLoad = store == null ? null : AccessTools.Method(store, "Load", Type.EmptyTypes);
+            MethodInfo? createDefault = store == null ? null : AccessTools.Method(store, "CreateDefault", Type.EmptyTypes);
+            MethodInfo? save = strictLoad == null ? null : AccessTools.Method(store, "Save", [strictLoad.ReturnType, typeof(string), typeof(bool)]);
+            if (strictLoad == null || save == null || createDefault == null)
             {
                 return;
             }
 
-            object config;
+            object? config;
             try
             {
                 config = strictLoad.Invoke(null, null);
@@ -80,7 +78,7 @@ internal static class ScAutoCompatPatch
                 return; // 沒有設定檔：沒有需要還原的東西。
             }
 
-            PropertyInfo baseUrl = config == null ? null : AccessTools.Property(config.GetType(), "BaseUrl");
+            PropertyInfo? baseUrl = config == null ? null : AccessTools.Property(config.GetType(), "BaseUrl");
             if (baseUrl == null || !LocalOpenAIEndpoint.IsOwnBaseUrl(baseUrl.GetValue(config) as string, ScAutoCompatPatch.PackageId))
             {
                 return;
@@ -105,7 +103,7 @@ internal static class ScAutoCompatPatch
     {
         try
         {
-            string endpointUrl = LocalOpenAIEndpoint.GetBaseUrl(ScAutoCompatPatch.PackageId);
+            string? endpointUrl = LocalOpenAIEndpoint.GetBaseUrl(ScAutoCompatPatch.PackageId);
             if (endpointUrl == null)
             {
                 Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
@@ -113,9 +111,9 @@ internal static class ScAutoCompatPatch
             }
 
             Type store = AccessTools.TypeByName(Namespace + "ApiConfigurationStore");
-            MethodInfo load = store == null ? null : AccessTools.Method(store, "LoadForEditing");
-            MethodInfo save = load == null ? null : AccessTools.Method(store, "Save", [load.ReturnType, typeof(string), typeof(bool)]);
-            if (save == null)
+            MethodInfo? load = store == null ? null : AccessTools.Method(store, "LoadForEditing");
+            MethodInfo? save = load == null ? null : AccessTools.Method(store, "Save", [load.ReturnType, typeof(string), typeof(bool)]);
+            if (load == null || save == null)
             {
                 Log.Warning("[RimLLM] Compat: ApiConfigurationStore.Save was not found (Simplified Chinese Automation: One may have changed); its settings were not pre-filled.");
                 return;
@@ -129,8 +127,8 @@ internal static class ScAutoCompatPatch
             {
                 try
                 {
-                    object existing = strictLoad.Invoke(null, null);
-                    string existingUrl = existing == null ? null : (string)AccessTools.Property(existing.GetType(), "BaseUrl").GetValue(existing);
+                    object? existing = strictLoad.Invoke(null, null);
+                    string? existingUrl = existing == null ? null : (string?)AccessTools.Property(existing.GetType(), "BaseUrl").GetValue(existing);
                     if (!string.IsNullOrWhiteSpace(existingUrl) && !LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, ScAutoCompatPatch.PackageId))
                     {
                         CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
@@ -144,7 +142,7 @@ internal static class ScAutoCompatPatch
                 }
             }
 
-            object config = load.Invoke(null, null);
+            object config = load.Invoke(null, null) ?? throw new InvalidOperationException("ApiConfigurationStore.LoadForEditing 沒有回傳設定。");
             Type configType = config.GetType();
 
             AccessTools.Property(configType, "BaseUrl").SetValue(config, endpointUrl);
@@ -171,8 +169,8 @@ internal static class ScAutoCompatPatch
     private static void RefreshNativeSettingsDraft(MethodInfo loadForEditing)
     {
         Type mod = AccessTools.TypeByName("RimTranslation.Core.RimTranslationMod");
-        object instance = mod == null ? null : AccessTools.Property(mod, "Instance")?.GetValue(null);
-        FieldInfo draft = mod == null ? null : AccessTools.Field(mod, "apiDraft");
+        object? instance = mod == null ? null : AccessTools.Property(mod, "Instance")?.GetValue(null);
+        FieldInfo? draft = mod == null ? null : AccessTools.Field(mod, "apiDraft");
         if (instance == null || draft == null)
         {
             return;

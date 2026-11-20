@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections;
 using System.Reflection;
@@ -64,17 +62,17 @@ internal static class AutoTranslationCompatPatch
         {
             Type settingsType = AccessTools.TypeByName("AutoTranslation.Settings");
             Type managerType = AccessTools.TypeByName("AutoTranslation.Services.TranslatorManager");
-            FieldInfo translatorNameField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorName");
-            FieldInfo translatorSettingsField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorSettings");
-            MethodInfo getTranslator = managerType == null ? null : AccessTools.Method(managerType, "GetTranslator", [typeof(string)]);
+            FieldInfo? translatorNameField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorName");
+            FieldInfo? translatorSettingsField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorSettings");
+            MethodInfo? getTranslator = managerType == null ? null : AccessTools.Method(managerType, "GetTranslator", [typeof(string)]);
             if (translatorNameField == null || translatorSettingsField == null || getTranslator == null)
             {
                 return;
             }
 
-            object translator = getTranslator.Invoke(null, [TranslatorName]);
-            object config = (translator == null ? null : CompatSeedUtil.GetMember(translator, "Settings"))
-                ?? ((IDictionary)translatorSettingsField.GetValue(null))[TranslatorName];
+            object? translator = getTranslator.Invoke(null, [TranslatorName]);
+            object? config = (translator == null ? null : CompatSeedUtil.GetMember(translator, "Settings"))
+                ?? ((IDictionary?)translatorSettingsField.GetValue(null))?[TranslatorName];
             if (config == null
                 || !LocalOpenAIEndpoint.IsOwnBaseUrl(CompatSeedUtil.GetMember(config, UserCustomBaseUrlMember) as string, AutoTranslationCompatPatch.PackageId))
             {
@@ -85,14 +83,14 @@ internal static class AutoTranslationCompatPatch
             if (string.Equals(translatorNameField.GetValue(null) as string, TranslatorName, StringComparison.Ordinal))
             {
                 translatorNameField.SetValue(null, DefaultTranslatorName);
-                object fallback = getTranslator.Invoke(null, [DefaultTranslatorName]);
+                object? fallback = getTranslator.Invoke(null, [DefaultTranslatorName]);
                 if (fallback != null)
                 {
                     AccessTools.Field(managerType, "CurrentTranslator")?.SetValue(null, fallback);
                 }
             }
 
-            ((Verse.Mod)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
+            ((Verse.Mod?)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
             CompatSeedUtil.LogReverted(DisplayName);
         }
         catch (Exception ex)
@@ -109,7 +107,7 @@ internal static class AutoTranslationCompatPatch
     {
         try
         {
-            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(AutoTranslationCompatPatch.PackageId);
+            string? baseUrl = LocalOpenAIEndpoint.GetBaseUrl(AutoTranslationCompatPatch.PackageId);
             if (baseUrl == null)
             {
                 Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
@@ -122,7 +120,7 @@ internal static class AutoTranslationCompatPatch
                 return;
             }
 
-            object translator = members.GetTranslator.Invoke(null, [TranslatorName]);
+            object? translator = members.GetTranslator.Invoke(null, [TranslatorName]);
             if (translator == null)
             {
                 Log.Warning($"[RimLLM] Compat: the '{TranslatorName}' translator of {DisplayName} was not found; its settings were not pre-filled.");
@@ -145,11 +143,17 @@ internal static class AutoTranslationCompatPatch
         Type settingsType = AccessTools.TypeByName("AutoTranslation.Settings");
         Type managerType = AccessTools.TypeByName("AutoTranslation.Services.TranslatorManager");
         Type aiSettingsType = AccessTools.TypeByName("AutoTranslation.Translators.TranslatorSettings_AIModel");
-        FieldInfo translatorNameField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorName");
-        FieldInfo translatorSettingsField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorSettings");
-        MethodInfo getTranslator = managerType == null ? null : AccessTools.Method(managerType, "GetTranslator", [typeof(string)]);
+        FieldInfo? translatorNameField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorName");
+        FieldInfo? translatorSettingsField = settingsType == null ? null : AccessTools.Field(settingsType, "TranslatorSettings");
+        MethodInfo? getTranslator = managerType == null ? null : AccessTools.Method(managerType, "GetTranslator", [typeof(string)]);
+        if (managerType == null || translatorNameField == null || translatorSettingsField == null || getTranslator == null || aiSettingsType == null)
+        {
+            members = default;
+            return false;
+        }
+
         members = new SettingsMembers(managerType, translatorNameField, translatorSettingsField, getTranslator, aiSettingsType);
-        return translatorNameField != null && translatorSettingsField != null && getTranslator != null && aiSettingsType != null;
+        return true;
     }
 
     /// <summary>把端點位址與專用模型寫進該翻譯器的設定，首次接管時一併選用它。</summary>
@@ -159,14 +163,18 @@ internal static class AutoTranslationCompatPatch
     private static void SeedTranslator(string baseUrl, object translator, SettingsMembers members)
     {
         // 該翻譯器的設定：優先用翻譯器已持有的，否則從設定字典取或新建，並把兩邊接起來。
-        var dictionary = (IDictionary)members.TranslatorSettings.GetValue(null);
-        object config = CompatSeedUtil.GetMember(translator, "Settings") ?? dictionary[TranslatorName];
-        if (config == null || !members.AiSettings.IsInstanceOfType(config))
+        if (members.TranslatorSettings.GetValue(null) is not IDictionary dictionary)
         {
-            config = Activator.CreateInstance(members.AiSettings);
+            throw new InvalidOperationException("AutoTranslation 翻譯器設定字典不存在。");
         }
 
-        string existingUrl = CompatSeedUtil.GetMember(config, UserCustomBaseUrlMember) as string;
+        object? config = CompatSeedUtil.GetMember(translator, "Settings") ?? dictionary[TranslatorName];
+        if (config == null || !members.AiSettings.IsInstanceOfType(config))
+        {
+            config = Activator.CreateInstance(members.AiSettings) ?? throw new InvalidOperationException("無法建立 AI 模型翻譯器設定。");
+        }
+
+        string? existingUrl = CompatSeedUtil.GetMember(config, UserCustomBaseUrlMember) as string;
         bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, AutoTranslationCompatPatch.PackageId);
         if (!string.IsNullOrWhiteSpace(existingUrl) && !ours)
         {
@@ -198,7 +206,7 @@ internal static class AutoTranslationCompatPatch
             AccessTools.Field(members.ManagerType, "CurrentTranslator")?.SetValue(null, translator);
         }
 
-        ((Verse.Mod)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
+        ((Verse.Mod?)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
     }
 
     /// <summary>Auto Translation 設定與翻譯器管理員的反射成員；任一項為 null 代表對方已改版。</summary>
@@ -241,14 +249,14 @@ internal static class AutoTranslationCompatPatch
     }
 
     /// <summary>目前選用的翻譯器是否為需要金鑰且已就緒（玩家已填金鑰）的其他翻譯器。</summary>
-    private static bool UsesOwnKeyedTranslator(string currentName, MethodInfo getTranslator)
+    private static bool UsesOwnKeyedTranslator(string? currentName, MethodInfo getTranslator)
     {
         if (string.IsNullOrEmpty(currentName) || string.Equals(currentName, TranslatorName, StringComparison.Ordinal))
         {
             return false;
         }
 
-        object current = getTranslator.Invoke(null, [currentName]);
+        object? current = getTranslator.Invoke(null, [currentName]);
         return current != null
             && CompatSeedUtil.GetMember(current, "RequiresKey") is true
             && CompatSeedUtil.GetMember(current, "Ready") is true;

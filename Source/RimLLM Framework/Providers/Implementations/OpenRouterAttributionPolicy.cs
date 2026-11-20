@@ -43,7 +43,7 @@ internal sealed class OpenRouterAttributionPolicy : PipelinePolicy
 
     private static void Apply(PipelineMessage message)
     {
-        RimLLMAppAttribution attribution = RimLLMAppAttribution.Current;
+        RimLLMAppAttribution attribution = RimLLMAppAttribution.Current ?? RimLLMAppAttribution.Framework;
         message.Request.Headers.Set(RefererHeader, attribution.Url);
         message.Request.Headers.Set(TitleHeader, attribution.Title);
     }

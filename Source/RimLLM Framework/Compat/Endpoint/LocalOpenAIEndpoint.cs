@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,6 +5,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using RimLLM_Framework.Manager;
@@ -36,7 +35,7 @@ internal static class LocalOpenAIEndpoint
 
     private static readonly Dictionary<string, Handler> Handlers = new(StringComparer.Ordinal);
     private static readonly Lock Gate = new();
-    private static HttpListener _listener;
+    private static HttpListener? _listener;
     private static int _port;
 
     /// <summary>登錄某個 Mod 的處理器。可重複呼叫，後者覆蓋前者。</summary>
@@ -49,14 +48,14 @@ internal static class LocalOpenAIEndpoint
     }
 
     /// <summary>該 Mod 該寫進設定的 Base URL；必要時啟動端點。啟動失敗回傳 null。</summary>
-    public static string GetBaseUrl(string modId)
+    public static string? GetBaseUrl(string modId)
     {
         int port = EnsureStarted();
         return port == 0 ? null : $"http://127.0.0.1:{port}/m/{modId}/v1";
     }
 
     /// <summary>是否為框架自己先前寫入的位址（埠號每次啟動不同，需要更新時才認得出來）。</summary>
-    public static bool IsOwnBaseUrl(string baseUrl, string modId)
+    public static bool IsOwnBaseUrl(string? baseUrl, string modId)
     {
         if (string.IsNullOrEmpty(baseUrl)) return false;
 
@@ -141,13 +140,14 @@ internal static class LocalOpenAIEndpoint
             }
 
             // /m/{modId}/v1/{endpoint...}
-            if (!TryParseRoute(context.Request.Url, out string modId, out string endpoint))
+            ArgumentNullException.ThrowIfNull(context.Request.Url);
+            if (!TryParseRoute(context.Request.Url, out string? modId, out string? endpoint))
             {
                 await WriteJsonAsync(context, 404, ErrorBody("not_found", "Unknown path.")).ConfigureAwait(false);
                 return;
             }
 
-            Handler handler = FindHandler(modId);
+            Handler? handler = FindHandler(modId);
             if (handler == null)
             {
                 await WriteJsonAsync(context, 404, ErrorBody("not_found", "No handler registered for this mod.")).ConfigureAwait(false);
@@ -193,7 +193,7 @@ internal static class LocalOpenAIEndpoint
     }
 
     /// <summary>解析 <c>/m/{modId}/v1/{endpoint...}</c>；路徑不符時回傳 false。</summary>
-    private static bool TryParseRoute(Uri url, out string modId, out string endpoint)
+    private static bool TryParseRoute(Uri url, [NotNullWhen(true)] out string? modId, [NotNullWhen(true)] out string? endpoint)
     {
         modId = null;
         endpoint = null;
@@ -209,11 +209,11 @@ internal static class LocalOpenAIEndpoint
     }
 
     /// <summary>取得該 Mod 已登錄的處理器；未登錄回傳 null。</summary>
-    private static Handler FindHandler(string modId)
+    private static Handler? FindHandler(string modId)
     {
         lock (Gate)
         {
-            Handlers.TryGetValue(modId, out Handler handler);
+            Handlers.TryGetValue(modId, out Handler? handler);
             return handler;
         }
     }
@@ -269,7 +269,7 @@ internal static class LocalOpenAIEndpoint
                 return false;
             }
 
-            string type = error.ValueKind == JsonValueKind.Object
+            string? type = error.ValueKind == JsonValueKind.Object
                 && error.TryGetProperty("type", out JsonElement t) && t.ValueKind == JsonValueKind.String
                 ? t.GetString()
                 : null;
@@ -299,7 +299,7 @@ internal static class LocalOpenAIEndpoint
         {
             sb.Append("data: ").Append(JsonSerializer.Serialize(new
             {
-                choices = new[] { new { index = 0, delta = new { role = "assistant", content = text }, finish_reason = (string)null } }
+                choices = new[] { new { index = 0, delta = new { role = "assistant", content = text }, finish_reason = (string?)null } }
             })).Append("\n\n");
             sb.Append("data: ").Append(JsonSerializer.Serialize(new
             {

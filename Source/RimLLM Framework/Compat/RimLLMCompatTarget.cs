@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Mod;
@@ -62,7 +60,7 @@ internal sealed class RimLLMCompatTarget
     public bool IsPatched { get; private set; }
 
     /// <summary>攔截套用失敗的原因（通常是目標 Mod 版本漂移導致找不到方法）。</summary>
-    public string PatchError { get; private set; }
+    public string? PatchError { get; private set; }
 
     /// <summary>
     /// 套用接管設定，失敗時 fail-soft：記警告、把原因存到 <see cref="PatchError"/>，不讓例外炸到遊戲啟動流程。

@@ -650,12 +650,12 @@ override RimLLM_Framework.Providers.OpenRouterProvider.ProviderId.get -> string!
 ~readonly RimLLM_Framework.Mod.RimLLMMarkdownSegment.Markdown -> string
 ~readonly RimLLM_Framework.Mod.RimLLMMarkdownSegment.Rows -> System.Collections.Generic.IReadOnlyList<string[]>
 readonly RimLLM_Framework.Providers.OpenAIProvider.Settings -> RimLLM_Framework.IRimLLMSettings!
-~static RimLLM_Framework.Core.EncryptionUtility.Decrypt(string cipherText) -> string
-~static RimLLM_Framework.Core.EncryptionUtility.Encrypt(string plainText) -> string
-~static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThread(System.Action action) -> void
-~static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<System.Threading.Tasks.Task<T>> func) -> System.Threading.Tasks.Task<T>
-~static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<System.Threading.Tasks.Task<T>> func, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<T>
-~static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<T> func) -> System.Threading.Tasks.Task<T>
+static RimLLM_Framework.Core.EncryptionUtility.Decrypt(string! cipherText) -> string?
+static RimLLM_Framework.Core.EncryptionUtility.Encrypt(string! plainText) -> string!
+static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThread(System.Action! action) -> void
+static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<System.Threading.Tasks.Task<T>!>! func) -> System.Threading.Tasks.Task<T>!
+static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<System.Threading.Tasks.Task<T>!>! func, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<T>!
+static RimLLM_Framework.Core.RimLLMDispatcher.EnqueueOnMainThreadAsync<T>(System.Func<T>! func) -> System.Threading.Tasks.Task<T>!
 static RimLLM_Framework.LLMErrorMapper.ContainsIgnoreCase(string! haystack, string! needle) -> bool
 static RimLLM_Framework.LLMErrorMapper.CreateException(int? statusCode, string! friendlyMessage, System.TimeSpan? retryAfter = null, System.Exception? innerException = null, string? detectionText = null) -> RimLLM_Framework.RimLLMException!
 static RimLLM_Framework.LLMErrorMapper.LooksLikeContentPolicyRejection(string! message) -> bool

@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Reflection;
 using HarmonyLib;
@@ -23,8 +21,8 @@ internal static class CompatSeedUtil
     /// <summary>該 Mod 的專用模型名（取自 "供應商:模型"）；未指定回傳預設標籤。</summary>
     internal static string ModelLabel(string modId)
     {
-        string pin = Mod.RimLLMFrameworkMod.Settings?.GetCompatModelPin(modId);
-        return ProviderIds.TrySplitModelId(pin, out _, out string model) ? model : DefaultModelLabel;
+        string? pin = Mod.RimLLMFrameworkMod.Settings?.GetCompatModelPin(modId);
+        return pin != null && ProviderIds.TrySplitModelId(pin, out _, out string? model) ? model : DefaultModelLabel;
     }
 
     /// <summary>登錄端點處理器：把該 Mod 送來的 OpenAI 相容請求轉給 RimLLM。</summary>
@@ -61,7 +59,7 @@ internal static class CompatSeedUtil
     }
 
     /// <summary>取得目前啟用的 Mod 實例（Verse.Mod 子類）；找不到回傳 null。</summary>
-    internal static object FindModInstance(string typeName)
+    internal static object? FindModInstance(string typeName)
     {
         Type type = AccessTools.TypeByName(typeName);
         return type == null
@@ -69,13 +67,13 @@ internal static class CompatSeedUtil
             : System.Linq.Enumerable.FirstOrDefault(LoadedModManager.ModHandles, handle => handle.GetType() == type);
     }
 
-    internal static object GetMember(object target, string name)
+    internal static object? GetMember(object target, string name)
     {
         return AccessTools.Field(target.GetType(), name)?.GetValue(target)
             ?? AccessTools.Property(target.GetType(), name)?.GetValue(target);
     }
 
-    internal static void SetMember(object target, string name, object value)
+    internal static void SetMember(object target, string name, object? value)
     {
         FieldInfo field = AccessTools.Field(target.GetType(), name);
         if (field != null)

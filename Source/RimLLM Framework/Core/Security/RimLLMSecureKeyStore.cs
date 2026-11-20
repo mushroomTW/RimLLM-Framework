@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -107,7 +105,7 @@ internal static class RimLLMSecureKeyStore
         if (string.IsNullOrWhiteSpace(path))
             throw new CryptographicException("Secure key path is unavailable.");
         path = Path.GetFullPath(path);
-        string directory = Path.GetDirectoryName(path);
+        string directory = Path.GetDirectoryName(path) ?? throw new CryptographicException("Secure key path has no directory.");
         if (OperatingSystem.IsWindows())
             Directory.CreateDirectory(directory);
         else

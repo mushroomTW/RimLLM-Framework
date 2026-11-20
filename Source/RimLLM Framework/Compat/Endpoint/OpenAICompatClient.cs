@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -37,7 +35,7 @@ internal sealed class OpenAICompatClient
     private readonly string _packageId;
     private readonly int _defaultMaxOutputTokens;
     private readonly float? _defaultTemperature;
-    private IChatClient _chat;
+    private IChatClient? _chat;
 
     /// <summary>正式路徑：延遲到第一次請求才向 RimLLM 取 client，避免在攔截掛載階段觸碰 manager。</summary>
     /// <param name="packageId">來源 Mod 的 packageId。</param>
@@ -165,7 +163,7 @@ internal sealed class OpenAICompatClient
 
         public override Task<ChatResponse> GetResponseAsync(
             IEnumerable<ChatMessage> messages,
-            ChatOptions options = null,
+            ChatOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             return base.GetResponseAsync(messages, ApplyPin(options), cancellationToken);
@@ -173,17 +171,17 @@ internal sealed class OpenAICompatClient
 
         public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
             IEnumerable<ChatMessage> messages,
-            ChatOptions options = null,
+            ChatOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             return base.GetStreamingResponseAsync(messages, ApplyPin(options), cancellationToken);
         }
 
         /// <summary>呼叫端已自行指定模型時尊重它；需要改寫時複製，不就地修改呼叫端的物件。</summary>
-        private ChatOptions ApplyPin(ChatOptions options)
+        private ChatOptions? ApplyPin(ChatOptions? options)
         {
             if (!string.IsNullOrEmpty(options?.ModelId)) return options;
-            string pin = Mod.RimLLMFrameworkMod.Settings?.GetCompatModelPin(_packageId);
+            string? pin = Mod.RimLLMFrameworkMod.Settings?.GetCompatModelPin(_packageId);
             if (string.IsNullOrEmpty(pin)) return options;
 
             ChatOptions clone = options?.Clone() ?? new ChatOptions();
@@ -250,7 +248,7 @@ internal sealed class OpenAICompatClient
         public int? MaxOutputTokens;
         public float? Temperature;
         public float? TopP;
-        public ChatResponseFormat ResponseFormat;
+        public ChatResponseFormat? ResponseFormat;
         public bool StrictSchema;
     }
 
@@ -372,7 +370,7 @@ internal sealed class OpenAICompatClient
     }
 
     /// <summary>讀取可選的字串成員；不存在或型別不符時回傳 null。</summary>
-    private static string ReadOptionalString(JsonElement element, string name)
+    private static string? ReadOptionalString(JsonElement element, string name)
     {
         return element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
@@ -393,7 +391,7 @@ internal sealed class OpenAICompatClient
                 continue;
             }
 
-            string role = item.TryGetProperty("role", out JsonElement roleElement) && roleElement.ValueKind == JsonValueKind.String
+            string? role = item.TryGetProperty("role", out JsonElement roleElement) && roleElement.ValueKind == JsonValueKind.String
                 ? roleElement.GetString()
                 : null;
             List<AIContent> parts = ReadContent(content);
@@ -404,7 +402,7 @@ internal sealed class OpenAICompatClient
         }
     }
 
-    private static ChatRole ToChatRole(string role)
+    private static ChatRole ToChatRole(string? role)
     {
         return (role ?? string.Empty).ToLowerInvariant() switch
         {
@@ -445,13 +443,13 @@ internal sealed class OpenAICompatClient
         }
         else if (part.TryGetProperty("image_url", out JsonElement image))
         {
-            DataContent data = ToDataContent(ReadImageUrl(image));
+            DataContent? data = ToDataContent(ReadImageUrl(image));
             if (data != null) parts.Add(data);
         }
     }
 
     /// <summary>讀出圖片的 URL：Chat 為 <c>{"url": ...}</c>，Responses 的 input_image 直接是字串。</summary>
-    private static string ReadImageUrl(JsonElement image)
+    private static string? ReadImageUrl(JsonElement image)
     {
         if (image.ValueKind == JsonValueKind.String)
         {
@@ -464,7 +462,7 @@ internal sealed class OpenAICompatClient
     }
 
     /// <summary>只處理 <c>data:&lt;mime&gt;;base64,&lt;payload&gt;</c>；該 Mod 的預覽圖一律是這種形式。</summary>
-    private static DataContent ToDataContent(string url)
+    private static DataContent? ToDataContent(string? url)
     {
         const string prefix = "data:";
         const string marker = ";base64,";

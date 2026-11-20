@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.IO;
 using System.Security.Cryptography;
@@ -13,7 +11,7 @@ namespace RimLLM_Framework.Core;
 /// </summary>
 public static class EncryptionUtility
 {
-    private static byte[] _secureKey;
+    private static byte[]? _secureKey;
     private static readonly System.Threading.Lock CryptLock = new();
     private const string SecureVersionPrefix = "v3:";
     private const string SecureKeyFileName = "RimLLM_EncryptionKey.dat";
@@ -120,7 +118,7 @@ public static class EncryptionUtility
     /// 讓呼叫端能區分「金鑰本來就是空的」與「金鑰解不開或格式不支援」。
     /// 若此時回傳空字串，呼叫端下次存檔就會以 Encrypt("") 覆寫，造成金鑰靜默永久遺失。
     /// </remarks>
-    public static string Decrypt(string cipherText)
+    public static string? Decrypt(string cipherText)
     {
         if (string.IsNullOrEmpty(cipherText))
             return string.Empty;
