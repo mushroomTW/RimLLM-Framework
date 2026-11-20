@@ -85,7 +85,7 @@ public class RimLLMChatOptions : ChatOptions
     /// <see cref="RimLLMChatOptions"/> 時的唯一管道），而「不存在或型別不符就用預設值」
     /// 的三段式判斷先前散落在 executor 與各 provider，逐字重複了六次。
     /// </summary>
-    internal static T ReadAdditional<T>(ChatOptions options, string key, T fallback)
+    internal static T ReadAdditional<T>(ChatOptions? options, string key, T fallback)
     {
         return options?.AdditionalProperties != null &&
                options.AdditionalProperties.TryGetValue(key, out object? value) &&
