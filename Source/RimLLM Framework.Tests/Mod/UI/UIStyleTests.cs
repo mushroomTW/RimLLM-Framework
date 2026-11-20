@@ -12,6 +12,9 @@ namespace RimLLM_Framework.Tests;
 [TestFixture]
 public class UIStyleTests
 {
+    private static readonly string[] ExpectedGemmaModel = ["gemma-4-31b-it"];
+    private static readonly string[] ExpectedGoogleGeminiModel = ["google/gemini-3.5-flash"];
+
     // ---------- 金鑰遮罩 ----------
 
     [Test]
@@ -83,8 +86,8 @@ public class UIStyleTests
         string vendor = RimLLMUIStyle.GetModelVendor(ProviderIds.Gemini);
 
         CollectionAssert.AreEqual(models, RimLLMUIStyle.FilterModels(models, "google", vendor));
-        CollectionAssert.AreEqual(new[] { "gemma-4-31b-it" }, RimLLMUIStyle.FilterModels(models, "google/gemma", vendor));
-        CollectionAssert.AreEqual(new[] { "gemma-4-31b-it" }, RimLLMUIStyle.FilterModels(models, "gle/gemma", vendor), "橫跨斜線的片段也要比對得到");
+        CollectionAssert.AreEqual(ExpectedGemmaModel, RimLLMUIStyle.FilterModels(models, "google/gemma", vendor));
+        CollectionAssert.AreEqual(ExpectedGemmaModel, RimLLMUIStyle.FilterModels(models, "gle/gemma", vendor), "橫跨斜線的片段也要比對得到");
         ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModels(models, "google/flash", vendor).Count);
         ClassicAssert.AreEqual(0, RimLLMUIStyle.FilterModels(models, "google").Count, "沒有廠商鍵時維持純字串比對");
     }
@@ -106,7 +109,7 @@ public class UIStyleTests
     {
         var models = new List<string> { "meta/llama-4", "google/gemini-3.5-flash" };
 
-        CollectionAssert.AreEqual(new[] { "google/gemini-3.5-flash" }, RimLLMUIStyle.FilterModels(models, "google", "nvidia"));
+        CollectionAssert.AreEqual(ExpectedGoogleGeminiModel, RimLLMUIStyle.FilterModels(models, "google", "nvidia"));
     }
 
     [Test]

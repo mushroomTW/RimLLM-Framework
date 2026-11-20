@@ -52,7 +52,7 @@ public class ProviderTests
     }
 
     /// <summary>經 executor（框架唯一的記帳點）送出一次請求，用量寫入指定帳本。</summary>
-    private static string GenerateThroughExecutor(ILLMProvider provider, RimLLMUsageTracker tracker, List<ChatMessage> messages, string model)
+    private static string GenerateThroughExecutor(TestOpenAIProviderWithUsage provider, RimLLMUsageTracker tracker, List<ChatMessage> messages, string model)
     {
         using IChatClient client = provider.CreateChatClient(model);
         ChatResponse response = RimLLMChatClientExecutor.GenerateAsync(

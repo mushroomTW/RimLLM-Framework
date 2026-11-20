@@ -111,7 +111,7 @@ public static partial class ChatTestDrawer
         int lengthStart = ReasoningMarkerPrefix.Length;
         int suffixStart = answer.IndexOf(ReasoningMarkerSuffix, lengthStart, StringComparison.Ordinal);
         if (suffixStart < 0) return;
-        if (!int.TryParse(answer.Substring(lengthStart, suffixStart - lengthStart), System.Globalization.NumberStyles.None,
+        if (!int.TryParse(answer.AsSpan(lengthStart, suffixStart - lengthStart), System.Globalization.NumberStyles.None,
                 System.Globalization.CultureInfo.InvariantCulture, out int length)) return;
 
         int contentStart = suffixStart + ReasoningMarkerSuffix.Length;

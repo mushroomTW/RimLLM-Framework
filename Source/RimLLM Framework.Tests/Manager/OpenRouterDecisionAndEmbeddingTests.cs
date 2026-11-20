@@ -23,6 +23,8 @@ public class OpenRouterDecisionAndEmbeddingTests
 {
     private const string ModId = "test.openrouter";
     private static readonly RimLLMAppAttribution Attribution = new("RimAgent", "https://example.com/rimagent");
+    private static readonly string[] ExpectedDecisionModels = ["typesafe/jev-1.14", "liquid/d1.2"];
+    private static readonly string[] ExpectedEmbeddingModels = ["openai/text-embedding-3-small"];
 
     private RecordingHttpHandler _handler;
 
@@ -114,7 +116,7 @@ public class OpenRouterDecisionAndEmbeddingTests
         ClassicAssert.AreEqual(
             "https://openrouter.ai/api/v1/models?output_modalities=decisions",
             _handler.Requests[0].Uri.ToString());
-        CollectionAssert.AreEqual(new[] { "typesafe/jev-1.14", "liquid/d1.2" }, models);
+        CollectionAssert.AreEqual(ExpectedDecisionModels, models);
     }
 
     [Test]
@@ -156,7 +158,7 @@ public class OpenRouterDecisionAndEmbeddingTests
             EmbeddingApiKey = "sk-or-test"
         };
 
-        IEmbeddingGenerator<string, Embedding<float>> generator = NewManager(settings).CreateEmbeddingGenerator(ModId);
+        var generator = NewManager(settings).CreateEmbeddingGenerator(ModId);
         GeneratedEmbeddings<Embedding<float>> embeddings = await generator.GenerateAsync(["hello"]);
 
         RecordingHttpHandler.Request sent = _handler.Requests[0];
@@ -175,7 +177,7 @@ public class OpenRouterDecisionAndEmbeddingTests
 
         ClassicAssert.AreEqual("https://openrouter.ai/api/v1/embeddings/models", _handler.Requests[0].Uri.ToString());
         ClassicAssert.IsTrue(list.Filtered);
-        CollectionAssert.AreEqual(new[] { "openai/text-embedding-3-small" }, list.Models);
+        CollectionAssert.AreEqual(ExpectedEmbeddingModels, list.Models);
     }
 
     [Test]

@@ -27,6 +27,9 @@ public class GeminiDecisionTests
     private FakeGeminiHandler _handler;
     private Func<HttpMessageHandler> _originalMessageHandlerFactory;
     private static readonly string[] expected = new[] { "gemini-decision-1" };
+    private static readonly string[] CosmeticBlockedAnchors = ["Cosmetic", "Blocked"];
+    private static readonly string[] QueueChoices = ["billing", "replacements"];
+    private static readonly string[] LowHighAnchors = ["Low", "High"];
 
     [SetUp]
     public void SetUp()
@@ -102,7 +105,7 @@ public class GeminiDecisionTests
             ["billing"] = "Payment questions.",
             ["general"] = null
         }, "queue");
-        builder.Score("How severe?", new[] { "Cosmetic", "Blocked" }, "severity");
+        builder.Score("How severe?", CosmeticBlockedAnchors, "severity");
 
         await SendIgnoringAnswersAsync("The mug arrived cracked.", builder);
 
@@ -184,8 +187,8 @@ public class GeminiDecisionTests
     {
         var builder = new QuestionSet();
         NoulHandle damaged = builder.Noul("Did the item arrive damaged?", id: "is_damaged");
-        ChoiceHandle queue = builder.Choice("Which queue?", new[] { "billing", "replacements" }, "queue");
-        ScoreHandle severity = builder.Score("How severe?", new[] { "Low", "High" }, "severity");
+        ChoiceHandle queue = builder.Choice("Which queue?", QueueChoices, "queue");
+        ScoreHandle severity = builder.Score("How severe?", LowHighAnchors, "severity");
 
         QuestionSetResult result = await NewGeminiService().EvaluateAsync("The mug arrived cracked.", builder);
 

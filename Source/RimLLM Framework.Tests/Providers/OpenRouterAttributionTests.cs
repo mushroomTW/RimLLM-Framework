@@ -184,7 +184,7 @@ public class OpenRouterAttributionTests
         OpenAIProvider.TransportOverride = new System.ClientModel.Primitives.HttpClientPipelineTransport(http);
         try
         {
-            using IChatClient client = new RimLLMAttributionChatClient(provider.CreateChatClient(model), attribution);
+            using var client = new RimLLMAttributionChatClient(provider.CreateChatClient(model), attribution);
             await client.GetResponseAsync([new ChatMessage(ChatRole.User, "hi")]);
             return handler.Last.Headers;
         }
