@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -48,7 +46,7 @@ public class RimLLMDecisionService
     internal static string GetEffectiveApiKey(IRimLLMSettings settings, string providerId)
     {
         string key = settings.GetDecisionApiKey(providerId);
-        string chatProviderId = GetChatKeyProviderId(providerId);
+        string? chatProviderId = GetChatKeyProviderId(providerId);
         if (string.IsNullOrWhiteSpace(key) && chatProviderId != null)
         {
             key = settings.GetActiveApiKey(chatProviderId);
@@ -57,9 +55,9 @@ public class RimLLMDecisionService
     }
 
     /// <summary>該決策供應商在目錄中宣告可沿用的對話供應商；未知或不沿用時為 null。</summary>
-    private static string GetChatKeyProviderId(string providerId)
+    private static string? GetChatKeyProviderId(string providerId)
     {
-        return RimLLMDecisionProviderCatalog.TryGet(providerId, out RimLLMDecisionProvider provider)
+        return RimLLMDecisionProviderCatalog.TryGet(providerId, out RimLLMDecisionProvider? provider)
             ? provider.ChatKeyProviderId
             : null;
     }
@@ -74,7 +72,7 @@ public class RimLLMDecisionService
         {
             return true;
         }
-        string chatProviderId = GetChatKeyProviderId(providerId);
+        string? chatProviderId = GetChatKeyProviderId(providerId);
         return chatProviderId != null && !string.IsNullOrWhiteSpace(settings.GetApiKey(chatProviderId));
     }
 
@@ -100,7 +98,7 @@ public class RimLLMDecisionService
         string[] suffixes = GeminiDecisionsAdapterHandler.Targets(normalized)
             ? ["/v1/systemone", "/v1beta/decisions", "/v1beta"]
             : ["/v1/systemone"];
-        string suffix = suffixes.FirstOrDefault(s => normalized.EndsWith(s, StringComparison.OrdinalIgnoreCase));
+        string? suffix = suffixes.FirstOrDefault(s => normalized.EndsWith(s, StringComparison.OrdinalIgnoreCase));
         if (suffix != null)
         {
             normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd('/');
@@ -109,9 +107,9 @@ public class RimLLMDecisionService
     }
 
     private static readonly Lock HttpClientLock = new();
-    private static Func<HttpMessageHandler> _httpClientFactoryKey;
-    private static HttpClient _defaultHttpClient;
-    private static HttpClient _geminiHttpClient;
+    private static Func<HttpMessageHandler>? _httpClientFactoryKey;
+    private static HttpClient? _defaultHttpClient;
+    private static HttpClient? _geminiHttpClient;
 
     /// <summary>
     /// 取得共用的 HttpClient。TypeSafeClient 不會釋放外部傳入的 HttpClient（見其建構子文件），
@@ -191,7 +189,7 @@ public class RimLLMDecisionService
     /// 解析指定供應商要用的模型名稱：逐次覆寫優先，其次供應商自己的設定。
     /// 沒有預設模型，兩者都沒有就回傳空字串，由玩家到設定頁選擇。
     /// </summary>
-    private string ResolveModel(string providerId, string modelOverride)
+    private string ResolveModel(string providerId, string? modelOverride)
     {
         string model = !string.IsNullOrWhiteSpace(modelOverride)
             ? modelOverride
@@ -220,7 +218,7 @@ public class RimLLMDecisionService
     /// </summary>
     /// <param name="providerId">要使用的決策供應商 id；null 或空字串代表使用啟用中的供應商。</param>
     /// <param name="modelOverride">逐次覆寫的模型名稱；為空時用該供應商設定中的模型。</param>
-    private DecisionConnection ResolveConnection(string providerId, string modelOverride = null)
+    private DecisionConnection ResolveConnection(string? providerId, string? modelOverride = null)
     {
         string resolvedProviderId = string.IsNullOrWhiteSpace(providerId)
             ? _settings.DecisionProvider
@@ -482,7 +480,7 @@ public class RimLLMDecisionService
     public async Task<QuestionSetResult> EvaluateAsync(
         string state,
         QuestionSet plan,
-        string model = null,
+        string? model = null,
         CancellationToken cancellationToken = default)
     {
         return (await EvaluateDetailedAsync(state, plan, model, cancellationToken).ConfigureAwait(false)).Result;
@@ -492,7 +490,7 @@ public class RimLLMDecisionService
     internal async Task<DecisionEvaluation> EvaluateDetailedAsync(
         string state,
         QuestionSet plan,
-        string model = null,
+        string? model = null,
         CancellationToken cancellationToken = default)
     {
         // 沒有指定供應商的請求才走備援鏈；呼叫端明確指定供應商的路徑
@@ -559,7 +557,7 @@ public class RimLLMDecisionService
         string state,
         QuestionSet plan,
         string providerId,
-        string model = null,
+        string? model = null,
         CancellationToken cancellationToken = default)
     {
         try

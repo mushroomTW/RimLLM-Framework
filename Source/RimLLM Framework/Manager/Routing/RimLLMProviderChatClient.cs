@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -36,16 +34,16 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     private readonly string _model;
     private readonly IRimLLMSettings _settings;
     /// <summary>本次嘗試結算的 token 回呼，由路由層傳入供請求日誌附帶顯示。</summary>
-    private readonly Action<UsageTokens> _onUsage;
+    private readonly Action<UsageTokens>? _onUsage;
     /// <summary>用量帳本，由路由層傳入；為 null 時不記帳（單元測試直接建立本類別時）。</summary>
-    private readonly RimLLMUsageTracker _usageTracker;
+    private readonly RimLLMUsageTracker? _usageTracker;
 
     public RimLLMProviderChatClient(
         ILLMProvider provider,
         string model,
         IRimLLMSettings settings,
-        Action<UsageTokens> onUsage = null,
-        RimLLMUsageTracker usageTracker = null)
+        Action<UsageTokens>? onUsage = null,
+        RimLLMUsageTracker? usageTracker = null)
     {
         _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         _model = model;
@@ -56,10 +54,10 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
     public async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options = null,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ChatOptions effective = StripUnsupportedTools(_provider, options, out bool toolsStripped);
+        ChatOptions? effective = StripUnsupportedTools(_provider, options, out bool toolsStripped);
         var messageList = new List<ChatMessage>(messages ?? new List<ChatMessage>());
 
         ChatResponse response = await GenerateAsync(messageList, effective, cancellationToken).ConfigureAwait(false);
@@ -76,10 +74,10 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
     private async Task<ChatResponse> GenerateAsync(
         IList<ChatMessage> messages,
-        ChatOptions options,
+        ChatOptions? options,
         CancellationToken cancellationToken)
     {
-        Type responseType = RimLLMChatOptions.GetResponseType(options);
+        Type? responseType = RimLLMChatOptions.GetResponseType(options);
         if ((responseType != null || HasCallerSchema(options)) && IsNativeStructuredProvider(_provider))
         {
             try
@@ -117,8 +115,8 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     /// </summary>
     private async Task<ChatResponse> GenerateWithPromptSchemaAsync(
         IList<ChatMessage> messages,
-        ChatOptions options,
-        Type responseType,
+        ChatOptions? options,
+        Type? responseType,
         CancellationToken cancellationToken)
     {
         using IChatClient client = _provider.CreateChatClient(_model);
@@ -137,13 +135,13 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
     public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options = null,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         return new StreamUpdateEnumerable(this, messages, options, cancellationToken);
     }
 
-    public object GetService(Type serviceType, object serviceKey = null)
+    public object? GetService(Type serviceType, object? serviceKey = null)
     {
         ArgumentNullException.ThrowIfNull(serviceType);
         // 帶 key 的查詢代表呼叫端要的是具名服務，這一層沒有提供任何具名服務。
@@ -171,13 +169,13 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     {
         private readonly RimLLMProviderChatClient _client;
         private readonly IEnumerable<ChatMessage> _messages;
-        private readonly ChatOptions _options;
+        private readonly ChatOptions? _options;
         private readonly CancellationToken _cancellationToken;
 
         public StreamUpdateEnumerable(
             RimLLMProviderChatClient client,
             IEnumerable<ChatMessage> messages,
-            ChatOptions options,
+            ChatOptions? options,
             CancellationToken cancellationToken)
         {
             _client = client;
@@ -214,9 +212,9 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             System.Threading.Channels.ChannelWriter<ChatResponseUpdate> writer,
             CancellationToken cancellationToken)
         {
-            ChatOptions effective = StripUnsupportedTools(_client._provider, _options, out bool toolsStripped);
+            ChatOptions? effective = StripUnsupportedTools(_client._provider, _options, out bool toolsStripped);
             var messageList = new List<ChatMessage>(_messages ?? new List<ChatMessage>());
-            Type responseType = RimLLMChatOptions.GetResponseType(effective);
+            Type? responseType = RimLLMChatOptions.GetResponseType(effective);
             bool useNativeSchema = (responseType != null || HasCallerSchema(effective)) &&
                                    _client.IsNativeStructuredProvider(_client._provider);
 
@@ -344,7 +342,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             return false;
         }
 
-        for (Exception current = exception; current != null; current = current.InnerException)
+        for (Exception? current = exception; current != null; current = current.InnerException)
         {
             if (current is RimLLMException rimException && rimException.IsSchemaRejection)
             {
@@ -355,7 +353,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
         // 只看例外鏈的訊息，不看 ToString()：後者含堆疊，而堆疊裡的 RimLLMSchemaBuilder
         // 本身就含 "schema"，任何訊息帶 "invalid"／"400" 的例外都會被誤判成 schema 被拒。
         var messageBuilder = new System.Text.StringBuilder();
-        for (Exception current = exception; current != null; current = current.InnerException)
+        for (Exception? current = exception; current != null; current = current.InnerException)
         {
             messageBuilder.Append(current.Message).Append('\n');
         }
@@ -378,7 +376,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     /// 回應上會額外標記 <see cref="RimLLMClientExtensions.ToolsStrippedKey"/>：
     /// 只寫 log 的話 Agent 端拿到的是一個永遠不呼叫工具的回應，程式上無從分辨。
     /// </summary>
-    private static ChatOptions StripUnsupportedTools(ILLMProvider provider, ChatOptions options, out bool stripped)
+    private static ChatOptions? StripUnsupportedTools(ILLMProvider provider, ChatOptions? options, out bool stripped)
     {
         stripped = false;
         if (options?.Tools == null || options.Tools.Count == 0) return options;
@@ -410,7 +408,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     /// 附加在既有系統訊息之後而不是取代它——先前這裡是直接覆寫，系統訊息若不在
     /// 索引 0，原本的內容就會連同被換掉。
     /// </remarks>
-    private static IList<ChatMessage> ApplyJsonSchemaInstructions(IList<ChatMessage> messages, Type responseType, ChatOptions options)
+    private static IList<ChatMessage> ApplyJsonSchemaInstructions(IList<ChatMessage> messages, Type? responseType, ChatOptions? options)
     {
         string schemaInstructions;
         if (responseType != null)
@@ -419,11 +417,11 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                 "\n\n[結構化輸出要求：只能回傳符合下列結構的原始 JSON，不要加入 Markdown code fence 或其他說明。範例：\n" +
                 RimLLMJsonHelper.GetSampleJson(responseType) + "]";
         }
-        else if (HasCallerSchema(options))
+        else if (options?.ResponseFormat is ChatResponseFormatJson { Schema: { } callerSchema })
         {
             schemaInstructions =
                 "\n\n[結構化輸出要求：只能回傳符合下列 JSON Schema 的原始 JSON，不要加入 Markdown code fence 或其他說明。JSON Schema：\n" +
-                ((ChatResponseFormatJson)options.ResponseFormat).Schema.Value.GetRawText() + "]";
+                callerSchema.GetRawText() + "]";
         }
         else
         {
@@ -444,7 +442,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     }
 
     /// <summary>呼叫端自行設定了帶 schema 的 ResponseFormat（例如 MEAI 的 GetResponseAsync&lt;T&gt;），而不是走框架的結構化輸出。</summary>
-    private static bool HasCallerSchema(ChatOptions options)
+    private static bool HasCallerSchema(ChatOptions? options)
     {
         return RimLLMChatOptions.GetResponseType(options) == null &&
                options?.ResponseFormat is ChatResponseFormatJson { Schema: not null };
@@ -454,9 +452,9 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     /// 不走原生 schema 時，呼叫端的 schema 已改由提示詞傳達，這裡把回應格式降成單純的 JSON 模式，
     /// 避免把供應商不接受（或剛剛拒絕）的 json_schema 再送一次。
     /// </summary>
-    private static ChatOptions DowngradeCallerSchema(ChatOptions options)
+    private static ChatOptions? DowngradeCallerSchema(ChatOptions? options)
     {
-        if (!HasCallerSchema(options)) return options;
+        if (options is null || !HasCallerSchema(options)) return options;
 
         ChatOptions clone = options.Clone();
         clone.ResponseFormat = ChatResponseFormat.Json;

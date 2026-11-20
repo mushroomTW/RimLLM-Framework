@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -32,7 +30,7 @@ internal class RimLLMRequestQueue
     private sealed class QueueEntry : IComparable<QueueEntry>
     {
         public int Priority { get; set; }
-        public TaskCompletionSource<IDisposable> Tcs { get; set; }
+        public required TaskCompletionSource<IDisposable> Tcs { get; set; }
 
         /// <summary>
         /// 入列序號。先前以 DateTime.UtcNow 判先後，同一個時鐘刻度內入列的請求鍵值相等，
@@ -40,8 +38,9 @@ internal class RimLLMRequestQueue
         /// </summary>
         public long Sequence { get; set; }
 
-        public int CompareTo(QueueEntry other)
+        public int CompareTo(QueueEntry? other)
         {
+            ArgumentNullException.ThrowIfNull(other);
             // 優先級高（數值大）的排在前面
             int cmp = other.Priority.CompareTo(this.Priority);
             if (cmp == 0)
@@ -56,7 +55,7 @@ internal class RimLLMRequestQueue
     /// <summary>釋放時歸還名額並重新抽取佇列。</summary>
     private sealed class Slot : IDisposable
     {
-        private RimLLMRequestQueue _queue;
+        private RimLLMRequestQueue? _queue;
 
         public Slot(RimLLMRequestQueue queue)
         {
@@ -65,7 +64,7 @@ internal class RimLLMRequestQueue
 
         public void Dispose()
         {
-            RimLLMRequestQueue queue = Interlocked.Exchange(ref _queue, null);
+            RimLLMRequestQueue? queue = Interlocked.Exchange(ref _queue, null);
             if (queue == null) return; // 重複釋放不可重複歸還名額
 
             lock (queue._queueLock)
@@ -143,7 +142,7 @@ internal class RimLLMRequestQueue
 
     private void ProcessQueue()
     {
-        List<QueueEntry> toGrant = null;
+        List<QueueEntry>? toGrant = null;
         lock (_queueLock)
         {
             int limit = Math.Max(1, _settings.MaxConcurrentRequests);

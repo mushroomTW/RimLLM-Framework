@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.ClientModel;
 using System.Collections.Generic;
@@ -16,7 +14,7 @@ namespace RimLLM_Framework.Manager;
 internal record GenerationParams(
     IChatClient Client,
     IEnumerable<ChatMessage> Messages,
-    ChatOptions Options,
+    ChatOptions? Options,
     string Model,
     bool UseNativeSchema,
     string ProviderId,
@@ -27,7 +25,7 @@ internal record GenerationParams(
     /// 每次嘗試結算的用量寫入的帳本。由路由層明確傳入，不再向全域 Manager 查找；
     /// 為 null 時（直接測試 executor）只觸發 onUsage 回呼、不記帳。
     /// </summary>
-    public RimLLMUsageTracker UsageTracker { get; init; }
+    public RimLLMUsageTracker? UsageTracker { get; init; }
 }
 
 /// <summary>以逐候選的參數（模型、schema 方言、逾時）包裝一次 MEAI IChatClient 呼叫。</summary>
@@ -42,8 +40,8 @@ internal static class RimLLMChatClientExecutor
     /// </summary>
     public static async Task<ChatResponse> GenerateAsync(
         GenerationParams p,
-        Action<ChatOptions> customizeOptions = null,
-        Action<UsageTokens> onUsage = null)
+        Action<ChatOptions>? customizeOptions = null,
+        Action<UsageTokens>? onUsage = null)
     {
         var (client, messages, options, model, useNativeSchema, providerId, timeoutSeconds, cancellationToken) = p;
 
@@ -87,7 +85,7 @@ internal static class RimLLMChatClientExecutor
 
         // 只有推理內容不算成功：輸出額度被思考用完時，呼叫端拿到的是空字串，
         // 記成成功就不會備援，呼叫端也無從察覺。
-        if (string.IsNullOrWhiteSpace(response?.Text) && !hasToolCalls)
+        if (response is null || (string.IsNullOrWhiteSpace(response.Text) && !hasToolCalls))
         {
             // 服務端已經計費，用量要照記。沒有回報時只有推理內容可估；什麼都沒有就不記。
             if (response?.Usage != null || hasReasoning)
@@ -100,6 +98,7 @@ internal static class RimLLMChatClientExecutor
         }
 
         // 要不要用估算值只由 RecordUsage 決定；逐字元估算相較網路往返可忽略。
+        ArgumentNullException.ThrowIfNull(response);
         RecordUsage(p.UsageTracker, providerId, model, builtMessages, response.Usage, EstimateCompletionRaw(contents), onUsage);
         return response;
     }
@@ -108,7 +107,7 @@ internal static class RimLLMChatClientExecutor
     /// 供應商沒回報用量時的 completion 估算：答案文字與推理文字都算。
     /// 推理 token 同樣計費，只算答案會讓本機相容端點上的推理模型被低估數倍。
     /// </summary>
-    private static double EstimateCompletionRaw(IList<AIContent> contents)
+    private static double EstimateCompletionRaw(IList<AIContent>? contents)
     {
         double estimate = 0;
         if (contents == null) return estimate;
@@ -139,8 +138,8 @@ internal static class RimLLMChatClientExecutor
     public static async Task StreamAsync(
         GenerationParams p,
         Func<ChatResponseUpdate, Task> onUpdateReceived,
-        Action<ChatOptions> customizeOptions = null,
-        Action<UsageTokens> onUsage = null)
+        Action<ChatOptions>? customizeOptions = null,
+        Action<UsageTokens>? onUsage = null)
     {
         var (client, messages, options, model, useNativeSchema, providerId, timeoutSeconds, cancellationToken) = p;
 
@@ -229,7 +228,7 @@ internal static class RimLLMChatClientExecutor
         public bool AnyOutput;
         public bool AnyAnswer;
         public double CompletionEstimate;
-        public UsageDetails LastUsage;
+        public UsageDetails? LastUsage;
 
         public void Inspect(IList<AIContent> contents)
         {
@@ -288,11 +287,11 @@ internal static class RimLLMChatClientExecutor
     /// 併進去而不是另開一則訊息，是因為 provider 端的上下文快取都以 system instruction
     /// 為單位；拆成兩則會讓相同的前綴算不到同一份快取。
     /// </remarks>
-    internal static IList<ChatMessage> BuildMessages(IEnumerable<ChatMessage> messages, ChatOptions options)
+    internal static IList<ChatMessage> BuildMessages(IEnumerable<ChatMessage>? messages, ChatOptions? options)
     {
         var list = messages != null ? new List<ChatMessage>(messages) : [];
 
-        string cachedContext = RimLLMChatOptions.GetCachedContext(options);
+        string? cachedContext = RimLLMChatOptions.GetCachedContext(options);
         if (!string.IsNullOrEmpty(cachedContext))
         {
             int firstSystemIndex = list.FindIndex(m => m != null && m.Role == ChatRole.System);
@@ -327,10 +326,10 @@ internal static class RimLLMChatClientExecutor
     /// 以呼叫端的原始 options 為基底複製，組出送往 provider 的選項。
     /// </summary>
     internal static ChatOptions BuildOptions(
-        ChatOptions source,
+        ChatOptions? source,
         string model,
         bool useNativeSchema,
-        Action<ChatOptions> customizeOptions)
+        Action<ChatOptions>? customizeOptions)
     {
         // 以呼叫端的原始 options 為基底複製，因此 TopP、TopK、FrequencyPenalty、
         // PresencePenalty、Seed、StopSequences、Tools、Reasoning、AdditionalProperties、
@@ -358,7 +357,7 @@ internal static class RimLLMChatClientExecutor
         options.AdditionalProperties[RimLLMChatOptions.DisableReasoningKey] =
             RimLLMChatOptions.GetDisableReasoning(source);
 
-        Type responseType = RimLLMChatOptions.GetResponseType(source);
+        Type? responseType = RimLLMChatOptions.GetResponseType(source);
 
         // 與 raw 路徑一致：含 Dictionary 的開放式 map 型別仍送出 response_format，
         // 但 strict 改為 false，否則服務端會拒絕（AdditionalProperties["strict"] 控制
@@ -392,13 +391,13 @@ internal static class RimLLMChatClientExecutor
     /// <param name="completionEstimate">provider 沒回報用量時使用的 completion token 估算值（<see cref="EstimateTokensRaw"/> 的累計）。</param>
     /// <param name="onUsage">供應商有回報用量時的 token 回呼（數字與帳本相同）；只有估算值時不觸發，以免日誌把估算當實際值顯示。</param>
     private static void RecordUsage(
-        RimLLMUsageTracker usageTracker,
+        RimLLMUsageTracker? usageTracker,
         string providerId,
         string model,
         IList<ChatMessage> messages,
-        UsageDetails usage,
+        UsageDetails? usage,
         double completionEstimate,
-        Action<UsageTokens> onUsage = null)
+        Action<UsageTokens>? onUsage = null)
     {
         int promptTokens;
         int completionTokens;
@@ -444,7 +443,7 @@ internal static class RimLLMChatClientExecutor
     /// <summary>
     /// 由 SDK 的 <see cref="UsageDetails"/> 取出三項 token 計數；usage 為 null 時一律回傳 0。
     /// </summary>
-    private static void ReadUsage(UsageDetails usage, out int promptTokens, out int completionTokens, out int cachedPromptTokens)
+    private static void ReadUsage(UsageDetails? usage, out int promptTokens, out int completionTokens, out int cachedPromptTokens)
     {
         promptTokens = ToInt32(usage?.InputTokenCount);
         completionTokens = ToInt32(usage?.OutputTokenCount);

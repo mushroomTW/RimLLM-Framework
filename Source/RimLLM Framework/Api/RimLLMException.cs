@@ -74,7 +74,7 @@ public class RimLLMException : Exception
     /// <param name="error">標準化錯誤列舉代碼。</param>
     /// <param name="message">錯誤詳細訊息。</param>
     /// <param name="innerException">導致此例外狀況的內部例外狀況。</param>
-    public RimLLMException(LLMError error, string message, Exception innerException) : base(message, innerException)
+    public RimLLMException(LLMError error, string message, Exception? innerException) : base(message, innerException)
     {
         Error = error;
     }

@@ -62,7 +62,7 @@ public static class RimLLMLog
     /// <param name="value">原始字串。</param>
     /// <param name="maxLength">截斷上限字元數。</param>
     /// <returns>已清理並可安全記錄的字串。</returns>
-    public static string SanitizeForLog(string value, int maxLength = 500)
+    public static string? SanitizeForLog(string? value, int maxLength = 500)
     {
         if (string.IsNullOrEmpty(value)) return value;
 

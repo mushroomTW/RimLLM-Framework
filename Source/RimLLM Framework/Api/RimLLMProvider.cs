@@ -156,7 +156,7 @@ public static class RimLLMProvider
     /// 非拋版能力查詢，供相容層高頻輪詢使用，避免離線時以例外控制流程。
     /// 語意與 <see cref="GetEffectiveCapabilities"/> 一致，僅以傳回值取代擲出。
     /// </summary>
-    internal static bool TryGetEffectiveCapabilities(string? preferredModelId, out LLMProviderCapabilities? capabilities, out string failureReason)
+    internal static bool TryGetEffectiveCapabilities(string? preferredModelId, out LLMProviderCapabilities? capabilities, out string? failureReason)
     {
         try
         {
@@ -174,7 +174,7 @@ public static class RimLLMProvider
     /// <summary>
     /// 非拋版能力查詢（預設模型），供相容層高頻輪詢使用。
     /// </summary>
-    internal static bool TryGetEffectiveCapabilities(out LLMProviderCapabilities? capabilities, out string failureReason)
+    internal static bool TryGetEffectiveCapabilities(out LLMProviderCapabilities? capabilities, out string? failureReason)
     {
         return TryGetEffectiveCapabilities(null, out capabilities, out failureReason);
     }

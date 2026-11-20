@@ -1,8 +1,7 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,7 +19,7 @@ public class RimLLMFallbackPipeline
 {
     private readonly IRimLLMSettings _settings;
     private readonly RimLLMHealthLedger _healthLedger;
-    private readonly Func<string, ILLMProvider> _providerResolver;
+    private readonly Func<string, ILLMProvider?> _providerResolver;
     private readonly Func<string, bool> _isProviderEnabledFunc;
     private int _roundRobinIndex;
 
@@ -36,7 +35,7 @@ public class RimLLMFallbackPipeline
         IRimLLMSettings settings,
         RimLLMHealthLedger healthLedger,
         RimLLMUsageTracker usageTracker,
-        Func<string, ILLMProvider> providerResolver,
+        Func<string, ILLMProvider?> providerResolver,
         Func<string, bool> isProviderEnabledFunc)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -60,9 +59,9 @@ public class RimLLMFallbackPipeline
     /// 仍可能在稍後的請求中被路由到。
     /// </param>
     /// <returns>已排序的可用候選名單。</returns>
-    internal List<ResolvedCandidate> ResolveCandidates(string preferredModelId, string minFallbackLevel, bool includeCoolingDown = false)
+    internal List<ResolvedCandidate> ResolveCandidates(string? preferredModelId, string? minFallbackLevel, bool includeCoolingDown = false)
     {
-        if (!TryResolveCandidates(preferredModelId, minFallbackLevel, includeCoolingDown, out List<ResolvedCandidate> candidates, out string failureReason))
+        if (!TryResolveCandidates(preferredModelId, minFallbackLevel, includeCoolingDown, out List<ResolvedCandidate>? candidates, out string? failureReason))
         {
             throw new RimLLMException(LLMError.ProviderOffline, failureReason);
         }
@@ -75,11 +74,11 @@ public class RimLLMFallbackPipeline
     /// 語意與 <see cref="ResolveCandidates"/> 完全一致，僅以傳回值取代擲出。
     /// </summary>
     internal bool TryResolveCandidates(
-        string preferredModelId,
-        string minFallbackLevel,
+        string? preferredModelId,
+        string? minFallbackLevel,
         bool includeCoolingDown,
-        out List<ResolvedCandidate> candidates,
-        out string failureReason,
+        [NotNullWhen(true)] out List<ResolvedCandidate>? candidates,
+        [NotNullWhen(false)] out string? failureReason,
         bool advanceRoundRobin = true)
     {
         var fallbackChain = GetFallbackChainSnapshot();
@@ -102,7 +101,7 @@ public class RimLLMFallbackPipeline
         var resolved = new List<ResolvedCandidate>();
         foreach (string entry in effectiveChain)
         {
-            if (TryGetEligibleCandidate(entry, minFallbackLevel, apiKeyCache, out string pId, out ILLMProvider p, out string mName))
+            if (TryGetEligibleCandidate(entry, minFallbackLevel, apiKeyCache, out string? pId, out ILLMProvider? p, out string? mName))
             {
                 resolved.Add(new ResolvedCandidate { Entry = entry, ProviderId = pId, Provider = p, ModelName = mName });
             }
@@ -195,7 +194,7 @@ public class RimLLMFallbackPipeline
     /// 伺服器要求的等待是否超過願意等待的上限。超過時原地等待只會讓呼叫端一直卡住，
     /// 應該直接換下一個候選；沒有候選可換時，呼叫端會從例外的 RetryAfter 得知要等多久。
     /// </summary>
-    internal static bool ExceedsRetryAfterLimit(Exception ex)
+    internal static bool ExceedsRetryAfterLimit(Exception? ex)
     {
         return ex is RimLLMException { RetryAfter: { } retryAfter } &&
                retryAfter.TotalSeconds > MaxRetryWaitSeconds;
@@ -209,7 +208,7 @@ public class RimLLMFallbackPipeline
     /// 本地指數退避上限為 60 秒。Retry-After 超過同一上限時不會走到這裡的等待，
     /// 路由層會依 <see cref="ExceedsRetryAfterLimit"/> 直接換下一個候選。
     /// </summary>
-    internal static float ResolveRetryDelay(float baseDelay, int attempt, Exception ex)
+    internal static float ResolveRetryDelay(float baseDelay, int attempt, Exception? ex)
     {
         const int maxBackoffSteps = 6;
 
@@ -259,7 +258,7 @@ public class RimLLMFallbackPipeline
     /// 把指定模型放到鏈首。已在鏈上時移動既有條目（保留使用者設定的大小寫），否則插入。
     /// 回傳 true 代表鏈首現在就是指定模型。
     /// </summary>
-    private bool MovePreferredModelToFrontIfUsable(List<string> effectiveChain, string preferredModelId, Dictionary<string, string> apiKeyCache)
+    private bool MovePreferredModelToFrontIfUsable(List<string> effectiveChain, string? preferredModelId, Dictionary<string, string> apiKeyCache)
     {
         if (string.IsNullOrEmpty(preferredModelId)) return false;
 
@@ -267,7 +266,7 @@ public class RimLLMFallbackPipeline
         if (RimLLMChatOptions.IsFallbackModelId(preferredModelId)) return false;
 
         string preferredEntry = preferredModelId;
-        if (!ResolveFallbackEntry(preferredEntry, out string prefProvider, out string prefModel)
+        if (!ResolveFallbackEntry(preferredEntry, out string? prefProvider, out string? prefModel)
             || string.IsNullOrEmpty(prefModel))
         {
             // 無 provider 前綴的純 model 名視為「不指定 provider」，忽略（交給 fallback chain）
@@ -300,17 +299,19 @@ public class RimLLMFallbackPipeline
 
     internal bool ResolveFallbackEntry(string entry, out string providerId, out string modelName)
     {
-        providerId = ProviderIds.ParseProviderId(entry);
+        string? parsedProvider = ProviderIds.ParseProviderId(entry);
         modelName = "";
 
-        if (providerId == null)
+        if (parsedProvider == null)
         {
             providerId = entry;
             return false;
         }
 
+        providerId = parsedProvider;
+
         // 純供應商（含結尾冒號 "Provider:"）：取該供應商的預設模型
-        modelName = ProviderIds.TrySplitModelId(entry, out _, out string explicitModel)
+        modelName = ProviderIds.TrySplitModelId(entry, out _, out string? explicitModel) && explicitModel != null
             ? explicitModel
             : _settings.GetDefaultModel(providerId, "default");
 
@@ -332,7 +333,7 @@ public class RimLLMFallbackPipeline
     {
         if (!_isProviderEnabledFunc(providerId)) return false;
         if (!provider.RequiresApiKey) return true;
-        if (apiKeyCache != null && apiKeyCache.TryGetValue(providerId, out string cachedKey))
+        if (apiKeyCache != null && apiKeyCache.TryGetValue(providerId, out string? cachedKey))
         {
             return !string.IsNullOrEmpty(cachedKey);
         }
@@ -342,7 +343,7 @@ public class RimLLMFallbackPipeline
         return !string.IsNullOrEmpty(apiKey);
     }
 
-    private bool TryGetEligibleCandidate(string entry, string minFallbackLevel, Dictionary<string, string> apiKeyCache, out string providerId, out ILLMProvider provider, out string modelName)
+    private bool TryGetEligibleCandidate(string entry, string? minFallbackLevel, Dictionary<string, string> apiKeyCache, [NotNullWhen(true)] out string? providerId, [NotNullWhen(true)] out ILLMProvider? provider, [NotNullWhen(true)] out string? modelName)
     {
         provider = null;
 
@@ -389,7 +390,7 @@ public class RimLLMFallbackPipeline
         return ModelPricing.GetModelLevel(providerId, modelName);
     }
 
-    private static int ParseMinFallbackLevel(string levelStr)
+    private static int ParseMinFallbackLevel(string? levelStr)
     {
         return (levelStr ?? string.Empty).ToLowerInvariant() switch
         {
@@ -400,7 +401,7 @@ public class RimLLMFallbackPipeline
         };
     }
 
-    internal static bool IsRetryableException(Exception ex)
+    internal static bool IsRetryableException(Exception? ex)
     {
         if (ex is OperationCanceledException)
         {

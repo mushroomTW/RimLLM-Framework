@@ -24,7 +24,7 @@ internal sealed class OpenRouterAttributionPolicy : PipelinePolicy
     public const string TitleHeader = "X-OpenRouter-Title";
 
     /// <summary>位址是否指向 OpenRouter。供不經由 OpenRouterProvider 的路徑（embedding、決策）判斷要不要加標頭。</summary>
-    public static bool Targets(Uri uri)
+    public static bool Targets(Uri? uri)
     {
         return uri != null && string.Equals(uri.Host, Host, StringComparison.OrdinalIgnoreCase);
     }

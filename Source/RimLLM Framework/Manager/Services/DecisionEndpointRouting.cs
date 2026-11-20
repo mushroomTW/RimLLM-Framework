@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -30,7 +28,7 @@ internal static class DecisionEndpointRouting
     /// <summary>端點是否走明文 HTTP。明文端點視為玩家自架的服務，可以不填金鑰。</summary>
     public static bool IsPlaintext(string endpoint)
     {
-        return Uri.TryCreate(endpoint, UriKind.Absolute, out Uri uri)
+        return Uri.TryCreate(endpoint, UriKind.Absolute, out Uri? uri)
                && string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -40,7 +38,7 @@ internal static class DecisionEndpointRouting
     /// </summary>
     public static Uri GetBaseUrl(string endpoint)
     {
-        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out Uri uri))
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out Uri? uri))
         {
             throw new UriFormatException($"The decision endpoint '{endpoint}' is not an absolute URI.");
         }
@@ -84,7 +82,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
         }
 
         string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        List<string> ids = TryReadOpenAiModelIds(body);
+        List<string>? ids = TryReadOpenAiModelIds(body);
         if (ids == null)
         {
             // 不是 OpenAI 格式（多半是 Jev 原生格式）：把讀掉的內容放回去，交給 SDK 自己解析。
@@ -99,7 +97,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
                 await base.SendAsync(decisionRequest, cancellationToken).ConfigureAwait(false);
             if (decisionResponse.IsSuccessStatusCode && decisionResponse.Content != null)
             {
-                List<string> decisionIds = TryReadOpenAiModelIds(
+                List<string>? decisionIds = TryReadOpenAiModelIds(
                     await decisionResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
                 if (decisionIds != null)
                 {
@@ -114,7 +112,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
 
     /// <summary>讀出 OpenAI 格式的 <c>data[].id</c>；不是這個格式時回傳 null。</summary>
     #pragma warning disable S1168 // API 合約規定格式不符時回傳 null，呼叫端已區分 null 與空集合。
-    internal static List<string> TryReadOpenAiModelIds(string body)
+    internal static List<string>? TryReadOpenAiModelIds(string body)
     {
         try
         {
@@ -134,9 +132,10 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
                 if (entry.ValueKind == JsonValueKind.Object &&
                     entry.TryGetProperty("id", out JsonElement id) &&
                     id.ValueKind == JsonValueKind.String &&
-                    !string.IsNullOrWhiteSpace(id.GetString()))
+                    id.GetString() is { } idText &&
+                    !string.IsNullOrWhiteSpace(idText))
                 {
-                    ids.Add(id.GetString());
+                    ids.Add(idText);
                 }
             }
             return ids;
@@ -160,6 +159,7 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
 
     private static HttpRequestMessage CloneWithQuery(HttpRequestMessage request, string query)
     {
+        ArgumentNullException.ThrowIfNull(request.RequestUri);
         var uri = new UriBuilder(request.RequestUri) { Query = query }.Uri;
         var clone = new HttpRequestMessage(request.Method, uri) { Version = request.Version };
         foreach (KeyValuePair<string, IEnumerable<string>> header in request.Headers)

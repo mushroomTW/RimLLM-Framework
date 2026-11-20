@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -36,7 +34,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
     /// 重試前的指數退避（最長 60 秒）會一直占著名額，MaxConcurrentRequests 預設只有 2，
     /// 一個被限流的供應商就能讓其他 Mod 的請求全部排隊。測試可傳 null 略過排隊。
     /// </summary>
-    private readonly RimLLMRequestQueue _queue;
+    private readonly RimLLMRequestQueue? _queue;
 
     /// <summary>
     /// 標記本次請求是串流。RoutingContext 不帶這個資訊，而候選用盡時要擲出的錯誤碼
@@ -53,11 +51,11 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
 
     private sealed class RequestState
     {
-        public List<RimLLMFallbackPipeline.ResolvedCandidate> Candidates;
+        public List<RimLLMFallbackPipeline.ResolvedCandidate>? Candidates;
         public int Index = -1;
         public int AttemptOnCurrent;
         public bool SawRetryableFailureOnCurrent;
-        public Exception LastException;
+        public Exception? LastException;
         /// <summary>最後一次失敗嘗試的耗時（已扣除排隊等待），供候選失敗日誌使用。</summary>
         public long LastAttemptMs;
         public DateTime StartTime = DateTime.Now;
@@ -69,7 +67,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         /// </summary>
         public UsageTokens LastUsage;
 
-        public RimLLMFallbackPipeline.ResolvedCandidate Current => Candidates[Index];
+        public RimLLMFallbackPipeline.ResolvedCandidate Current => (Candidates ?? throw new InvalidOperationException("候選尚未解析。"))[Index];
     }
 
     public RimLLMFailoverChatClient(
@@ -78,7 +76,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         RimLLMUsageTracker usageTracker,
         RimLLMFallbackPipeline policy,
         string modId,
-        RimLLMRequestQueue queue = null)
+        RimLLMRequestQueue? queue = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _healthLedger = healthLedger ?? throw new ArgumentNullException(nameof(healthLedger));
@@ -120,7 +118,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
 
         public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
             IEnumerable<ChatMessage> messages,
-            ChatOptions options = null,
+            ChatOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             ChatOptions marked = options?.Clone() ?? new ChatOptions();
@@ -284,7 +282,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
     /// 擲出的例外沿用最後一個候選的錯誤碼與 Retry-After：呼叫端靠它們分辨額度用盡、
     /// 限流或金鑰錯誤，一律蓋成同一個錯誤碼的話 SDK 的錯誤契約就形同虛設。
     /// </summary>
-    private void Exhausted(RequestState state, ChatOptions options)
+    private void Exhausted(RequestState state, ChatOptions? options)
     {
         // 最後一個候選的失敗已由 AdvanceAsync 在換手前結算，這裡只需寫收尾日誌。
         state.Total.Stop();
@@ -300,7 +298,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         });
 
         bool streaming = RimLLMChatOptions.ReadAdditional(options, StreamingKey, false);
-        string lastError = RimLLMLog.SanitizeForLog(state.LastException?.Message, 300);
+        string? lastError = RimLLMLog.SanitizeForLog(state.LastException?.Message, 300);
         string message = streaming
             ? $"All fallback attempts failed, unable to establish stream connection. Last error: {lastError}"
             : $"All fallback attempts failed. Last error: {lastError}";
@@ -324,7 +322,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         bool isTerminal,
         CancellationToken cancellationToken)
     {
-        if (!_states.TryGetValue(context, out RequestState state) || state.Candidates == null)
+        if (!_states.TryGetValue(context, out RequestState? state) || state.Candidates == null)
         {
             return default;
         }
@@ -396,7 +394,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         return default;
     }
 
-    public override object GetService(Type serviceType, object serviceKey = null)
+    public override object? GetService(Type serviceType, object? serviceKey = null)
     {
         if (serviceType == typeof(ChatClientMetadata))
         {

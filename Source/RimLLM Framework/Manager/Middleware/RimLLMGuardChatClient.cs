@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -43,10 +41,10 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
 
     public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options = null,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        List<ChatMessage> bufferedMessages = messages?.ToList();
+        List<ChatMessage> bufferedMessages = messages.ToList();
         Guard(bufferedMessages);
         using RimLLMUsageTracker.BudgetReservation reservation = ReserveBudget(bufferedMessages, options);
         return await base.GetResponseAsync(bufferedMessages, options, cancellationToken).ConfigureAwait(false);
@@ -54,10 +52,10 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
 
     public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options = null,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        List<ChatMessage> bufferedMessages = messages?.ToList();
+        List<ChatMessage> bufferedMessages = messages.ToList();
 
         // 防濫用檢查維持在取得列舉器時執行。預算 reservation 延到第一次列舉，
         // 避免呼叫端建立串流後從未列舉，永久占住每日額度。
@@ -76,12 +74,12 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
 
     }
 
-    private RimLLMUsageTracker.BudgetReservation ReserveBudget(IEnumerable<ChatMessage> messages, ChatOptions options)
+    private RimLLMUsageTracker.BudgetReservation ReserveBudget(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
         return _usageTracker.ReserveBudgetOrThrow(EstimateBudgetTokens(messages, options));
     }
 
-    private static long EstimateBudgetTokens(IEnumerable<ChatMessage> messages, ChatOptions options)
+    private static long EstimateBudgetTokens(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
         long estimate = 0;
         if (messages != null)
@@ -92,7 +90,7 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
             }
         }
 
-        string cachedContext = RimLLMChatOptions.GetCachedContext(options);
+        string? cachedContext = RimLLMChatOptions.GetCachedContext(options);
         if (!string.IsNullOrEmpty(cachedContext))
         {
             estimate = SaturatingMath.Add(estimate, RimLLMChatClientExecutor.EstimateTokens(cachedContext));
@@ -105,7 +103,7 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
 
     private async IAsyncEnumerable<ChatResponseUpdate> StreamWithBudgetReservationAsync(
         List<ChatMessage> messages,
-        ChatOptions options,
+        ChatOptions? options,
         CancellationToken cancellationToken,
         [EnumeratorCancellation] CancellationToken enumerationCancellationToken = default)
     {
@@ -128,7 +126,7 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
     {
         if (messages == null) return false;
 
-        ChatMessage last = null;
+        ChatMessage? last = null;
         foreach (ChatMessage message in messages)
         {
             last = message;

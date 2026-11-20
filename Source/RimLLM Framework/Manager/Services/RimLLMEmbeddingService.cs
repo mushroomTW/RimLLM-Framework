@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
@@ -62,9 +60,9 @@ public class RimLLMEmbeddingService
     /// 查表取得供應商的預設服務根位址；不支援的供應商直接擲回例外，
     /// 呼叫端不再各自寫 switch 分派。
     /// </summary>
-    internal static string ResolveDefaultEndpoint(string provider)
+    internal static string ResolveDefaultEndpoint(string? provider)
     {
-        string defaultEndpoint;
+        string? defaultEndpoint;
         if (!OpenAiCompatibleDefaultEndpoints.TryGetValue(provider ?? string.Empty, out defaultEndpoint))
         {
             throw new RimLLMException(LLMError.Unknown, $"Unsupported embedding provider: {provider}");
@@ -75,9 +73,9 @@ public class RimLLMEmbeddingService
     /// <summary>
     /// 同一張表的不擲例外版本，供設定頁顯示預設端點提示；不支援的供應商回傳空字串。
     /// </summary>
-    public static string GetDefaultEndpointOrEmpty(string provider)
+    public static string GetDefaultEndpointOrEmpty(string? provider)
     {
-        return OpenAiCompatibleDefaultEndpoints.TryGetValue(provider ?? string.Empty, out string defaultEndpoint)
+        return OpenAiCompatibleDefaultEndpoints.TryGetValue(provider ?? string.Empty, out string? defaultEndpoint)
             ? defaultEndpoint
             : string.Empty;
     }
@@ -143,7 +141,7 @@ public class RimLLMEmbeddingService
 
     internal Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(
         IEnumerable<string> texts,
-        Microsoft.Extensions.AI.EmbeddingGenerationOptions generationOptions,
+        Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions,
         CancellationToken cancellationToken = default)
     {
         return ComputeEmbeddingsCoreAsync(texts, generationOptions, null, cancellationToken);
@@ -151,8 +149,8 @@ public class RimLLMEmbeddingService
 
     internal Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsAsync(
         IEnumerable<string> texts,
-        Microsoft.Extensions.AI.EmbeddingGenerationOptions generationOptions,
-        Action<IReadOnlyList<RimLLMEmbeddingResult>> onBatchCompleted,
+        Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions,
+        Action<IReadOnlyList<RimLLMEmbeddingResult>>? onBatchCompleted,
         CancellationToken cancellationToken = default)
     {
         return ComputeEmbeddingsCoreAsync(texts, generationOptions, onBatchCompleted, cancellationToken);
@@ -160,8 +158,8 @@ public class RimLLMEmbeddingService
 
     private async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeEmbeddingsCoreAsync(
         IEnumerable<string> texts,
-        Microsoft.Extensions.AI.EmbeddingGenerationOptions generationOptions,
-        Action<IReadOnlyList<RimLLMEmbeddingResult>> onBatchCompleted,
+        Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions,
+        Action<IReadOnlyList<RimLLMEmbeddingResult>>? onBatchCompleted,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(texts);
@@ -234,12 +232,12 @@ public class RimLLMEmbeddingService
     /// 是針對主供應商的，備援供應商不認得，所以不沿用。
     /// </summary>
     private EmbeddingBatchContext CreateBackupContext(
-        string provider, float timeoutSeconds, Microsoft.Extensions.AI.EmbeddingGenerationOptions generationOptions)
+        string provider, float timeoutSeconds, Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions)
     {
         string apiKey = string.IsNullOrEmpty(_settings.GetEmbeddingApiKey(provider))
             ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
             : _settings.GetEmbeddingApiKey(provider);
-        Microsoft.Extensions.AI.EmbeddingGenerationOptions options = generationOptions?.Clone();
+        Microsoft.Extensions.AI.EmbeddingGenerationOptions? options = generationOptions?.Clone();
         if (options != null)
         {
             options.ModelId = null;
@@ -262,7 +260,7 @@ public class RimLLMEmbeddingService
         List<EmbeddingBatchContext> contexts,
         List<string> candidates,
         float timeoutSeconds,
-        Microsoft.Extensions.AI.EmbeddingGenerationOptions generationOptions)
+        Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions)
     {
         // 先濾掉用不了的備援（模型不明、需要金鑰卻沒有、已不被支援），主供應商永遠在最前面：
         // 打過去只會得到「尚未設定」的錯誤，還會蓋掉主供應商真正的失敗原因。
@@ -291,7 +289,7 @@ public class RimLLMEmbeddingService
     private static async Task<IReadOnlyList<RimLLMEmbeddingResult>> ComputeAllBatchesAsync(
         List<string> inputs,
         EmbeddingBatchContext context,
-        Action<IReadOnlyList<RimLLMEmbeddingResult>> onBatchCompleted,
+        Action<IReadOnlyList<RimLLMEmbeddingResult>>? onBatchCompleted,
         bool deferUsage,
         CancellationToken cancellationToken)
     {
@@ -317,19 +315,19 @@ public class RimLLMEmbeddingService
         public string Model { get; }
         public string Provider { get; }
         public string ApiKey { get; }
-        public string Endpoint { get; }
+        public string? Endpoint { get; }
         public string DefaultEndpoint { get; }
         public float TimeoutSeconds { get; }
-        public Microsoft.Extensions.AI.EmbeddingGenerationOptions GenerationOptions { get; }
+        public Microsoft.Extensions.AI.EmbeddingGenerationOptions? GenerationOptions { get; }
 
         public EmbeddingBatchContext(
             string model,
             string provider,
             string apiKey,
-            string endpoint,
+            string? endpoint,
             string defaultEndpoint,
             float timeoutSeconds,
-            Microsoft.Extensions.AI.EmbeddingGenerationOptions generationOptions)
+            Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions)
         {
             Model = model;
             Provider = provider;
@@ -480,7 +478,7 @@ public class RimLLMEmbeddingService
         var ids = new List<string>();
         bool isGoogle = await ForEachGoogleNativeModelAsync(root, apiKey, model =>
         {
-            string name = GetString(model, "name");
+            string? name = GetString(model, "name");
             if (!string.IsNullOrEmpty(name) &&
                 ArrayContains(model, "supportedGenerationMethods", "embedContent"))
             {
@@ -505,7 +503,7 @@ public class RimLLMEmbeddingService
         string compatRoot, string apiKey, Action<JsonElement> onModel, CancellationToken cancellationToken)
     {
         string nativeRoot = TrimSuffix(compatRoot, "/openai");
-        string pageToken = null;
+        string? pageToken = null;
         do
         {
             string url = nativeRoot + "/models?pageSize=1000" +
@@ -566,7 +564,7 @@ public class RimLLMEmbeddingService
                 var seen = new HashSet<string>(StringComparer.Ordinal);
                 foreach (JsonElement model in models.EnumerateArray())
                 {
-                    string name = GetString(model, "name");
+                    string? name = GetString(model, "name");
                     if (string.IsNullOrEmpty(name) || !seen.Add(name)) continue;
                     names.Add(name);
                     if (names.Count >= MaxOllamaModelsToProbe)
@@ -645,7 +643,7 @@ public class RimLLMEmbeddingService
     private static async Task<RimLLMEmbeddingModelList> FetchLocalEmbeddingModelsAsync(
         string root, string apiKey, CancellationToken cancellationToken)
     {
-        RimLLMEmbeddingModelList lmStudio = await TryFetchLmStudioEmbeddingModelsAsync(root, cancellationToken).ConfigureAwait(false);
+        RimLLMEmbeddingModelList? lmStudio = await TryFetchLmStudioEmbeddingModelsAsync(root, cancellationToken).ConfigureAwait(false);
         if (lmStudio != null) return lmStudio;
 
         try
@@ -662,7 +660,7 @@ public class RimLLMEmbeddingService
     }
 
     /// <summary>LM Studio 的原生清單以 <c>type</c> 區分 llm / vlm / embeddings。不是 LM Studio 時回傳 null。</summary>
-    private static async Task<RimLLMEmbeddingModelList> TryFetchLmStudioEmbeddingModelsAsync(
+    private static async Task<RimLLMEmbeddingModelList?> TryFetchLmStudioEmbeddingModelsAsync(
         string root, CancellationToken cancellationToken)
     {
         try
@@ -677,10 +675,10 @@ public class RimLLMEmbeddingService
             bool anyTyped = false;
             foreach (JsonElement model in data.EnumerateArray())
             {
-                string type = GetString(model, "type");
+                string? type = GetString(model, "type");
                 if (type == null) continue;
                 anyTyped = true;
-                string id = GetString(model, "id");
+                string? id = GetString(model, "id");
                 if (!string.IsNullOrEmpty(id) && string.Equals(type, "embeddings", StringComparison.OrdinalIgnoreCase))
                 {
                     ids.Add(id);
@@ -703,13 +701,13 @@ public class RimLLMEmbeddingService
         {
             throw LLMErrorMapper.CreateException(
                 (int)response.StatusCode,
-                $"{request.RequestUri.AbsolutePath} responded {(int)response.StatusCode}: {Core.RimLLMLog.SanitizeForLog(body, 200)}",
+                $"{request.RequestUri?.AbsolutePath} responded {(int)response.StatusCode}: {Core.RimLLMLog.SanitizeForLog(body, 200)}",
                 detectionText: body);
         }
         return JsonDocument.Parse(body);
     }
 
-    private static string GetString(JsonElement element, string property)
+    private static string? GetString(JsonElement element, string property)
     {
         return element.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
@@ -810,7 +808,7 @@ public class RimLLMEmbeddingService
     /// 建立 OpenAI 相容端點的連線參數：端點正規化、套用預設值、補上佔位金鑰。
     /// </summary>
     private static void BuildOpenAiCompatibleClientArgs(
-        string apiKey, string endpoint, string defaultEndpoint,
+        string apiKey, string? endpoint, string defaultEndpoint,
         out ApiKeyCredential credential, out OpenAIClientOptions options)
     {
         options = new OpenAIClientOptions
@@ -836,7 +834,7 @@ public class RimLLMEmbeddingService
     /// 讓單元測試以假的 HTTP 傳輸攔截 embedding 請求（與 <c>EncryptionUtility.SecureKeyPathResolver</c>
     /// 同一種測試接縫）；正式環境一律 null，走 SDK 預設傳輸。
     /// </summary>
-    internal static System.ClientModel.Primitives.PipelineTransport TransportOverride { get; set; }
+    internal static System.ClientModel.Primitives.PipelineTransport? TransportOverride { get; set; }
 
     /// <summary>
     /// 沒有能力資訊的通用 <c>/v1/models</c>。<paramref name="root"/> 已正規化並套用過預設值。
@@ -964,12 +962,12 @@ public class RimLLMEmbeddingService
     /// SDK 需要的是服務根位址（如 http://localhost:11434/v1），
     /// 因此把使用者可能填入的完整 embeddings 路徑收斂回根位址。
     /// </summary>
-    internal static string NormalizeEmbeddingEndpoint(string endpoint)
+    internal static string? NormalizeEmbeddingEndpoint(string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint)) return null;
 
         string normalized = endpoint.Trim().TrimEnd(SlashTrimChars);
-        string suffix = EmbeddingPathSuffixes.FirstOrDefault(s => normalized.EndsWith(s, StringComparison.OrdinalIgnoreCase));
+        string? suffix = EmbeddingPathSuffixes.FirstOrDefault(s => normalized.EndsWith(s, StringComparison.OrdinalIgnoreCase));
         if (suffix != null)
         {
             normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd(SlashTrimChars);
@@ -982,7 +980,7 @@ public class RimLLMEmbeddingService
     /// </summary>
     /// <param name="embeddingProvider">Embedding 供應商識別碼。</param>
     /// <returns>對應的對話供應商識別碼。</returns>
-    public static string GetMainProviderIdForEmbedding(string embeddingProvider)
+    public static string GetMainProviderIdForEmbedding(string? embeddingProvider)
     {
         return embeddingProvider switch
         {

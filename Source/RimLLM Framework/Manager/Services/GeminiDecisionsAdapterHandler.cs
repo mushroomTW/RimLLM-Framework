@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -32,7 +30,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
     /// <summary>端點是否指向 Gemini API，需要套用這個轉接。</summary>
     public static bool Targets(string endpoint)
     {
-        return Uri.TryCreate(endpoint, UriKind.Absolute, out Uri uri) &&
+        return Uri.TryCreate(endpoint, UriKind.Absolute, out Uri? uri) &&
                string.Equals(uri.Host, GeminiHost, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -50,7 +48,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
         }
 
         // Gemini 以 x-goog-api-key 驗證，不接受 Bearer。
-        string apiKey = request.Headers.Authorization?.Parameter;
+        string? apiKey = request.Headers.Authorization?.Parameter;
         request.Headers.Authorization = null;
         if (!string.IsNullOrEmpty(apiKey))
         {
@@ -64,6 +62,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
             request.Content = JevWireFormat.JsonContent(ToGeminiRequest(body, out model));
         }
 
+        ArgumentNullException.ThrowIfNull(request.RequestUri);
         request.RequestUri = new UriBuilder(request.RequestUri)
         {
             Path = isEvaluate ? GeminiEvaluatePath : GeminiModelsPath,
@@ -97,8 +96,8 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
     /// <summary>System One 請求 → Gemini Decisions 請求。</summary>
     internal static string ToGeminiRequest(string jevBody, out string model)
     {
-        JsonObject source = JsonNode.Parse(jevBody).AsObject();
-        model = source["model"] is JsonValue modelValue && modelValue.TryGetValue(out string m) ? m : "";
+        JsonObject source = JsonNode.Parse(jevBody)?.AsObject() ?? throw new JsonException("Request body is not a JSON object.");
+        model = source["model"] is JsonValue modelValue && modelValue.TryGetValue(out string? m) ? m : "";
 
         var questions = new JsonObject();
         if (source["questions"] is JsonObject sourceQuestions)
@@ -110,7 +109,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
                     continue;
                 }
 
-                string type = question["type"] is JsonValue t && t.TryGetValue(out string s) ? s : "";
+                string type = question["type"] is JsonValue t && t.TryGetValue(out string? s) ? s : "";
                 var converted = new JsonObject
                 {
                     ["type"] = type,
@@ -118,7 +117,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
                     ["instructions"] = AsText(question["instructions"])
                 };
 
-                JsonNode criteria = question["criteria"];
+                JsonNode? criteria = question["criteria"];
                 if (criteria != null)
                 {
                     converted["criteria"] = ConvertCriteria(type, criteria);
@@ -158,7 +157,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
 
             case "score" when criteria is JsonArray levels:
                 var converted = new JsonArray();
-                foreach (JsonNode level in levels)
+                foreach (JsonNode? level in levels)
                 {
                     converted.Add(AsText(level));
                 }
@@ -170,13 +169,13 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
     }
 
     /// <summary>字串取原值，其他 JSON 內容序列化成文字，null 視為空字串。</summary>
-    private static string AsText(JsonNode node)
+    private static string AsText(JsonNode? node)
     {
         if (node == null)
         {
             return "";
         }
-        return node is JsonValue value && value.TryGetValue(out string text) ? text : node.ToJsonString();
+        return node is JsonValue value && value.TryGetValue(out string? text) ? text : node.ToJsonString();
     }
 
     /// <summary>
@@ -185,14 +184,14 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
     /// </summary>
     internal static string ToJevResult(string geminiBody, string model)
     {
-        JsonObject root = JsonNode.Parse(geminiBody).AsObject();
+        JsonObject root = JsonNode.Parse(geminiBody)?.AsObject() ?? throw new JsonException("Response body is not a JSON object.");
         if (root["model"] == null)
         {
             root["model"] = model;
         }
 
         // usage 缺席或不是 Jev 形狀時一律補成 input_tokens／output_tokens，缺的計數記 0。
-        JsonObject usage = root["usage"] as JsonObject;
+        JsonObject? usage = root["usage"] as JsonObject;
         if (usage == null || usage["input_tokens"] == null)
         {
             root["usage"] = new JsonObject
@@ -253,7 +252,7 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
 
         string description = entry.TryGetProperty("description", out JsonElement d) &&
                              d.ValueKind == JsonValueKind.String
-            ? d.GetString()
+            ? d.GetString() ?? string.Empty
             : "";
         model = (name, description);
         return true;

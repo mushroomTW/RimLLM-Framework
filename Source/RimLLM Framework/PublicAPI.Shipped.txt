@@ -289,7 +289,7 @@ RimLLM_Framework.RimLLMException.IsTemperatureRejection.set -> void
 RimLLM_Framework.RimLLMException.RetryAfter.get -> System.TimeSpan?
 RimLLM_Framework.RimLLMException.RetryAfter.set -> void
 RimLLM_Framework.RimLLMException.RimLLMException(RimLLM_Framework.LLMError error, string! message) -> void
-RimLLM_Framework.RimLLMException.RimLLMException(RimLLM_Framework.LLMError error, string! message, System.Exception! innerException) -> void
+RimLLM_Framework.RimLLMException.RimLLMException(RimLLM_Framework.LLMError error, string! message, System.Exception? innerException) -> void
 RimLLM_Framework.RimLLMProvider
 RimLLM_Framework.TestResult
 RimLLM_Framework.TestResult.ErrorCode.get -> RimLLM_Framework.LLMError
@@ -336,7 +336,7 @@ static RimLLM_Framework.Core.RimLLMLog.Enabled.get -> bool
 static RimLLM_Framework.Core.RimLLMLog.Enabled.set -> void
 static RimLLM_Framework.Core.RimLLMLog.Error(string! msg) -> void
 static RimLLM_Framework.Core.RimLLMLog.Message(string! msg) -> void
-static RimLLM_Framework.Core.RimLLMLog.SanitizeForLog(string! value, int maxLength = 500) -> string!
+static RimLLM_Framework.Core.RimLLMLog.SanitizeForLog(string? value, int maxLength = 500) -> string?
 static RimLLM_Framework.Core.RimLLMLog.Warning(string! msg) -> void
 static RimLLM_Framework.Manager.RimLLMJsonHelper.ValidateStructuredObject<T>(T result) -> void
 static RimLLM_Framework.Mod.BudgetSettingsDrawer.DrawBudgetSettings(Verse.Listing_Standard! listing) -> void
@@ -435,58 +435,58 @@ RimLLM_Framework.IRimLLMSettings.IsProviderEnabled(string! providerId) -> bool
 RimLLM_Framework.IRimLLMSettings.RequestLogs.get -> System.Collections.Generic.List<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry!>!
 RimLLM_Framework.IRimLLMSettings.RequestLogs.set -> void
 RimLLM_Framework.IRimLLMSettings.SetModelList(string! providerId, System.Collections.Generic.List<string!>! models) -> void
-~RimLLM_Framework.Manager.RimLLMEmbeddingResult.ModelId.get -> string
-~RimLLM_Framework.Manager.RimLLMEmbeddingResult.ProviderId.get -> string
-~RimLLM_Framework.Manager.RimLLMEmbeddingResult.RimLLMEmbeddingResult(float[] vector, long? inputTokenCount) -> void
-~RimLLM_Framework.Manager.RimLLMEmbeddingResult.RimLLMEmbeddingResult(float[] vector, long? inputTokenCount, string modelId, string providerId) -> void
-~RimLLM_Framework.Manager.RimLLMEmbeddingResult.Vector.get -> float[]
-~RimLLM_Framework.Manager.RimLLMEmbeddingService.ComputeEmbeddingAsync(string text, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<RimLLM_Framework.Manager.RimLLMEmbeddingResult>
-~RimLLM_Framework.Manager.RimLLMEmbeddingService.ComputeEmbeddingsAsync(System.Collections.Generic.IEnumerable<string> texts, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<RimLLM_Framework.Manager.RimLLMEmbeddingResult>>
-~RimLLM_Framework.Manager.RimLLMEmbeddingService.FetchAvailableModelsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<RimLLM_Framework.Manager.RimLLMEmbeddingModelList>
-~RimLLM_Framework.Manager.RimLLMEmbeddingService.FetchAvailableModelsAsync(string provider, string endpoint, string apiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<RimLLM_Framework.Manager.RimLLMEmbeddingModelList>
-~RimLLM_Framework.Manager.RimLLMEmbeddingService.RimLLMEmbeddingService(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Manager.RimLLMEmbeddingService.TestEmbeddingAsync(string provider, string model, string endpoint, string apiKey, string text = "RimWorld LLM Embedding Test", System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<RimLLM_Framework.Manager.RimLLMEmbeddingResult>
-~RimLLM_Framework.Manager.RimLLMFallbackPipeline.RimLLMFallbackPipeline(RimLLM_Framework.IRimLLMSettings settings, RimLLM_Framework.Manager.RimLLMHealthLedger healthLedger, RimLLM_Framework.Manager.RimLLMUsageTracker usageTracker, System.Func<string, RimLLM_Framework.Providers.ILLMProvider> providerResolver, System.Func<string, bool> isProviderEnabledFunc) -> void
-~RimLLM_Framework.Manager.RimLLMManager.DecisionService.get -> RimLLM_Framework.Manager.Services.RimLLMDecisionService
-~RimLLM_Framework.Manager.RimLLMManager.EmbeddingService.get -> RimLLM_Framework.Manager.RimLLMEmbeddingService
-~RimLLM_Framework.Manager.RimLLMManager.FetchProviderModelsAsync(string providerId) -> System.Threading.Tasks.Task<System.Collections.Generic.List<string>>
-~RimLLM_Framework.Manager.RimLLMManager.GetProviderCapabilities(string providerId) -> RimLLM_Framework.LLMProviderCapabilities
-~RimLLM_Framework.Manager.RimLLMManager.GetRegisteredProviderIds() -> System.Collections.Generic.List<string>
-~RimLLM_Framework.Manager.RimLLMManager.IsProviderEnabled(string providerId) -> bool
-~RimLLM_Framework.Manager.RimLLMManager.RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0) -> void
-~RimLLM_Framework.Manager.RimLLMManager.RegisterProvider(RimLLM_Framework.Providers.ILLMProvider provider) -> void
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.ErrorMessage.get -> string
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.ErrorMessage.set -> void
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.ModId.get -> string
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.ModId.set -> void
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.Model.get -> string
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.Model.set -> void
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.Provider.get -> string
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.Provider.set -> void
-~RimLLM_Framework.Manager.RimLLMManager.RequestLogs.get -> System.Collections.Generic.IReadOnlyCollection<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry>
-~RimLLM_Framework.Manager.RimLLMManager.RimLLMManager(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Manager.RimLLMManager.TestProviderAsync(string providerId) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult>
-~RimLLM_Framework.Manager.RimLLMManager.TestProviderAsync(string providerId, string model) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult>
-~RimLLM_Framework.Manager.RimLLMManager.UsageTracker.get -> RimLLM_Framework.Manager.RimLLMUsageTracker
-~RimLLM_Framework.Manager.RimLLMSchemaResult.Json.get -> string
-~RimLLM_Framework.Manager.RimLLMUsageTracker.GetCallerModIds() -> System.Collections.Generic.IReadOnlyCollection<string>
-~RimLLM_Framework.Manager.RimLLMUsageTracker.ProviderStatistics.get -> System.Collections.Generic.IReadOnlyDictionary<string, RimLLM_Framework.Manager.RimLLMUsageTracker.ProviderStats>
-~RimLLM_Framework.Manager.RimLLMUsageTracker.RecordCaller(string modId) -> void
-~RimLLM_Framework.Manager.RimLLMUsageTracker.RecordLog(RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry entry) -> void
-~RimLLM_Framework.Manager.RimLLMUsageTracker.RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0) -> void
-~RimLLM_Framework.Manager.RimLLMUsageTracker.RequestLogs.get -> System.Collections.Generic.IReadOnlyCollection<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry>
-~RimLLM_Framework.Manager.RimLLMUsageTracker.RimLLMUsageTracker(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.ChatKeyProviderId.get -> string
-~RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.ChatKeyProviderId.init -> void
-~RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.DefaultEndpoint.get -> string
-~RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.Id.get -> string
-~RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.RimLLMDecisionProvider(string id, string defaultEndpoint) -> void
-~RimLLM_Framework.Manager.Services.RimLLMDecisionService.EvaluateAsync(string state, TypeSafeAI.QuestionSet plan, string model = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TypeSafeAI.QuestionSetResult>
-~RimLLM_Framework.Manager.Services.RimLLMDecisionService.FetchDecisionModelsAsync(string providerId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string>>
-~RimLLM_Framework.Manager.Services.RimLLMDecisionService.FetchModelsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TypeSafeAI.ModelInfo>>
-~RimLLM_Framework.Manager.Services.RimLLMDecisionService.FetchModelsAsync(string endpoint, string model, string apiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TypeSafeAI.ModelInfo>>
-~RimLLM_Framework.Manager.Services.RimLLMDecisionService.RimLLMDecisionService(RimLLM_Framework.IRimLLMSettings settings) -> void
-~RimLLM_Framework.Manager.Services.RimLLMDecisionService.TestConnectionAsync(string endpoint, string model, string apiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task
+RimLLM_Framework.Manager.RimLLMEmbeddingResult.ModelId.get -> string?
+RimLLM_Framework.Manager.RimLLMEmbeddingResult.ProviderId.get -> string?
+RimLLM_Framework.Manager.RimLLMEmbeddingResult.RimLLMEmbeddingResult(float[]! vector, long? inputTokenCount) -> void
+RimLLM_Framework.Manager.RimLLMEmbeddingResult.RimLLMEmbeddingResult(float[]! vector, long? inputTokenCount, string? modelId, string? providerId) -> void
+RimLLM_Framework.Manager.RimLLMEmbeddingResult.Vector.get -> float[]!
+RimLLM_Framework.Manager.RimLLMEmbeddingService.ComputeEmbeddingAsync(string! text, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<RimLLM_Framework.Manager.RimLLMEmbeddingResult!>!
+RimLLM_Framework.Manager.RimLLMEmbeddingService.ComputeEmbeddingsAsync(System.Collections.Generic.IEnumerable<string!>! texts, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<RimLLM_Framework.Manager.RimLLMEmbeddingResult!>!>!
+RimLLM_Framework.Manager.RimLLMEmbeddingService.FetchAvailableModelsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<RimLLM_Framework.Manager.RimLLMEmbeddingModelList!>!
+RimLLM_Framework.Manager.RimLLMEmbeddingService.FetchAvailableModelsAsync(string! provider, string! endpoint, string! apiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<RimLLM_Framework.Manager.RimLLMEmbeddingModelList!>!
+RimLLM_Framework.Manager.RimLLMEmbeddingService.RimLLMEmbeddingService(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Manager.RimLLMEmbeddingService.TestEmbeddingAsync(string! provider, string! model, string! endpoint, string! apiKey, string! text = "RimWorld LLM Embedding Test", System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<RimLLM_Framework.Manager.RimLLMEmbeddingResult!>!
+RimLLM_Framework.Manager.RimLLMFallbackPipeline.RimLLMFallbackPipeline(RimLLM_Framework.IRimLLMSettings! settings, RimLLM_Framework.Manager.RimLLMHealthLedger! healthLedger, RimLLM_Framework.Manager.RimLLMUsageTracker! usageTracker, System.Func<string!, RimLLM_Framework.Providers.ILLMProvider?>! providerResolver, System.Func<string!, bool>! isProviderEnabledFunc) -> void
+RimLLM_Framework.Manager.RimLLMManager.DecisionService.get -> RimLLM_Framework.Manager.Services.RimLLMDecisionService!
+RimLLM_Framework.Manager.RimLLMManager.EmbeddingService.get -> RimLLM_Framework.Manager.RimLLMEmbeddingService!
+RimLLM_Framework.Manager.RimLLMManager.FetchProviderModelsAsync(string! providerId) -> System.Threading.Tasks.Task<System.Collections.Generic.List<string!>!>!
+RimLLM_Framework.Manager.RimLLMManager.GetProviderCapabilities(string! providerId) -> RimLLM_Framework.LLMProviderCapabilities!
+RimLLM_Framework.Manager.RimLLMManager.GetRegisteredProviderIds() -> System.Collections.Generic.List<string!>!
+RimLLM_Framework.Manager.RimLLMManager.IsProviderEnabled(string! providerId) -> bool
+RimLLM_Framework.Manager.RimLLMManager.RecordUsage(string! providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0) -> void
+RimLLM_Framework.Manager.RimLLMManager.RegisterProvider(RimLLM_Framework.Providers.ILLMProvider! provider) -> void
+RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.ErrorMessage.get -> string?
+RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.ErrorMessage.set -> void
+RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.ModId.get -> string?
+RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.ModId.set -> void
+RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.Model.get -> string?
+RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.Model.set -> void
+RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.Provider.get -> string?
+RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry.Provider.set -> void
+RimLLM_Framework.Manager.RimLLMManager.RequestLogs.get -> System.Collections.Generic.IReadOnlyCollection<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry!>!
+RimLLM_Framework.Manager.RimLLMManager.RimLLMManager(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Manager.RimLLMManager.TestProviderAsync(string! providerId) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult!>!
+RimLLM_Framework.Manager.RimLLMManager.TestProviderAsync(string! providerId, string! model) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult!>!
+RimLLM_Framework.Manager.RimLLMManager.UsageTracker.get -> RimLLM_Framework.Manager.RimLLMUsageTracker!
+RimLLM_Framework.Manager.RimLLMSchemaResult.Json.get -> string!
+RimLLM_Framework.Manager.RimLLMUsageTracker.GetCallerModIds() -> System.Collections.Generic.IReadOnlyCollection<string!>!
+RimLLM_Framework.Manager.RimLLMUsageTracker.ProviderStatistics.get -> System.Collections.Generic.IReadOnlyDictionary<string!, RimLLM_Framework.Manager.RimLLMUsageTracker.ProviderStats!>!
+RimLLM_Framework.Manager.RimLLMUsageTracker.RecordCaller(string! modId) -> void
+RimLLM_Framework.Manager.RimLLMUsageTracker.RecordLog(RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry! entry) -> void
+RimLLM_Framework.Manager.RimLLMUsageTracker.RecordUsage(string! providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0) -> void
+RimLLM_Framework.Manager.RimLLMUsageTracker.RequestLogs.get -> System.Collections.Generic.IReadOnlyCollection<RimLLM_Framework.Manager.RimLLMManager.RequestLogEntry!>!
+RimLLM_Framework.Manager.RimLLMUsageTracker.RimLLMUsageTracker(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.ChatKeyProviderId.get -> string?
+RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.ChatKeyProviderId.init -> void
+RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.DefaultEndpoint.get -> string!
+RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.Id.get -> string!
+RimLLM_Framework.Manager.Services.RimLLMDecisionProvider.RimLLMDecisionProvider(string! id, string! defaultEndpoint) -> void
+RimLLM_Framework.Manager.Services.RimLLMDecisionService.EvaluateAsync(string! state, TypeSafeAI.QuestionSet! plan, string? model = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TypeSafeAI.QuestionSetResult!>!
+RimLLM_Framework.Manager.Services.RimLLMDecisionService.FetchDecisionModelsAsync(string! providerId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<string!>!>!
+RimLLM_Framework.Manager.Services.RimLLMDecisionService.FetchModelsAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TypeSafeAI.ModelInfo!>!>!
+RimLLM_Framework.Manager.Services.RimLLMDecisionService.FetchModelsAsync(string! endpoint, string! model, string! apiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyList<TypeSafeAI.ModelInfo!>!>!
+RimLLM_Framework.Manager.Services.RimLLMDecisionService.RimLLMDecisionService(RimLLM_Framework.IRimLLMSettings! settings) -> void
+RimLLM_Framework.Manager.Services.RimLLMDecisionService.TestConnectionAsync(string! endpoint, string! model, string! apiKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ~RimLLM_Framework.Mod.Dialog_SelectModel.Dialog_SelectModel(System.Collections.Generic.List<string> models, System.Action<string> onSelected) -> void
 ~RimLLM_Framework.Mod.Dialog_SelectModel.Dialog_SelectModel(System.Collections.Generic.List<string> models, System.Action<string> onSelected, string providerId) -> void
 ~RimLLM_Framework.Mod.Dialog_SetContextWindow.Dialog_SetContextWindow(string entry, int currentTokens, System.Action<int> onConfirmed) -> void
@@ -605,23 +605,23 @@ RimLLM_Framework.TestResult.Model.get -> string?
 RimLLM_Framework.TestResult.Model.set -> void
 RimLLM_Framework.TestResult.Provider.get -> string?
 RimLLM_Framework.TestResult.Provider.set -> void
-~const RimLLM_Framework.Manager.RimLLMEmbeddingService.DisabledProviderId = "Disabled" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Clef = "Clef" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Disabled = "Disabled" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Gemini = "Gemini" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Kev = "Kev" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Laya = "Laya" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Liquid = "Liquid" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Local = "Local" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Microsoft = "Microsoft" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Ollama = "Ollama" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.OpenAI = "OpenAI" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.OpenRouter = "OpenRouter" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Solar = "Solar" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Span = "Span" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Tev = "Tev" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.TypeSafe = "TypeSafe" -> string
-~const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Unsloth = "Unsloth" -> string
+const RimLLM_Framework.Manager.RimLLMEmbeddingService.DisabledProviderId = "Disabled" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Clef = "Clef" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Disabled = "Disabled" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Gemini = "Gemini" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Kev = "Kev" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Laya = "Laya" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Liquid = "Liquid" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Local = "Local" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Microsoft = "Microsoft" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Ollama = "Ollama" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.OpenAI = "OpenAI" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.OpenRouter = "OpenRouter" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Solar = "Solar" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Span = "Span" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Tev = "Tev" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.TypeSafe = "TypeSafe" -> string!
+const RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Unsloth = "Unsloth" -> string!
 ~const RimLLM_Framework.Mod.RimLLMFrameworkSettings.DisabledProvider = "Disabled" -> string
 const RimLLM_Framework.ProviderIds.DeepSeek = "DeepSeek" -> string!
 const RimLLM_Framework.ProviderIds.Gemini = "Gemini" -> string!
@@ -665,27 +665,27 @@ static RimLLM_Framework.LLMErrorMapper.LooksLikeReasoningRejection(string! messa
 static RimLLM_Framework.LLMErrorMapper.LooksLikeSchemaRejection(string! message) -> bool
 static RimLLM_Framework.LLMErrorMapper.LooksLikeTemperatureRejection(string! message) -> bool
 static RimLLM_Framework.LLMErrorMapper.ParseRetryAfter(string? headerValue) -> System.TimeSpan?
-~static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetDefaultEndpointOrEmpty(string provider) -> string
-~static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetMainProviderIdForEmbedding(string embeddingProvider) -> string
-~static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetModelListKey(string embeddingProvider) -> string
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.Deserialize<T>(string json) -> T
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.DeserializeAndValidate<T>(string json) -> T
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.DeserializeStructured<T>(string rawResponse, RimLLM_Framework.IRimLLMSettings settings) -> T
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.ExtractJsonBlock(string input) -> string
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.GetSampleJson(System.Type type) -> string
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.GetSampleJson<T>() -> string
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.Options.get -> System.Text.Json.JsonSerializerOptions
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.RepairJson(string json) -> string
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.Serialize(object value) -> string
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.Serialize<T>(T value) -> string
-~static RimLLM_Framework.Manager.RimLLMJsonHelper.ValidateRequiredMembers(object value, System.Type type, System.Collections.Generic.HashSet<System.Type> visitedTypes) -> void
-~static RimLLM_Framework.Manager.RimLLMSchemaBuilder.Build(System.Type type) -> RimLLM_Framework.Manager.RimLLMSchemaResult
-~static RimLLM_Framework.Manager.RimLLMSchemaBuilder.BuildJson(System.Type type) -> string
-~static RimLLM_Framework.Manager.RimLLMSchemaBuilder.ContainsOpenEndedMap(System.Type type) -> bool
-~static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Get(string providerId) -> RimLLM_Framework.Manager.Services.RimLLMDecisionProvider
-~static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.GetDefaultEndpoint(string providerId) -> string
-~static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.TryGet(string providerId, out RimLLM_Framework.Manager.Services.RimLLMDecisionProvider provider) -> bool
-~static RimLLM_Framework.Manager.Services.RimLLMDecisionService.GetModelListKey(string providerId) -> string
+static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetDefaultEndpointOrEmpty(string? provider) -> string!
+static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetMainProviderIdForEmbedding(string? embeddingProvider) -> string!
+static RimLLM_Framework.Manager.RimLLMEmbeddingService.GetModelListKey(string! embeddingProvider) -> string!
+static RimLLM_Framework.Manager.RimLLMJsonHelper.Deserialize<T>(string! json) -> T?
+static RimLLM_Framework.Manager.RimLLMJsonHelper.DeserializeAndValidate<T>(string! json) -> T
+static RimLLM_Framework.Manager.RimLLMJsonHelper.DeserializeStructured<T>(string! rawResponse, RimLLM_Framework.IRimLLMSettings! settings) -> T
+static RimLLM_Framework.Manager.RimLLMJsonHelper.ExtractJsonBlock(string! input) -> string!
+static RimLLM_Framework.Manager.RimLLMJsonHelper.GetSampleJson(System.Type! type) -> string!
+static RimLLM_Framework.Manager.RimLLMJsonHelper.GetSampleJson<T>() -> string!
+static RimLLM_Framework.Manager.RimLLMJsonHelper.Options.get -> System.Text.Json.JsonSerializerOptions!
+static RimLLM_Framework.Manager.RimLLMJsonHelper.RepairJson(string! json) -> string!
+static RimLLM_Framework.Manager.RimLLMJsonHelper.Serialize(object? value) -> string!
+static RimLLM_Framework.Manager.RimLLMJsonHelper.Serialize<T>(T value) -> string!
+static RimLLM_Framework.Manager.RimLLMJsonHelper.ValidateRequiredMembers(object! value, System.Type! type, System.Collections.Generic.HashSet<System.Type!>! visitedTypes) -> void
+static RimLLM_Framework.Manager.RimLLMSchemaBuilder.Build(System.Type! type) -> RimLLM_Framework.Manager.RimLLMSchemaResult!
+static RimLLM_Framework.Manager.RimLLMSchemaBuilder.BuildJson(System.Type! type) -> string!
+static RimLLM_Framework.Manager.RimLLMSchemaBuilder.ContainsOpenEndedMap(System.Type! type) -> bool
+static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.Get(string! providerId) -> RimLLM_Framework.Manager.Services.RimLLMDecisionProvider!
+static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.GetDefaultEndpoint(string! providerId) -> string!
+static RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.TryGet(string! providerId, out RimLLM_Framework.Manager.Services.RimLLMDecisionProvider? provider) -> bool
+static RimLLM_Framework.Manager.Services.RimLLMDecisionService.GetModelListKey(string! providerId) -> string!
 ~static RimLLM_Framework.Mod.ChatTestDrawer.DrawChatTestSettings(Verse.Listing_Standard listing) -> void
 ~static RimLLM_Framework.Mod.ChatTestDrawer.Initialize(RimLLM_Framework.Mod.RimLLMFrameworkSettings settings) -> void
 ~static RimLLM_Framework.Mod.CompatSettingsDrawer.DrawCompatSettings(Verse.Listing_Standard listing) -> void
@@ -751,7 +751,7 @@ static RimLLM_Framework.RimLLMProvider.GetRegisteredProviderIds() -> System.Coll
 static RimLLM_Framework.RimLLMProvider.RegisterProvider(RimLLM_Framework.Providers.ILLMProvider! provider) -> void
 static RimLLM_Framework.RimLLMProvider.SupportsVision(string! modelId) -> bool?
 static RimLLM_Framework.RimLLMProvider.TestProviderAsync(string! providerId) -> System.Threading.Tasks.Task<RimLLM_Framework.TestResult!>!
-~static readonly RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.All -> System.Collections.Generic.IReadOnlyList<RimLLM_Framework.Manager.Services.RimLLMDecisionProvider>
+static readonly RimLLM_Framework.Manager.Services.RimLLMDecisionProviderCatalog.All -> System.Collections.Generic.IReadOnlyList<RimLLM_Framework.Manager.Services.RimLLMDecisionProvider!>!
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.FetchStatus -> System.Collections.Generic.Dictionary<string, string>
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.Fetching -> System.Collections.Generic.Dictionary<string, bool>
 ~static readonly RimLLM_Framework.Mod.GenericProviderSubTabDrawer.ModelFilters -> System.Collections.Generic.Dictionary<string, string>

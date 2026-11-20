@@ -1,8 +1,7 @@
-#nullable disable
-
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -190,7 +189,7 @@ public class RimLLMUsageTracker
     }
 
     /// <summary>將一次請求結果計入該供應商的成功／失敗計數。</summary>
-    private void CountOutcome(string provider, bool success)
+    private void CountOutcome(string? provider, bool success)
     {
         var stats = _providerStatistics.GetOrAdd(provider ?? "Unknown", _ => new ProviderStats());
         if (success)
@@ -350,7 +349,7 @@ public class RimLLMUsageTracker
     /// 輸入 Token 中由上下文快取（cache read / cachedContent）命中的部分；
     /// 這些 Token 以折扣費率計價，是 Context Caching 節省成本的來源。
     /// </param>
-    public void RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
+    public void RecordUsage(string providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
     {
         promptTokens = Math.Max(0, promptTokens);
         completionTokens = Math.Max(0, completionTokens);
@@ -419,7 +418,7 @@ public class RimLLMUsageTracker
     /// 原子地檢查預算並保留整個 logical request 的估算 token。每個 fallback/retry attempt
     /// 的實際用量仍會獨立累加；直到請求成功、失敗、取消或串流結束時 Dispose 才釋放 reservation。
     /// </summary>
-    internal bool TryReserveBudget(long estimatedTokens, out BudgetReservation reservation)
+    internal bool TryReserveBudget(long estimatedTokens, [NotNullWhen(true)] out BudgetReservation? reservation)
     {
         return TryReserveBudget(estimatedTokens, out reservation, out _);
     }
@@ -435,7 +434,7 @@ public class RimLLMUsageTracker
     /// 誤報會把當天真正超限時的警告吃掉。
     /// </param>
     /// <returns>若成功預留額度則傳回 true，否則傳回 false。</returns>
-    internal bool TryReserveBudget(long estimatedTokens, out BudgetReservation reservation, out bool contended)
+    internal bool TryReserveBudget(long estimatedTokens, [NotNullWhen(true)] out BudgetReservation? reservation, out bool contended)
     {
         CheckDailyReset();
 
@@ -478,7 +477,7 @@ public class RimLLMUsageTracker
     /// </summary>
     internal BudgetReservation ReserveBudgetOrThrow(long estimatedTokens)
     {
-        if (TryReserveBudget(estimatedTokens, out BudgetReservation reservation, out bool contended))
+        if (TryReserveBudget(estimatedTokens, out BudgetReservation? reservation, out bool contended))
         {
             return reservation;
         }
@@ -542,7 +541,7 @@ public class RimLLMUsageTracker
             _reservedTokens = reservedTokens;
         }
 
-        internal void RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
+        internal void RecordUsage(string providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
         {
             Tracker.RecordUsage(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens);
         }

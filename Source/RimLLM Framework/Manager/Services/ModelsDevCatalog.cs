@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -54,7 +52,7 @@ internal static class ModelsDevCatalog
     /// </summary>
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
     private static readonly Lock CacheLock = new();
-    private static Task<ModelsDevData> _cached;
+    private static Task<ModelsDevData?>? _cached;
     private static DateTime _cachedAt;
 
     internal static bool IsCovered(string providerId)
@@ -67,25 +65,26 @@ internal static class ModelsDevCatalog
     /// 同時進行的呼叫共用同一次下載；成功結果快取 <see cref="CacheDuration"/>，失敗則下次重試。
     /// 失敗只記警告並回傳 null，上限只是附帶資訊，不讓模型清單的重新整理失敗。
     /// </summary>
-    internal static Task<ModelsDevData> GetAllAsync(float timeoutSeconds)
+    internal static Task<ModelsDevData?> GetAllAsync(float timeoutSeconds)
     {
         lock (CacheLock)
         {
             #pragma warning disable VSTHRD103 // 只在 Task 已完成時讀 Result；DownloadAsync 會捕捉所有例外，不會丟出
-            bool reusable = _cached != null
+            if (_cached is { } cached
                 && DateTime.UtcNow - _cachedAt < CacheDuration
-                && !(_cached.IsCompleted && _cached.Result == null);
-            #pragma warning restore VSTHRD103
-            if (!reusable)
+                && !(cached.IsCompleted && cached.Result == null))
             {
-                _cached = DownloadAsync(timeoutSeconds);
-                _cachedAt = DateTime.UtcNow;
+                return cached;
             }
+            #pragma warning restore VSTHRD103
+
+            _cached = DownloadAsync(timeoutSeconds);
+            _cachedAt = DateTime.UtcNow;
             return _cached;
         }
     }
 
-    private static async Task<ModelsDevData> DownloadAsync(float timeoutSeconds)
+    private static async Task<ModelsDevData?> DownloadAsync(float timeoutSeconds)
     {
         try
         {

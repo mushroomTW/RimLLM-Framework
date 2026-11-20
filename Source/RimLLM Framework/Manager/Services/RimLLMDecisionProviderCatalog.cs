@@ -1,7 +1,6 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using RimLLM_Framework.Providers;
 
@@ -28,7 +27,7 @@ public sealed class RimLLMDecisionProvider
     /// 決策金鑰留空時沿用哪個對話供應商的金鑰（同一家公司、同一把金鑰）；null 代表不沿用。
     /// 服務的金鑰解析與設定精靈的一鍵開啟都讀這個欄位。
     /// </summary>
-    public string ChatKeyProviderId { get; init; }
+    public string? ChatKeyProviderId { get; init; }
 
     /// <summary>
     /// 是否開放玩家自訂端點。只有自架的本機服務（埠號因人而異）需要；
@@ -167,10 +166,11 @@ public static class RimLLMDecisionProviderCatalog
     /// <param name="providerId">決策供應商識別碼。</param>
     /// <param name="provider">找到時傳回供應商物件，否則為 null。</param>
     /// <returns>若找到該供應商則為 true，否則為 false。</returns>
-    public static bool TryGet(string providerId, out RimLLMDecisionProvider provider)
+    public static bool TryGet(string providerId, [NotNullWhen(true)] out RimLLMDecisionProvider? provider)
     {
-        if (!string.IsNullOrEmpty(providerId) && ById.TryGetValue(providerId, out provider))
+        if (!string.IsNullOrEmpty(providerId) && ById.TryGetValue(providerId, out RimLLMDecisionProvider? found))
         {
+            provider = found;
             return true;
         }
         provider = null;
@@ -184,7 +184,7 @@ public static class RimLLMDecisionProviderCatalog
     /// <returns>對應的決策供應商物件。</returns>
     public static RimLLMDecisionProvider Get(string providerId)
     {
-        return TryGet(providerId, out RimLLMDecisionProvider provider) ? provider : ById[TypeSafe];
+        return TryGet(providerId, out RimLLMDecisionProvider? provider) ? provider : ById[TypeSafe];
     }
 
     /// <summary>

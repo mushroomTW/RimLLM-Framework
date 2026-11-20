@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -208,7 +206,7 @@ internal static class ModelPricing
     /// 估算單次呼叫的美元成本。回傳是否找到費率，讓記帳區分未知費用與明確的零元費率。
     /// <paramref name="cachedPromptTokens"/> 由呼叫端保證已落在 [0, promptTokens] 範圍內。
     /// </summary>
-    internal static bool TryEstimateCost(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens, out float cost)
+    internal static bool TryEstimateCost(string providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens, out float cost)
     {
         if (!TryFindRate(providerId, modelName, out CostRate rate))
         {
@@ -225,7 +223,7 @@ internal static class ModelPricing
     }
 
     /// <summary>先查 models.dev 目錄，再查內建表；兩者都先精確比對再做前綴比對。</summary>
-    private static bool TryFindRate(string providerId, string modelName, out CostRate rate)
+    private static bool TryFindRate(string providerId, string? modelName, out CostRate rate)
     {
         return TryFindRate(_catalogRates, providerId, modelName, out rate)
             || TryFindRate(BuiltInRates, providerId, modelName, out rate);
@@ -235,7 +233,7 @@ internal static class ModelPricing
     /// 在單一費率表中查詢。前綴模糊匹配需比對每個鍵並保留最長匹配，故保留迴圈。
     /// </summary>
 #pragma warning disable S3267 // 需同時比對前綴邊界並保留最長匹配鍵，LINQ 運算式會讓邏輯更難讀且無法提前結束。
-    private static bool TryFindRate(Dictionary<string, CostRate> rates, string providerId, string modelName, out CostRate rate)
+    private static bool TryFindRate(Dictionary<string, CostRate> rates, string? providerId, string? modelName, out CostRate rate)
     {
         string normModel = StripModelsPrefix(modelName?.Trim());
         if (rates.TryGetValue(BuildKey(providerId, modelName), out rate))
@@ -246,7 +244,7 @@ internal static class ModelPricing
         // 前綴模糊匹配（例如 gpt-4o-2024-08-06 匹配 gpt-4o）。前綴之後必須是分隔字元或結尾：
         // 單純的 StartsWith 會讓 "gpt-4" 吃到 "gpt-4.1-mini"，把 $0.40 的模型以 $30 計價。
         string providerPrefix = (providerId?.Trim() ?? "") + ":";
-        string bestKey = null;
+        string? bestKey = null;
         int bestLength = 0;
         foreach (var kvp in rates)
         {
@@ -274,12 +272,12 @@ internal static class ModelPricing
 #pragma warning restore S3267
 
     /// <summary>組查詢鍵：僅剝除 models/ 前綴，不做大小寫正規化（比對器負責）。</summary>
-    private static string BuildKey(string providerId, string modelName)
+    private static string BuildKey(string? providerId, string? modelName)
     {
         return (providerId?.Trim() ?? "") + ":" + StripModelsPrefix(modelName?.Trim());
     }
 
-    private static string StripModelsPrefix(string model)
+    private static string StripModelsPrefix(string? model)
     {
         if (!string.IsNullOrEmpty(model) && model.StartsWith("models/", StringComparison.OrdinalIgnoreCase))
         {

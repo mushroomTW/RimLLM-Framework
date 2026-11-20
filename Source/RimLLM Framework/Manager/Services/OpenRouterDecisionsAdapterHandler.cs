@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Linq;
 using System.Net.Http;
@@ -40,6 +38,7 @@ internal sealed class OpenRouterDecisionsAdapterHandler : DelegatingHandler
         }
 
         // 只改寫 SDK 原始路徑；已是 OpenRouter 路徑的請求（例如外層模型清單轉接重送的請求）原樣放行。
+        ArgumentNullException.ThrowIfNull(request.RequestUri);
         string path = request.RequestUri.AbsolutePath;
         bool isEvaluate = request.Method == HttpMethod.Post &&
                           string.Equals(path, JevEvaluatePath, StringComparison.OrdinalIgnoreCase);
@@ -90,7 +89,7 @@ internal sealed class OpenRouterDecisionsAdapterHandler : DelegatingHandler
             string[] refused = answers
                 .Where(a => a.Value is JsonObject answer &&
                             answer["type"] is JsonValue type &&
-                            type.TryGetValue(out string name) &&
+                            type.TryGetValue(out string? name) &&
                             name == RefusalType)
                 .Select(a => a.Key)
                 .ToArray();

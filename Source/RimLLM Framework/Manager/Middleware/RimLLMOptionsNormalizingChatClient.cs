@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -26,7 +24,7 @@ internal sealed class RimLLMOptionsNormalizingChatClient : DelegatingChatClient
 
     public override Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options = null,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         return base.GetResponseAsync(messages, Normalize(options), cancellationToken);
@@ -34,7 +32,7 @@ internal sealed class RimLLMOptionsNormalizingChatClient : DelegatingChatClient
 
     public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options = null,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         return base.GetStreamingResponseAsync(messages, Normalize(options), cancellationToken);
@@ -44,7 +42,7 @@ internal sealed class RimLLMOptionsNormalizingChatClient : DelegatingChatClient
     /// 呼叫端已指定思考強度、或玩家未設定預設值時原樣放行。
     /// 需要改寫時一律複製，不可就地修改呼叫端傳進來的物件。
     /// </summary>
-    private ChatOptions Normalize(ChatOptions options)
+    private ChatOptions? Normalize(ChatOptions? options)
     {
         if (_settings.DefaultReasoningEffort == null) return options;
         if (options?.Reasoning?.Effort != null) return options;

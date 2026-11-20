@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -107,7 +105,7 @@ public static class RimLLMSchemaBuilder
     private static readonly ConcurrentDictionary<Type, RimLLMSchemaResult> ResultCache = new();
 
     private static readonly System.Threading.Lock OptionsLock = new();
-    private static JsonSerializerOptions _serializerOptions;
+    private static JsonSerializerOptions? _serializerOptions;
 
     /// <summary>
     /// 產生指定型別的 schema。結果不可變，可直接共用。
@@ -117,7 +115,7 @@ public static class RimLLMSchemaBuilder
     {
         ArgumentNullException.ThrowIfNull(type);
 
-        if (ResultCache.TryGetValue(type, out RimLLMSchemaResult cached))
+        if (ResultCache.TryGetValue(type, out RimLLMSchemaResult? cached))
         {
             return cached;
         }
@@ -157,7 +155,7 @@ public static class RimLLMSchemaBuilder
     private static JsonObject BuildCanonical(Type type, int maxDepth)
     {
         JsonObject raw = ExportRaw(type);
-        JsonObject normalized = Normalize(raw, GetTypeInfo(type), new NormalizeContext(raw, maxDepth), 0);
+        JsonObject? normalized = Normalize(raw, GetTypeInfo(type), new NormalizeContext(raw, maxDepth), 0);
         return normalized ?? CreateEmptyObjectSchema();
     }
 
@@ -175,7 +173,7 @@ public static class RimLLMSchemaBuilder
     {
         JsonNode node = JsonSchemaExporter.GetJsonSchemaAsNode(EnsureSerializerOptions(), type);
         // exporter 的根一律是物件 schema；若不是，轉型失敗直接拋出，不會靜默產出錯誤形狀。
-        return (JsonObject)JsonNode.Parse(node.ToJsonString());
+        return (JsonObject)(JsonNode.Parse(node.ToJsonString()) ?? throw new JsonException("Schema node could not be re-parsed."));
     }
 
     /// <summary>
@@ -215,7 +213,7 @@ public static class RimLLMSchemaBuilder
     /// <param name="depth">目前的遞迴深度。</param>
     /// <returns>正規化後的 JSON 物件；若節點無法表達則為 null。</returns>
 #pragma warning disable S1168 // null 表示不可表達節點，與空集合語意不同，呼叫端需區分。
-    private static JsonObject Normalize(JsonObject node, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
+    private static JsonObject? Normalize(JsonObject? node, JsonTypeInfo? typeInfo, NormalizeContext context, int depth)
     {
         if (node == null || depth > context.MaxDepth)
         {
@@ -224,18 +222,18 @@ public static class RimLLMSchemaBuilder
 
         // exporter 的 $ref 是指向樹內既有節點的 JSON pointer，而且不只用於循環，也用於去重。
         // 若此節點是 $ref，直接處理並回傳。
-        if (TryNormalizeRef(node, typeInfo, context, depth, out JsonObject refResult))
+        if (TryNormalizeRef(node, typeInfo, context, depth, out JsonObject? refResult))
         {
             return refResult;
         }
 
-        JsonObject collapsed = CollapseCompositeKeywords(node);
+        JsonObject? collapsed = CollapseCompositeKeywords(node);
         if (collapsed == null)
         {
             return null;
         }
 
-        string typeName = ExtractTypeName(collapsed);
+        string? typeName = ExtractTypeName(collapsed);
         if (typeName == null)
         {
             return null;
@@ -252,7 +250,7 @@ public static class RimLLMSchemaBuilder
             result[OptionalMarker] = true;
         }
 
-        JsonNode description = collapsed[SchemaDescription];
+        JsonNode? description = collapsed[SchemaDescription];
         if (description != null && description.GetValueKind() == JsonValueKind.String)
         {
             result[SchemaDescription] = description.GetValue<string>();
@@ -279,11 +277,11 @@ public static class RimLLMSchemaBuilder
 
     /// <summary>正規化陣列型別節點；元素無法表達時整個陣列成員一併捨棄（回傳 null 表示無法表達，與舊實作一致）。</summary>
 #pragma warning disable S1168 // null 表示陣列元素無法表達，調用端會將整個成員捨棄，不應轉為空集合。
-    private static JsonObject NormalizeArray(JsonObject collapsed, JsonTypeInfo typeInfo, NormalizeContext context, int depth, JsonObject result)
+    private static JsonObject? NormalizeArray(JsonObject collapsed, JsonTypeInfo? typeInfo, NormalizeContext context, int depth, JsonObject result)
     {
-        JsonObject itemSchema = Normalize(
+        JsonObject? itemSchema = Normalize(
             collapsed[SchemaItems] as JsonObject,
-            typeInfo != null ? GetTypeInfo(typeInfo.ElementType) : null,
+            typeInfo?.ElementType is { } elementType ? GetTypeInfo(elementType) : null,
             context,
             depth + 1);
 
@@ -299,10 +297,10 @@ public static class RimLLMSchemaBuilder
     /// 若 pointer 指向目前路徑上的祖先（循環）或目標不存在，回傳 null 並 true；
     /// 若此節點不是 $ref，回傳 false。
     /// </summary>
-    private static bool TryNormalizeRef(JsonObject node, JsonTypeInfo typeInfo, NormalizeContext context, int depth, out JsonObject result)
+    private static bool TryNormalizeRef(JsonObject node, JsonTypeInfo? typeInfo, NormalizeContext context, int depth, out JsonObject? result)
     {
         result = null;
-        JsonNode refToken = node["$ref"];
+        JsonNode? refToken = node["$ref"];
         if (refToken == null || refToken.GetValueKind() != JsonValueKind.String)
         {
             return false;
@@ -315,7 +313,7 @@ public static class RimLLMSchemaBuilder
             return true;
         }
 
-        JsonObject target = ResolvePointer(context.RawRoot, pointer);
+        JsonObject? target = ResolvePointer(context.RawRoot, pointer);
         if (target == null)
         {
             return true;
@@ -335,16 +333,16 @@ public static class RimLLMSchemaBuilder
 
     /// <summary>循環在 CLR 型別層截斷，回傳 null 表示「此分支不應輸出」，非集合。</summary>
     #pragma warning disable S1168 // 回傳 JsonObject? 而非集合，null 代表截斷遞迴，呼叫端已處理。
-    private static JsonObject NormalizeObject(
-        JsonObject node, JsonObject result, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
+    private static JsonObject? NormalizeObject(
+        JsonObject node, JsonObject result, JsonTypeInfo? typeInfo, NormalizeContext context, int depth)
     {
         // Dictionary 會產生開放式 map（additionalProperties 是一份 value schema）；
         // 自訂類別則沒有 additionalProperties，由我們補上 false。
         if (node[SchemaAdditionalProperties] is JsonObject valueSchema)
         {
-            JsonObject normalizedValue = Normalize(
+            JsonObject? normalizedValue = Normalize(
                 valueSchema,
-                typeInfo != null ? GetTypeInfo(typeInfo.ElementType) : null,
+                typeInfo?.ElementType is { } elementType ? GetTypeInfo(elementType) : null,
                 context,
                 depth + 1);
 
@@ -360,7 +358,7 @@ public static class RimLLMSchemaBuilder
         // exporter 會把遞迴成員先完整展開一輪、其中才出現指回祖先的 $ref，
         // 若只靠 pointer 偵測就會多送一整層 —— 實測 ComplexTestDataStructure 的 schema
         // 從 789 字元漲到 3119 字元，而那是每次結構化請求都要付的 prompt token。
-        Type clrType = typeInfo != null ? typeInfo.Type : null;
+        Type? clrType = typeInfo?.Type;
         if (clrType != null)
         {
             if (context.TypePath.Contains(clrType)) return null;
@@ -389,7 +387,7 @@ public static class RimLLMSchemaBuilder
     /// 無法表達的成員會被略過。
     /// </summary>
     private static void NormalizeProperties(
-        JsonObject node, JsonObject result, JsonTypeInfo typeInfo, NormalizeContext context, int depth)
+        JsonObject node, JsonObject result, JsonTypeInfo? typeInfo, NormalizeContext context, int depth)
     {
         var properties = new JsonObject();
         var required = new JsonArray();
@@ -400,9 +398,9 @@ public static class RimLLMSchemaBuilder
 
             foreach (var property in rawProperties)
             {
-                memberLookup.TryGetValue(property.Key, out JsonPropertyInfo memberInfo);
+                memberLookup.TryGetValue(property.Key, out JsonPropertyInfo? memberInfo);
 
-                JsonObject memberSchema = Normalize(
+                JsonObject? memberSchema = Normalize(
                     property.Value as JsonObject,
                     memberInfo != null ? GetTypeInfo(memberInfo.PropertyType) : null,
                     context,
@@ -428,13 +426,13 @@ public static class RimLLMSchemaBuilder
     /// 而框架不經過那層（見 <see cref="ExportRaw"/>）。
     /// 只讀 <c>System.ComponentModel.DescriptionAttribute</c>。
     /// </summary>
-    private static void ApplyMemberDescription(JsonObject memberSchema, JsonPropertyInfo memberInfo)
+    private static void ApplyMemberDescription(JsonObject memberSchema, JsonPropertyInfo? memberInfo)
     {
         ApplyDescription(memberSchema, memberInfo?.AttributeProvider as MemberInfo);
     }
 
     /// <summary>成員層級與類別層級的 <see cref="DescriptionAttribute"/> 共用同一套讀取邏輯。</summary>
-    private static void ApplyDescription(JsonObject schema, MemberInfo attributeSource)
+    private static void ApplyDescription(JsonObject schema, MemberInfo? attributeSource)
     {
         if (schema == null || attributeSource == null) return;
         if (schema[SchemaDescription] != null) return;
@@ -449,7 +447,7 @@ public static class RimLLMSchemaBuilder
         }
     }
 
-    private static Dictionary<string, JsonPropertyInfo> BuildMemberLookup(JsonTypeInfo typeInfo)
+    private static Dictionary<string, JsonPropertyInfo> BuildMemberLookup(JsonTypeInfo? typeInfo)
     {
         var lookup = new Dictionary<string, JsonPropertyInfo>(StringComparer.Ordinal);
         if (typeInfo == null) return lookup;
@@ -468,16 +466,16 @@ public static class RimLLMSchemaBuilder
     /// 其餘（真正的多型）回傳 null，讓父層捨棄該成員 —— 寧可少一個欄位，也不要送出 provider 不吃的形狀。
     /// </summary>
     #pragma warning disable S1168 // 回傳 JsonObject 而非集合，null 表示無法攤平，呼叫端已處理。
-    private static JsonObject CollapseCompositeKeywords(JsonObject node)
+    private static JsonObject? CollapseCompositeKeywords(JsonObject node)
     {
-        JsonArray composite = (node["allOf"] as JsonArray) ?? (node["anyOf"] as JsonArray) ?? (node["oneOf"] as JsonArray);
+        JsonArray? composite = (node["allOf"] as JsonArray) ?? (node["anyOf"] as JsonArray) ?? (node["oneOf"] as JsonArray);
         if (composite == null)
         {
             return node;
         }
 
-        JsonObject candidate = null;
-        foreach (JsonNode branch in composite)
+        JsonObject? candidate = null;
+        foreach (JsonNode? branch in composite)
         {
             if (branch is not JsonObject branchObject) return null;
 
@@ -497,7 +495,7 @@ public static class RimLLMSchemaBuilder
             if (sibling.Key == "allOf" || sibling.Key == "anyOf" || sibling.Key == "oneOf") continue;
             if (merged[sibling.Key] == null)
             {
-                merged[sibling.Key] = sibling.Value.DeepClone();
+                merged[sibling.Key] = sibling.Value?.DeepClone();
             }
         }
 
@@ -507,7 +505,7 @@ public static class RimLLMSchemaBuilder
 
     private static bool IsNullOnlySchema(JsonObject node)
     {
-        JsonNode type = node["type"];
+        JsonNode? type = node["type"];
         return type != null && type.GetValueKind() == JsonValueKind.String && type.GetValue<string>() == "null";
     }
 
@@ -515,9 +513,9 @@ public static class RimLLMSchemaBuilder
     /// 取出單一 type 名稱。可為 null 的聯集在此收斂 —— 選填語意改由 <see cref="OptionalMarker"/> 攜帶，
     /// 由 Stage C 依 provider 方言還原。
     /// </summary>
-    private static string ExtractTypeName(JsonObject node)
+    private static string? ExtractTypeName(JsonObject node)
     {
-        JsonNode typeToken = node["type"];
+        JsonNode? typeToken = node["type"];
 
         // exporter 對列舉只輸出 {"enum":[...]}，不帶 type；此管線直接使用 exporter，
         // 沒有 type 的節點會被視為無法表達而丟棄，
@@ -532,9 +530,9 @@ public static class RimLLMSchemaBuilder
 
         if (typeToken is not JsonArray candidates) return null;
 
-        foreach (JsonNode candidate in candidates)
+        foreach (JsonNode? candidate in candidates)
         {
-            if (candidate.GetValueKind() != JsonValueKind.String) continue;
+            if (candidate?.GetValueKind() != JsonValueKind.String) continue;
             string name = candidate.GetValue<string>();
             if (name != "null") return name;
         }
@@ -546,14 +544,14 @@ public static class RimLLMSchemaBuilder
     /// 由列舉值反推 <c>type</c>。<c>JsonStringEnumConverter</c> 會產出字串值，
     /// 未套用該轉換器的列舉則是整數值。
     /// </summary>
-    private static string InferTypeFromEnum(JsonArray enumValues)
+    private static string? InferTypeFromEnum(JsonArray? enumValues)
     {
         if (enumValues == null || enumValues.Count == 0) return null;
 
-        foreach (JsonNode value in enumValues)
+        foreach (JsonNode? value in enumValues)
         {
-            if (value.GetValueKind() == JsonValueKind.String) return "string";
-            if (value.GetValueKind() == JsonValueKind.Number) return "integer";
+            if (value?.GetValueKind() == JsonValueKind.String) return "string";
+            if (value?.GetValueKind() == JsonValueKind.Number) return "integer";
         }
 
         return null;
@@ -564,13 +562,13 @@ public static class RimLLMSchemaBuilder
     /// MEAI 不使用 <c>$defs</c>，pointer 一律指向輸出樹內的既有路徑。
     /// </summary>
     #pragma warning disable S1168 // 回傳 JsonObject? 而非集合，null 表示指針無效，呼叫端已處理。
-    private static JsonObject ResolvePointer(JsonObject rawRoot, string pointer)
+    private static JsonObject? ResolvePointer(JsonObject rawRoot, string pointer)
     {
         if (string.IsNullOrEmpty(pointer)) return null;
         if (pointer == "#") return rawRoot;
         if (!pointer.StartsWith("#/", StringComparison.Ordinal)) return null;
 
-        JsonNode current = rawRoot;
+        JsonNode? current = rawRoot;
         foreach (string rawSegment in pointer.Substring(2).Split('/'))
         {
             if (current is not JsonObject container) return null;
@@ -596,7 +594,7 @@ public static class RimLLMSchemaBuilder
         return canonical;
     }
 
-    private static void ApplyOpenAiDialectRecursive(JsonObject node)
+    private static void ApplyOpenAiDialectRecursive(JsonObject? node)
     {
         if (node == null) return;
 
@@ -604,7 +602,7 @@ public static class RimLLMSchemaBuilder
 
         if (optional)
         {
-            JsonNode type = node["type"];
+            JsonNode? type = node["type"];
             if (type != null && type.GetValueKind() == JsonValueKind.String)
             {
                 node["type"] = new JsonArray(type.GetValue<string>(), "null");
@@ -616,7 +614,7 @@ public static class RimLLMSchemaBuilder
 
             if (node["enum"] is JsonArray enumValues && !ContainsNull(enumValues))
             {
-                enumValues.Add((JsonNode)null);
+                enumValues.Add((JsonNode?)null);
             }
         }
 
@@ -644,7 +642,7 @@ public static class RimLLMSchemaBuilder
     /// </summary>
     private static bool ApplyOptionalMarker(JsonObject node)
     {
-        JsonNode optionalMarker = node[OptionalMarker];
+        JsonNode? optionalMarker = node[OptionalMarker];
         bool optional = optionalMarker != null && optionalMarker.GetValue<bool>();
         node.Remove(OptionalMarker);
         return optional;
@@ -652,7 +650,7 @@ public static class RimLLMSchemaBuilder
 
     private static bool ContainsTypeName(JsonArray values, string name)
     {
-        foreach (JsonNode value in values)
+        foreach (JsonNode? value in values)
         {
             if (value != null && value.GetValueKind() == JsonValueKind.String &&
                 string.Equals(value.GetValue<string>(), name, StringComparison.Ordinal)) return true;
@@ -662,18 +660,18 @@ public static class RimLLMSchemaBuilder
 
     private static bool ContainsNull(JsonArray values)
     {
-        foreach (JsonNode value in values)
+        foreach (JsonNode? value in values)
         {
             if (value == null || value.GetValueKind() == JsonValueKind.Null) return true;
         }
         return false;
     }
 
-    private static bool HasOpenEndedMap(JsonObject node)
+    private static bool HasOpenEndedMap(JsonObject? node)
     {
         if (node == null) return false;
 
-        JsonNode additional = node[SchemaAdditionalProperties];
+        JsonNode? additional = node[SchemaAdditionalProperties];
         // additionalProperties 為 false（自訂類別）或物件（Dictionary 的 value schema）才是合法形狀；
         // 布林 true 在 STJ 是 JsonValueKind.True（Newtonsoft 的 JTokenType.Boolean 在此一分為二）。
         if (additional != null && additional.GetValueKind() != JsonValueKind.True && additional.GetValueKind() != JsonValueKind.False)
@@ -768,7 +766,7 @@ public static class RimLLMSchemaBuilder
         }
     }
 
-    private static JsonTypeInfo GetTypeInfo(Type type)
+    private static JsonTypeInfo? GetTypeInfo(Type type)
     {
         if (type == null) return null;
 

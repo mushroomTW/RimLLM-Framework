@@ -107,7 +107,7 @@ public static class ProviderIds
     /// <param name="entry">備援鏈條目或複合模型識別碼。</param>
     /// <param name="providerId">供應商識別碼（規則同 <see cref="ParseProviderId"/>）；空字串時為 null。</param>
     /// <param name="modelName">模型名稱；未指定模型時為 null。</param>
-    public static bool TrySplitModelId(string entry, out string? providerId, [NotNullWhen(true)] out string? modelName)
+    public static bool TrySplitModelId(string entry, [NotNullWhen(true)] out string? providerId, [NotNullWhen(true)] out string? modelName)
     {
         providerId = ParseProviderId(entry);
         modelName = null;
@@ -116,6 +116,7 @@ public static class ProviderIds
         int colonIndex = entry.IndexOf(':');
         if (colonIndex <= 0 || colonIndex >= entry.Length - 1) return false;
 
+        providerId = entry.Substring(0, colonIndex);
         modelName = entry.Substring(colonIndex + 1);
         return true;
     }

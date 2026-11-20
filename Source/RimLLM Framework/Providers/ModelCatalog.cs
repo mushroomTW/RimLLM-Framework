@@ -8,7 +8,7 @@ namespace RimLLM_Framework.Providers;
 /// </summary>
 internal sealed class ModelCatalog
 {
-    public ModelCatalog(List<string> models, Dictionary<string, int> contextWindows, Dictionary<string, bool>? visionSupport = null)
+    public ModelCatalog(List<string>? models, Dictionary<string, int>? contextWindows, Dictionary<string, bool>? visionSupport = null)
     {
         Models = models ?? [];
         ContextWindows = contextWindows ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

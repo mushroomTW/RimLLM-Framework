@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -47,7 +45,7 @@ public static class RimLLMJsonHelper
     public static JsonSerializerOptions Options => SharedOptions;
 
     /// <summary>以執行期型別序列化（DTO 可能是 object 宣告，泛型推斷會丟失成員）。</summary>
-    public static string Serialize(object value)
+    public static string Serialize(object? value)
     {
         if (value == null) return "null";
         return JsonSerializer.Serialize(value, value.GetType(), SharedOptions);
@@ -58,7 +56,7 @@ public static class RimLLMJsonHelper
         return JsonSerializer.Serialize(value, SharedOptions);
     }
 
-    public static T Deserialize<T>(string json)
+    public static T? Deserialize<T>(string json)
     {
         return JsonSerializer.Deserialize<T>(json, SharedOptions);
     }
@@ -76,14 +74,14 @@ public static class RimLLMJsonHelper
     /// </summary>
     public static string GetSampleJson(Type type)
     {
-        if (SampleJsonCache.TryGetValue(type, out string json))
+        if (SampleJsonCache.TryGetValue(type, out string? json))
         {
             return json;
         }
 
         try
         {
-            object instance = CreateDummyInstance(type);
+            object? instance = CreateDummyInstance(type);
             string generatedJson = Serialize(instance);
             SampleJsonCache[type] = generatedJson;
             return generatedJson;
@@ -403,14 +401,14 @@ public static class RimLLMJsonHelper
         return match.Success ? match.Value : input;
     }
 
-    private static object CreateDummyInstance(Type type)
+    private static object? CreateDummyInstance(Type type)
     {
         return CreateDummyInstance(type, []);
     }
 
-    private static object CreateDummyInstance(Type type, HashSet<Type> visitedTypes)
+    private static object? CreateDummyInstance(Type type, HashSet<Type> visitedTypes)
     {
-        if (TryCreateScalarDummy(type, out object scalar)) return scalar;
+        if (TryCreateScalarDummy(type, out object? scalar)) return scalar;
 
         // 避免循環引用導致 StackOverflow
         if (visitedTypes.Contains(type))
@@ -421,9 +419,9 @@ public static class RimLLMJsonHelper
 
         try
         {
-            if (TryCreateCollectionDummy(type, visitedTypes, out object collection)) return collection;
+            if (TryCreateCollectionDummy(type, visitedTypes, out object? collection)) return collection;
 
-            object instance;
+            object? instance;
             try
             {
                 instance = Activator.CreateInstance(type);
@@ -447,7 +445,7 @@ public static class RimLLMJsonHelper
         }
     }
 
-    private static bool TryCreateScalarDummy(Type type, out object dummy)
+    private static bool TryCreateScalarDummy(Type type, out object? dummy)
     {
         if (type == typeof(string)) { dummy = "string"; return true; }
         if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte)) { dummy = 0; return true; }
@@ -463,11 +461,11 @@ public static class RimLLMJsonHelper
         return false;
     }
 
-    private static bool TryCreateCollectionDummy(Type type, HashSet<Type> visitedTypes, out object dummy)
+    private static bool TryCreateCollectionDummy(Type type, HashSet<Type> visitedTypes, out object? dummy)
     {
         if (type.IsArray)
         {
-            var elementType = type.GetElementType();
+            var elementType = type.GetElementType() ?? typeof(object);
             var array = Array.CreateInstance(elementType, 1);
             array.SetValue(CreateDummyInstance(elementType, new HashSet<Type>(visitedTypes)), 0);
             dummy = array;
@@ -544,8 +542,8 @@ public static class RimLLMJsonHelper
             });
         ValidateRequiredJsonMembers(document.RootElement, RimLLMSchemaBuilder.Build(typeof(T)).Element);
 
-        T result = Deserialize<T>(json);
-        if (ReferenceEquals(result, null))
+        T? result = Deserialize<T>(json);
+        if (result is null)
         {
             throw new InvalidOperationException("Structured response deserialized to null.");
         }
@@ -557,7 +555,7 @@ public static class RimLLMJsonHelper
     /// </summary>
     public static void ValidateStructuredObject<T>(T result)
     {
-        if (ReferenceEquals(result, null))
+        if (result is null)
         {
             throw new InvalidOperationException("Structured response deserialized to null.");
         }
@@ -607,7 +605,7 @@ public static class RimLLMJsonHelper
 
     private static void ValidateDictionaryMembers(object value, JsonTypeInfo typeInfo, HashSet<Type> visitedTypes, Type type)
     {
-        foreach (object item in EnumerateDictionaryValues(value))
+        foreach (object? item in EnumerateDictionaryValues(value))
         {
             ValidateRuntimeMember(
                 item,
@@ -736,7 +734,7 @@ public static class RimLLMJsonHelper
     {
         foreach (JsonElement requiredName in required.EnumerateArray())
         {
-            string name = requiredName.GetString();
+            string name = requiredName.GetString() ?? string.Empty;
             if (!TryFindProperty(value, name, out JsonElement memberValue))
             {
                 throw new InvalidOperationException(
@@ -763,8 +761,8 @@ public static class RimLLMJsonHelper
     #pragma warning restore S3267
 
     private static void ValidateRuntimeMember(
-        object value,
-        Type type,
+        object? value,
+        Type? type,
         HashSet<Type> visitedTypes,
         string nullErrorMessage)
     {
@@ -777,7 +775,7 @@ public static class RimLLMJsonHelper
         ValidateRequiredMembers(value, type ?? value.GetType(), visitedTypes);
     }
 
-    private static IEnumerable<object> EnumerateDictionaryValues(object value)
+    private static IEnumerable<object?> EnumerateDictionaryValues(object value)
     {
         if (value is IDictionary dictionary)
         {
@@ -789,7 +787,7 @@ public static class RimLLMJsonHelper
         {
             foreach (object entry in enumerable)
             {
-                PropertyInfo valueProperty = entry?.GetType().GetProperty("Value");
+                PropertyInfo? valueProperty = entry?.GetType().GetProperty("Value");
                 if (valueProperty != null) yield return valueProperty.GetValue(entry, null);
             }
         }

@@ -1,7 +1,6 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
@@ -49,11 +48,11 @@ public class RimLLMManager
     public class RequestLogEntry
     {
         public DateTime Timestamp { get; set; } = DateTime.Now;
-        public string ModId { get; set; }
-        public string Provider { get; set; }
-        public string Model { get; set; }
+        public string? ModId { get; set; }
+        public string? Provider { get; set; }
+        public string? Model { get; set; }
         public bool Success { get; set; }
-        public string ErrorMessage { get; set; }
+        public string? ErrorMessage { get; set; }
         public long LatencyMs { get; set; }
         /// <summary>本次請求的輸入 token（供應商有回報才有值，否則為 0）。</summary>
         public int PromptTokens { get; set; }
@@ -156,9 +155,9 @@ public class RimLLMManager
     /// 候選解析，但不做冷卻過濾：冷卻會到期，查詢當下被濾掉的候選仍可能在稍後的
     /// 請求中被路由到，交集若漏掉它就會過度樂觀。候選為空時例外原樣上拋。
     /// </summary>
-    internal LLMProviderCapabilities GetEffectiveCapabilities(string preferredModelId)
+    internal LLMProviderCapabilities GetEffectiveCapabilities(string? preferredModelId)
     {
-        if (!TryGetEffectiveCapabilities(preferredModelId, out LLMProviderCapabilities effective, out string failureReason))
+        if (!TryGetEffectiveCapabilities(preferredModelId, out LLMProviderCapabilities? effective, out string? failureReason))
         {
             throw new RimLLMException(LLMError.ProviderOffline, failureReason);
         }
@@ -170,13 +169,13 @@ public class RimLLMManager
     /// 非拋版能力查詢，供相容層每秒輪詢使用，避免離線時每秒配置例外。
     /// 語意與 <see cref="GetEffectiveCapabilities(string)"/> 一致，僅以傳回值取代擲出。
     /// </summary>
-    internal bool TryGetEffectiveCapabilities(string preferredModelId, out LLMProviderCapabilities effective, out string failureReason)
+    internal bool TryGetEffectiveCapabilities(string? preferredModelId, [NotNullWhen(true)] out LLMProviderCapabilities? effective, [NotNullWhen(false)] out string? failureReason)
     {
         if (!_fallbackPipeline.TryResolveCandidates(
                 preferredModelId,
                 null,
                 includeCoolingDown: true,
-                out List<RimLLMFallbackPipeline.ResolvedCandidate> candidates,
+                out List<RimLLMFallbackPipeline.ResolvedCandidate>? candidates,
                 out failureReason,
                 advanceRoundRobin: false))
         {
@@ -217,7 +216,7 @@ public class RimLLMManager
 
         lock (_providerLock)
         {
-            if (!_providers.TryGetValue(providerId, out ILLMProvider provider))
+            if (!_providers.TryGetValue(providerId, out ILLMProvider? provider))
             {
                 return new LLMProviderCapabilities();
             }
@@ -254,7 +253,7 @@ public class RimLLMManager
     /// <summary>
     /// 執行緒安全地查找已註冊的供應商。
     /// </summary>
-    private bool TryGetProvider(string providerId, out ILLMProvider provider)
+    private bool TryGetProvider(string providerId, [NotNullWhen(true)] out ILLMProvider? provider)
     {
         lock (_providerLock)
         {
@@ -266,7 +265,7 @@ public class RimLLMManager
     /// 把 modId 解析為 OpenRouter 應用歸屬。遊戲內由 <see cref="RimLLM_Framework.Mod.RimLLMFrameworkMod"/>
     /// 以啟動時的啟用 Mod 快照注入；單元測試不注入，一律歸屬框架。
     /// </summary>
-    internal Func<string, RimLLMAppAttribution> AttributionResolver { get; init; }
+    internal Func<string, RimLLMAppAttribution?>? AttributionResolver { get; init; }
 
     internal IChatClient CreateChatClient(string modId)
     {
@@ -330,7 +329,7 @@ public class RimLLMManager
 
     public async Task<TestResult> TestProviderAsync(string providerId)
     {
-        if (!TryGetProvider(providerId, out ILLMProvider provider))
+        if (!TryGetProvider(providerId, out ILLMProvider? provider))
         {
             return new TestResult
             {
@@ -350,7 +349,7 @@ public class RimLLMManager
     /// </summary>
     public async Task<TestResult> TestProviderAsync(string providerId, string model)
     {
-        if (TryGetProvider(providerId, out ILLMProvider provider) && provider is OpenAIProvider builtIn)
+        if (TryGetProvider(providerId, out ILLMProvider? provider) && provider is OpenAIProvider builtIn)
         {
             return await builtIn.TestConnectionAsync(model).ConfigureAwait(false);
         }
@@ -359,7 +358,7 @@ public class RimLLMManager
 
     public async Task<List<string>> FetchProviderModelsAsync(string providerId)
     {
-        if (!TryGetProvider(providerId, out ILLMProvider provider))
+        if (!TryGetProvider(providerId, out ILLMProvider? provider))
         {
             throw new RimLLMException(LLMError.ProviderOffline, $"Unknown provider ID: {providerId}");
         }
@@ -373,7 +372,7 @@ public class RimLLMManager
     /// </summary>
     internal async Task<ModelCatalog> FetchProviderModelCatalogAsync(string providerId)
     {
-        if (!TryGetProvider(providerId, out ILLMProvider provider))
+        if (!TryGetProvider(providerId, out ILLMProvider? provider))
         {
             throw new RimLLMException(LLMError.ProviderOffline, $"Unknown provider ID: {providerId}");
         }
@@ -392,7 +391,7 @@ public class RimLLMManager
             && (!catalog.Models.TrueForAll(catalog.ContextWindows.ContainsKey)
                 || !catalog.Models.TrueForAll(catalog.VisionSupport.ContainsKey)))
         {
-            ModelsDevCatalog.ModelsDevData data = await modelsDevTask.ConfigureAwait(false);
+            ModelsDevCatalog.ModelsDevData? data = await modelsDevTask.ConfigureAwait(false);
             if (data != null)
             {
                 ModelsDevCatalog.FillMissing(data.Windows, providerId, catalog.ContextWindows);
@@ -417,7 +416,7 @@ public class RimLLMManager
     /// </summary>
     internal int? GetContextWindow(string modelId)
     {
-        return ProviderIds.TrySplitModelId(modelId, out string providerId, out string modelName)
+        return ProviderIds.TrySplitModelId(modelId, out string? providerId, out string? modelName)
             ? _settings.GetContextWindow(providerId, modelName)
             : null;
     }
@@ -428,7 +427,7 @@ public class RimLLMManager
     /// </summary>
     internal bool? SupportsVision(string modelId)
     {
-        return ProviderIds.TrySplitModelId(modelId, out string providerId, out string modelName)
+        return ProviderIds.TrySplitModelId(modelId, out string? providerId, out string? modelName)
             ? _settings.GetVisionSupport(providerId, modelName)
             : null;
     }
@@ -444,7 +443,7 @@ public class RimLLMManager
         _throttleStore.ClearCooldowns();
     }
 
-    public void RecordUsage(string providerId, string modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
+    public void RecordUsage(string providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
     {
         _usageTracker.RecordUsage(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens);
     }

@@ -97,19 +97,19 @@ public class RimLLMChatOptions : ChatOptions
     // 以下讀取器接受任意 ChatOptions，讓框架內部不必再對 RimLLMChatOptions 做型別轉換
     // ——下游若直接對純 ChatOptions 塞鍵，走的是同一條路徑。
 
-    internal static int GetPriority(ChatOptions options) =>
+    internal static int GetPriority(ChatOptions? options) =>
         ReadAdditional(options, PriorityKey, 0);
 
-    internal static string? GetMinFallbackLevel(ChatOptions options) =>
+    internal static string? GetMinFallbackLevel(ChatOptions? options) =>
         ReadAdditional<string?>(options, MinFallbackLevelKey, null);
 
-    internal static string? GetCachedContext(ChatOptions options) =>
+    internal static string? GetCachedContext(ChatOptions? options) =>
         ReadAdditional<string?>(options, CachedContextKey, null);
 
-    internal static bool GetDisableReasoning(ChatOptions options) =>
+    internal static bool GetDisableReasoning(ChatOptions? options) =>
         ReadAdditional(options, DisableReasoningKey, false);
 
-    internal static System.Type? GetResponseType(ChatOptions options) =>
+    internal static System.Type? GetResponseType(ChatOptions? options) =>
         ReadAdditional<System.Type?>(options, ResponseTypeKey, null);
 
 }

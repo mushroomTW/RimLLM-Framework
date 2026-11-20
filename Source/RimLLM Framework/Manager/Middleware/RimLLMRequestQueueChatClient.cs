@@ -1,5 +1,3 @@
-#nullable disable
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -31,7 +29,7 @@ internal sealed class RimLLMRequestQueueChatClient : DelegatingChatClient
 
     public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options = null,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         var wait = Stopwatch.StartNew();
@@ -44,13 +42,13 @@ internal sealed class RimLLMRequestQueueChatClient : DelegatingChatClient
 
     public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options = null,
+        ChatOptions? options = null,
         CancellationToken cancellationToken = default)
         => StreamQueuedAsync(messages, options, cancellationToken);
 
     private async IAsyncEnumerable<ChatResponseUpdate> StreamQueuedAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions options,
+        ChatOptions? options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         // Iterator 在第一次 MoveNextAsync 才取得名額；僅建立 enumerable／enumerator 不會送出請求。
