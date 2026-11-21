@@ -26,7 +26,6 @@ internal static class RimLLMSecureKeyStore
         return LoadOrCreateKeyringCore(path, store);
     }
 
-    /// <summary>依目前平台挑選系統鑰匙圈實作。</summary>
     private static ISecretStore ResolveSecretStore()
     {
         if (OperatingSystem.IsMacOS()) return new MacOSSecretStore();
@@ -34,7 +33,6 @@ internal static class RimLLMSecureKeyStore
         throw new PlatformNotSupportedException("No system keyring is supported on this platform.");
     }
 
-    /// <summary>讓平台無關的識別碼、競態與遺失金鑰行為能以隔離的儲存體驗證。</summary>
     internal static byte[] LoadOrCreateKeyring(string path, ISecretStore store)
     {
         ArgumentNullException.ThrowIfNull(store);

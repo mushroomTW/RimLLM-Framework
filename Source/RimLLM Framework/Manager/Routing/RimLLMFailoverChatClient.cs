@@ -17,10 +17,8 @@ namespace RimLLM_Framework.Manager;
 /// <remarks>
 /// 建構在 MEAI 的 <see cref="FailoverChatClient"/> 之上：基底類別負責呼叫、串流
 /// 承諾狀態與嘗試上限，本類別只負責「下一個試誰」與「試完之後記什麼」。
-///
-/// 與先前自製迴圈的一個行為差異：MEAI 規定「串流一旦把內容吐給呼叫端，就不再
-/// 切換供應商」，因此串流中途換供應商的能力不復存在，錯誤會直接上拋。非串流路徑
-/// 的備援行為不變。
+/// MEAI 規定「串流一旦把內容吐給呼叫端，就不再
+/// 切換供應商」，因此串流中途換供應商的能力不復存在，錯誤會直接上拋。
 /// </remarks>
 internal sealed class RimLLMFailoverChatClient : FailoverChatClient
 {
@@ -32,7 +30,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
 
     /// <summary>
     /// 併發名額佇列。以每個候選嘗試為單位取得名額：名額若在路由外層取得，
-    /// 重試前的指數退避（最長 60 秒）會一直占著名額，MaxConcurrentRequests 預設只有 2，
+    /// 重試前的指數退避（最長 60 秒）會一直占著名額，MaxConcurrentRequests 預設很小，
     /// 一個被限流的供應商就能讓其他 Mod 的請求全部排隊。測試可傳 null 略過排隊。
     /// </summary>
     private readonly RimLLMRequestQueue? _queue;
@@ -86,7 +84,6 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         _modId = modId;
         _queue = queue;
 
-        // 終止由候選是否用盡決定，不另設嘗試上限。
         MaximumAttemptsPerRequest = null;
     }
 
@@ -107,9 +104,6 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             new RimLLMFailoverChatClient(settings, healthLedger, usageTracker, policy, modId, queue));
     }
 
-    /// <summary>
-    /// 在請求進入路由之前標記「這是串流」。
-    /// </summary>
     private sealed class StreamingMarkerChatClient : DelegatingChatClient
     {
         public StreamingMarkerChatClient(IChatClient innerClient)
@@ -158,7 +152,6 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         }
 
         var candidate = state.Current;
-        // 呼叫端包裝：關閉詳細日誌時連內插字串都不配置，輸出與原本（不輸出）完全一致。
         if (RimLLMLog.Enabled)
         {
             RimLLMLog.Message(state.AttemptOnCurrent > 0
@@ -179,7 +172,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
     /// <summary>
     /// 結算候選：一次請求對同一個候選的所有重試合計只記一次失敗。
     /// 逐次記錄會讓單一次網路抖動就把連續失敗數推過熔斷門檻
-    ///（預設重試 3 次即記 4 次失敗），把健康的目標冤枉冷卻數分鐘。
+    ///並把健康的目標冤枉冷卻數分鐘。
     /// </summary>
     private void SettleCandidate(RequestState state, string healthKey)
     {
@@ -222,9 +215,6 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         }
     }
 
-    /// <summary>
-    /// 決定重試或換手，並在重試前套用退避延遲。
-    /// </summary>
     private async Task AdvanceAsync(RequestState state, CancellationToken cancellationToken)
     {
         var candidate = state.Current;
@@ -270,7 +260,6 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             }
         }
 
-        // 換手之前結算這個候選的健康度與日誌。
         SettleCandidate(state, RimLLMFallbackPipeline.HealthKey(candidate));
         RecordCandidateFailure(state, candidate);
 

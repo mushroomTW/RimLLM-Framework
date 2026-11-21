@@ -11,14 +11,11 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 負責對話測試（ChatTest）分頁的 UI 渲染與對話生命週期狀態管理。
-/// </summary>
+/// <summary>對話測試（ChatTest）分頁：UI 渲染與對話生命週期狀態管理。</summary>
 public static partial class ChatTestDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
-    // 對話測試專屬的 UI 暫存狀態
     private static string chatInput = "";
     private static readonly List<string> chatHistory = [];
     private static Vector2 chatScrollPosition = Vector2.zero;
@@ -28,41 +25,29 @@ public static partial class ChatTestDrawer
     /// <summary>對話測試釘選的模型（"Provider:Model"），null 代表自動、沿用備援鏈順序。</summary>
     private static string? chatModelId;
 
-    /// <summary>聊天輸入框的控制項名稱，用於將 Enter 鍵綁定限縮在該欄位取得焦點時。</summary>
     private const string ChatInputControlName = "RimLLM_ChatInput";
     private const string ChatAiTag = "RimLLM_ChatAi";
 
-    /// <summary>對話測試頁用到的翻譯鍵，集中於此避免重複硬編碼。</summary>
     private const string ReasoningEffortLabelKey = "RimLLM_ReasoningEffortLabel";
     private const string ReasoningEffortAutoKey = "RimLLM_ReasoningEffort_Auto";
     private const string ChatUserPrefixKey = "RimLLM_ChatUser";
 
     private static readonly char[] SpaceTrimChars = [' '];
 
-    /// <summary>目前進行中請求的取消來源，供「清空」按鈕中止長時間回應。</summary>
     private static System.Threading.CancellationTokenSource? chatCts;
     // 取消或清除時遞增；回呼在主執行緒真正執行時才檢查，避免舊索引寫入新歷史。
     private static long chatRequestGeneration;
 
-    /// <summary>
-    /// 串流中重新渲染畫面的最短間隔。50ms 對眼睛已是連續更新，
-    /// 但把每秒上百次的全文 Markdown 重排壓到最多 20 次。
-    /// </summary>
+    /// <summary>串流重繪的最短間隔：50ms 對眼睛已是連續更新，但能把每秒上百次的全文 Markdown 重排壓到最多 20 次。</summary>
     private const int StreamRenderIntervalMs = 50;
     private static readonly long StreamRenderIntervalTicks =
         System.Diagnostics.Stopwatch.Frequency * StreamRenderIntervalMs / 1000L;
 
-    /// <summary>
-    /// 判斷聊天輸入是否應該送出。純空白視為未輸入。
-    /// </summary>
     internal static bool ShouldSendChatInput(string rawInput)
     {
         return !string.IsNullOrEmpty(rawInput) && rawInput.Trim().Length > 0;
     }
 
-    /// <summary>
-    /// 中止進行中的聊天請求（若有）。
-    /// </summary>
     private static void CancelActiveChatRequest()
     {
         Interlocked.Increment(ref chatRequestGeneration);
@@ -87,15 +72,7 @@ public static partial class ChatTestDrawer
         });
     }
 
-    /// <summary>
-    /// 於主線程更新本輪 AI 佔位項目；已取消、歷史重置或索引失效時略過整個回呼。
-    /// </summary>
-    /// <param name="requestGeneration">請求世代號，用於判斷回呼是否已過期。</param>
-    /// <param name="index">要更新的歷史紀錄索引。</param>
-    /// <param name="reply">模型回覆文字。</param>
-    /// <param name="meta">此則回覆的遙測元資料（用量、模型、延遲等）。</param>
-    /// <param name="persist">是否一併寫回遙測並解除載入狀態（串流結束時使用）。</param>
-    /// <param name="scrollToBottom">是否把對話框捲到底。</param>
+    /// <summary>於主線程更新本輪 AI 佔位項目；已取消、歷史重置或索引失效時略過整個回呼。</summary>
     private static void UpdateAiHistoryEntry(long requestGeneration, int index, string reply, ChatEntryMeta? meta = null, bool persist = false, bool scrollToBottom = true)
     {
         EnqueueChatUpdate(requestGeneration, () =>
@@ -134,19 +111,13 @@ public static partial class ChatTestDrawer
         });
     }
 
-    /// <summary>
-    /// 將目前的對話歷史複本交給遙測儲存，寫檔（AES + JSON + 磁碟）交由背景單寫者執行。
-    /// 先前在主執行緒同步寫檔，背景寫入正持有檔案鎖時主執行緒還會被卡住。
-    /// </summary>
+    /// <summary>將對話歷史複本交給遙測儲存；寫檔交由背景單寫者，避免主執行緒被檔案鎖卡住。</summary>
     private static void PersistChatHistory()
     {
         Settings.ChatHistory = new List<string>(chatHistory);
         Settings.QueueTelemetrySave();
     }
 
-    /// <summary>
-    /// 初始化對話歷史紀錄。
-    /// </summary>
     public static void Initialize(RimLLMFrameworkSettings settings)
     {
         if (settings.ChatHistory != null && settings.ChatHistory.Count > 0)
@@ -156,17 +127,11 @@ public static partial class ChatTestDrawer
         }
     }
 
-    /// <summary>
-    /// 獲取對話分頁詳細內容的滾動高度。
-    /// </summary>
     public static float GetHeight(float width)
     {
         return 686f;
     }
 
-    /// <summary>
-    /// 繪製對話測試介面。
-    /// </summary>
     public static void DrawChatTestSettings(Listing_Standard listing)
     {
         if (!chatReasoningInitialized)
@@ -247,14 +212,12 @@ public static partial class ChatTestDrawer
         Widgets.DrawBoxSolid(bubbleRect, bgColor);
         Widgets.DrawBox(bubbleRect, 1);
 
-        // 標題列
         Rect headerRect = new(bubbleRect.x + 8f, bubbleRect.y + 4f, bubbleRect.width - 16f, 20f);
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
         {
             Widgets.Label(headerRect, layout.HeaderText);
         }
 
-        // 內文
         if (layout.Parts == null)
         {
             Rect bodyRect = new(bubbleRect.x + 8f, bubbleRect.y + 24f, bubbleInnerWidth, layout.TextHeight + 2f);
@@ -272,7 +235,6 @@ public static partial class ChatTestDrawer
             }
         }
 
-        // AI 訊息底部工具列（微型標籤與一鍵複製）
         if (!layout.IsUser)
         {
             float btnWidth = 80f;
@@ -361,15 +323,10 @@ public static partial class ChatTestDrawer
         }
     }
 
-    /// <summary>
-    /// 測試模型選擇列。選單列出備援鏈上的 "Provider:Model" 條目，選中後以
-    /// <see cref="ChatOptions.ModelId"/> 釘選為鏈首；選自動則不指定、沿用備援鏈順序。
-    /// </summary>
+    /// <summary>測試模型選擇列：選中後以 <see cref="ChatOptions.ModelId"/> 釘選為鏈首；選自動則不指定、沿用備援鏈順序。</summary>
     private static void DrawModelSelectorRow(Listing_Standard listing)
     {
-        // 與模型設置頁共用同一份去空去重邏輯，兩處列出的條目才不會漂移。
         List<string> entries = ModelSettingsDrawer.CollectEntries();
-        // 備援鏈被改掉後，舊的釘選已無意義，退回自動。
         if (!string.IsNullOrEmpty(chatModelId) && !entries.Contains(chatModelId))
         {
             chatModelId = null;
@@ -406,9 +363,6 @@ public static partial class ChatTestDrawer
         }
     }
 
-    /// <summary>
-    /// 思考強度設定列。
-    /// </summary>
     private static void DrawReasoningEffortRow(Listing_Standard listing)
     {
         Rect effortRowRect = listing.GetRect(30f);
@@ -486,11 +440,7 @@ public static partial class ChatTestDrawer
         return parts;
     }
 
-    /// <summary>
-    /// 繪製 AI 訊息底部的微型中繼標籤（方案 A：極簡扁平資訊列）。
-    /// 徹底拿掉刺眼的硬外框與高對比底色，以低調柔和的冷灰字階呈現，
-    /// 滑鼠懸停時微顯高亮，既保留一鍵複製與詳細 Tooltip，又完全不搶正文焦點。
-    /// </summary>
+    /// <summary>繪製 AI 訊息底部的微型中繼標籤（模型、耗時與 Token 數），懸停時微顯高亮。</summary>
     private static void DrawAiMetaBadges(Rect area, BubbleLayout layout)
     {
         if (layout.Meta == null || area.width < 50f) return;
@@ -498,10 +448,8 @@ public static partial class ChatTestDrawer
         float curX = area.x;
         float gap = 8f;
 
-        // 1. 模型標籤（點擊可一鍵複製，懸停微高亮）
         DrawModelBadge(ref curX, area, layout, gap);
 
-        // 2. 耗時與 Token 數（懸停顯示詳細分解 Tooltip）
         DrawMetricsBadge(curX, area, layout);
     }
 
@@ -538,7 +486,6 @@ public static partial class ChatTestDrawer
 
         curX += modelW;
 
-        // 分隔點
         if (area.xMax - curX > 50f)
         {
             Rect dotRect = new(curX, area.y, gap, area.height);
@@ -581,10 +528,7 @@ public static partial class ChatTestDrawer
         }
     }
 
-    /// <summary>
-    /// 一張氣泡卡片繪製所需的全部預算結果：解析後的標籤與內文、量測過的高度、
-    /// 徽章文字與寬度。<see cref="Entry"/> 記住來源字串，讓快取以參考相等判定是否過期。
-    /// </summary>
+    /// <summary>一張氣泡卡片的預算結果（解析後的標籤與內文、量測高度、徽章）；<see cref="Entry"/> 記住來源字串，讓快取以參考相等判定是否過期。</summary>
     private sealed class BubbleLayout
     {
         public required string Entry;
@@ -609,10 +553,7 @@ public static partial class ChatTestDrawer
     private static GUIStyle? _richLabelStyle;
     private static GameFont _richLabelStyleFont;
 
-    /// <summary>
-    /// 內文用的 rich text 樣式。GUIStyle 是 Unity 原生物件，先前每個 OnGUI pass 都 new 一個；
-    /// 只有字型變了才需要重建。
-    /// </summary>
+    /// <summary>內文用的 rich text 樣式；GUIStyle 是 Unity 原生物件，只有字型變了才重建。</summary>
     private static GUIStyle ResolveRichLabelStyle()
     {
         if (_richLabelStyle == null || _richLabelStyleFont != Text.Font)
@@ -627,12 +568,7 @@ public static partial class ChatTestDrawer
         return _richLabelStyle;
     }
 
-    /// <summary>
-    /// 逐筆比對歷史項目與快取的來源字串：沒變的直接沿用，變了的（串流中的那一筆、新增的、
-    /// 清空後重建的）才重新解析與量測。先前每個 OnGUI pass 都對全部歷史重做
-    /// Translate、StripTags（Regex）與 CalcHeight，長對話開著設定頁就是持續的每幀開銷。
-    /// 寬度或字型變了會讓所有量測失效，此時整批重算。
-    /// </summary>
+    /// <summary>逐筆比對歷史項目與快取的來源字串：沒變的沿用，變了的才重新解析與量測；寬度或字型變了則整批重算（Translate、StripTags 與 CalcHeight 成本高）。</summary>
     private static List<BubbleLayout> ResolveBubbleLayouts(GUIStyle richLabelStyle, float bubbleInnerWidth)
     {
         if (Math.Abs(_layoutCacheWidth - bubbleInnerWidth) > 0.001f || _layoutCacheFont != Text.Font)

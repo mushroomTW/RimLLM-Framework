@@ -13,13 +13,6 @@ namespace RimLLM_Framework.Manager;
 /// <summary>
 /// SDK 的核心管理器。
 /// 統一調度 API 供應商註冊、生命週期管理與公開外觀轉發。
-/// 內部核心職責委託給：
-/// - 對話中介層堆疊（見 <see cref="CreateChatClient"/>）
-/// - 嵌入向量服務 (RimLLMEmbeddingService)
-/// - 使用量與日誌追蹤器 (RimLLMUsageTracker)
-/// - 備用管道 (RimLLMFallbackPipeline)
-/// - 請求佇列 (RimLLMRequestQueue)
-/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMManager
 {
@@ -70,7 +63,6 @@ public class RimLLMManager
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         RimLLMLog.Enabled = _settings.DetailedLogging;
 
-        // 建立子模組
         _requestQueue = new RimLLMRequestQueue(settings);
         _healthLedger = new RimLLMHealthLedger();
         _usageTracker = new RimLLMUsageTracker(settings);
@@ -86,7 +78,6 @@ public class RimLLMManager
         // 節流狀態必須跨 client 共用：CreateChatClient 每次呼叫都組出全新的
         // 一疊中介層，狀態若跟著中介層走，換一個 client 就等同重置。
 
-        // 初始化並註冊內建供應商
         RegisterBuiltInProvider(new OpenAIProvider(settings));
         RegisterBuiltInProvider(new GeminiProvider(settings));
         RegisterBuiltInProvider(new OpenAICompatibleProvider(settings));
@@ -250,9 +241,6 @@ public class RimLLMManager
         return !isBuiltIn || _settings.IsProviderEnabled(providerId);
     }
 
-    /// <summary>
-    /// 執行緒安全地查找已註冊的供應商。
-    /// </summary>
     private bool TryGetProvider(string providerId, [NotNullWhen(true)] out ILLMProvider? provider)
     {
         lock (_providerLock)
@@ -308,17 +296,11 @@ public class RimLLMManager
         return new RimLLMDecisionClient(this, modId);
     }
 
-    /// <summary>
-    /// 目前決策供應商的可用狀態。純查詢，不發任何網路請求。
-    /// 未啟用決策供應商時回報 <c>Enabled = false</c>，不擲例外——
-    /// 「玩家還沒設定」是查詢結果，不是錯誤。
-    /// </summary>
     internal DecisionAvailability GetDecisionAvailability()
     {
         return _decisionService.GetAvailability();
     }
 
-    /// <summary>執行指定 Mod 的防濫用檢查（供 embedding / decision facade 於每次呼叫時使用）。</summary>
     internal void CheckAntiAbuseForMod(string modId)
     {
         if (_settings.EnableAntiAbuse)
@@ -388,7 +370,7 @@ public class RimLLMManager
             ? await openAiProvider.FetchModelCatalogAsync().ConfigureAwait(false)
             : new ModelCatalog(await provider.FetchAvailableModelsAsync().ConfigureAwait(false), contextWindows: null);
 
-        // 供應商 API 已回報每個模型的上限時不等 models.dev：下載照樣完成並留在快取，但不拖慢這次重新整理
+        // 供應商 API 已回報每個模型的上限與圖片支援時不等 models.dev：下載照樣完成並留在快取，但不拖慢這次重新整理
         if (modelsDevTask != null
             && (!catalog.Models.TrueForAll(catalog.ContextWindows.ContainsKey)
                 || !catalog.Models.TrueForAll(catalog.VisionSupport.ContainsKey)))

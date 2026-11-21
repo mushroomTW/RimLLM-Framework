@@ -5,7 +5,6 @@ namespace RimLLM_Framework;
 /// <summary>
 /// RimLLM SDK 拋出的專屬例外。
 /// 包含統一錯誤碼，利於呼叫端 Mod 進行錯誤處理與 Fallback。
-/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlmException，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMException : Exception
 {
@@ -28,15 +27,13 @@ public class RimLLMException : Exception
 
     /// <summary>
     /// 標記此錯誤是否為「服務端拒絕原生 JSON Schema」。
-    /// 只有明確標記為 true 的錯誤才會觸發框架的非原生 Schema 降級重打，
-    /// 避免一般的 InvalidResponse 失敗被誤判而掩蓋真正的錯誤。
+    /// 只有明確標記為 true 的錯誤才會觸發框架的非原生 Schema 降級重打。
     /// </summary>
     public bool IsSchemaRejection { get; set; }
 
     /// <summary>
     /// 標記此錯誤是否為「服務端不接受思考相關參數」（reasoning_effort、thinking、enable_thinking 等）。
-    /// 各家對同一參數的支援範圍差到模型層級，光靠模型名無法窮舉，
-    /// 因此改由服務端的拒絕來判定，並讓框架去掉該參數重打一次。
+    /// 框架會去掉該參數重打一次。
     /// </summary>
     public bool IsReasoningRejection { get; set; }
 
@@ -48,7 +45,7 @@ public class RimLLMException : Exception
 
     /// <summary>
     /// 標記此錯誤是否為「服務端不接受 max_tokens，要求改用 max_completion_tokens」。
-    /// 框架以模型名判斷該送哪個欄位，名單漏掉的新模型系列靠這個旗標自癒。
+    /// 框架會改用 max_completion_tokens 重打一次。
     /// </summary>
     public bool IsMaxTokensRejection { get; set; }
 
@@ -61,8 +58,6 @@ public class RimLLMException : Exception
     /// <summary>
     /// 使用指定的錯誤代碼與訊息初始化 <see cref="RimLLMException"/> 類別的新執行個體。
     /// </summary>
-    /// <param name="error">標準化錯誤列舉代碼。</param>
-    /// <param name="message">錯誤詳細訊息。</param>
     public RimLLMException(LLMError error, string message) : base(message)
     {
         Error = error;
@@ -71,9 +66,6 @@ public class RimLLMException : Exception
     /// <summary>
     /// 使用指定的錯誤代碼、訊息與內部例外狀況初始化 <see cref="RimLLMException"/> 類別的新執行個體。
     /// </summary>
-    /// <param name="error">標準化錯誤列舉代碼。</param>
-    /// <param name="message">錯誤詳細訊息。</param>
-    /// <param name="innerException">導致此例外狀況的內部例外狀況。</param>
     public RimLLMException(LLMError error, string message, Exception? innerException) : base(message, innerException)
     {
         Error = error;

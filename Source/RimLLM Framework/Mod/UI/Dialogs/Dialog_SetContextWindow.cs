@@ -25,7 +25,7 @@ public class Dialog_SetContextWindow : Window
         _tokens = currentTokens;
         _onConfirmed = onConfirmed;
         doCloseX = true;
-        // 點到視窗外就關閉會讓已輸入的值無聲遺失，只保留右上角 X 與確定兩種離開方式
+        // 點到視窗外就關閉會讓已輸入的值無聲遺失。
         closeOnClickedOutside = false;
         absorbInputAroundWindow = true;
     }
@@ -44,8 +44,7 @@ public class Dialog_SetContextWindow : Window
     }
 
     /// <summary>
-    /// Enter 視同按下確定。基底 <see cref="Window.OnAcceptKeyPressed"/> 在 closeOnAccept 為 true 時
-    /// 只會關閉視窗而不儲存，玩家輸入數字後按 Enter 的值就會遺失。
+    /// Enter 視同按下確定。基底在 closeOnAccept 為 true 時只會關閉視窗而不儲存。
     /// </summary>
     public override void OnAcceptKeyPressed()
     {

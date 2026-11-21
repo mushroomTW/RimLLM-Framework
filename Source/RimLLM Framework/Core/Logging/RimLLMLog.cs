@@ -14,11 +14,7 @@ public static partial class RimLLMLog
     /// <summary>是否啟用一般資訊（Message）等級的日誌輸出。</summary>
     public static bool Enabled { get; set; } = true;
 
-    /// <summary>
-    /// 正則前快徑：訊息若不含任何金鑰指標子字串，正則必然無匹配，直接跳過。
-    /// 此處列出的每個指標都是對應正則分支的必要子字串（大小寫不敏感），
-    /// 因此跳過不會改變任何輸出，僅省下每請求一次的正則掃描。
-    /// </summary>
+    // 正則前快徑：每個指標必須是 SecretPattern 對應分支的必要子字串，否則該分支會被略過而漏遮。
     private static bool HasPotentialSecret(string value)
     {
         return value.Contains("api", StringComparison.OrdinalIgnoreCase)
@@ -113,10 +109,6 @@ public static partial class RimLLMLog
         }
     }
 
-    /// <summary>
-    /// 無 Unity 引擎時的控制台輸出。還原前景色的責任集中在此，
-    /// 避免每個等級各自 set / restore 而漏掉還原。
-    /// </summary>
     private static void WriteConsole(ConsoleColor color, string level, string msg)
     {
         ConsoleColor original = Console.ForegroundColor;
@@ -131,20 +123,13 @@ public static partial class RimLLMLog
         }
     }
 
-    /// <summary>
-    /// 敏感字串遮罩樣式。除了通用的 api_key／authorization 賦值形式外，
-    /// 另涵蓋本框架 12 家供應商實際使用的金鑰前綴，避免漏遮。
-    /// </summary>
     [GeneratedRegex(@"(?i)(" +
-        // 賦值形式（含 x-api-key、x-goog-api-key 等 header 名稱）
         @"(?:x-goog-)?api[_\- ]?key[""']?\s*[:=]\s*[""']?[^""'\s,;}]+" +
         @"|x-api-key[""']?\s*[:=]\s*[""']?[^""'\s,;}]+" +
         // 需一併吃掉 "Bearer " 前綴，否則只會遮到 scheme 而讓後面的 token 露出。
         @"|authorization[""']?\s*[:=]\s*[""']?(?:Bearer\s+)?[^""'\s,;}]+" +
         @"|key=[^&\s]+" +
-        // Bearer token
         @"|Bearer\s+[A-Za-z0-9\-._~+/]{16,}={0,2}" +
-        // 各供應商的金鑰前綴
         @"|sk-ant-[A-Za-z0-9\-_]{16,}" +
         @"|sk-[a-z0-9_\-]{8,}" +
         @"|AIza[0-9A-Za-z\-_]{20,}" +

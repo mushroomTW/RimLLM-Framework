@@ -12,23 +12,17 @@ namespace RimLLM_Framework.Compat;
 /// </summary>
 internal static class CompatSeedUtil
 {
-    /// <summary>未指定專用模型時寫進第三方設定頁的模型名。</summary>
     internal const string DefaultModelLabel = "RimLLM";
 
     /// <summary>寫進第三方「API Key」欄位的佔位字串：本機端點不驗證金鑰，只是讓對方的「已設定」檢查通過。</summary>
     internal const string PlaceholderApiKey = "rimllm-local";
 
-    /// <summary>該 Mod 的專用模型名（取自 "供應商:模型"）；未指定回傳預設標籤。</summary>
     internal static string ModelLabel(string modId)
     {
         string? pin = Mod.RimLLMFrameworkMod.Settings?.GetCompatModelPin(modId);
         return pin != null && ProviderIds.TrySplitModelId(pin, out _, out string? model) ? model : DefaultModelLabel;
     }
 
-    /// <summary>登錄端點處理器：把該 Mod 送來的 OpenAI 相容請求轉給 RimLLM。</summary>
-    /// <param name="modId">該 Mod 的 packageId。</param>
-    /// <param name="defaultMaxOutputTokens">請求未指定輸出上限時的預設值，對齊該 Mod 自家請求的用量。</param>
-    /// <param name="defaultTemperature">請求未指定溫度時的預設值；null 代表交給供應商預設。</param>
     internal static void RegisterEndpoint(string modId, int defaultMaxOutputTokens, float? defaultTemperature = null)
     {
         LocalOpenAIEndpoint.Register(
@@ -36,7 +30,6 @@ internal static class CompatSeedUtil
             (payload, chat, ct) => new OpenAICompatClient(modId, defaultMaxOutputTokens, defaultTemperature).CompleteAsync(payload, chat, ct));
     }
 
-    /// <summary>接管關閉、已把框架寫入的位址還原成該 Mod 預設值時，告知玩家需要自行設定。</summary>
     internal static void LogReverted(string displayName)
     {
         Log.Message($"[RimLLM] Compat: takeover is off, so the local endpoint address was removed from {displayName}'s settings. Set up that mod's own API to use it without RimLLM.");
@@ -47,7 +40,6 @@ internal static class CompatSeedUtil
         Log.Warning($"[RimLLM] Compat: could not remove the local endpoint address from {displayName}'s settings. Reason: {ex.GetBaseException().Message}");
     }
 
-    /// <summary>已有玩家自己的設定時不覆蓋，但要讓玩家知道為什麼接管沒有生效。</summary>
     internal static void WarnKeptNativeConfig(string displayName)
     {
         Log.Warning($"[RimLLM] Compat: takeover is on, but {displayName} already has its own API settings, so they were kept and its requests still use them. Clear that mod's API address and key to let RimLLM handle its requests.");
@@ -58,7 +50,6 @@ internal static class CompatSeedUtil
         Log.Warning($"[RimLLM] Compat: could not pre-fill the native settings of {displayName}. Reason: {ex.GetBaseException().Message}");
     }
 
-    /// <summary>取得目前啟用的 Mod 實例（Verse.Mod 子類）；找不到回傳 null。</summary>
     internal static object? FindModInstance(string typeName)
     {
         Type type = AccessTools.TypeByName(typeName);

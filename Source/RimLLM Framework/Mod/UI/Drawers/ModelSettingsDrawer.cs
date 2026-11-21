@@ -7,23 +7,15 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 負責逐模型設置頁的 UI 渲染：備援鏈上每個模型的分級覆寫與上下文上限手寫值，
-/// 以及新增模型至備援鏈。備援鏈頁（<see cref="FallbackSettingsDrawer"/>）只保留
-/// 順序、增刪與路由策略。
-/// 存檔結構不變（沿用既有的分級覆寫與上下文上限覆寫字典），因此舊存檔無需遷移。
-/// </summary>
+/// <summary>逐模型設置頁：備援鏈上每個模型的分級覆寫與上下文上限手寫值，以及新增模型至備援鏈。</summary>
 public static class ModelSettingsDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
-    // 新增模型專屬的 UI 暫存狀態
     private static string addProviderId = ProviderIds.Gemini;
     private static string addModelName = "";
 
-    /// <summary>
-    /// 獲取模型設置詳細內容的滾動高度。
-    /// </summary>
+    /// <summary>備援鏈上的模型列數。</summary>
     public static int RowCount()
     {
         return CollectEntries().Count;
@@ -34,18 +26,12 @@ public static class ModelSettingsDrawer
         return 280f + (RowCount() * 36f);
     }
 
-    /// <summary>
-    /// 備援鏈去空去重後的有序模型條目，供本頁逐列顯示。鏈內保證唯一，
-    /// 但舊存檔可能殘留重複，去重後顯示才不會出現調了兩次的同一列。
-    /// </summary>
+    /// <summary>備援鏈去空去重後的有序模型條目；舊存檔可能殘留重複，去重後才不會出現調了兩次的同一列。</summary>
     internal static List<string> CollectEntries()
     {
         return [.. Settings.FallbackChain.Where(entry => !string.IsNullOrEmpty(entry)).Distinct(System.StringComparer.Ordinal)];
     }
 
-    /// <summary>
-    /// 繪製模型設置。
-    /// </summary>
     public static void DrawModelSettings(Listing_Standard listing)
     {
         listing.Label("RimLLM_ModelsExplanation".Translate());
@@ -64,7 +50,6 @@ public static class ModelSettingsDrawer
                 string entry = entries[i];
                 Rect itemRect = listing.GetRect(30f);
 
-                // 最右側為刪除按鈕，其餘按鈕依序往左排
                 if (Widgets.ButtonText(new Rect(itemRect.x + itemRect.width - 40f, itemRect.y, 30f, itemRect.height), "X"))
                 {
                     entryToRemove = entry;
@@ -105,20 +90,14 @@ public static class ModelSettingsDrawer
         DrawAddModelSection(listing);
     }
 
-    /// <summary>
-    /// 取得所有已註冊供應商識別碼（含第三方 Mod 註冊的外部供應商）。
-    /// </summary>
     private static List<string> GetRegisteredProviderIds()
     {
-        // SDK 尚未初始化時退回內建清單
         return RimLLMProvider.TryGetManager(out var manager)
             ? manager.GetRegisteredProviderIds()
             : new List<string>(ProviderIds.BuiltIn);
     }
 
-    /// <summary>
-    /// 判斷供應商在 UI 中是否可選（內建依設定啟用狀態；外部供應商註冊即啟用）。
-    /// </summary>
+    /// <summary>供應商在 UI 中是否可選：內建依設定啟用狀態，外部供應商註冊即啟用。</summary>
     private static bool IsProviderSelectable(string providerId)
     {
         return RimLLMProvider.TryGetManager(out var manager)
@@ -133,9 +112,6 @@ public static class ModelSettingsDrawer
         addModelName = "";
     }
 
-    /// <summary>
-    /// 新增模型至備援鏈：選供應商、選該供應商快取模型、加入。加入後本頁列表即出現該列。
-    /// </summary>
     private static void EnsureActiveProvider()
     {
         if (!IsProviderSelectable(addProviderId))
@@ -183,16 +159,12 @@ public static class ModelSettingsDrawer
         }
     }
 
-    /// <summary>
-    /// 新增模型至備援鏈：選供應商、選該供應商快取模型、加入。加入後本頁列表即出現該列。
-    /// </summary>
     private static void DrawAddModelSection(Listing_Standard listing)
     {
         EnsureActiveProvider();
 
         listing.Label("RimLLM_AddToFallbackTitle".Translate());
 
-        // 選擇供應商
         Rect addRect = listing.GetRect(30f);
         Rect addProvBtn = new(addRect.x, addRect.y, 150f, addRect.height);
         Rect addModBtn = new(addRect.x + 160f, addRect.y, 250f, addRect.height);
@@ -202,7 +174,6 @@ public static class ModelSettingsDrawer
             ShowProviderSelectionMenu();
         }
 
-        // 選擇該供應商底下的快取模型
         var models = Settings.GetModelList(addProviderId);
         string modelBtnLabel = string.IsNullOrEmpty(addModelName) ? "RimLLM_SelectModelPlaceholder".Translate().ToString() : addModelName;
 
@@ -211,7 +182,6 @@ public static class ModelSettingsDrawer
             Find.WindowStack.Add(new Dialog_SelectModel(models, (selectedM) => addModelName = selectedM, addProviderId));
         }
 
-        // 點擊新增
         if (Widgets.ButtonText(addSubmitBtn, "RimLLM_AddBtn".Translate()))
         {
             TryAddModelToChain();
@@ -230,7 +200,6 @@ public static class ModelSettingsDrawer
 
     private static void DrawLevelButton(Rect rect, string modelName)
     {
-        // 分級只有自動／低／中／高四檔，以陣列對照取代 switch，新增等級時只改一處。
         int currentLevel = Settings.GetModelLevelOverride(modelName);
         int index = currentLevel >= 1 && currentLevel <= 3 ? currentLevel : 0;
         string levelLabel = LevelLabelKeys[index].Translate();
@@ -249,12 +218,9 @@ public static class ModelSettingsDrawer
         }
     }
 
-    /// <summary>常用的上下文上限，讓玩家一鍵選取；其他數值走自訂視窗。</summary>
     private static readonly int[] ContextWindowPresets = [131072, 200000, 262144, 1048576];
 
-    /// <summary>
-    /// 繪製上下文上限按鈕：顯示目前生效的值（手動值優先於 API 回報值），點擊可手動設定或改回自動。
-    /// </summary>
+    /// <summary>繪製上下文上限按鈕：顯示目前生效的值（手動值優先於 API 回報值）。</summary>
     private static void DrawContextWindowButton(Rect rect, string entry, string providerId, string modelName)
     {
         int manual = Settings.GetContextWindowOverride(entry);
@@ -310,7 +276,6 @@ public static class ModelSettingsDrawer
         }
     }
 
-    /// <summary>以 K / M 縮寫 token 數，例如 131072 → 131K、1048576 → 1M。</summary>
     private static string FormatTokens(int tokens)
     {
         if (tokens >= 1000000)

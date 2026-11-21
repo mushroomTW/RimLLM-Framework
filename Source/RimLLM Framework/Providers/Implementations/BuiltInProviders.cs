@@ -9,10 +9,7 @@ using RimLLM_Framework.Manager;
 namespace RimLLM_Framework.Providers;
 
 /// <summary>
-/// Google Gemini API 供應商，經由官方 OpenAI 相容端點存取。
-/// 對話、串流、工具呼叫、結構化輸出、思考強度（<c>reasoning_effort</c>）與模型清單
-/// 全由基底 <see cref="OpenAIProvider"/> 經 OpenAI SDK 處理，不再使用原生 Google.GenAI 路徑。
-/// 既有的供應商識別碼、API 金鑰與模型設定沿用不變。
+/// Google Gemini API 供應商，經由官方 OpenAI 相容端點存取，其餘行為由基底 <see cref="OpenAIProvider"/> 處理。
 /// 唯一例外是上下文上限：相容端點不回報，重新整理模型清單時另向原生 <c>/models</c> 讀取。
 /// </summary>
 public class GeminiProvider : OpenAIProvider
@@ -37,7 +34,6 @@ public class GeminiProvider : OpenAIProvider
         return new ModelCatalog(models, windows ?? catalog.ContextWindows);
     }
 
-    /// <summary>讀取原生端點的輸入上限；無法推得原生端點或請求失敗時回傳 null（失敗會記警告）。</summary>
     private async Task<Dictionary<string, int>?> FetchNativeInputTokenLimitsAsync()
     {
         // 相容根位址以 /openai 結尾，去掉即為原生 API 根位址；自訂成其他代理時無從推得，略過。
@@ -63,10 +59,7 @@ public class GeminiProvider : OpenAIProvider
         }
     }
 
-    /// <summary>
-    /// 把單一原生模型的 <c>inputTokenLimit</c> 寫入 <paramref name="windows"/>。
-    /// 名稱去掉 <c>models/</c> 前綴，與相容端點回傳、設定中保存的模型名稱一致。
-    /// </summary>
+    /// <summary>把單一原生模型的 <c>inputTokenLimit</c> 寫入 <paramref name="windows"/>，名稱去掉 <c>models/</c> 前綴。</summary>
     internal static void ReadInputTokenLimit(JsonElement model, Dictionary<string, int> windows)
     {
         const string namePrefix = "models/";
@@ -111,9 +104,7 @@ public class DeepSeekProvider : OpenAIProvider
 /// </summary>
 public class GrokProvider : OpenAIProvider
 {
-    /// <summary>
-    /// Grok API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。
-    /// </summary>
+    /// <summary>Grok API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。</summary>
     protected override bool SupportsNativeJsonSchemaPayload => false;
 
     /// <summary>
@@ -145,9 +136,7 @@ public class GroqProvider : OpenAIProvider
 /// </summary>
 public class MiniMaxProvider : OpenAIProvider
 {
-    /// <summary>
-    /// MiniMax API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。
-    /// </summary>
+    /// <summary>MiniMax API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。</summary>
     protected override bool SupportsNativeJsonSchemaPayload => false;
 
     public MiniMaxProvider(IRimLLMSettings settings)
@@ -161,9 +150,7 @@ public class MiniMaxProvider : OpenAIProvider
 /// </summary>
 public class NvidiaProvider : OpenAIProvider
 {
-    /// <summary>
-    /// NVIDIA API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。
-    /// </summary>
+    /// <summary>NVIDIA API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。</summary>
     protected override bool SupportsNativeJsonSchemaPayload => false;
 
     public NvidiaProvider(IRimLLMSettings settings)
@@ -177,9 +164,7 @@ public class NvidiaProvider : OpenAIProvider
 /// </summary>
 public class QwenProvider : OpenAIProvider
 {
-    /// <summary>
-    /// Qwen API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。
-    /// </summary>
+    /// <summary>Qwen API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。</summary>
     protected override bool SupportsNativeJsonSchemaPayload => false;
 
     /// <summary>
@@ -198,9 +183,7 @@ public class QwenProvider : OpenAIProvider
 /// </summary>
 public class ZaiProvider : OpenAIProvider
 {
-    /// <summary>
-    /// Z.ai API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。
-    /// </summary>
+    /// <summary>Z.ai API 不確定支援 strict JSON Schema，改走提示式 JSON fallback。</summary>
     protected override bool SupportsNativeJsonSchemaPayload => false;
 
     /// <summary>

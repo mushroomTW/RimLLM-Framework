@@ -45,10 +45,7 @@ internal static class ServiceProviderFailover
     /// <summary>
     /// 依序嘗試候選，前面的失敗（<see cref="ShouldFailOver"/>）就換下一個；最後一個候選的例外原樣往外丟，
     /// 保留它自己的堆疊。呼叫端必須先把用不了的備援濾掉：候選不可為空，且最後一個失敗就是最終答案。
-    /// 兩個服務共用這一個迴圈，換家的規則才不會各寫一份而漂移。
     /// </summary>
-    /// <param name="attempt">以候選與「是否為最後一個」執行一次嘗試。</param>
-    /// <param name="onFailover">某個候選失敗而要換下一個時的通知（記日誌用）。</param>
     internal static async Task<TResult> RunAsync<TCandidate, TResult>(
         IReadOnlyList<TCandidate> candidates,
         Func<TCandidate, bool, Task<TResult>> attempt,

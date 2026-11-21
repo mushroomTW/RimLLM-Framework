@@ -10,10 +10,7 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// Decision 模組設定頁。版面與 Embedding 模組一致：
-/// 中欄是供應商清單，右欄是啟用開關、金鑰、端點、模型與連線測試。
-/// </summary>
+/// <summary>Decision 模組設定頁，版面與 Embedding 模組一致。</summary>
 public static class DecisionSettingsDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
@@ -36,7 +33,6 @@ public static class DecisionSettingsDrawer
     private static readonly Dictionary<string, string> ModelFilters = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, bool> RevealedKeys = new(StringComparer.Ordinal);
 
-    /// <summary>該供應商目前的端點是否走明文 HTTP（玩家自架的本機服務）。</summary>
     private static bool IsPlaintextEndpoint(string providerId)
     {
         return DecisionEndpointRouting.IsPlaintext(Settings.GetDecisionEndpoint(providerId));
@@ -65,15 +61,11 @@ public static class DecisionSettingsDrawer
         string providerId = ActiveDecisionSubTab;
         int modelCount = Settings.GetModelCount(RimLLMDecisionService.GetModelListKey(providerId));
         float modelSectionHeight = modelCount > 0 ? 280f : 70f;
-        // 端點欄只有本機服務才畫，其餘供應商把那一段高度省下來
         float endpointHeight = RimLLMDecisionProviderCatalog.Get(providerId).AllowCustomEndpoint ? 0f : -70f;
         return 460f + endpointHeight + ProviderFallbackChainControls.Height + modelSectionHeight;
     }
 
-    /// <summary>
-    /// 繪製決策供應商清單。每個供應商都要繪製按鈕並加間距，有 UI 副作用，
-    /// 無法以純 LINQ 運算式替換，故保留迴圈。
-    /// </summary>
+    /// <summary>繪製決策供應商清單。</summary>
     #pragma warning disable S3267 // 迴圈內有 UI 繪製副作用（DrawDecisionSubButton 與 listing.Gap），無法以 LINQ 取代。
     public static void DrawMiddleDecisionMenu(Rect rect)
     {
@@ -242,7 +234,6 @@ public static class DecisionSettingsDrawer
         {
             using (RimLLMUIStyle.With(font: GameFont.Tiny))
             {
-                // 可沿用對話金鑰的供應商（如 Gemini）留空時，提示已繼承主金鑰。
                 listing.Label(RimLLMDecisionService.HasEffectiveApiKey(Settings, providerId)
                     ? "RimLLM_DecisionInheritedKeyHint".Translate()
                     : "RimLLM_DecisionNoKeyWarning".Translate());
@@ -297,7 +288,6 @@ public static class DecisionSettingsDrawer
 
         listing.Label("RimLLM_AvailableModelsTitle".Translate());
         string modelListKey = RimLLMDecisionService.GetModelListKey(providerId);
-        // 沒有預設模型清單：只顯示從伺服器抓回的模型。
         if (Settings.GetModelCount(modelListKey) == 0)
         {
             listing.Label("RimLLM_DecisionNoModelList".Translate());
@@ -320,7 +310,6 @@ public static class DecisionSettingsDrawer
             buttonWidth: 200f);
     }
 
-    /// <summary>已抓回的模型：篩選列與可點選的模型方塊。</summary>
     private static void DrawFetchedModels(Listing_Standard listing, string providerId, string modelListKey)
     {
         ModelChipGrid.DrawFilterBar(listing, "RimLLM_DecisionFetchedModelsHint", ModelFilters, providerId);
@@ -357,7 +346,6 @@ public static class DecisionSettingsDrawer
         Fetching[providerId] = true;
         FetchStatus[providerId] = "RimLLM_Fetching".Translate();
 
-        // 端點、模型與金鑰只由服務這裡決定，避免設定頁兩處各抄一份。
         DecisionPreviewArguments args = new RimLLMDecisionService(Settings).GetPreviewArguments(providerId);
 
         _ = Task.Run(async () =>
@@ -421,7 +409,6 @@ public static class DecisionSettingsDrawer
         Testing[providerId] = true;
         TestStatus[providerId] = "RimLLM_DecisionTesting".Translate();
 
-        // 與抓取模型清單共用同一組參數來源。
         DecisionPreviewArguments args = new RimLLMDecisionService(Settings).GetPreviewArguments(providerId);
 
         _ = Task.Run(async () =>

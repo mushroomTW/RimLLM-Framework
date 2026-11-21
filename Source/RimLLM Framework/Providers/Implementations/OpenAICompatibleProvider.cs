@@ -5,21 +5,15 @@ namespace RimLLM_Framework.Providers;
 
 /// <summary>
 /// OpenAI 相容 API 供應商，用於自訂 Endpoint (如 Ollama, LM Studio, vLLM 等本地模型伺服器)。
-/// 繼承自 OpenAIProvider 以完全重用 OpenAI 通訊協定。
 /// </summary>
 public class OpenAICompatibleProvider : OpenAIProvider
 {
     public override string ProviderId => ProviderIds.OpenAICompatible;
     protected override string DefaultEndpoint => "http://localhost:1234/v1";
 
-    /// <summary>
-    /// 本地相容 API 通常不需要 API 金鑰。
-    /// </summary>
     public override bool RequiresApiKey => false;
 
-    /// <summary>
-    /// 多數本地相容伺服器不支援 json_schema response_format，改走提示式 JSON fallback。
-    /// </summary>
+    /// <summary>多數本地相容伺服器不支援 json_schema response_format，改走提示式 JSON fallback。</summary>
     protected override bool SupportsNativeJsonSchemaPayload => false;
 
     public OpenAICompatibleProvider(IRimLLMSettings settings) : base(settings)

@@ -4,17 +4,12 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 負責 API 供應商（Providers）分頁的頂層 SubTab 路由分發與選單繪製。
-/// </summary>
+/// <summary>供應商（Providers）分頁的 SubTab 路由與選單繪製。</summary>
 public static class ProviderSettingsDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
-    /// <summary>
-    /// 中欄選單項目：顯示名稱與供應商識別碼。
-    /// 顯示名稱刻意保留品牌寫法（如 NVIDIA），因此無法直接沿用 ProviderIds 的值。
-    /// </summary>
+    // 顯示名稱保留品牌寫法（如 NVIDIA），無法直接沿用 ProviderIds 的值。
     private static readonly List<KeyValuePair<string, string>> MenuEntries =
     [
         new KeyValuePair<string, string>("Google Gemini", ProviderIds.Gemini),
@@ -35,13 +30,10 @@ public static class ProviderSettingsDrawer
     private const float SubButtonHeight = 46f;
     private const float SubButtonGap = 4f;
 
-    // 供應商分頁專屬的 UI 暫存狀態
     public static string ActiveProviderSubTab { get; set; } = ProviderIds.Gemini;
     private static Vector2 _midScrollPosition = Vector2.zero;
 
-    /// <summary>
-    /// 獲取供應商設定詳細內容的滾動高度。
-    /// </summary>
+    /// <summary>計算供應商設定詳細內容所需的高度。</summary>
     public static float GetHeight(float width)
     {
         bool enabled = Settings.IsProviderEnabled(ActiveProviderSubTab);
@@ -50,7 +42,6 @@ public static class ProviderSettingsDrawer
         int modelCount = Settings.GetModelCount(ActiveProviderSubTab);
         float modelSectionHeight = modelCount > 0 ? 280f : 60f;
 
-        // 動態計算 API 金鑰列表的高度
         float keysHeight = 0f;
         if (ActiveProviderSubTab != ProviderIds.OpenAICompatible)
         {
@@ -80,9 +71,7 @@ public static class ProviderSettingsDrawer
         return 250f + keysHeight + modelSectionHeight + 100f + statsHeight + extraHeight;
     }
 
-    /// <summary>
-    /// 繪製中欄的供應商選單。
-    /// </summary>
+    /// <summary>繪製中欄的供應商選單。</summary>
     public static void DrawMiddleProviderMenu(Rect rect)
     {
         Rect contentRect = rect.ContractedBy(6f);
@@ -155,9 +144,7 @@ public static class ProviderSettingsDrawer
         GUI.color = oldColor;
     }
 
-    /// <summary>
-    /// 根據目前的供應商，調度右側的詳細配置渲染。
-    /// </summary>
+    /// <summary>依目前的供應商調度右側詳細設定的繪製。</summary>
     public static void DrawRightDetailContent(Listing_Standard listing)
     {
         GenericProviderSubTabDrawer.DrawGenericProviderSettings(listing, ActiveProviderSubTab);

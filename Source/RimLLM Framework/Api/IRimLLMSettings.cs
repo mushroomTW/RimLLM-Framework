@@ -5,7 +5,6 @@ namespace RimLLM_Framework;
 
 /// <summary>
 /// 定義 RimLLM Framework 的設定檔介面。
-/// 藉由介面隔離，解除核心邏輯與 RimWorld ModSettings 本體的直接耦合。
 /// </summary>
 public interface IRimLLMSettings
 {

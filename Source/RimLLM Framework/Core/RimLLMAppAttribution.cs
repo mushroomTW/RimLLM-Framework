@@ -11,9 +11,8 @@ namespace RimLLM_Framework.Core;
 /// 送給 OpenRouter 的應用歸屬身分：<c>HTTP-Referer</c> 網址與 App 顯示名稱。
 /// </summary>
 /// <remarks>
-/// OpenRouter 以網址作為 App 的唯一識別，名稱只是該 App 的顯示名稱。
-/// 因此沒有專屬網址的 Mod 一律歸屬到框架本身，而不是把它的名稱掛在別人的網址底下：
-/// 那樣多個 Mod 會共用同一個 App，顯示名稱隨最後一個請求來回跳動。
+/// OpenRouter 以網址作為 App 的唯一識別，名稱只是顯示名稱，
+/// 因此沒有專屬網址的 Mod 一律歸屬到框架本身。
 /// </remarks>
 internal sealed record RimLLMAppAttribution(string Title, string Url)
 {
@@ -27,8 +26,8 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
     /// 目前請求的歸屬，沿非同步呼叫鏈傳到 SDK pipeline policy。未設定時為 <see cref="Framework"/>。
     /// </summary>
     /// <remarks>
-    /// 以 AsyncLocal 傳遞而非經由參數：<see cref="Providers.ILLMProvider.CreateChatClient"/> 是公開介面，
-    /// 只帶 model，加參數會破壞外部實作。請只在 async 方法內設定，值才會在該次呼叫結束後還原。
+    /// 以 AsyncLocal 傳遞，因為 <see cref="Providers.ILLMProvider.CreateChatClient"/> 是公開介面，加參數會破壞外部實作。
+    /// 請只在 async 方法內設定，值才會在該次呼叫結束後還原。
     /// </remarks>
     public static RimLLMAppAttribution? Current
     {
@@ -40,9 +39,8 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
     /// 以目前啟用的 Mod 建立 packageId → 歸屬的唯讀對照表，並回傳查詢函式。
     /// </summary>
     /// <remarks>
-    /// 啟動時在主執行緒建一次快照：啟用清單在遊戲執行期間不會變動，
-    /// 而 <see cref="ModLister"/> 的字典沒有同步保護，不能在背景執行緒建立 client 時才查。
-    /// 共用同一網址的 Mod（或網址與框架相同）會互相覆寫 OpenRouter 上的顯示名稱，因此一律歸屬框架。
+    /// 須在主執行緒建立快照，因為 <see cref="ModLister"/> 的字典沒有同步保護。
+    /// 共用同一網址的 Mod（或網址與框架相同）一律歸屬框架。
     /// </remarks>
     /// <param name="mods">啟用中的 Mod：packageId（不含 _steam 後綴）、名稱與 About.xml 的 url。</param>
     public static Func<string?, RimLLMAppAttribution> CreateResolver(
@@ -94,12 +92,10 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
         return IsHeaderSafe(title) ? new RimLLMAppAttribution(title, url) : Framework;
     }
 
-    /// <summary>非空白且只含可列印 ASCII 字元。</summary>
     private static bool IsHeaderSafe([NotNullWhen(true)] string? value)
     {
         return !string.IsNullOrWhiteSpace(value) && value.All(c => c >= 0x20 && c <= 0x7E);
     }
 
-    /// <summary>比對網址是否相同時忽略結尾斜線。</summary>
     private static string UrlKey(string url) => url.TrimEnd('/');
 }

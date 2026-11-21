@@ -28,10 +28,7 @@ public class RimLLMTelemetryStore
     private bool _saveRunning;
     private bool _saveRequested;
 
-    /// <summary>
-    /// 檔案路徑解析器。抽為可替換的委派，讓單元測試能指向暫存目錄，
-    /// 不必依賴 Verse 的 GenFilePaths。
-    /// </summary>
+    /// <summary>檔案路徑解析器；抽為可替換委派，讓單元測試能指向暫存目錄而不依賴 Verse 的 GenFilePaths。</summary>
     internal static Func<string> FilePathResolver { get; set; } =
         () => Path.Combine(GenFilePaths.ConfigFolderPath, FileName);
 
@@ -69,12 +66,7 @@ public class RimLLMTelemetryStore
         return FilePathResolver();
     }
 
-    /// <summary>
-    /// 解析遙測檔路徑。取不到 Config 路徑時（單元測試、headless 反射執行）記錄後回傳 false，
-    /// 由呼叫端略過本次讀寫。
-    /// </summary>
-    /// <param name="action">用途（"load" 或 "save"），僅用於日誌訊息。</param>
-    /// <param name="path">解析出的檔案路徑；失敗時為 null。</param>
+    /// <summary>解析遙測檔路徑；取不到 Config 路徑時（單元測試、headless 反射執行）記錄後回傳 false，由呼叫端略過本次讀寫。</summary>
     private static bool TryResolveFilePath(string action, [NotNullWhen(true)] out string? path)
     {
         try
@@ -90,9 +82,7 @@ public class RimLLMTelemetryStore
         }
     }
 
-    /// <summary>
-    /// 標記有未寫入的變更（供節流寫入路徑呼叫）。
-    /// </summary>
+    /// <summary>標記有未寫入的變更（供節流寫入路徑呼叫）。</summary>
     public void MarkDirty()
     {
         IsDirty = true;
@@ -147,10 +137,7 @@ public class RimLLMTelemetryStore
         }
     }
 
-    /// <summary>
-    /// 主檔的加密歷史無法解密時，嘗試改用 .bak 備份接手上線。
-    /// 成功接手時回傳 true，表示本次 <see cref="Load"/> 已完成。
-    /// </summary>
+    /// <summary>主檔的加密歷史無法解密時改用 .bak 備份接手；成功時回傳 true，表示本次 <see cref="Load"/> 已完成。</summary>
     private bool TryAdoptBackupChatHistory(string backupPath, string path, RimLLMTelemetryStore primary)
     {
         var backup = new RimLLMTelemetryStore();
@@ -176,9 +163,7 @@ public class RimLLMTelemetryStore
         return false;
     }
 
-    /// <summary>
-    /// 主檔無法解析時改用 .bak 備份：能還原就還原，不能還原則僅在記憶體接手並保留磁碟上的備份。
-    /// </summary>
+    /// <summary>主檔無法解析時改用 .bak 備份：能還原就還原，不能還原則僅在記憶體接手並保留磁碟上的備份。</summary>
     private void RecoverFromBackupFile(string backupPath, string path)
     {
         var recovered = new RimLLMTelemetryStore();
@@ -346,9 +331,6 @@ public class RimLLMTelemetryStore
         }
     }
 
-    /// <summary>
-    /// 組出要寫入磁碟的 DTO。對話歷史加密後才落地。
-    /// </summary>
     private TelemetryDto BuildSaveDto()
     {
         return new TelemetryDto
@@ -364,9 +346,7 @@ public class RimLLMTelemetryStore
         };
     }
 
-    /// <summary>
-    /// 產生要寫出的加密歷史。歷史為空時沿用先前解不開的密文，不可用 null 覆寫。
-    /// </summary>
+    /// <summary>產生要寫出的加密歷史；歷史為空時沿用先前解不開的密文，不可用 null 覆寫。</summary>
     private string? BuildEncryptedChatHistory()
     {
         if (ChatHistory != null && ChatHistory.Count > 0)
@@ -378,9 +358,6 @@ public class RimLLMTelemetryStore
         return _undecryptableEncryptedChatHistory;
     }
 
-    /// <summary>
-    /// 寫檔成功後更新狀態旗標：無待寫變更，並視情況清除保留的密文與備份保護。
-    /// </summary>
     private void MarkSaved()
     {
         IsDirty = false;
@@ -419,9 +396,7 @@ public class RimLLMTelemetryStore
         }
     }
 
-    /// <summary>
-    /// 不需要保留 .bak 時的退回方案：先移開舊檔再放入新檔，失敗則把舊檔搬回原位。
-    /// </summary>
+    /// <summary>不需要保留 .bak 時的退回方案：先移開舊檔再放入新檔，失敗則把舊檔搬回原位。</summary>
     private static void ReplaceViaDisplacedFile(string tempPath, string path)
     {
         string displacedPath = path + ".replace.old";
@@ -447,9 +422,7 @@ public class RimLLMTelemetryStore
         SafeDeleteFile(displacedPath);
     }
 
-    /// <summary>
-    /// 部分檔案系統不支援 File.Replace 時的退回方案：「先備份再覆寫」。
-    /// </summary>
+    /// <summary>部分檔案系統不支援 File.Replace 時的退回方案：先備份再覆寫。</summary>
     private static void ReplaceViaBackup(string tempPath, string path, string? backupPath)
     {
         SafeDeleteFile(backupPath);
@@ -457,10 +430,7 @@ public class RimLLMTelemetryStore
         File.Move(tempPath, path);
     }
 
-    /// <summary>
-    /// 把現有主檔搬到 .bak。搬不動時仍繼續覆寫主檔；若因此覆寫不了，
-    /// 後續的 File.Move 會拋出並由呼叫端記錄，行為與先前一致。
-    /// </summary>
+    /// <summary>把現有主檔搬到 .bak；搬不動時仍繼續覆寫，若因此覆寫不了，後續 File.Move 會拋出並由呼叫端記錄。</summary>
     private static void TryMoveToBackup(string path, string? backupPath)
     {
         try
@@ -508,7 +478,6 @@ public class RimLLMTelemetryStore
 
     private void TrimChatHistory()
     {
-        // 限制大小在 100 條內，防遙測 JSON 無限膨脹
         if (ChatHistory != null && ChatHistory.Count > MaxChatHistoryEntries)
         {
             ChatHistory.RemoveRange(0, ChatHistory.Count - MaxChatHistoryEntries);

@@ -28,7 +28,6 @@ public class OpenRouterProvider : OpenAIProvider
     /// <summary>
     /// OpenRouter 專屬 options 客製化：內置 Model Fallback ——
     /// model 含逗號時轉為 models 陣列（走 RawRepresentationFactory Patch）。
-    /// 思考強度由基底類別依 <see cref="ReasoningFormat"/> 統一處理。
     /// </summary>
     protected override void BuildChatOptions(ChatOptions? requestOptions, string model, ChatOptions options)
     {
@@ -40,8 +39,6 @@ public class OpenRouterProvider : OpenAIProvider
         // 再由 Patch 完整掌控 model 相關欄位。
         options.ModelId = null;
 
-        // 基底類別已經設過 factory（思考參數與 max_tokens 改寫），
-        // 直接覆寫會把那些 Patch 一併弄丟，因此串接而非取代。
         options.RawRepresentationFactory = OpenAIPatchExtensions.ChainPatch(
             options.RawRepresentationFactory,
             chatCompletionOptions =>
@@ -50,7 +47,6 @@ public class OpenRouterProvider : OpenAIProvider
                 var modelsArray = new List<string>();
                 foreach (string m in model.Split([','], StringSplitOptions.RemoveEmptyEntries))
                 {
-                    // 只有全是空白的條目會在 Trim 後變空，那種條目不該進 models 陣列。
                     string trimmed = m.Trim();
                     if (trimmed.Length > 0) modelsArray.Add(trimmed);
                 }

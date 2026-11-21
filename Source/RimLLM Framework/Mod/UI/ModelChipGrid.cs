@@ -6,19 +6,13 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 決策與 Embedding 設定頁共用的「已抓取模型」區塊：搜尋列、模型晶片網格與點擊選單。
-/// 兩頁只差在提示文字與「設為模型」寫入哪個欄位，其餘版面與行為必須一致。
-/// </summary>
+/// <summary>決策與 Embedding 設定頁共用的「已抓取模型」區塊：搜尋列、模型晶片網格與點擊選單。</summary>
 internal static class ModelChipGrid
 {
     private const float ChipHeight = 28f;
     private const float ChipGap = 8f;
     private const float MinChipWidth = 220f;
 
-    /// <summary>
-    /// 繪製提示文字與搜尋列，輸入值寫回 <paramref name="filters"/>[<paramref name="providerId"/>]。
-    /// </summary>
     internal static void DrawFilterBar(Listing_Standard listing, string hintKey, Dictionary<string, string> filters, string providerId)
     {
         Rect hintRect = listing.GetRect(18f);
@@ -49,10 +43,6 @@ internal static class ModelChipGrid
         listing.Gap(4f);
     }
 
-    /// <summary>
-    /// 在可捲動區域內以晶片網格列出模型，只畫可視範圍內的列。
-    /// 捲動位置逐供應商保存在 <paramref name="scrollPositions"/>。
-    /// </summary>
     internal static void DrawGrid(
         Rect scrollRect,
         string providerId,
@@ -71,7 +61,6 @@ internal static class ModelChipGrid
         Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
         scrollPositions[providerId] = scrollPos;
 
-        // tooltip 後綴的翻譯提到迴圈外，不必每個晶片各查一次。
         RimLLMUIStyle.GetVisibleRowRange(scrollPos.y, scrollRect.height, ChipHeight + ChipGap, ChipGap, rows, out int firstRow, out int endRow);
         string copyHint = "\n\n" + "RimLLM_ClickToCopy".Translate();
 
@@ -111,13 +100,6 @@ internal static class ModelChipGrid
         Widgets.EndScrollView();
     }
 
-    /// <summary>
-    /// 模型晶片的點擊選單：「設為模型」與「複製名稱」。
-    /// </summary>
-    /// <param name="model">被點擊的模型名稱。</param>
-    /// <param name="setAsLabelKey">「設為模型」選項的翻譯鍵。</param>
-    /// <param name="modelLabelKey">設定完成訊息的前綴翻譯鍵。</param>
-    /// <param name="applyModel">把模型寫入設定（含存檔）的動作。</param>
     internal static void ShowModelMenu(string model, string setAsLabelKey, string modelLabelKey, Action<string> applyModel)
     {
         var options = new List<FloatMenuOption>

@@ -13,9 +13,6 @@ namespace RimLLM_Framework.Manager.Services;
 ///
 /// 本機架設的決策服務（Ollama、Unsloth 等）只提供明文 HTTP；TypeSafeAI SDK 直接接受 http base URL，
 /// 所以明文與 HTTPS 端點都原樣交給 SDK，不需要任何傳輸層改寫。
-///
-/// 框架的對話與 embedding 供應商本來就允許明文本機端點（Ollama、LM Studio），
-/// 決策這裡沿用同一套規則：玩家自己填的端點就是權威。
 /// </summary>
 internal static class DecisionEndpointRouting
 {
@@ -110,7 +107,6 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
         return response;
     }
 
-    /// <summary>讀出 OpenAI 格式的 <c>data[].id</c>；不是這個格式時回傳 null。</summary>
     #pragma warning disable S1168 // API 合約規定格式不符時回傳 null，呼叫端已區分 null 與空集合。
     internal static List<string>? TryReadOpenAiModelIds(string body)
     {

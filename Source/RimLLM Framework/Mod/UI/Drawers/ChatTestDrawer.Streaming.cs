@@ -9,15 +9,11 @@ using RimLLM_Framework.Manager;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 對話測試的串流請求：送出請求、累積串流片段並節流重繪，結束後組出最終中繼資料。
-/// </summary>
 public static partial class ChatTestDrawer
 {
     private sealed class StreamRenderState
     {
         public readonly Lock ReplyLock = new();
-        /// <summary>供應商原生的推理內容（<see cref="TextReasoningContent"/>），與答案分開累積。</summary>
         public readonly StringBuilder Reasoning = new();
         public readonly StringBuilder Answer = new();
         public long LastRenderTimestamp;
@@ -194,7 +190,6 @@ public static partial class ChatTestDrawer
         }
     }
 
-    /// <summary>送出串流請求並把更新寫進 renderState；完成後把最終內容寫回對話紀錄。</summary>
     private static async Task StreamChatAsync(string userPrompt, string? pinnedModel, StreamRenderState renderState)
     {
         using var client = RimLLMProvider.CreateChatClient(ServiceConsumerList.DebugChatModId);

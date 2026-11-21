@@ -7,7 +7,7 @@ namespace RimLLM_Framework.Core;
 
 /// <summary>
 /// 提供統一的 AES-256 對稱加密與解密工具，用於保護設定檔與遙測中的敏感資料。
-/// AES 金鑰以每使用者的 OS 保護秘密保存，不再支援舊版格式。
+/// AES 金鑰以每使用者的 OS 保護秘密保存。
 /// </summary>
 public static class EncryptionUtility
 {
@@ -16,7 +16,6 @@ public static class EncryptionUtility
     private const string SecureVersionPrefix = "v3:";
     private const string SecureKeyFileName = "RimLLM_EncryptionKey.dat";
 
-    // 讓測試使用隔離的 key 檔案；正式環境固定走每使用者的 OS 保護儲存。
     internal static Func<string> SecureKeyPathResolver { get; set; } = GetDefaultSecureKeyPath;
 
     internal static void ResetSecureKeyForTests()
@@ -114,9 +113,8 @@ public static class EncryptionUtility
     /// 解密 Base64 密文，回傳原始字串。
     /// </summary>
     /// <remarks>
-    /// 解密失敗或遇到不支援的舊版本/未知前綴時回傳 <c>null</c>（而非空字串），
-    /// 讓呼叫端能區分「金鑰本來就是空的」與「金鑰解不開或格式不支援」。
-    /// 若此時回傳空字串，呼叫端下次存檔就會以 Encrypt("") 覆寫，造成金鑰靜默永久遺失。
+    /// 解密失敗或遇到不支援的版本/未知前綴時回傳 <c>null</c>（而非空字串），
+    /// 讓呼叫端區分「金鑰本來就是空的」與「金鑰解不開」，以免下次存檔以 Encrypt("") 覆寫而永久遺失金鑰。
     /// </remarks>
     public static string? Decrypt(string? cipherText)
     {

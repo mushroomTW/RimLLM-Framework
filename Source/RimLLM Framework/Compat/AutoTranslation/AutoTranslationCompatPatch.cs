@@ -12,11 +12,10 @@ namespace RimLLM_Framework.Compat;
 /// </summary>
 /// <remarks>
 /// 它的 <c>OpenAI Compatible (Local/Other)</c> 翻譯器本來就是「對一個 Base URL 發 OpenAI Chat Completions
-/// 請求、不需要金鑰」，正好是本機端點的形狀。全程以名稱反射存取，它缺席或改版時框架 DLL 仍能安全載入。
+/// 請求、不需要金鑰」，正好是本機端點的形狀。
 /// </remarks>
 internal static class AutoTranslationCompatPatch
 {
-    /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴）。</summary>
     public const string PackageId = "seohyeon.autotranslation";
 
     private const string DisplayName = "Auto Translation";
@@ -24,22 +23,16 @@ internal static class AutoTranslationCompatPatch
     /// <summary>該翻譯器在 Auto Translation 內的顯示名，同時是它的設定字典的鍵。</summary>
     private const string TranslatorName = "OpenAI Compatible (Local/Other)";
 
-    /// <summary>Auto Translation 的預設翻譯器（免金鑰），接管關閉時改回它。</summary>
     private const string DefaultTranslatorName = "Google";
 
-    /// <summary>該翻譯器設定類別中「自訂 Base URL」成員的名稱（反射用，內容不可改）。</summary>
     private const string UserCustomBaseUrlMember = "UserCustomBaseURL";
 
-    /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply()
     {
         CompatSeedUtil.RegisterEndpoint(AutoTranslationCompatPatch.PackageId, 2048, 0.3f);
         OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId) == true);
     }
 
-    /// <summary>
-    /// 玩家切換接管開關或專用模型時呼叫：開啟時把端點位址寫進它的設定，關閉時移除框架寫入的位址。
-    /// </summary>
     public static void OnTakeoverToggled(bool enabled)
     {
         if (enabled)
@@ -52,10 +45,6 @@ internal static class AutoTranslationCompatPatch
         }
     }
 
-    /// <summary>
-    /// 接管關閉時，若翻譯器位址是框架寫的，清空位址並改回它的預設翻譯器（Google），
-    /// 避免它繼續對已不服務的本機端點發請求。玩家自己的位址不動。
-    /// </summary>
     internal static void RevertNativeConfig()
     {
         try
@@ -99,10 +88,6 @@ internal static class AutoTranslationCompatPatch
         }
     }
 
-    /// <summary>
-    /// 把它的 OpenAI 相容翻譯器指向本機端點並選用。玩家自己填的位址（例如 Ollama）或已填金鑰的其他翻譯器不覆蓋；
-    /// 框架先前寫的位址只更新埠號與模型名，不改它選用的翻譯器。
-    /// </summary>
     internal static void SeedNativeConfig()
     {
         try
@@ -135,9 +120,6 @@ internal static class AutoTranslationCompatPatch
         }
     }
 
-    /// <summary>
-    /// 找出 Auto Translation 的設定欄位與翻譯器管理員方法。任一項找不到即代表對方改版，呼叫端只記警告。
-    /// </summary>
     private static bool TryResolveMembers(out SettingsMembers members)
     {
         Type settingsType = AccessTools.TypeByName("AutoTranslation.Settings");
@@ -156,13 +138,8 @@ internal static class AutoTranslationCompatPatch
         return true;
     }
 
-    /// <summary>把端點位址與專用模型寫進該翻譯器的設定，首次接管時一併選用它。</summary>
-    /// <param name="baseUrl">本機端點的 Base URL。</param>
-    /// <param name="translator">翻譯器實例。</param>
-    /// <param name="members">已解析的反射成員。</param>
     private static void SeedTranslator(string baseUrl, object translator, SettingsMembers members)
     {
-        // 該翻譯器的設定：優先用翻譯器已持有的，否則從設定字典取或新建，並把兩邊接起來。
         if (members.TranslatorSettings.GetValue(null) is not IDictionary dictionary)
         {
             throw new InvalidOperationException("AutoTranslation 翻譯器設定字典不存在。");
@@ -201,7 +178,6 @@ internal static class AutoTranslationCompatPatch
 
         if (!ours)
         {
-            // 讓翻譯器立即以新設定就緒並成為目前使用的翻譯器，不必重開遊戲。
             AccessTools.Method(translator.GetType(), "Prepare", Type.EmptyTypes)?.Invoke(translator, parameters: null);
             AccessTools.Field(members.ManagerType, "CurrentTranslator")?.SetValue(null, translator);
         }
@@ -209,15 +185,8 @@ internal static class AutoTranslationCompatPatch
         ((Verse.Mod?)CompatSeedUtil.FindModInstance("AutoTranslation.AutoTranslation"))?.WriteSettings();
     }
 
-    /// <summary>Auto Translation 設定與翻譯器管理員的反射成員；任一項為 null 代表對方已改版。</summary>
     private readonly struct SettingsMembers
     {
-        /// <summary>建立成員集合。</summary>
-        /// <param name="managerType">翻譯器管理員型別。</param>
-        /// <param name="translatorName">目前翻譯器名稱的靜態欄位。</param>
-        /// <param name="translatorSettings">翻譯器設定字典的靜態欄位。</param>
-        /// <param name="getTranslator">以名稱取得翻譯器的靜態方法。</param>
-        /// <param name="aiSettings">AI 模型翻譯器設定型別。</param>
         public SettingsMembers(
             Type managerType,
             FieldInfo translatorName,
@@ -232,23 +201,17 @@ internal static class AutoTranslationCompatPatch
             AiSettings = aiSettings;
         }
 
-        /// <summary>翻譯器管理員型別。</summary>
         public Type ManagerType { get; }
 
-        /// <summary>目前翻譯器名稱的靜態欄位。</summary>
         public FieldInfo TranslatorNameField { get; }
 
-        /// <summary>翻譯器設定字典的靜態欄位。</summary>
         public FieldInfo TranslatorSettings { get; }
 
-        /// <summary>以名稱取得翻譯器的靜態方法。</summary>
         public MethodInfo GetTranslator { get; }
 
-        /// <summary>AI 模型翻譯器設定型別。</summary>
         public Type AiSettings { get; }
     }
 
-    /// <summary>目前選用的翻譯器是否為需要金鑰且已就緒（玩家已填金鑰）的其他翻譯器。</summary>
     private static bool UsesOwnKeyedTranslator(string? currentName, MethodInfo getTranslator)
     {
         if (string.IsNullOrEmpty(currentName) || string.Equals(currentName, TranslatorName, StringComparison.Ordinal))

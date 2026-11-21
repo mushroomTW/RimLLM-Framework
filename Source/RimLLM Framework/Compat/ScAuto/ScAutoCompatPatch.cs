@@ -9,36 +9,25 @@ namespace RimLLM_Framework.Compat;
 /// 簡中自動化 One（RimTranslation）的接管設定：不攔截它的任何方法，只把它的 API 設定指向框架的本機端點。
 /// </summary>
 /// <remarks>
-/// <para>
 /// One 的翻譯、評審、連線測試、能力測試全都是「對 Base URL 發 OpenAI 相容請求」，
-/// 所以只要 Base URL 指向 <see cref="LocalOpenAIEndpoint"/>，所有功能自然走框架，
-/// 不需要像過去那樣逐一攔截它的傳輸層、金鑰檢查與探測流程。
-/// </para>
-/// <para>
-/// 它的類別多為 <c>internal</c>，無法在編譯期引用，因此寫入設定只靠反射呼叫它自己的
-/// <c>ApiConfigurationStore.Save</c>（由它處理格式、檔案與金鑰檔），型別與方法以名稱解析。
+/// 所以只要 Base URL 指向 <see cref="LocalOpenAIEndpoint"/> 就會走框架。
+/// 它的類別多為 <c>internal</c>，寫入設定只靠反射呼叫它自己的 <c>ApiConfigurationStore.Save</c>（由它處理格式、檔案與金鑰檔）。
 /// 金鑰不寫入（本機端點不驗證金鑰，真實金鑰不離開框架）。
-/// </para>
 /// </remarks>
 internal static class ScAutoCompatPatch
 {
     private const string Namespace = "RimTranslation.Api.";
 
-    /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴）。</summary>
     public const string PackageId = "ow1r.scauto";
 
     private const string DisplayName = "Simplified Chinese Automation: One";
 
-    /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply()
     {
         CompatSeedUtil.RegisterEndpoint(ScAutoCompatPatch.PackageId, OpenAICompatClient.DefaultMaxOutputTokens);
         OnTakeoverToggled(Mod.RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ScAutoCompatPatch.PackageId) == true);
     }
 
-    /// <summary>
-    /// 玩家切換接管開關或專用模型時呼叫：開啟時把端點位址寫進它的設定，關閉時移除框架寫入的位址。
-    /// </summary>
     public static void OnTakeoverToggled(bool enabled)
     {
         if (enabled)
@@ -51,10 +40,7 @@ internal static class ScAutoCompatPatch
         }
     }
 
-    /// <summary>
-    /// 接管關閉時，若位址是框架寫的，改回它的預設位址（它不接受空位址）。
-    /// 框架不寫入金鑰，還原後它會以「未設定金鑰」明確報錯，而不是持續連到已不服務的本機端點。
-    /// </summary>
+    /// <summary>接管關閉時，若位址是框架寫的，改回它的預設位址（它不接受空位址）。</summary>
     internal static void RevertNativeConfig()
     {
         try
@@ -95,10 +81,6 @@ internal static class ScAutoCompatPatch
         }
     }
 
-    /// <summary>
-    /// 把它的設定改成指向本機端點。只改「沒有設定」或「框架自己先前寫的」位址（埠號每次啟動都不同，
-    /// 需要更新）；玩家自己填的真實位址一律不動。
-    /// </summary>
     internal static void SeedNativeConfig()
     {
         try

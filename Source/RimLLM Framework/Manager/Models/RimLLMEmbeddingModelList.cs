@@ -9,7 +9,6 @@ namespace RimLLM_Framework.Manager;
 /// （或 OpenAI 官方型錄的固定命名）過濾，只含 embedding 模型；
 /// 為 <c>false</c> 代表伺服器沒有回報能力資訊，清單只把像 embedding 的名稱排到前面，
 /// 仍可能混有對話模型。
-/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMEmbeddingModelList
 {

@@ -39,8 +39,8 @@ public class RimLLMDecisionService
     }
 
     /// <summary>
-    /// 決策供應商實際要用的金鑰。Gemini 的決策金鑰留空時沿用對話的 Gemini 金鑰
-    /// （與 Embedding 沿用對話金鑰的規則相同），玩家只要貼一次 Gemini 金鑰。
+    /// 決策供應商實際要用的金鑰。決策金鑰留空時，沿用目錄宣告的對話供應商金鑰（目前為 Gemini、OpenRouter）
+    /// （與 Embedding 沿用對話金鑰的規則相同）。
     /// 其他決策供應商與對話供應商是不同服務，不沿用。
     /// </summary>
     internal static string GetEffectiveApiKey(IRimLLMSettings settings, string providerId)
@@ -142,7 +142,6 @@ public class RimLLMDecisionService
         HttpMessageHandler handler = MessageHandlerFactory();
         if (gemini)
         {
-            // Gemini Decisions API 的路徑、金鑰標頭與欄位名稱和 System One 不同，在傳輸層互轉。
             handler = new GeminiDecisionsAdapterHandler { InnerHandler = handler };
         }
         else
@@ -174,7 +173,6 @@ public class RimLLMDecisionService
     {
         return new TypeSafeClientOptions
         {
-            // 明文本機端點與 HTTPS 端點都原樣交給 SDK。
             BaseUrl = DecisionEndpointRouting.GetBaseUrl(endpoint),
             // 沒有預設模型：只抓模型清單時模型可以是空的，送決策前由 RequireModel 擋下。
             DefaultModel = model ?? "",
@@ -200,7 +198,6 @@ public class RimLLMDecisionService
     /// <summary>只用來建立查模型清單的 TypeSafeClient；清單請求不帶模型名稱，這個值不會送出。</summary>
     private const string ModelListPlaceholderModel = "model-list";
 
-    /// <summary>送出決策前確認已選模型；沒有預設模型可退，未選就不送出請求。</summary>
     private static void RequireModel(string model)
     {
         if (string.IsNullOrWhiteSpace(model))
@@ -293,7 +290,6 @@ public class RimLLMDecisionService
             Model = ResolveModel(providerId, modelOverride: null),
             // 只回報「有沒有金鑰」，金鑰本身絕不外洩。
             HasKey = HasEffectiveApiKey(_settings, providerId),
-            // 明文本機端點是玩家自架的服務，可以不填金鑰。
             RequiresKey = !DecisionEndpointRouting.IsPlaintext(endpoint),
             Endpoint = endpoint
         };
@@ -301,7 +297,6 @@ public class RimLLMDecisionService
 
     /// <summary>
     /// 設定頁預覽某個供應商（可能尚未啟用）時要送出的端點、模型與金鑰。
-    /// 設定頁的「抓取模型清單」與「連線測試」都走這裡，參數來源只有一處。
     /// </summary>
     internal DecisionPreviewArguments GetPreviewArguments(string providerId)
     {
@@ -551,7 +546,7 @@ public class RimLLMDecisionService
     /// <summary>
     /// 以指定供應商執行一次決策請求，並帶回在請求開始時捕捉的供應商／模型歸屬資訊。
     /// 端點與金鑰取自該供應商在框架設定中保存的值；
-    /// <paramref name="providerId"/> 為空時等同 <see cref="EvaluateDetailedAsync"/>（使用啟用中的供應商）。
+    /// <paramref name="providerId"/> 為空時使用啟用中的供應商，但不走備援鏈（備援只在 <see cref="EvaluateDetailedAsync"/>）。
     /// </summary>
     internal async Task<DecisionEvaluation> EvaluateWithProviderDetailedAsync(
         string state,
@@ -601,8 +596,6 @@ public class RimLLMDecisionService
     {
         return ex switch
         {
-            // HTTP 狀態碼 → LLMError 的對照由既有 LLMErrorMapper 單一來源處理；
-            // TypeSafeApiException 帶 StatusCode 與 Retry-After，正好可以完整重用。
             TypeSafeApiException apiError => LLMErrorMapper.CreateException(
                                 (int)apiError.StatusCode,
                                 $"Decision API: {RimLLMLog.SanitizeForLog(apiError.Message, 300)}",
@@ -621,7 +614,7 @@ public class RimLLMDecisionService
                                 LLMError.InvalidResponse,
                                 $"Decision API: {RimLLMLog.SanitizeForLog(invalidResponse.Message, 300)}",
                                 innerException: invalidResponse),
-            // TypeSafeClient 建立時的金鑰檢查：與 ResolveActiveConnection 的前置檢查同一語意，
+            // TypeSafeClient 建立時的金鑰檢查：與 ResolveConnection 的前置檢查同一語意，
             // 但 SDK 訊息是英文原文，統一成 InvalidKey 並保留原文供除錯。
             TypeSafeException missingKey when missingKey.Message != null &&
                                                                missingKey.Message.Contains("API key", StringComparison.Ordinal) => new RimLLMException(

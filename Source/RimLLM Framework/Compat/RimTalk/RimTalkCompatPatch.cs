@@ -13,28 +13,21 @@ namespace RimLLM_Framework.Compat;
 /// RimTalk 的 <c>Local</c> 供應商本來就是「對一個 Base URL 發 OpenAI 相容請求、不需要金鑰」，
 /// 正好是本機端點的形狀。接管時把 <c>LocalConfig</c> 指向端點，並切到本機模式
 /// （關閉簡易模式與雲端供應商清單）；玩家原本的雲端設定都還在，不會被改動或刪除。
-/// 全程以名稱反射存取，RimTalk 缺席或改版時框架 DLL 仍能安全載入。
 /// </remarks>
 internal static class RimTalkCompatPatch
 {
-    /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴）。</summary>
     public const string PackageId = "cj.rimtalk";
 
     private const string DisplayName = "RimTalk";
 
-    /// <summary>目標 Mod 設定類別中的成員名稱，以反射存取，避免編譯期相依於目標 Mod。</summary>
     private const string BaseUrlMember = "BaseUrl";
 
-    /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply()
     {
         CompatSeedUtil.RegisterEndpoint(RimTalkCompatPatch.PackageId, 2048);
         OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(RimTalkCompatPatch.PackageId) == true);
     }
 
-    /// <summary>
-    /// 玩家切換接管開關或專用模型時呼叫：開啟時把端點位址寫進它的設定，關閉時移除框架寫入的位址。
-    /// </summary>
     public static void OnTakeoverToggled(bool enabled)
     {
         if (enabled)
@@ -47,10 +40,6 @@ internal static class RimTalkCompatPatch
         }
     }
 
-    /// <summary>
-    /// 接管關閉時，若本機設定的位址是框架寫的，清空位址並把模式改回它的預設（簡易模式、雲端清單）。
-    /// 框架只在玩家沒有可用設定時才寫入，所以還原不會丟掉玩家自己的設定。
-    /// </summary>
     internal static void RevertNativeConfig()
     {
         try
@@ -77,10 +66,6 @@ internal static class RimTalkCompatPatch
         }
     }
 
-    /// <summary>
-    /// 把它的本機設定改成指向本機端點。玩家自己填的本機位址（例如 Ollama）或可用的雲端設定不覆蓋；
-    /// 框架先前寫的位址只更新埠號與模型名，不改它的模式。
-    /// </summary>
     internal static void SeedNativeConfig()
     {
         try

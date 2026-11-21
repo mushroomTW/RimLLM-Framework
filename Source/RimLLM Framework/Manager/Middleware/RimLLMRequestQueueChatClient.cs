@@ -59,7 +59,6 @@ internal sealed class RimLLMRequestQueueChatClient : DelegatingChatClient
             .ConfigureAwait(false);
         QueueWaitMilliseconds = wait.ElapsedMilliseconds;
 
-        // using 與 await foreach 共同保證正常結束、例外、取消及提早停止時歸還名額並釋放內層。
         await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken)
             .WithCancellation(cancellationToken).ConfigureAwait(false))
         {

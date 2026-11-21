@@ -19,7 +19,6 @@ namespace RimLLM_Framework.Manager.Services;
 /// </summary>
 internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
 {
-    /// <summary>Gemini Developer API 的主機名稱。</summary>
     internal const string GeminiHost = "generativelanguage.googleapis.com";
 
     private const string JevEvaluatePath = "/v1/systemone";
@@ -27,7 +26,6 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
     private const string GeminiEvaluatePath = "/v1beta/decisions";
     private const string GeminiModelsPath = "/v1beta/models";
 
-    /// <summary>端點是否指向 Gemini API，需要套用這個轉接。</summary>
     public static bool Targets(string endpoint)
     {
         return Uri.TryCreate(endpoint, UriKind.Absolute, out Uri? uri) &&
@@ -93,7 +91,6 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
         return response;
     }
 
-    /// <summary>System One 請求 → Gemini Decisions 請求。</summary>
     internal static string ToGeminiRequest(string jevBody, out string model)
     {
         JsonObject source = JsonNode.Parse(jevBody)?.AsObject() ?? throw new JsonException("Request body is not a JSON object.");
@@ -168,7 +165,6 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
         }
     }
 
-    /// <summary>字串取原值，其他 JSON 內容序列化成文字，null 視為空字串。</summary>
     private static string AsText(JsonNode? node)
     {
         if (node == null)
@@ -190,7 +186,6 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
             root["model"] = model;
         }
 
-        // usage 缺席或不是 Jev 形狀時一律補成 input_tokens／output_tokens，缺的計數記 0。
         JsonObject? usage = root["usage"] as JsonObject;
         if (usage == null || usage["input_tokens"] == null)
         {
@@ -204,7 +199,6 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
     }
 
     /// <summary>
-    /// Gemini 的 <c>{"models":[{"name":"models/x"}]}</c> → Jev 的模型清單。
     /// Gemini 清單包含所有對話模型，只留下名稱含 decision 的決策模型。
     /// </summary>
     internal static string ToJevModelList(string geminiBody)
@@ -227,9 +221,6 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
         return JevWireFormat.ModelList(models);
     }
 
-    /// <summary>
-    /// 從 Gemini 模型條目中解析出決策模型。名稱不含 "decision" 或格式不對時回傳 false。
-    /// </summary>
     private static bool TryExtractDecisionModel(JsonElement entry, out (string Name, string Description) model)
     {
         model = ("", "");

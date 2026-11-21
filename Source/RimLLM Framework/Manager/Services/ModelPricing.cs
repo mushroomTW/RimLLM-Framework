@@ -13,22 +13,15 @@ namespace RimLLM_Framework.Manager;
 /// </remarks>
 internal static class ModelPricing
 {
-    /// <summary>高階模型等級（Level 3）。</summary>
     public const int ModelLevelHigh = 3;
-    /// <summary>中階模型等級（Level 2）。</summary>
     public const int ModelLevelMedium = 2;
-    /// <summary>入門/免費模型等級（Level 1）。</summary>
     public const int ModelLevelLow = 1;
 
     private const float HighTierCompletionCostThreshold = 3.00f;
     private const float MediumTierCompletionCostThreshold = 0.50f;
 
-    /// <summary>沒有快取讀取價時，以輸入價的此倍率估算快取命中 token 的費率。</summary>
     private const float DefaultCacheReadMultiplier = 0.25f;
 
-    /// <summary>
-    /// 一筆每百萬 token 的美元費率。
-    /// </summary>
     internal readonly struct CostRate
     {
         public readonly float PromptPerMillion;
@@ -43,12 +36,8 @@ internal static class ModelPricing
         }
     }
 
-    /// <summary>
-    /// 內建後備費率表，鍵為 "provider:model"（OrdinalIgnoreCase）。只在 models.dev 目錄查不到時使用。
-    /// </summary>
     private static readonly Dictionary<string, CostRate> BuiltInRates = new(StringComparer.OrdinalIgnoreCase)
     {
-        // OpenAI
         { "openai:gpt-5", new CostRate(1.25f, 10.00f) },
         { "openai:gpt-5-mini", new CostRate(0.25f, 2.00f) },
         { "openai:gpt-5-nano", new CostRate(0.05f, 0.40f) },
@@ -71,7 +60,6 @@ internal static class ModelPricing
         { "openai:text-embedding-3-large", new CostRate(0.13f, 0f) },
         { "openai:text-embedding-ada-002", new CostRate(0.10f, 0f) },
 
-        // Google Gemini
         { "gemini:gemini-embedding-001", new CostRate(0.15f, 0f) },
         { "gemini:gemini-2.0-flash", new CostRate(0.10f, 0.40f) },
         { "gemini:gemini-2.0-flash-lite", new CostRate(0.075f, 0.30f) },
@@ -102,29 +90,24 @@ internal static class ModelPricing
         { "groq:qwen/qwen3-32b", new CostRate(0.29f, 0.59f) },
         { "groq:moonshotai/kimi-k2-instruct", new CostRate(1.00f, 3.00f) },
 
-        // Qwen
         { "qwen:qwen-max", new CostRate(2.80f, 8.40f) },
         { "qwen:qwen-plus", new CostRate(0.40f, 1.20f) },
         { "qwen:qwen-turbo", new CostRate(0.10f, 0.20f) },
 
-        // Moonshot / Kimi
         { "kimi:kimi-k2", new CostRate(0.60f, 2.50f) },
         { "kimi:moonshot-v1-8k", new CostRate(1.68f, 1.68f) },
         { "kimi:moonshot-v1-32k", new CostRate(3.36f, 3.36f) },
         { "kimi:moonshot-v1-128k", new CostRate(8.40f, 8.40f) },
 
-        // MiniMax
         { "minimax:minimax-m3", new CostRate(0.30f, 1.20f) },
         { "minimax:minimax-m2", new CostRate(0.30f, 1.20f) },
         { "minimax:abab6.5s", new CostRate(0.14f, 0.28f) },
 
-        // Z.ai (GLM)
         { "z.ai:glm-4.6", new CostRate(0.60f, 2.20f) },
         { "z.ai:glm-4.5", new CostRate(0.60f, 2.20f) },
         { "z.ai:glm-4.5-air", new CostRate(0.20f, 1.10f) },
         { "z.ai:glm-4.5-flash", new CostRate(0f, 0f) },
 
-        // Grok (xAI)
         { "grok:grok-4", new CostRate(3.00f, 15.00f) },
         { "grok:grok-4-fast", new CostRate(0.20f, 0.50f) },
         { "grok:grok-3", new CostRate(3.00f, 15.00f) },
@@ -136,18 +119,24 @@ internal static class ModelPricing
         { "player2:player2", new CostRate(0f, 0f) }
     };
 
-    /// <summary>models.dev 目錄的費率（鍵格式同 <see cref="BuiltInRates"/>）。整份替換，讀取端不加鎖。</summary>
-    private static volatile Dictionary<string, CostRate> _catalogRates = new(StringComparer.OrdinalIgnoreCase);
-
     /// <summary>
-    /// 模型分級快取。玩家的分級覆寫不進快取（由呼叫端即時查詢），因此設定頁調整立即生效；
-    /// 目錄費率更新時整份清除。
+    /// models.dev 目錄的費率（鍵格式同 <see cref="BuiltInRates"/>）與依它算出的模型分級快取，整份一起替換，讀取端不加鎖。
+    /// 兩者放在同一個物件：用舊費率算到一半的分級只會寫進已被換掉的快取，不會汙染新的。
+    /// 玩家的分級覆寫不進快取（由呼叫端即時查詢），因此設定頁調整立即生效。
     /// </summary>
-    private static readonly ConcurrentDictionary<string, int> ModelLevelCache = new(StringComparer.OrdinalIgnoreCase);
+    private sealed class Catalog
+    {
+        public readonly Dictionary<string, CostRate> Rates;
+        public readonly ConcurrentDictionary<string, int> LevelCache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// 以 models.dev 目錄的費率取代目前的目錄費率（框架供應商 → 模型名稱 → 費率）。
-    /// </summary>
+        public Catalog(Dictionary<string, CostRate> rates)
+        {
+            Rates = rates;
+        }
+    }
+
+    private static volatile Catalog _catalog = new(new Dictionary<string, CostRate>(StringComparer.OrdinalIgnoreCase));
+
     internal static void SetCatalogRates(Dictionary<string, Dictionary<string, CostRate>> ratesByProvider)
     {
         var flattened = new Dictionary<string, CostRate>(StringComparer.OrdinalIgnoreCase);
@@ -163,8 +152,7 @@ internal static class ModelPricing
             }
         }
 
-        _catalogRates = flattened;
-        ModelLevelCache.Clear();
+        _catalog = new Catalog(flattened);
     }
 
     /// <summary>
@@ -180,14 +168,15 @@ internal static class ModelPricing
             return ModelLevelLow;
         }
 
+        Catalog catalog = _catalog;
         string cacheKey = BuildKey(providerId, modelName);
-        if (ModelLevelCache.TryGetValue(cacheKey, out int cached))
+        if (catalog.LevelCache.TryGetValue(cacheKey, out int cached))
         {
             return cached;
         }
 
         int level;
-        if (TryFindRate(providerId, modelName, out CostRate rate))
+        if (TryFindRate(catalog, providerId, modelName, out CostRate rate))
         {
             if (rate.CompletionPerMillion >= HighTierCompletionCostThreshold) level = ModelLevelHigh;
             else if (rate.CompletionPerMillion >= MediumTierCompletionCostThreshold) level = ModelLevelMedium;
@@ -198,7 +187,7 @@ internal static class ModelPricing
             level = ModelLevelMedium;
         }
 
-        ModelLevelCache[cacheKey] = level;
+        catalog.LevelCache[cacheKey] = level;
         return level;
     }
 
@@ -222,16 +211,17 @@ internal static class ModelPricing
         return true;
     }
 
-    /// <summary>先查 models.dev 目錄，再查內建表；兩者都先精確比對再做前綴比對。</summary>
     private static bool TryFindRate(string providerId, string? modelName, out CostRate rate)
     {
-        return TryFindRate(_catalogRates, providerId, modelName, out rate)
+        return TryFindRate(_catalog, providerId, modelName, out rate);
+    }
+
+    private static bool TryFindRate(Catalog catalog, string providerId, string? modelName, out CostRate rate)
+    {
+        return TryFindRate(catalog.Rates, providerId, modelName, out rate)
             || TryFindRate(BuiltInRates, providerId, modelName, out rate);
     }
 
-    /// <summary>
-    /// 在單一費率表中查詢。前綴模糊匹配需比對每個鍵並保留最長匹配，故保留迴圈。
-    /// </summary>
 #pragma warning disable S3267 // 需同時比對前綴邊界並保留最長匹配鍵，LINQ 運算式會讓邏輯更難讀且無法提前結束。
     private static bool TryFindRate(Dictionary<string, CostRate> rates, string? providerId, string? modelName, out CostRate rate)
     {

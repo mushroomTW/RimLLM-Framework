@@ -11,7 +11,6 @@ using RimLLM_Framework.Core;
 
 namespace RimLLM_Framework.Manager;
 
-/// <summary>封裝 GenerateAsync / StreamAsync 的核心請求參數，避免方法參數過多觸發 S107。</summary>
 internal sealed record GenerationParams(
     IChatClient Client,
     IEnumerable<ChatMessage> Messages,
@@ -23,7 +22,7 @@ internal sealed record GenerationParams(
     CancellationToken CancellationToken)
 {
     /// <summary>
-    /// 每次嘗試結算的用量寫入的帳本。由路由層明確傳入，不再向全域 Manager 查找；
+    /// 每次嘗試結算的用量寫入的帳本，由路由層傳入；
     /// 為 null 時（直接測試 executor）只觸發 onUsage 回呼、不記帳。
     /// </summary>
     public RimLLMUsageTracker? UsageTracker { get; init; }
@@ -33,11 +32,8 @@ internal sealed record GenerationParams(
 internal static class RimLLMChatClientExecutor
 {
     /// <summary>
-    /// 非串流請求：以 <see cref="GenerationParams.TimeoutSeconds"/> 建立整體逾時，並與呼叫端的取消 Token 連動。
     /// 官方 SDK 的 client 本身沒有套用使用者設定的 ApiTimeout，因此在此統一補上，
     /// 使 SDK 路徑與 raw HTTP 路徑的逾時語意一致。
-    /// <paramref name="customizeOptions"/> 為供應商專屬的 options 客製化（如 reasoning、Patch 逃生門）。
-    /// <paramref name="onUsage"/> 為本次請求結算的 token 回呼，供請求日誌附帶顯示；可為 null。
     /// </summary>
     public static async Task<ChatResponse> GenerateAsync(
         GenerationParams p,
@@ -75,9 +71,6 @@ internal static class RimLLMChatClientExecutor
 
         // 回應原樣交還。ResponseId、CreatedAt、ConversationId、RawRepresentation 這些
         // 只有 provider 知道的欄位，一旦在這裡拆成中介型別再重組就補不回來了。
-        // 推理內容維持 MEAI 原生的 TextReasoningContent，不再合成 <think> 文字——
-        // 要不要顯示、怎麼顯示是呈現層的事。
-        //
         // 空回應判定仍要逐則彙整 Contents：response.Text 只涵蓋 TextContent，
         // 內層 client 回傳多則訊息時（巢狀 decorator）工具呼叫與推理內容不在其中。
         IList<AIContent> contents = CollectContents(response);
@@ -98,7 +91,6 @@ internal static class RimLLMChatClientExecutor
                 : $"{providerId} returned an empty response.");
         }
 
-        // 要不要用估算值只由 RecordUsage 決定；逐字元估算相較網路往返可忽略。
         ArgumentNullException.ThrowIfNull(response);
         RecordUsage(p.UsageTracker, providerId, model, builtMessages, response.Usage, EstimateCompletionRaw(contents), onUsage);
         return response;
@@ -149,7 +141,7 @@ internal static class RimLLMChatClientExecutor
         IList<ChatMessage> builtMessages = BuildMessages(messages, options);
         TimeSpan idleTimeout = ResolveTimeout(timeoutSeconds);
         // provider 沒回報用量時才會用到的 completion token 估算。逐塊累加估算值，
-        // 不保留文字本身：先前為此累積最多 4MB 的 StringBuilder，而多數 provider 都會回報用量。
+        // 不保留文字本身。
         var streamState = new StreamTrackingState();
 
         using (var timeoutCts = new CancellationTokenSource(idleTimeout))
@@ -189,7 +181,6 @@ internal static class RimLLMChatClientExecutor
         EnsureStreamAnswered(streamState, providerId);
     }
 
-    /// <summary>逐一轉發串流更新；每個更新處理期間暫停閒置計時，處理完再重新起算。</summary>
     private static async Task PumpStreamAsync(
         IAsyncEnumerable<ChatResponseUpdate> updates,
         CancellationTokenSource timeoutCts,
@@ -200,19 +191,16 @@ internal static class RimLLMChatClientExecutor
     {
         await foreach (ChatResponseUpdate update in updates.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            // 收到任何更新即重設閒置計時器，避免長回應被整體逾時誤殺。
             if (update?.Contents == null)
             {
                 timeoutCts.CancelAfter(idleTimeout);
                 continue;
             }
 
-            // 處理這個 update 的期間（含等待消費端）暫停計時，處理完再重新起算。
             timeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
 
             // 只做記帳，不改寫內容：判斷這次串流是否真的產出過東西，
-            // 並收集用量。推理內容維持 MEAI 原生的 TextReasoningContent，
-            // 不再被合成成 <think> 文字——那是呈現層的事。
+            // 並收集用量。
             streamState.Inspect(update.Contents);
 
             // 原樣轉發：呼叫端收到的就是 provider 產生的那個 update，
@@ -227,7 +215,6 @@ internal static class RimLLMChatClientExecutor
         }
     }
 
-    /// <summary>串流結束後確認有產出內容與答案，否則轉成對應的錯誤。</summary>
     private static void EnsureStreamAnswered(StreamTrackingState streamState, string providerId)
     {
         if (!streamState.AnyOutput)
@@ -280,7 +267,6 @@ internal static class RimLLMChatClientExecutor
         }
     }
 
-    /// <summary>彙整 <see cref="ChatResponse"/> 內所有訊息的 content，與 <c>ChatResponse.Text</c> 的涵蓋範圍一致。</summary>
     private static IList<AIContent> CollectContents(ChatResponse response)
     {
         var merged = new List<AIContent>();
@@ -300,9 +286,6 @@ internal static class RimLLMChatClientExecutor
         return TimeSpan.FromSeconds(timeoutSeconds > 0f ? timeoutSeconds : 30f);
     }
 
-    /// <summary>
-    /// 把可重複使用的長上下文（CachedContext）併進系統訊息。
-    /// </summary>
     /// <remarks>
     /// 併進去而不是另開一則訊息，是因為 provider 端的上下文快取都以 system instruction
     /// 為單位；拆成兩則會讓相同的前綴算不到同一份快取。
@@ -328,8 +311,6 @@ internal static class RimLLMChatClientExecutor
                 }
                 else if (!existing.Contains(cachedContext, StringComparison.Ordinal))
                 {
-                    // 附加在既有系統提示詞之後。先前這裡是「前置一份已經含有既有內容的
-                    // 字串」，結果同一段系統提示詞會在訊息裡出現兩次。
                     list[firstSystemIndex] = new ChatMessage(ChatRole.System, existing + "\n\n" + cachedContext);
                 }
             }
@@ -342,19 +323,12 @@ internal static class RimLLMChatClientExecutor
         return list;
     }
 
-    /// <summary>
-    /// 以呼叫端的原始 options 為基底複製，組出送往 provider 的選項。
-    /// </summary>
     internal static ChatOptions BuildOptions(
         ChatOptions? source,
         string model,
         bool useNativeSchema,
         Action<ChatOptions>? customizeOptions)
     {
-        // 以呼叫端的原始 options 為基底複製，因此 TopP、TopK、FrequencyPenalty、
-        // PresencePenalty、Seed、StopSequences、Tools、Reasoning、AdditionalProperties、
-        // RawRepresentationFactory 一律原樣帶到 provider。工具能力過濾與思考強度正規化
-        // 都在上游對 ChatOptions 完成，這裡不需要再重新決定一次。
         ChatOptions options = source?.Clone() ?? new ChatOptions();
         options.ModelId = model;
         options.Temperature = source?.Temperature ?? 0.7f;
@@ -386,7 +360,6 @@ internal static class RimLLMChatClientExecutor
         {
             // schema 與 strict 取自同一次產生結果，避免兩者各算一次而分歧。
             RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(responseType);
-            // Element 由 schema 結果快取，不再每請求 JsonDocument.Parse 一次。
             options.ResponseFormat = ChatResponseFormat.ForJsonSchema(
                 schema.Element,
                 "custom_type",
@@ -401,13 +374,8 @@ internal static class RimLLMChatClientExecutor
 
     /// <summary>
     /// 記錄請求用量至用量帳本，若供應商未回報則改用字元估算值。
-    /// 這是框架唯一的用量記帳點：provider adapter 不再自行記帳。
+    /// 對話請求的用量只在這裡記帳，provider adapter 不自行記帳。
     /// </summary>
-    /// <param name="usageTracker">寫入的帳本；為 null 時略過記帳。</param>
-    /// <param name="providerId">LLM 供應商識別碼。</param>
-    /// <param name="model">使用的模型名稱。</param>
-    /// <param name="messages">送出的提示訊息列表。</param>
-    /// <param name="usage">供應商回傳的用量明細（可為 null）。</param>
     /// <param name="completionEstimate">provider 沒回報用量時使用的 completion token 估算值（<see cref="EstimateTokensRaw"/> 的累計）。</param>
     /// <param name="onUsage">供應商有回報用量時的 token 回呼（數字與帳本相同）；只有估算值時不觸發，以免日誌把估算當實際值顯示。</param>
     private static void RecordUsage(
@@ -460,9 +428,6 @@ internal static class RimLLMChatClientExecutor
             Math.Max(0, cachedPromptTokens));
     }
 
-    /// <summary>
-    /// 由 SDK 的 <see cref="UsageDetails"/> 取出三項 token 計數；usage 為 null 時一律回傳 0。
-    /// </summary>
     private static void ReadUsage(UsageDetails? usage, out int promptTokens, out int completionTokens, out int cachedPromptTokens)
     {
         promptTokens = ToInt32(usage?.InputTokenCount);
@@ -472,7 +437,7 @@ internal static class RimLLMChatClientExecutor
 
     /// <summary>
     /// 供應商沒回報用量時的字元估算：CJK 字元約 1 token／字，其餘（拉丁字母、標點、空白）
-    /// 約 4 字元／token。先前一律以 0.8 token／字元計，英文提示詞會高估約 3 倍。
+    /// 約 4 字元／token。
     /// </summary>
     internal static int EstimateTokens(string text)
     {

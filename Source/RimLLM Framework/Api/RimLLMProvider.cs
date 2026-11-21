@@ -15,7 +15,6 @@ public static class RimLLMProvider
 {
     private static RimLLMManager? _manager;
 
-    /// <summary>內部存取目前 manager 執行個體（同 assembly 使用）。</summary>
     internal static RimLLMManager Manager
     {
         get
@@ -28,10 +27,7 @@ public static class RimLLMProvider
         }
     }
 
-    /// <summary>
-    /// 嘗試取得 manager。SDK 尚未初始化時回傳 false 而不擲出例外，
-    /// 供設定 UI 在框架未載入時安全地略過相依於 manager 的區塊。
-    /// </summary>
+    /// <summary>SDK 尚未初始化時回傳 false 而不擲出例外。</summary>
     internal static bool TryGetManager([NotNullWhen(true)] out RimLLMManager? manager)
     {
         manager = _manager;
@@ -152,10 +148,7 @@ public static class RimLLMProvider
         return Manager.GetEffectiveCapabilities(preferredModelId);
     }
 
-    /// <summary>
-    /// 非拋版能力查詢，供相容層高頻輪詢使用，避免離線時以例外控制流程。
-    /// 語意與 <see cref="GetEffectiveCapabilities"/> 一致，僅以傳回值取代擲出。
-    /// </summary>
+    /// <summary>語意同 <see cref="GetEffectiveCapabilities"/>，以傳回值取代擲出例外，供高頻輪詢使用。</summary>
     internal static bool TryGetEffectiveCapabilities(string? preferredModelId, out LLMProviderCapabilities? capabilities, out string? failureReason)
     {
         try
@@ -171,9 +164,6 @@ public static class RimLLMProvider
         }
     }
 
-    /// <summary>
-    /// 非拋版能力查詢（預設模型），供相容層高頻輪詢使用。
-    /// </summary>
     internal static bool TryGetEffectiveCapabilities(out LLMProviderCapabilities? capabilities, out string? failureReason)
     {
         return TryGetEffectiveCapabilities(preferredModelId: null, out capabilities, out failureReason);

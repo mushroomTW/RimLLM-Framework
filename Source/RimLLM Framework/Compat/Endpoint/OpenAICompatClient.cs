@@ -20,16 +20,12 @@ namespace RimLLM_Framework.Compat;
 /// 讓補丁層只需把合成的回應 JSON 交還給該 Mod 自己的解析器，不必引用或建構它的任何型別
 /// （其類別多為 <c>internal</c>）。失敗同樣合成為該協議的錯誤 JSON，使其原有的重試與降級邏輯照常運作。
 /// </para>
-/// <para>
-/// 提示工程與結構化輸出約束完全沿用該 Mod 的請求：訊息原樣轉送，回應格式也照請求轉成 MEAI 的 ResponseFormat。
-/// </para>
 /// </remarks>
 internal sealed class OpenAICompatClient
 {
     /// <summary>簡中自動化 One 請求未指定輸出上限時的預設值，對齊它自家請求建構器的預設（8192）。</summary>
     internal const int DefaultMaxOutputTokens = 8192;
 
-    /// <summary>寫進合成回應的識別，僅用於除錯。</summary>
     private const string ResponseId = "rimllm-takeover";
 
     private readonly string _packageId;
@@ -37,10 +33,6 @@ internal sealed class OpenAICompatClient
     private readonly float? _defaultTemperature;
     private IChatClient? _chat;
 
-    /// <summary>正式路徑：延遲到第一次請求才向 RimLLM 取 client，避免在攔截掛載階段觸碰 manager。</summary>
-    /// <param name="packageId">來源 Mod 的 packageId。</param>
-    /// <param name="defaultMaxOutputTokens">請求未指定輸出上限時的預設值。</param>
-    /// <param name="defaultTemperature">請求未指定溫度時的預設值；null 代表交給供應商預設。</param>
     public OpenAICompatClient(string packageId, int defaultMaxOutputTokens, float? defaultTemperature)
     {
         _packageId = packageId;
@@ -48,7 +40,6 @@ internal sealed class OpenAICompatClient
         _defaultTemperature = defaultTemperature;
     }
 
-    /// <summary>測試用：注入假的 <see cref="IChatClient"/>，驗證請求轉換與回應合成。</summary>
     internal OpenAICompatClient(IChatClient chat)
     {
         _packageId = ScAutoCompatPatch.PackageId;
@@ -56,15 +47,11 @@ internal sealed class OpenAICompatClient
         _defaultMaxOutputTokens = DefaultMaxOutputTokens;
     }
 
-    /// <summary>延遲到第一次請求才向 RimLLM 取 client，避免在攔截掛載階段觸碰 manager。</summary>
     private IChatClient Chat => _chat ??= CreatePinnedChatClient(_packageId);
 
     /// <summary>
     /// 把該 Mod 的請求 JSON 交給 RimLLM，回傳同協議的回應 JSON（成功或錯誤）。
     /// </summary>
-    /// <param name="payloadJson">該 Mod 傳輸層即將 POST 的請求本文。</param>
-    /// <param name="chatProtocol">true 為 Chat Completions，false 為 Responses。</param>
-    /// <param name="cancellationToken">該 Mod 的取消 token；觸發時原樣擲出 <see cref="OperationCanceledException"/>。</param>
     /// <remarks>
     /// 除了呼叫端取消以外的失敗一律不擲出，而是轉成錯誤 JSON：該 Mod 的解析器會把它還原成帶 ErrorType 的失敗結果，
     /// 暫時性錯誤（timeout／network／rate_limit／server）由它自己重試。
@@ -128,10 +115,7 @@ internal sealed class OpenAICompatClient
         };
     }
 
-    /// <summary>
-    /// 預設關閉思考鏈：接管的 Mod 都是翻譯、對話、衝突分析這類講求速度與成本的批量呼叫。
-    /// 輸出上限與溫度用該 Mod 登錄時給的預設，請求內容有指定時再覆寫。
-    /// </summary>
+    /// <summary>預設關閉思考鏈：接管的 Mod 都是翻譯、對話、衝突分析這類講求速度與成本的批量呼叫。</summary>
     private RimLLMChatOptions BuildOptions()
     {
         return new RimLLMChatOptions
@@ -142,10 +126,6 @@ internal sealed class OpenAICompatClient
         };
     }
 
-    /// <summary>
-    /// 建立套用「相容 Mod 專用模型」的 client：玩家在模組相容頁為該 Mod 指定了模型時，
-    /// 該模型固定排在備援鏈首位（失敗仍會退回整條鏈）；未指定則完全沿用預設路由。
-    /// </summary>
     private static CompatPinnedChatClient CreatePinnedChatClient(string packageId)
     {
         return new CompatPinnedChatClient(RimLLMProvider.CreateChatClient(packageId), packageId);
@@ -177,7 +157,6 @@ internal sealed class OpenAICompatClient
             return base.GetStreamingResponseAsync(messages, ApplyPin(options), cancellationToken);
         }
 
-        /// <summary>呼叫端已自行指定模型時尊重它；需要改寫時複製，不就地修改呼叫端的物件。</summary>
         private ChatOptions? ApplyPin(ChatOptions? options)
         {
             if (!string.IsNullOrEmpty(options?.ModelId)) return options;
@@ -241,7 +220,6 @@ internal sealed class OpenAICompatClient
         return RimLLMJsonHelper.Serialize(root);
     }
 
-    /// <summary>請求 JSON 解出的中性結果。</summary>
     internal sealed class RequestSpec
     {
         public List<ChatMessage> Messages = [];
@@ -326,9 +304,6 @@ internal sealed class OpenAICompatClient
         }
     }
 
-    /// <summary>
-    /// 取出回應格式所在的物件：Chat 在 <c>response_format</c>，Responses 在 <c>text.format</c>。
-    /// </summary>
     private static bool TryGetFormatElement(JsonElement root, bool chatProtocol, out JsonElement format)
     {
         if (chatProtocol)
@@ -347,10 +322,7 @@ internal sealed class OpenAICompatClient
         return true;
     }
 
-    /// <summary>
-    /// 讀取 <c>json_schema</c> 格式：Chat 的 schema 包在 <c>json_schema</c> 內，Responses 直接在同一層。
-    /// schema 缺少時退回純 JSON 模式。
-    /// </summary>
+    /// <summary>schema 缺少時退回純 JSON 模式。</summary>
     private static void ApplyJsonSchemaFormat(JsonElement format, bool chatProtocol, RequestSpec spec)
     {
         JsonElement holder = chatProtocol && format.TryGetProperty("json_schema", out JsonElement inner) ? inner : format;
@@ -369,7 +341,6 @@ internal sealed class OpenAICompatClient
         spec.StrictSchema = holder.TryGetProperty("strict", out JsonElement strict) && strict.ValueKind == JsonValueKind.True;
     }
 
-    /// <summary>讀取可選的字串成員；不存在或型別不符時回傳 null。</summary>
     private static string? ReadOptionalString(JsonElement element, string name)
     {
         return element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
@@ -432,7 +403,6 @@ internal sealed class OpenAICompatClient
         return parts;
     }
 
-    /// <summary>把單一內容片段（文字或圖片）轉成 <see cref="AIContent"/> 並加入 <paramref name="parts"/>。</summary>
     private static void AppendContentPart(List<AIContent> parts, JsonElement part)
     {
         if (part.ValueKind != JsonValueKind.Object) return;

@@ -15,9 +15,7 @@ namespace RimLLM_Framework.Mod;
 
 /// <summary>
 /// 基於 Markdig AST 解析引擎，把 Markdown 轉成 Unity 舊版 IMGUI 能顯示的 rich text。
-///
 /// 舊版 IMGUI rich text 只認得 b、i、size、color、material、quad 六個標籤。
-/// 本實作透過 Markdig 構建 CommonMark 語法樹，精準將各語法節點映射至支援的標籤與縮排符號。
 /// </summary>
 public static class RimLLMMarkdown
 {
@@ -202,8 +200,6 @@ public static class RimLLMMarkdown
         if (markdown.Length == 0) return string.Empty;
 
         string sanitized = SanitizeUnityTags(markdown, preserveTrustedColorWrapper: true);
-        // 表格由 Markdig 辨識後，把整張表的範圍一併排除在粗體預轉換之外：
-        // 欄位裡的 ** 常是語意標記（熱情等級、版本號），不是粗體。
         string preprocessed = PreprocessMarkdown(sanitized, CollectTableSpans(sanitized)) ?? string.Empty;
         MarkdownDocument document = Markdown.Parse(preprocessed, Pipeline);
         var sb = new StringBuilder(preprocessed.Length + 64);
@@ -234,11 +230,6 @@ public static class RimLLMMarkdown
     private static readonly System.Text.RegularExpressions.Regex CellLineBreak =
         new(@"`+[^`]*`+|＜br\s*/?＞", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase, RegexTimeout);
 
-    /// <summary>
-    /// 欄位文字取自原始 markdown 切片，而非解析後的 inline 樹。
-    /// 欄位裡的 <c>*</c> / <c>**</c> 可能是語意標記（<c>射擊 12**</c>），
-    /// 讓 Markdig 解析會把相鄰的星號配成一組並套上粗體，因此改由 <see cref="RenderCellInlines"/> 保守轉換。
-    /// </summary>
     private static string RenderCellInlines(string text)
     {
         return CellInlinePattern.Replace(text, static match =>
@@ -502,7 +493,6 @@ public static class RimLLMMarkdown
             }
         }
 
-        /// <summary>將單一表格列（標題或內容）寫入豐富文字輸出。</summary>
         private void AppendRow(TableRow row, List<string> cells)
         {
             if (row.IsHeader)
@@ -555,7 +545,6 @@ public static class RimLLMMarkdown
             RenderCodeLines(code);
         }
 
-        // FencedCodeBlock 繼承 CodeBlock，共用同一份行繪製邏輯。
         private void RenderCodeLines(CodeBlock code)
         {
             _sb.Append(ColorTagOpen).Append(CodeColor).Append('>');

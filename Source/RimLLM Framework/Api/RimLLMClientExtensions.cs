@@ -67,8 +67,7 @@ public static class RimLLMClientExtensions
 
     /// <summary>
     /// 框架路徑：只在 options 上標註目標型別，schema 方言交給知道供應商身分的路由層決定。
-    /// 請求本身走完整的 IChatClient 鏈，因此防濫用、預算、佇列與快取都不會被繞過
-    /// ——先前這條路徑直接呼叫 facade，任何搬到 facade 外層的中介層都會被跳過。
+    /// 請求本身走完整的 IChatClient 鏈，因此防濫用、預算、佇列與快取都不會被繞過。
     /// </summary>
     private static async Task<T> FrameworkPathAsync<T>(
         IChatClient client,
@@ -99,9 +98,7 @@ public static class RimLLMClientExtensions
         RimLLMChatOptions? options,
         CancellationToken cancellationToken)
     {
-        // 與框架路徑一樣先複製：ResponseFormat 是寫在副本上的，不能改到呼叫端手上那份。
         ChatOptions effective = (options ?? new RimLLMChatOptions()).Clone();
-        // schema 的快取由 RimLLMSchemaBuilder 統一負責，此處不再另建一份。
         string schemaJson = RimLLMSchemaBuilder.BuildJson(typeof(T));
         using (JsonDocument document = JsonDocument.Parse(schemaJson))
         {

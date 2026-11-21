@@ -7,10 +7,7 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 負責 RimLLM Framework 的設定畫面進入點與框架布局。
-/// 將具體的分頁渲染與交互狀態委託給各個 Drawer 類別。
-/// </summary>
+/// <summary>設定畫面進入點與框架布局；分頁渲染委託給各 Drawer。</summary>
 public static class RimLLMSettingsUI
 {
     private const string ProvidersCategoryId = "Providers";
@@ -33,18 +30,13 @@ public static class RimLLMSettingsUI
     private static Vector2 _detailScrollPosition = Vector2.zero;
     private static Vector2 _leftScrollPosition = Vector2.zero;
 
-    /// <summary>RimWorld 捲軸的固定寬度。</summary>
     private const float ScrollBarWidth = 16f;
 
-    /// <summary>捲到底時在最後一個控制項下方保留的呼吸空間。</summary>
     private const float DetailBottomPadding = 12f;
 
     /// <summary>各分頁上一幀實際畫出的內容高度，見 <see cref="ResolveDetailViewHeight"/>。</summary>
     private static readonly Dictionary<string, float> _measuredHeights = [];
 
-    /// <summary>
-    /// 初始化 UI 狀態，例如還原對話歷史。
-    /// </summary>
     public static void Initialize(RimLLMFrameworkSettings settings)
     {
         ChatTestDrawer.Initialize(settings);
@@ -54,9 +46,6 @@ public static class RimLLMSettingsUI
         }
     }
 
-    /// <summary>
-    /// 繪製 Mod 設定視窗的主入口。
-    /// </summary>
     public static void DoSettingsWindowContents(Rect inRect)
     {
         // 動態尋找並調整 RimWorld 預設的 Mod 設定視窗大小
@@ -74,7 +63,6 @@ public static class RimLLMSettingsUI
             }
         }
 
-        // 直接在原地繪製完整設定內容
         DrawSettingsWindowBody(inRect);
     }
 
@@ -85,12 +73,10 @@ public static class RimLLMSettingsUI
         float gap = 8f;
         float height = inRect.height - 10f;
 
-        // 1. 左側一級分類欄
         Rect leftColRect = new(inRect.x, inRect.y, leftWidth, height);
         Widgets.DrawMenuSection(leftColRect);
         DrawLeftCategoryMenu(leftColRect);
 
-        // 2. 根據選中項目決定中欄與右欄佈局
         if (activeMainCategory == ProvidersCategoryId)
         {
             Rect midColRect = new(leftColRect.xMax + gap, inRect.y, midWidth, height);
@@ -225,7 +211,6 @@ public static class RimLLMSettingsUI
             return;
         }
 
-        // 首頁按鈕多一行紅／綠狀態，在任何分頁都看得到「能不能用」。
         bool ready = SetupStatus.Current(out _) == SetupState.Ready;
         Color statusColor = ready ? RimLLMUIStyle.StatusGreen : RimLLMUIStyle.Danger;
         string status = (ready ? "RimLLM_MenuHomeReady" : "RimLLM_MenuHomeNotReady").Translate();
@@ -299,27 +284,17 @@ public static class RimLLMSettingsUI
         Widgets.EndScrollView();
     }
 
-    /// <summary>
-    /// 決定捲動內容的高度。優先採用上一幀實際畫出來的高度，只有該分頁第一次繪製時
-    /// 才退回各 Drawer 的估計值。
-    ///
-    /// 先前一律使用估計值，而那些是手調的魔術數字，會與實際繪製內容漂移 ——
-    /// 供應商分頁曾回報 848px 但實際只畫了約 662px，底部因此多出一大塊幽靈空白。
-    /// 改為量測後，新增或調整任何控制項都不必再同步維護一份高度公式。
-    /// </summary>
+    /// <summary>決定捲動內容的高度：優先採用上一幀實際畫出的高度，只有該分頁第一次繪製時才退回各 Drawer 的估計值（手調的估計值會與實際內容漂移）。</summary>
     private static float ResolveDetailViewHeight(float width, float visibleHeight)
     {
         float height = _measuredHeights.TryGetValue(GetDetailPageKey(), out float measured)
             ? measured + DetailBottomPadding
             : GetDetailViewHeight(width);
 
-        // 內容比可視區短時仍讓 viewRect 至少等高，避免捲動範圍為負值。
         return Mathf.Max(height, visibleHeight);
     }
 
-    /// <summary>
-    /// 量測值的鍵。供應商分頁各家內容長度不同，因此要連子分頁一起入鍵。
-    /// </summary>
+    /// <summary>量測值的鍵；供應商分頁各家內容長度不同，須連子分頁一起入鍵。</summary>
     private static string GetDetailPageKey()
     {
         if (activeMainCategory == ProvidersCategoryId)
@@ -337,12 +312,7 @@ public static class RimLLMSettingsUI
         return page != null ? page.EstimateHeight(width) : 280f;
     }
 
-    /// <summary>
-    /// 一個一級分頁的完整定義：選單標籤、標題、繪製與首幀高度估計。
-    ///
-    /// 這四件事先前分散在四段各自的 if/else-if 串接中，新增或改名一個分頁得同步改四處，
-    /// 漏改任何一處都只會在執行期才顯現（標題空白、內容不繪製、捲動高度錯誤）。
-    /// </summary>
+    /// <summary>一個一級分頁的完整定義：選單標籤、標題、繪製與首幀高度估計；集中定義，新增分頁不必同步修改多處。</summary>
     private sealed class DetailPage
     {
         public required string Id;
@@ -354,9 +324,6 @@ public static class RimLLMSettingsUI
         public bool Advanced;
     }
 
-    /// <summary>
-    /// 選單順序：先列常用的三頁（首頁、連接 AI、對話測試），進階群組前三為三類核心模型（語言模型、嵌入模型、決策模型），其餘接續微調與診斷工具。
-    /// </summary>
     private static readonly DetailPage[] Pages =
     [
         new() {

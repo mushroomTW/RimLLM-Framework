@@ -20,7 +20,7 @@ public static partial class RimLLMJsonHelper
 {
     private static readonly ConcurrentDictionary<Type, string> SampleJsonCache = new();
 
-    // 全框架共用的 JSON 引擎與寬容設定（原 RimLLMJson，已併入此檔）。
+    // 全框架共用的 JSON 引擎與寬容設定。
     // DTO 大量使用 public field（STJ 預設只看 property），反序列化大小寫不敏感，
     // 並對齊舊 Newtonsoft 寬容度：數字可由字串讀入、尾隨逗號與註解略過、列舉接受名稱。
     private static readonly JsonSerializerOptions SharedOptions = CreateSharedOptions();
@@ -40,7 +40,7 @@ public static partial class RimLLMJsonHelper
         return options;
     }
 
-    /// <summary>共用設定。JsonSerializerOptions 建構後即凍結語意，可多執行緒共用。</summary>
+    /// <summary>共用設定。首次序列化後 System.Text.Json 即鎖定選項，不可再修改；可多執行緒共用。</summary>
     public static JsonSerializerOptions Options => SharedOptions;
 
     /// <summary>以執行期型別序列化（DTO 可能是 object 宣告，泛型推斷會丟失成員）。</summary>
@@ -114,7 +114,6 @@ public static partial class RimLLMJsonHelper
             }
 
             string repairedJson = RepairJson(rawResponse);
-            // 每次需要修復的結構化回應都會觸發，受詳細日誌開關控制。
             if (RimLLMLog.Enabled)
             {
                 RimLLMLog.Warning($"[RimLLM] First JSON parse failed, attempting static repair. Response preview: {RimLLMLog.SanitizeForLog(rawResponse, 300)}\nRepaired preview: {RimLLMLog.SanitizeForLog(repairedJson, 300)}\nError: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
@@ -143,14 +142,11 @@ public static partial class RimLLMJsonHelper
             return json;
 
         json = json.Trim();
-        // 0. 只移除 JSON 字串外的思考區塊，避免改寫模型真正輸出的文字。
+        // 只移除 JSON 字串外的思考區塊，避免改寫模型真正輸出的文字。
         json = RemoveThinkBlocksOutsideStrings(json).Trim();
-        // 1. 移除 Markdown 標記
         json = StripMarkdownCodeBlocks(json);
-        // 2. 移除字串外的尾隨逗號。
         json = RemoveTrailingCommasOutsideStrings(json);
 
-        // 3. 補齊缺失括號 (跳過雙引號字串內部的字元)。
         if (!TryCollectExpectedClosers(json, out var expectedClosers, out bool inString, out bool escapeNext))
         {
             return json;
@@ -309,12 +305,6 @@ public static partial class RimLLMJsonHelper
         return result.ToString();
     }
 
-    /// <summary>處理字串內的單一字元：處理跳脫與結束引號，回傳下一個索引。</summary>
-    /// <param name="result">輸出緩衝區。</param>
-    /// <param name="index">目前字元的索引。</param>
-    /// <param name="current">目前字元。</param>
-    /// <param name="escapeNext">上一個字元是否為跳脫反斜線。</param>
-    /// <param name="inString">是否仍在字串內；遇到結束引號時會被設回 false。</param>
     private static int AppendStringChar(StringBuilder result, int index, char current, ref bool escapeNext, ref bool inString)
     {
         result.Append(current);
@@ -334,7 +324,6 @@ public static partial class RimLLMJsonHelper
         return index + 1;
     }
 
-    /// <summary>嘗試跳過 <c>&lt;think&gt;</c>…<c>&lt;/think&gt;</c> 區塊，若找到並跳過則回傳 true 並給出下一個索引。</summary>
     private static bool TrySkipThinkBlock(string json, int index, out int nextIndex)
     {
         const string thinkStart = "<think>";
@@ -353,7 +342,6 @@ public static partial class RimLLMJsonHelper
         return false;
     }
 
-    /// <summary>檢查指定索引的逗號後方是否緊接右括號（中間僅允許空白）。</summary>
     private static bool IsTrailingComma(string json, int index)
     {
         int next = index + 1;
@@ -439,7 +427,6 @@ public static partial class RimLLMJsonHelper
 
             if (instance != null)
             {
-                // 遞迴填充公開欄位與屬性
                 PopulateDummyMembers(instance, type, visitedTypes);
             }
             return instance;
@@ -650,7 +637,6 @@ public static partial class RimLLMJsonHelper
         }
     }
 
-    /// <summary>驗證 JSON 值是否包含 schema 要求的所有成員。</summary>
     #pragma warning disable S3267 // JsonElement.ObjectEnumerator 不實現 IEnumerable，無法直接套用 LINQ Where/FirstOrDefault。
     private static void ValidateRequiredJsonMembers(JsonElement value, JsonElement schema)
     {

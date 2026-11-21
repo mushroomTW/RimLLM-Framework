@@ -21,7 +21,6 @@ public sealed class RimLLMDecisionClient
     private readonly RimLLMManager _manager;
     private readonly string _modId;
 
-    /// <summary>此 Mod 的 OpenRouter 應用歸屬，於每次呼叫時放進 <see cref="RimLLMAppAttribution.Current"/>。</summary>
     private readonly RimLLMAppAttribution? _attribution;
 
     internal RimLLMDecisionClient(RimLLMManager manager, string modId)
@@ -101,11 +100,6 @@ public sealed class RimLLMDecisionClient
     }
     #pragma warning restore VSTHRD202
 
-    /// <summary>
-    /// 把供應商回報的 token 記入用量帳本。
-    /// 歸屬資訊來自請求開始時的快照（DecisionEvaluation），await 之後不得重讀設定：
-    /// 請求途中玩家切換啟用供應商，token 若記到新供應商就會污染帳本（與 RimLLMEmbeddingClient 同一考量）。
-    /// </summary>
     private RimLLMUsageTracker.BudgetReservation ReserveBudget(string state, QuestionSet plan)
     {
         long estimate = RimLLMChatClientExecutor.EstimateTokens(state ?? string.Empty);
@@ -118,16 +112,14 @@ public sealed class RimLLMDecisionClient
         return _manager.UsageTracker.ReserveBudgetOrThrow(estimate);
     }
 
-    /// <summary>
-    /// 問題集合編碼後的位元組數：每次請求除了模型與 state 之外都會送出這段內容。
-    /// 沿用舊 SDK 以位元組數當作 token 上限估計的保守作法。
-    /// </summary>
+    // 以位元組數當作 token 上限的保守估計。
     internal static long EncodedQuestionsLength(QuestionSet plan)
     {
         return JsonSerializer.SerializeToUtf8Bytes<IReadOnlyDictionary<string, Question>>(
             plan, TypeSafeJsonDefaults.ContentSerializerOptions).LongLength;
     }
 
+    // 歸屬取自請求開始時的快照（DecisionEvaluation），await 之後不得重讀設定，否則請求途中切換供應商會污染帳本。
     private static QuestionSetResult RecordUsage(DecisionEvaluation evaluation, RimLLMUsageTracker.BudgetReservation reservation)
     {
         QuestionSetResult result = evaluation.Result;

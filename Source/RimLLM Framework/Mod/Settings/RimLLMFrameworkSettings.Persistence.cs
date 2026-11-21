@@ -16,9 +16,7 @@ namespace RimLLM_Framework.Mod;
 /// </summary>
 public partial class RimLLMFrameworkSettings
 {
-    /// <summary>
-    /// 用於 JSON 序列化與反序列化的 DTO 結構，避開 RimWorld Scribe 字典嵌套序列化的兼容問題。
-    /// </summary>
+    /// <summary>JSON 序列化用的 DTO，避開 RimWorld Scribe 字典嵌套序列化的兼容問題。</summary>
     private sealed class SettingsDto
     {
         // 以下欄位由 System.Text.Json 反序列化時以反射填入；宣告時尚未有值，故以 null! 標示（未出現在 JSON 中的欄位保持 null）。
@@ -61,9 +59,6 @@ public partial class RimLLMFrameworkSettings
         public List<string> DecisionFallbackChain = null!;
     }
 
-    /// <summary>
-    /// 建立要寫入設定 XML 的 DTO。純加密與組裝，與 Scribe 的讀寫流程分離。
-    /// </summary>
     private string BuildSettingsJson()
     {
         var encryptedKeys = EncryptKeys(_apiKeys, _undecryptableApiKeys);
@@ -446,11 +441,7 @@ public partial class RimLLMFrameworkSettings
         return effort == null ? 0 : (int)effort.Value + 1;
     }
 
-    /// <summary>
-    /// <see cref="EncodeReasoningEffort"/> 的反向。合法範圍以列舉實際定義為準，不再寫死上限：
-    /// MEAI 10.10 的 ReasoningEffort 是 None=0…ExtraHigh=4，先前寫死的「&gt; 3 即無效」
-    /// 讓 High（存成 4）每次載入都被丟回 Auto。
-    /// </summary>
+    /// <summary><see cref="EncodeReasoningEffort"/> 的反向；合法範圍以列舉實際定義為準，不寫死上限（MEAI 的 ReasoningEffort 是 None=0…ExtraHigh=4）。</summary>
     internal static ReasoningEffort? DecodeReasoningEffort(int encoded)
     {
         if (encoded <= 0) return null;

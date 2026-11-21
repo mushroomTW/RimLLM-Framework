@@ -18,13 +18,10 @@ namespace RimLLM_Framework.Manager;
 /// </remarks>
 public class RimLLMHealthLedger
 {
-    /// <summary>連續失敗達此門檻後改用指數退避熔斷。</summary>
     private const int CircuitFailureThreshold = 3;
 
-    /// <summary>熔斷的基礎冷卻秒數，之後每多失敗一次翻倍。</summary>
     private const double CircuitBaseCooldownSeconds = 60.0;
 
-    /// <summary>指數退避的最大倍率次方（60s → 960s 封頂）。</summary>
     private const int MaxCircuitBackoffSteps = 4;
 
     /// <summary>
@@ -117,10 +114,6 @@ public class RimLLMHealthLedger
         return IsInCooldown(target, DateTime.UtcNow, out cooldownUntil, out continuousFailures);
     }
 
-    /// <summary>
-    /// 以呼叫端傳入的同一時間戳檢查冷卻，供候選過濾逐個比對時共用，
-    /// 避免每個候選各取一次 <see cref="DateTime.UtcNow"/>。語意與無參版本一致。
-    /// </summary>
     internal bool IsInCooldown(string target, DateTime now, out DateTime cooldownUntil, out int continuousFailures)
     {
         cooldownUntil = DateTime.MinValue;
@@ -149,9 +142,6 @@ public class RimLLMHealthLedger
         return IsInCooldown(target, out _, out _);
     }
 
-    /// <summary>
-    /// 以共用時間戳的簡化版冷卻檢查。
-    /// </summary>
     internal bool IsInCooldown(string target, DateTime now)
     {
         return IsInCooldown(target, now, out _, out _);

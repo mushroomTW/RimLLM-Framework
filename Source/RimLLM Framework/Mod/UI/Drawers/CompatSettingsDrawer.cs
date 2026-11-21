@@ -5,13 +5,7 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 負責第三方整合（Compat）分頁的 UI 渲染：每個可接管的 Mod 一列緊湊卡片，
-/// 狀態以色點＋短標籤呈現，細節與警語收進滑鼠懸停的提示。
-///
-/// 先前每個 Mod 各佔一大塊（名稱、狀態、開關、兩段警語全部重複），
-/// 目標一多整頁就得不停捲動；共用的警語改為只在頁首顯示一次。
-/// </summary>
+/// <summary>第三方整合（Compat）分頁：每個可接管的 Mod 一列緊湊卡片，共用警語只在頁首顯示一次，細節收進懸停提示。</summary>
 public static class CompatSettingsDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
@@ -24,13 +18,9 @@ public static class CompatSettingsDrawer
     private static readonly Color StatusPatchFailed = new Color32(0xef, 0x44, 0x44, 0xff);
     private static readonly Color StatusNotInstalled = new Color32(0x94, 0xa3, 0xb8, 0xff);
 
-    /// <summary>未安裝的列整體淡化，讓可操作的列在清單中一眼可辨。</summary>
     private static readonly Color DimmedTint = new(1f, 1f, 1f, 0.55f);
 
-    /// <summary>
-    /// 一列的靜態資料。安裝與掛載狀態在啟動後就固定（Mod 清單不會在執行期變動、
-    /// Harmony 攔截只在啟動時套用一次），因此只算一次；接管開關每幀從設定讀。
-    /// </summary>
+    // 安裝與掛載狀態在啟動後即固定（Mod 清單不變、Harmony 攔截只在啟動時套用一次），故只算一次；接管開關每幀從設定讀。
     private sealed class Row
     {
         public required RimLLMCompatTarget Target;
@@ -40,10 +30,7 @@ public static class CompatSettingsDrawer
 
     private static List<Row>? _rows;
 
-    /// <summary>
-    /// 排序：可用（已啟用且掛載成功）→ 掛載失敗 → 已安裝未啟用 → 未安裝。
-    /// 玩家真正能操作的列排最前，清單變長時不必在一堆未安裝項目裡找。
-    /// </summary>
+    /// <summary>排序：可用（已啟用且掛載成功）→ 掛載失敗 → 已安裝未啟用 → 未安裝。</summary>
     private static List<Row> Rows
     {
         get
@@ -94,7 +81,6 @@ public static class CompatSettingsDrawer
 
     public static float GetHeight(float width)
     {
-        // 說明段落 + 共用警語 + 每個目標一列
         float height = 150f;
         foreach (Row row in Rows)
         {
@@ -106,13 +92,11 @@ public static class CompatSettingsDrawer
 
     private const float ModelRowHeight = 28f;
 
-    /// <summary>只有已掛載且接管開啟的 Mod 才需要選模型。</summary>
     private static bool ShowsModelPicker(Row row)
     {
         return row.State == CompatRowState.Ready && Settings.IsCompatTakeoverEnabled(row.Target.ModId);
     }
 
-    /// <summary>每個接管中的 Mod 一行：顯示目前專用模型，點擊從備援鏈條目挑選或回到預設路由。</summary>
     private static void DrawModelPicker(Rect rect, Row row)
     {
         string modId = row.Target.ModId;
@@ -144,7 +128,6 @@ public static class CompatSettingsDrawer
         TooltipHandler.TipRegion(buttonRect, "RimLLM_CompatModelTip".Translate());
     }
 
-    /// <summary>儲存專用模型，並重新寫入該 Mod 的設定，讓它設定頁顯示的模型名跟著更新。</summary>
     private static void SavePin(RimLLMCompatTarget target, string? entry)
     {
         Settings.SetCompatModelPin(target.ModId, entry);
@@ -212,10 +195,7 @@ public static class CompatSettingsDrawer
         }
     }
 
-    /// <summary>
-    /// 狀態優先序：未安裝 → 掛載失敗 → 接管生效中 → 已安裝（開關未開）。
-    /// 「接管生效中」代表開關開啟且 Harmony 攔截已就緒；RimLLM 當下有沒有可用供應商是每次請求才判定，這裡不重複查。
-    /// </summary>
+    /// <summary>狀態色；「接管生效中」代表開關開啟且 Harmony 攔截已就緒，是否有可用供應商於每次請求才判定，這裡不重複查。</summary>
     private static Color StatusColor(Row row, bool enabled)
     {
         return row.State switch
@@ -248,7 +228,6 @@ public static class CompatSettingsDrawer
         };
     }
 
-    /// <summary>只在滑鼠停在該列時才組字串，避免每幀對每列做 Translate 與串接。</summary>
     private static string BuildTooltip(Row row, bool enabled)
     {
         string name = row.Target.DisplayName;

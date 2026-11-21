@@ -6,27 +6,18 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 負責全域配置（GlobalConfig）分頁的 UI 渲染。
-/// </summary>
+/// <summary>全域配置（GlobalConfig）分頁的繪製。</summary>
 public static class GlobalConfigDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
-    /// <summary>
-    /// 獲取全域配置分頁詳細內容的滾動高度。
-    /// </summary>
     public static float GetHeight(float width)
     {
         return 560f;
     }
 
-    /// <summary>
-    /// 繪製全域配置設定。
-    /// </summary>
     public static void DrawGlobalConfigSettings(Listing_Standard listing)
     {
-        // 0. 「不懂就不要改」提示與恢復預設
         DrawResetRow(listing);
 
         float prevTimeout = Settings.ApiTimeout;
@@ -36,30 +27,25 @@ public static class GlobalConfigDrawer
         bool prevNativeSchema = Settings.EnableNativeSchema;
         bool prevJsonRepair = Settings.EnableJsonRepair;
 
-        // 1. API 逾時時間
         listing.Label("RimLLM_ApiTimeoutLabel".Translate(Mathf.RoundToInt(Settings.ApiTimeout)));
         Settings.ApiTimeout = listing.Slider(Settings.ApiTimeout, 5f, 120f);
         RimLLMUIStyle.DrawHint(listing, "RimLLM_ApiTimeoutHint".Translate());
 
-        // 2. 單模型最多重試次數
         listing.Label("RimLLM_MaxRetriesLabel".Translate(Settings.MaxRetries));
         float retriesVal = listing.Slider((float)Settings.MaxRetries, 0f, 10f);
         Settings.MaxRetries = Mathf.RoundToInt(retriesVal);
         RimLLMUIStyle.DrawHint(listing, "RimLLM_MaxRetriesHint".Translate());
 
-        // 3. 重試間隔
         listing.Label("RimLLM_RetryDelayLabel".Translate(Mathf.RoundToInt(Settings.RetryDelay)));
         Settings.RetryDelay = listing.Slider(Settings.RetryDelay, 0f, 10f);
         RimLLMUIStyle.DrawHint(listing, "RimLLM_RetryDelayHint".Translate());
 
-        // 4. 最大並行數
         listing.Label("RimLLM_MaxConcurrentRequestsLabel".Translate(Settings.MaxConcurrentRequests));
         float maxConcurrentVal = listing.Slider((float)Settings.MaxConcurrentRequests, 1f, 10f);
         Settings.MaxConcurrentRequests = Mathf.RoundToInt(maxConcurrentVal);
         RimLLMUIStyle.DrawHint(listing, "RimLLM_MaxConcurrentRequestsHint".Translate());
         listing.Gap(6f);
 
-        // 4.5. 原生 Schema & JSON 修復開關
         bool enableNativeSchema = Settings.EnableNativeSchema;
         listing.CheckboxLabeled("RimLLM_EnableNativeSchemaLabel".Translate(), ref enableNativeSchema);
         Settings.EnableNativeSchema = enableNativeSchema;
@@ -83,11 +69,9 @@ public static class GlobalConfigDrawer
             Settings.Write();
         }
 
-        // 5. 預設思考強度
         DrawReasoningEffort(listing);
     }
 
-    /// <summary>「不懂就不要改」提示與恢復預設按鈕。</summary>
     private static void DrawResetRow(Listing_Standard listing)
     {
         Rect resetRow = listing.GetRect(30f);
@@ -103,7 +87,6 @@ public static class GlobalConfigDrawer
         listing.GapLine(10f);
     }
 
-    /// <summary>預設思考強度的下拉選單。</summary>
     private static void DrawReasoningEffort(Listing_Standard listing)
     {
         Rect effortRect = listing.GetRect(30f);

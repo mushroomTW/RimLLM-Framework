@@ -6,7 +6,6 @@ namespace RimLLM_Framework.Mod;
 
 /// <summary>
 /// 首頁：用一張紅／綠大卡片告訴玩家「AI 現在能不能用」與原因，只給一顆下一步按鈕。
-/// 新玩家第一次打開設定就落在這裡，不必先看懂其餘分頁。
 /// </summary>
 public static class HomeDrawer
 {
@@ -40,9 +39,6 @@ public static class HomeDrawer
         DrawResetAll(listing);
     }
 
-    /// <summary>
-    /// 「恢復預設」：所有設定（含金鑰）回到剛安裝的狀態，先跳確認視窗。用量統計不受影響。
-    /// </summary>
     private static void DrawResetAll(Listing_Standard listing)
     {
         listing.Gap(24f);
@@ -62,9 +58,6 @@ public static class HomeDrawer
         RimLLMUIStyle.DrawHint(listing, "RimLLM_HomeResetAllHint".Translate());
     }
 
-    /// <summary>
-    /// 選用服務的狀態：只有部分模組會用到，所以只顯示狀態與「去設定」，不影響上方紅／綠。
-    /// </summary>
     private static void DrawOptionalServices(Listing_Standard listing)
     {
         listing.Gap(16f);
@@ -155,7 +148,6 @@ public static class HomeDrawer
         }
     }
 
-    /// <summary>還不能用時，列出三步驟各自做完沒有，讓玩家知道卡在哪。</summary>
     private static void DrawTodoList(Listing_Standard listing, SetupState state)
     {
         bool anyEnabled = false;

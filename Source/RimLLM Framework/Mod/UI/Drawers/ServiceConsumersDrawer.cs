@@ -6,17 +6,10 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 「使用中的模組」分頁：列出使用 RimLLM 服務的模組。來源有兩個：
-/// 已啟用且在 About.xml 宣告依賴本框架的模組（靜態），以及本次遊戲實際送出過請求的 modId（執行期）。
-/// 合併規則見 <see cref="ServiceConsumerList"/>。
-/// </summary>
+/// <summary>「使用中的模組」分頁：列出已啟用且在 About.xml 宣告依賴本框架的模組，以及本次遊戲實際送出過請求的 modId；合併規則見 <see cref="ServiceConsumerList"/>。</summary>
 public static class ServiceConsumersDrawer
 {
-    /// <summary>
-    /// 宣告依賴的模組（packageId → 名稱）：Mod 清單在執行期不會變動，只算一次。
-    /// 只存字串而不存 ModMetaData：該型別帶 Steamworks 欄位，單元測試以反射掃描本組件欄位型別時會載入失敗。
-    /// </summary>
+    // 只存字串而不存 ModMetaData：該型別帶 Steamworks 欄位，反射掃描欄位型別的單元測試會載入失敗。
     private static List<KeyValuePair<string, string>>? _declaredMods;
 
     private static List<ServiceConsumerRow>? _rows;
@@ -76,9 +69,6 @@ public static class ServiceConsumersDrawer
         return mod != null ? new KeyValuePair<string, string>(mod.PackageIdPlayerFacing, mod.Name) : (KeyValuePair<string, string>?)null;
     }
 
-    /// <summary>
-    /// 宣告相依於 RimLLM 的 Mod 清單。雙重迴圈帶 continue/break，無法以單一 LINQ 運算式替換。
-    /// </summary>
     #pragma warning disable S3267 // 需跳過自身並找到第一個相依宣告，邏輯與 LINQ Where/Select 不易對應。
     private static List<KeyValuePair<string, string>> DeclaredMods
     {
@@ -124,7 +114,6 @@ public static class ServiceConsumersDrawer
         }
     }
 
-    /// <summary>只在滑鼠停在該列時才組字串。</summary>
     private static string BuildTooltip(ServiceConsumerRow row)
     {
         var lines = new List<string>
@@ -139,7 +128,6 @@ public static class ServiceConsumersDrawer
     }
 }
 
-/// <summary>「使用中的模組」的一列。</summary>
 internal sealed class ServiceConsumerRow
 {
     public required string? Name;
@@ -153,21 +141,13 @@ internal sealed class ServiceConsumerRow
     public List<string> CalledModIds = [];
 }
 
-/// <summary>
-/// 「使用中的模組」的合併邏輯，不碰 Verse，方便單元測試。
-/// 宣告依賴與執行期 modId 以 packageId 合併成一列；modId 對不上任何已啟用模組時以原字串單獨成列。
-/// </summary>
+/// <summary>「使用中的模組」的合併邏輯，不碰 Verse 以便單元測試；modId 對不上任何已啟用模組時以原字串單獨成列。</summary>
 internal static class ServiceConsumerList
 {
-    /// <summary>設定頁對話測試使用的 modId。</summary>
     internal const string DebugChatModId = "RimLLM.DebugChat";
 
-    /// <summary>Debug 分頁 Schema 自檢使用的 modId。</summary>
     internal const string SchemaSelfTestModId = "RimLLM.SchemaSelfTest";
 
-    /// <param name="declared">宣告依賴的模組（packageId → 名稱）。</param>
-    /// <param name="callerModIds">本次遊戲送出過請求的 modId。</param>
-    /// <param name="resolve">modId → 已啟用模組的（packageId, 名稱）；對不上回傳 null。</param>
     internal static List<ServiceConsumerRow> Build(
         IEnumerable<KeyValuePair<string, string>> declared,
         IEnumerable<string> callerModIds,
@@ -208,7 +188,6 @@ internal static class ServiceConsumerList
             row.CalledModIds.Sort(StringComparer.OrdinalIgnoreCase);
         }
 
-        // 已呼叫的排前面，其餘依名稱排序。
         rows.Sort((a, b) =>
         {
             int called = (b.CalledModIds.Count > 0).CompareTo(a.CalledModIds.Count > 0);

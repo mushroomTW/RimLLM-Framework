@@ -266,7 +266,6 @@ internal static class ModelsDevCatalog
         }
     }
 
-    /// <summary>models.dev 一次下載的結果：上下文上限與圖片輸入支援，皆為「框架供應商 → 模型名稱 → 值」。</summary>
     internal sealed class ModelsDevData
     {
         public ModelsDevData(Dictionary<string, Dictionary<string, int>> windows, Dictionary<string, Dictionary<string, bool>> vision)

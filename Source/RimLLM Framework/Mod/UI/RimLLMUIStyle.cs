@@ -6,11 +6,7 @@ using Verse;
 namespace RimLLM_Framework.Mod;
 
 /// <summary>
-/// 設定介面共用的樣式常數與繪製輔助。
-///
-/// 顏色集中在此，是因為同一種語意（選中、次要文字、成功、危險）先前以字面值散落在各個
-/// drawer，任何調整都得逐檔搜尋，實際上也已經出現同語意不同值的情形。
-/// 這裡的值直接沿用原本的硬編值，收攏本身不改變外觀。
+/// 設定介面共用的樣式常數與繪製輔助；同一種語意的顏色集中於此。
 /// </summary>
 public static class RimLLMUIStyle
 {
@@ -53,13 +49,7 @@ public static class RimLLMUIStyle
     /// <summary>對話測試中 AI 回覆氣泡的外框色。</summary>
     public static readonly Color BubbleAiBorder = new(0.32f, 0.32f, 0.32f, 0.65f);
 
-    /// <summary>
-    /// 暫時改變 <see cref="Text"/> 的全域繪製狀態，離開作用域自動還原。
-    ///
-    /// RimWorld 的 Text.Anchor / Font / WordWrap 是全域可變狀態，各處手動設值再手動還原；
-    /// 只要中途拋出例外，還原那行就不會執行，之後整個遊戲的 UI 都會沿用被改壞的狀態。
-    /// 以 using 包住可確保還原一定發生。
-    /// </summary>
+    /// <summary>暫時改變 <see cref="Text"/> 的全域繪製狀態，離開作用域自動還原。Text.Anchor / Font / WordWrap 是全域可變狀態，手動還原遇到例外就不會執行，以 using 確保還原一定發生。</summary>
     public static Scope With(TextAnchor? anchor = null, GameFont? font = null, bool? wordWrap = null)
     {
         return new Scope(anchor, font, wordWrap);
@@ -93,17 +83,10 @@ public static class RimLLMUIStyle
         }
     }
 
-    /// <summary>API 金鑰遮罩時保留的頭尾字元數。</summary>
     private const int MaskedPrefixLength = 8;
     private const int MaskedSuffixLength = 4;
 
-    /// <summary>
-    /// 把 API 金鑰轉成可安全顯示於畫面的遮罩形式。
-    ///
-    /// 保留頭尾是為了讓使用者能辨認自己設定了哪一把金鑰（多把金鑰輪替時特別需要），
-    /// 中段一律隱藏。長度不足以安全保留頭尾時整串隱藏 —— 短金鑰露出頭尾等同露出大半內容。
-    /// 空字串維持空，否則畫面上會看起來像已經設定過。
-    /// </summary>
+    /// <summary>把 API 金鑰轉成可安全顯示的遮罩形式：保留頭尾以便辨認（多把輪替時），中段隱藏；長度不足以安全保留頭尾時整串隱藏；空字串維持空。</summary>
     public static string MaskApiKey(string apiKey)
     {
         if (string.IsNullOrEmpty(apiKey)) return string.Empty;
@@ -149,8 +132,6 @@ public static class RimLLMUIStyle
 
     /// <summary>
     /// 以關鍵字過濾模型名稱。空白關鍵字代表不過濾。
-    /// 供應商設定頁與 <see cref="Dialog_SelectModel"/> 共用同一份實作，
-    /// 否則兩處的比對規則會各自漂移（例如一邊分大小寫、一邊不分）。
     /// </summary>
     /// <param name="vendor">
     /// 直連供應商的廠商名（見 <see cref="GetModelVendor"/>）。
@@ -249,12 +230,7 @@ public static class RimLLMUIStyle
         return entry.Result;
     }
 
-    /// <summary>
-    /// 算出捲動清單中真正落在可視範圍內的列區間 [firstRow, endRow)。
-    /// 每列固定高度的清單只畫可視的那幾列：OpenRouter 的模型晶片動輒數百個，
-    /// 全部畫出來等於每幀對捲出視野的內容做數百次文字量測與繪製呼叫。
-    /// 前後各多算一列，捲動時不會露出空白。
-    /// </summary>
+    /// <summary>算出捲動清單中落在可視範圍內的列區間 [firstRow, endRow)；每列固定高度，只畫可視列以免每幀對數百個晶片做文字量測，前後各多算一列，捲動時不會露出空白。</summary>
     public static void GetVisibleRowRange(float scrollY, float viewportHeight, float rowStride, float topPadding, int rowCount, out int firstRow, out int endRow)
     {
         if (rowCount <= 0 || rowStride <= 0f)
@@ -290,12 +266,7 @@ public static class RimLLMUIStyle
         return text.Truncate(width, cache);
     }
 
-    /// <summary>
-    /// 依可用寬度算出模型 chip 的欄數與實際寬度。
-    ///
-    /// 欄數由偏好寬度決定，但寬度改由欄數反推，讓 chip 填滿整列 ——
-    /// 先前使用固定寬度，右緣總是留下一條用不到的空隙，長模型名稱卻同時被截斷。
-    /// </summary>
+    /// <summary>依可用寬度算出模型 chip 的欄數與實際寬度：欄數由偏好寬度決定，寬度由欄數反推，讓 chip 填滿整列。</summary>
     public static void ComputeChipLayout(
         float contentWidth, float gap, float preferredWidth, out int columns, out float chipWidth)
     {
@@ -312,7 +283,6 @@ public static class RimLLMUIStyle
         {
             Widgets.DrawBoxSolid(rect, SelectionFill);
             Widgets.DrawBox(rect, 1);
-            // 左側高亮指示條，強化層次感
             Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, 3f, rect.height), Success);
         }
         else if (Mouse.IsOver(rect))

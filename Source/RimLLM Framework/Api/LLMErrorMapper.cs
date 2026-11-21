@@ -7,14 +7,11 @@ namespace RimLLM_Framework;
 
 /// <summary>
 /// HTTP 狀態碼 → <see cref="LLMError"/> 的單一對照來源。
-/// 官方 SDK 路徑（ClientResultException）、raw HTTP 路徑與 embedding 路徑共用同一份語意，
-/// 避免相同的狀態碼判斷散落多處而逐漸走樣。
 /// </summary>
 public static class LLMErrorMapper
 {
     /// <summary>
-    /// 解析 Retry-After 標頭值。RFC 7231 允許「延遲秒數」與「HTTP 日期」兩種格式，
-    /// 交由 <see cref="RetryConditionHeaderValue"/> 一併處理，避免各路徑各自實作而漏掉日期格式。
+    /// 解析 Retry-After 標頭值，支援 RFC 7231 的「延遲秒數」與「HTTP 日期」兩種格式。
     /// 無法解析或已過期時回傳 null。
     /// </summary>
     public static TimeSpan? ParseRetryAfter(string? headerValue)
@@ -25,7 +22,6 @@ public static class LLMErrorMapper
             : null;
     }
 
-    /// <summary>把 Retry-After 的兩種表示法統一換算成剩餘等待時間；非正值視為無建議。</summary>
     private static TimeSpan? ToDelay(RetryConditionHeaderValue retryAfter)
     {
         if (retryAfter == null) return null;
@@ -86,7 +82,6 @@ public static class LLMErrorMapper
             detectionText: fullMessage);
     }
 
-    /// <summary>讀出錯誤回應的內文；無法讀取時回傳空字串。</summary>
     private static string ReadResponseBody(ClientResultException exception)
     {
         try
@@ -100,7 +95,6 @@ public static class LLMErrorMapper
         }
     }
 
-    /// <summary>讀出 Retry-After 標頭；無法讀取或解析時回傳 null，重試沿用使用者設定的延遲。</summary>
     private static TimeSpan? ReadRetryAfter(ClientResultException exception)
     {
         try
@@ -143,7 +137,6 @@ public static class LLMErrorMapper
                     $"Payment required, please check your account balance: {friendlyMessage}", retryAfter: null, innerException);
 
             case 404:
-                // 模型或端點不存在屬於不可重試錯誤，重試只會空耗延遲。
                 return Create(LLMError.ModelNotFound,
                     $"Model or endpoint not found: {friendlyMessage}", retryAfter: null, innerException);
 
@@ -169,7 +162,6 @@ public static class LLMErrorMapper
         return Create(LLMError.Unknown, $"API request failed: {friendlyMessage}", retryAfter: null, innerException);
     }
 
-    /// <summary>400／413／422：請求本身有問題，以同一份 payload 重試必然再次失敗；標記可降級重打的拒絕類型。</summary>
     private static RimLLMException MapRejection(int? statusCode, string probe, string friendlyMessage, Exception? innerException)
     {
         RimLLMException rejected = Create(ResolveRejectionError(statusCode, probe),
@@ -181,7 +173,6 @@ public static class LLMErrorMapper
         return rejected;
     }
 
-    /// <summary>429：區分配額不足與一般速率限制。</summary>
     private static RimLLMException MapTooManyRequests(string probe, string friendlyMessage, TimeSpan? retryAfter, Exception? innerException)
     {
         if (ContainsIgnoreCase(probe, "quota") || ContainsIgnoreCase(probe, "insufficient"))
@@ -203,7 +194,6 @@ public static class LLMErrorMapper
     /// </summary>
     public static bool LooksLikeSchemaRejection(string message)
     {
-        // "json_schema" 是 "schema" 的子字串，不需要另外列。
         return ContainsIgnoreCase(message, "response_format") ||
                ContainsIgnoreCase(message, "schema");
     }
@@ -215,8 +205,6 @@ public static class LLMErrorMapper
     /// </summary>
     public static bool LooksLikeReasoningRejection(string message)
     {
-        // reasoning_effort / enable_thinking / thinking_budget 都含有下列兩個子字串之一，
-        // 逐一列出只是重複比對，不會多命中任何訊息。
         return ContainsIgnoreCase(message, "reasoning") ||
                ContainsIgnoreCase(message, "thinking");
     }
@@ -275,10 +263,8 @@ public static class LLMErrorMapper
     }
 
     /// <summary>
-    /// 400／413／422 的細分。
-    /// Schema、reasoning、temperature 與 max_tokens 遭拒各自有旗標與「去掉參數重打一次」的流程，
-    /// 錯誤碼維持 <see cref="LLMError.InvalidResponse"/> 以免影響既有的降級路徑；
-    /// 其餘才依 413 的定義與訊息關鍵字判定為上下文超長或內容過濾。
+    /// 400／413／422 的細分。可降級重打的拒絕類型維持 <see cref="LLMError.InvalidResponse"/>，
+    /// 以免影響既有的降級路徑。
     /// </summary>
     private static LLMError ResolveRejectionError(int? statusCode, string probe)
     {
@@ -290,7 +276,6 @@ public static class LLMErrorMapper
             return LLMError.InvalidResponse;
         }
 
-        // 413 Payload Too Large 依定義就是酬載過大，不必再比對訊息。
         if (statusCode == 413 || LooksLikeContextWindowRejection(probe))
         {
             return LLMError.ContextWindowExceeded;
@@ -300,11 +285,8 @@ public static class LLMErrorMapper
     }
 
     /// <summary>
-    /// 檢查字串是否包含指定的子字串（使用不區分大小寫的序數比對）。
+    /// 檢查字串是否包含指定的子字串（不區分大小寫的序數比對）；來源字串為 null 或空時回傳 false。
     /// </summary>
-    /// <param name="haystack">要搜尋的來源字串。</param>
-    /// <param name="needle">要比對的子字串。</param>
-    /// <returns>若來源字串包含該子字串則為 true，否則為 false。</returns>
     public static bool ContainsIgnoreCase(string haystack, string needle)
     {
         return !string.IsNullOrEmpty(haystack) &&

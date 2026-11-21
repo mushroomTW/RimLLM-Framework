@@ -11,9 +11,7 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 處理標準 HTTP / API Key 的通用 Provider 繪製與狀態維護邏輯。
-/// </summary>
+/// <summary>標準 HTTP / API Key 通用供應商的繪製與狀態維護。</summary>
 public static class GenericProviderSubTabDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
@@ -30,13 +28,9 @@ public static class GenericProviderSubTabDrawer
     /// <summary>哪幾把金鑰目前是明文顯示。鍵為 providerId + ":" + 索引；預設全部遮罩。</summary>
     public static readonly Dictionary<string, bool> RevealedKeys = [];
 
-    /// <summary>金鑰顯示切換鈕的寬度。</summary>
     private const float RevealButtonWidth = 40f;
 
-    /// <summary>
-    /// 清掉某供應商所有金鑰的顯示狀態。
-    /// 新增或刪除金鑰會讓索引整體位移，不清除的話「已顯示」旗標會落到別把金鑰上。
-    /// </summary>
+    // 新增或刪除金鑰會讓索引整體位移，須清掉顯示旗標，否則「已顯示」會落到別把金鑰上。
     private static void ResetRevealedKeys(string providerId)
     {
         var stale = RevealedKeys.Where(pair => pair.Key.StartsWith(providerId + ":", StringComparison.Ordinal)).Select(pair => pair.Key).ToList();
@@ -48,17 +42,13 @@ public static class GenericProviderSubTabDrawer
 
     public static void DrawGenericProviderSettings(Listing_Standard listing, string providerId)
     {
-        // 1. 啟用 / 停用
         bool enabled = Settings.IsProviderEnabled(providerId);
         listing.CheckboxLabeled("RimLLM_EnableProvider".Translate(), ref enabled);
         Settings.SetProviderEnabled(providerId, enabled);
         if (!enabled) return;
 
-        // 2. API 金鑰列表
         DrawApiKeyList(listing, providerId);
 
-        // 3. Endpoint 設定（端點可自訂的供應商：OpenAICompatible 的本地偵測、Player2 的本機／雲端切換；
-        // 其他供應商若有中國端點則顯示切換）
         if (ProviderIds.HasCustomEndpoint(providerId))
         {
             string defaultEndpoint = providerId == ProviderIds.Player2
@@ -79,18 +69,14 @@ public static class GenericProviderSubTabDrawer
             DrawChinaEndpointToggle(listing, providerId);
         }
 
-        // 4. 動態獲取模型列表與展示
         DrawModelListSection(listing, providerId);
 
-        // Fetch Models
         DrawFetchModelsButton(listing, providerId);
 
         listing.Gap(12f);
 
-        // 4.9 呼叫統計與成功率及 API Cache Rate
         DrawProviderCallStats(listing, providerId);
 
-        // 5. 連線測試
         DrawConnectionTest(listing, providerId);
 
         listing.GapLine(4f);
@@ -113,7 +99,6 @@ public static class GenericProviderSubTabDrawer
             Rect rowRect = listing.GetRect(30f);
             bool canDelete = keys.Count > 1 || !string.IsNullOrEmpty(keys[i]);
 
-            // 由右至左配置：刪除鈕（可刪時）、顯示切換鈕，其餘給輸入框。
             float reservedRight = RevealButtonWidth + 8f + (canDelete ? 40f : 0f);
             Rect inputRect = new(rowRect.x, rowRect.y, rowRect.width - reservedRight, rowRect.height);
             Rect revealRect = new(inputRect.xMax + 8f, rowRect.y, RevealButtonWidth, rowRect.height);
@@ -178,10 +163,8 @@ public static class GenericProviderSubTabDrawer
             return;
         }
 
-        // 搜尋列：模型動輒數百筆，沒有過濾等於要在 220px 高的框裡目視搜尋。
         DrawModelSearchRow(listing, providerId);
 
-        // 過濾結果與清單複製都走快取：只有模型清單版本或過濾字串變了才重算。
         List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
             providerId, Settings.ModelListVersion, ModelFilters[providerId], () => Settings.GetModelList(providerId),
             RimLLMUIStyle.GetModelVendor(providerId));
@@ -201,7 +184,6 @@ public static class GenericProviderSubTabDrawer
         DrawModelChipGrid(scrollRect, providerId, visibleModels);
     }
 
-    /// <summary>在可捲動區塊中只繪製可視範圍內的模型方塊。</summary>
     private static void DrawModelChipGrid(Rect scrollRect, string providerId, List<string> visibleModels)
     {
         float contentWidth = scrollRect.width - 16f;
@@ -222,7 +204,6 @@ public static class GenericProviderSubTabDrawer
         Widgets.BeginScrollView(scrollRect, ref scrollPos, viewRect);
         ModelScrollPositions[providerId] = scrollPos;
 
-        // 只畫可視範圍內的列；tooltip 後綴的翻譯提到迴圈外，不必每個晶片各查一次。
         RimLLMUIStyle.GetVisibleRowRange(scrollPos.y, scrollRect.height, chipHeight + gap, gap, rows, out int firstRow, out int endRow);
         string copyHint = "\n\n" + "RimLLM_ClickToCopy".Translate();
 
@@ -245,7 +226,6 @@ public static class GenericProviderSubTabDrawer
         Widgets.EndScrollView();
     }
 
-    /// <summary>模型清單的搜尋列：模型動輒數百筆，沒有過濾等於要在 220px 高的框裡目視搜尋。</summary>
     private static void DrawModelSearchRow(Listing_Standard listing, string providerId)
     {
         string filter = ModelFilters.TryGetValue(providerId, out string? f) ? f : "";
@@ -266,7 +246,6 @@ public static class GenericProviderSubTabDrawer
         listing.Gap(4f);
     }
 
-    /// <summary>繪製單一模型方塊與滑鼠提示。</summary>
     private static void DrawModelChip(Rect chipRect, string providerId, string model, string copyHint)
     {
         Widgets.DrawBoxSolid(chipRect, RimLLMUIStyle.ChipFill);
@@ -291,7 +270,6 @@ public static class GenericProviderSubTabDrawer
         }
     }
 
-    /// <summary>模型方塊的右鍵選單：複製名稱或加入備援鏈。</summary>
     private static void ShowModelChipMenu(string providerId, string capturedModel)
     {
         var options = new List<FloatMenuOption>
@@ -332,11 +310,7 @@ public static class GenericProviderSubTabDrawer
             () => StartFetchModels(providerId));
     }
 
-    /// <summary>
-    /// 「按鈕 + 右側狀態訊息」的共用列。忙碌時按鈕換成靜態標籤，避免重複觸發。
-    /// 抓模型清單與連線測試的版面完全相同，共用同一份實作以免兩處的間距各自漂移。
-    /// Embedding 分頁共用此實作，僅按鈕寬度不同（以參數傳入）；訊息欄偏移恆為按鈕寬＋間距。
-    /// </summary>
+    /// <summary>「按鈕 + 右側狀態訊息」的共用列；忙碌時按鈕換成靜態標籤，避免重複觸發。Embedding 分頁共用，僅按鈕寬度不同。</summary>
     internal static void DrawBusyActionRow(
         Listing_Standard listing, bool busy, string busyLabel, string buttonLabel, string statusText, Action onClick,
         float buttonWidth = 180f)
@@ -355,7 +329,6 @@ public static class GenericProviderSubTabDrawer
             onClick();
         }
 
-        // 忙碌時按鈕位置已顯示 busyLabel，呼叫端的狀態文字通常也是同一句，不再重複顯示。
         if (busy)
         {
             return;
@@ -379,8 +352,7 @@ public static class GenericProviderSubTabDrawer
         {
             successCount = stats.SuccessCount;
             failureCount = stats.FailureCount;
-            apiTotalTokens = stats.TotalPromptTokens;
-            apiCachedTokens = stats.CachedPromptTokens;
+            (apiTotalTokens, apiCachedTokens) = stats.PromptTokenSnapshot;
         }
         int totalCalls = successCount + failureCount;
         float successRate = totalCalls > 0 ? (successCount * 100f) / totalCalls : 100f;
@@ -479,12 +451,7 @@ public static class GenericProviderSubTabDrawer
             ex => "RimLLM_TestStatusError".Translate(RimLLMLog.SanitizeForLog(ex.Message, 220)));
     }
 
-    /// <summary>
-    /// 「抓模型清單」與「連線測試」共用的背景操作外殼：
-    /// 金鑰前置檢查、忙碌旗標、狀態訊息與主線程回寫。
-    /// <paramref name="operation"/> 於背景執行緒執行，回傳一個在主線程執行並產生狀態字串的委派，
-    /// 讓需要寫入設定的收尾動作能安全地回到主線程。
-    /// </summary>
+    /// <summary>「抓模型清單」與「連線測試」共用的背景操作外殼；operation 於背景執行緒執行，回傳在主線程執行、產生狀態字串的委派，讓收尾能安全寫入設定。</summary>
     private static void RunProviderOperation(
         string providerId,
         Dictionary<string, bool> busyFlags,
@@ -525,10 +492,6 @@ public static class GenericProviderSubTabDrawer
         });
     }
 
-    /// <summary>
-    /// 本地模型自動偵測（Ollama / LM Studio 等）的繪製與啟動邏輯。
-    /// 原為 LocalProviderSubTabDrawer，併入以消除單一呼叫者檔案。
-    /// </summary>
     /// <summary>OpenAI 相容本機服務的探測候選。供應商分頁與「連接 AI」精靈共用。</summary>
     internal static readonly LocalEndpointProbe.Target[] LocalTargets =
     [

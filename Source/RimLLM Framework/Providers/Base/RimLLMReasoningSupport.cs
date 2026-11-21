@@ -27,19 +27,13 @@ public enum ReasoningWireFormat
 
 /// <summary>
 /// 記錄哪些 (供應商, 模型) 組合被服務端明確拒絕過思考參數或 temperature。
-///
-/// 為什麼需要這層：各家對思考參數的支援範圍細到模型層級 —— Groq 的 <c>reasoning_effort</c>
-/// 只有特定模型吃、xAI 的推理模型根本不能關閉思考、本地相容端點的模型名更是使用者自訂。
-/// 靠模型名前綴窮舉必然腐化（框架先前就因此讓 o1/o3 以外的所有模型靜默失去設定）。
-/// 改為樂觀送出，收到服務端的 400 才記下來並去掉參數重打一次，
-/// 之後同一個模型就不再送 —— 不支援的模型會優雅退化，而不是硬失敗。
-///
-/// 記憶只存在於本次遊戲執行期間：模型能力可能隨服務端更新而改變，重開遊戲即重新嘗試。
+/// 各家對思考參數的支援細到模型層級（例如 Groq 的 <c>reasoning_effort</c> 只有特定模型吃、
+/// xAI 的推理模型不能關閉思考），模型名前綴窮舉會腐化，因此樂觀送出，收到服務端 400 才記下並去掉參數重打。
+/// 記憶只存在於本次遊戲執行期間，重開遊戲即重新嘗試；執行緒安全。
 /// </summary>
 public static class RimLLMReasoningSupport
 {
     private static readonly System.Threading.Lock Gate = new();
-    // 各種「不支援」記在同一集合，鍵以種類前綴區分（r=思考參數、t=temperature、d=關閉思考、m=max_tokens）。
     private static readonly HashSet<string> Unsupported = [];
 
     private static string BuildKey(string kind, string providerId, string model)

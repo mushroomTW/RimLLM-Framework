@@ -5,18 +5,13 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 對話紀錄的字串格式：中繼資料標記、推理與答案的分界、思考區塊標灰、前綴解析與剪貼簿淨化。純文字處理，不涉及繪製。
-/// </summary>
+/// <summary>對話紀錄的字串格式：中繼標記、推理與答案分界、思考區塊標灰、前綴解析與剪貼簿淨化；純文字處理，不涉及繪製。</summary>
 public static partial class ChatTestDrawer
 {
     /// <summary>中繼資料標記的前後綴，用於在持久化歷史中保存應答模型、耗時與 Token 數。</summary>
     internal const string MetaPrefix = "\n<!--rimllm-meta:";
     internal const string MetaSuffix = "-->";
 
-    /// <summary>
-    /// AI 應答的微型中繼資料。
-    /// </summary>
     internal sealed class ChatEntryMeta
     {
         public string ModelId { get; set; } = string.Empty;
@@ -146,25 +141,18 @@ public static partial class ChatTestDrawer
         // 否則供應商可以用同名的 </color> 提早關閉框架標籤。
         text = RimLLMMarkdown.EscapeUntrustedUnityTags(text);
 
-        // 註：此處原本在 DetailedLogging 下記錄完整的模型輸出。
-        // 該日誌未經 SanitizeForLog、未截斷，且因為由 OnChunkReceived 觸發，
-        // 會對每個 chunk 重複輸出整段累積內容，使 PII、prompt 或意外出現的金鑰
-        // 長期留存於 Player.log。已移除（稽核 SEC-002）。
+        // 不在此記錄完整模型輸出：未經 SanitizeForLog、未截斷，且每個 chunk 都會重複輸出整段累積內容，會使 PII 或金鑰長期留存於 Player.log。
 
-        // 1. 處理已閉合的 <think>...</think> 或 <thought>...</thought> -> 標記為灰色
         string result = ClosedThoughtTag.Replace(text, m => WrapClosedThought(m.Groups["body"].Value));
 
-        // 2. 處理未閉合的 <think> 或 <thought>（串流中常遇到） -> 將後續全部標記為灰色
         var matchUnclosedXml = UnclosedThoughtTag.Match(result);
         if (matchUnclosedXml.Success)
         {
             result = WrapTrailingThought(result, matchUnclosedXml.Index, matchUnclosedXml.Length);
         }
 
-        // 3. 處理已閉合的 markdown 思考區塊 ```thought...``` -> 標記為灰色
         result = ThoughtFence.Replace(result, m => WrapClosedThought(m.Groups["body"].Value));
 
-        // 4. 處理未閉合的 markdown 思考區塊 ```thought （串流中常遇到）-> 將後續全部標記為灰色
         int markdownMarker = result.IndexOf(MarkdownThoughtMarker, StringComparison.Ordinal);
         if (markdownMarker >= 0)
         {
@@ -176,7 +164,6 @@ public static partial class ChatTestDrawer
 
     private const string MarkdownThoughtMarker = "```thought";
 
-    /// <summary>已閉合的思考區塊：內容為空則整段捨棄，否則以灰色包起來。</summary>
     private static string WrapClosedThought(string content)
     {
         string thinkContent = content.Trim();
@@ -185,7 +172,6 @@ public static partial class ChatTestDrawer
             : $"\n<color=silver>{ThinkStartLabel}\n{thinkContent}\n{ThinkEndLabel}</color>\n\n";
     }
 
-    /// <summary>未閉合的思考區塊：把標記之後的所有內容都視為思考中並標灰。</summary>
     private static string WrapTrailingThought(string text, int markerIndex, int markerLength)
     {
         string before = text.Substring(0, markerIndex);
@@ -193,12 +179,7 @@ public static partial class ChatTestDrawer
         return before + $"\n<color=silver>{ThinkingLabel}\n{after} ...</color>";
     }
 
-    /// <summary>
-    /// 對話紀錄項目的前綴（例如 "&lt;b&gt;[AI]:&lt;/b&gt; "）。
-    /// 一定要以 ToString() 取 RawText 再串接：TaggedString 隱含轉成 string 時會呼叫 StripTags()，
-    /// 把整條訊息裡所有 &lt;...&gt; 標籤（包含 Markdown 轉出的 color/size/b）一併剝掉，
-    /// 畫面上就只剩沒有任何格式的純文字。
-    /// </summary>
+    // 須以 ToString() 取 RawText 再串接：TaggedString 隱含轉成 string 時會呼叫 StripTags()，把整條訊息的所有 <...> 標籤（含 Markdown 轉出的 color/size/b）剝掉。
     private static string EntryPrefix(string key)
     {
         try
@@ -222,10 +203,7 @@ public static partial class ChatTestDrawer
         };
     }
 
-    /// <summary>
-    /// 嘗試剝掉 <paramref name="key"/> 對應的前綴。
-    /// 修正前持久化的舊紀錄前綴已被 StripTags 剝成純文字（"[AI]: "），兩種形式都要認得。
-    /// </summary>
+    /// <summary>嘗試剝掉 <paramref name="key"/> 對應的前綴；舊紀錄的前綴已被 StripTags 剝成純文字（"[AI]: "），兩種形式都要認得。</summary>
     private static bool TryStripPrefix(string entry, string key, out string? label, out string? body)
     {
         string raw = EntryPrefix(key);
@@ -255,7 +233,6 @@ public static partial class ChatTestDrawer
             return false;
         }
 
-        // 抽離並淨化中繼資料標記，避免污染本文顯示與剪貼簿
         int metaStart = entry.LastIndexOf(MetaPrefix, StringComparison.Ordinal);
         if (metaStart >= 0)
         {
@@ -272,7 +249,6 @@ public static partial class ChatTestDrawer
         if (TryStripPrefix(entry, "RimLLM_ChatAiError", out label, out body)) return false;
         if (TryStripPrefix(entry, ChatAiTag, out label, out body)) return false;
 
-        // 舊格式或手動拼接的格式相容
         if (entry.StartsWith("<b>[我]:</b>", StringComparison.Ordinal) || entry.StartsWith("<b>[Me]:</b>", StringComparison.Ordinal))
         {
             int endTag = entry.IndexOf("</b>", StringComparison.Ordinal);
@@ -299,9 +275,7 @@ public static partial class ChatTestDrawer
         return ParseMessage(entry, out label, out body, out _);
     }
 
-    /// <summary>
-    /// 格式化模型名稱供微型標籤顯示。若為 "供應商:模型" 複合識別碼，轉為易讀的 "供應商 • 模型" 格式。
-    /// </summary>
+    /// <summary>把 "供應商:模型" 複合識別碼轉為易讀的 "供應商 • 模型" 格式。</summary>
     internal static string FormatModelDisplayName(string modelId)
     {
         if (string.IsNullOrEmpty(modelId)) return string.Empty;
@@ -310,11 +284,7 @@ public static partial class ChatTestDrawer
             : modelId;
     }
 
-    /// <summary>
-    /// 複製到剪貼簿前先移除真正的 rich text 標籤與可能存在的中繼標記，再把 <see cref="RimLLMMarkdown.EscapeCode"/> 為了不被 Unity 解讀
-    /// 而改成全形的程式碼標籤（＜b＞、＜/color＞…）還原成 ASCII。只還原那六種標籤，
-    /// 中文回覆裡本來就是全形的「＜注意＞」不能被改掉。順序不能顛倒，否則還原後的程式碼標籤會被當成格式一起剝掉。
-    /// </summary>
+    /// <summary>複製到剪貼簿前移除 rich text 標籤與中繼標記，再把 <see cref="RimLLMMarkdown.EscapeCode"/> 改成的全形程式碼標籤（＜b＞、＜/color＞…）還原成 ASCII；只還原那六種標籤（中文回覆本來就有全形「＜注意＞」），且須先剝標籤再還原，否則還原後的程式碼標籤會被一併剝掉。</summary>
     private static string StripRichTextForClipboard(string text)
     {
         if (string.IsNullOrEmpty(text)) return text;

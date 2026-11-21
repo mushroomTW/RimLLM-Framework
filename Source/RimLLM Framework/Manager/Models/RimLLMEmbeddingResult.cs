@@ -6,7 +6,6 @@ namespace RimLLM_Framework.Manager;
 ///
 /// <see cref="InputTokenCount"/> 為 <c>null</c> 代表供應商沒有回報用量，
 /// 這與「0 token」是兩回事 —— 後者會讓呼叫端誤以為這次呼叫不耗配額。
-/// 目前經由 OpenAI 相容端點回報；供應商未回報時為 <c>null</c>。
 ///
 /// <see cref="ModelId"/> 與 <see cref="ProviderId"/> 由服務在請求開始時捕捉
 /// （而非呼叫端在 await 之後重新讀設定），確保請求期間切換設定不會讓向量被標成

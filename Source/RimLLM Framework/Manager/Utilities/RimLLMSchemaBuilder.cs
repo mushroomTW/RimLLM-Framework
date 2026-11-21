@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
@@ -34,23 +35,23 @@ public sealed class RimLLMSchemaResult
     /// <summary>是否可安全地以 OpenAI strict structured output 送出。</summary>
     public bool StrictCompatible { get; }
 
-    private JsonElement? _element;
+    // 以參考型別裝箱：參考的寫入是原子的；JsonElement? 是多欄位結構，並行首次存取可能讀到寫一半的值。
+    private volatile StrongBox<JsonElement>? _element;
 
     /// <summary>
     /// <see cref="Json"/> 解析後的獨立 <see cref="JsonElement"/>，第一次存取時解析一次後重用。
-    /// 每次結構化請求都要把 schema 交給 <c>ChatResponseFormat.ForJsonSchema</c>，
-    /// 字串已經快取了，沒理由每請求再解析一次。多執行緒同時首次存取只會各解析一次、結果相同。
+    /// 多執行緒同時首次存取只會各解析一次、結果相同。
     /// </summary>
     internal JsonElement Element
     {
         get
         {
-            JsonElement? cached = _element;
-            if (cached.HasValue) return cached.Value;
+            var cached = _element;
+            if (cached != null) return cached.Value;
 
             using JsonDocument document = JsonDocument.Parse(Json);
             JsonElement element = document.RootElement.Clone();
-            _element = element;
+            _element = new StrongBox<JsonElement>(element);
             return element;
         }
     }
@@ -68,7 +69,7 @@ public sealed class RimLLMSchemaResult
 /// </list>
 ///
 /// 為什麼不能直接送 exporter 的原始輸出：它把可為 null 的成員寫成 <c>"type": ["string","null"]</c>，
-/// 送出前必須先收斂；<c>$ref</c> 指標也必須先解析 —— 這兩點由單元測試覆蓋，不再只是文件裡的一句宣稱。
+/// 送出前必須先收斂；<c>$ref</c> 指標也必須先解析。
 /// 全供應商皆走 OpenAI 相容端點，統一使用聯集寫法。
 /// </summary>
 public static class RimLLMSchemaBuilder
@@ -100,7 +101,7 @@ public static class RimLLMSchemaBuilder
 
     /// <summary>
     /// 最終結果快取。Stage C 只剩唯一的 OpenAI 相容方言，結果完全由型別決定，
-    /// 因此直接以 <c>Type</c> 為鍵 —— 方言時代的包裝 struct 已刪除。
+    /// 因此直接以 <c>Type</c> 為鍵。
     /// </summary>
     private static readonly ConcurrentDictionary<Type, RimLLMSchemaResult> ResultCache = new();
 
@@ -109,7 +110,6 @@ public static class RimLLMSchemaBuilder
 
     /// <summary>
     /// 產生指定型別的 schema。結果不可變，可直接共用。
-    /// 全內建供應商皆走 OpenAI 相容端點，共用同一種方言。
     /// </summary>
     public static RimLLMSchemaResult Build(Type type)
     {
@@ -148,9 +148,6 @@ public static class RimLLMSchemaBuilder
         return Build(type).ContainsOpenEndedMap;
     }
 
-    // ---------------------------------------------------------------------
-    // Stage A + B：canonical schema
-    // ---------------------------------------------------------------------
 
     private static JsonObject BuildCanonical(Type type, int maxDepth)
     {
@@ -167,7 +164,6 @@ public static class RimLLMSchemaBuilder
     /// 原始輸出，正規化只需要對付一種形狀。MEAI 包裝層多做而我們仍需要的只有
     /// <c>[Description]</c>，由 Stage B 自行讀取補上。
     ///
-    /// MEAI 現在使用 .NET 10 資產；直接呼叫 exporter 是正規化管線的設計選擇。
     /// </summary>
     internal static JsonObject ExportRaw(Type type)
     {
@@ -176,10 +172,6 @@ public static class RimLLMSchemaBuilder
         return (JsonObject)(JsonNode.Parse(node.ToJsonString()) ?? throw new JsonException("Schema node could not be re-parsed."));
     }
 
-    /// <summary>
-    /// 正規化遞迴過程中的路徑狀態。
-    /// 以 <see cref="List{T}"/> 保存展開路徑，供循環檢查與尾端移除共用。
-    /// </summary>
     private sealed class NormalizeContext
     {
         public NormalizeContext(JsonObject rawRoot, int maxDepth)
@@ -205,13 +197,8 @@ public static class RimLLMSchemaBuilder
     /// 正規化遞迴核心。
     ///
     /// 回傳 <see langword="null"/> 的語意是「這個節點無法表達，父層必須刪掉對應成員並從
-    /// <c>required</c> 移除」—— 與舊實作把循環成員截斷為 null 的行為一致。
+    /// <c>required</c> 移除」。
     /// </summary>
-    /// <param name="node">exporter 原始輸出中的節點。</param>
-    /// <param name="typeInfo">該節點對應的 CLR 型別資訊，可能為 null（此時退化成純 JSON 正規化）。</param>
-    /// <param name="context">包含遞迴追蹤與方言設定的正規化上下文。</param>
-    /// <param name="depth">目前的遞迴深度。</param>
-    /// <returns>正規化後的 JSON 物件；若節點無法表達則為 null。</returns>
 #pragma warning disable S1168 // null 表示不可表達節點，與空集合語意不同，呼叫端需區分。
     private static JsonObject? Normalize(JsonObject? node, JsonTypeInfo? typeInfo, NormalizeContext context, int depth)
     {
@@ -221,7 +208,6 @@ public static class RimLLMSchemaBuilder
         }
 
         // exporter 的 $ref 是指向樹內既有節點的 JSON pointer，而且不只用於循環，也用於去重。
-        // 若此節點是 $ref，直接處理並回傳。
         if (TryNormalizeRef(node, typeInfo, context, depth, out JsonObject? refResult))
         {
             return refResult;
@@ -275,8 +261,8 @@ public static class RimLLMSchemaBuilder
     }
 #pragma warning restore S1168
 
-    /// <summary>正規化陣列型別節點；元素無法表達時整個陣列成員一併捨棄（回傳 null 表示無法表達，與舊實作一致）。</summary>
 #pragma warning disable S1168 // null 表示陣列元素無法表達，調用端會將整個成員捨棄，不應轉為空集合。
+    /// <summary>正規化陣列型別節點；元素無法表達時整個陣列成員一併捨棄（回傳 null 表示無法表達）。</summary>
     private static JsonObject? NormalizeArray(JsonObject collapsed, JsonTypeInfo? typeInfo, NormalizeContext context, int depth, JsonObject result)
     {
         JsonObject? itemSchema = Normalize(
@@ -285,7 +271,6 @@ public static class RimLLMSchemaBuilder
             context,
             depth + 1);
 
-        // 陣列的元素無法表達時，整個陣列成員一併捨棄（與舊實作一致）。
         if (itemSchema == null) return null;
         result[SchemaItems] = itemSchema;
         return result;
@@ -309,7 +294,6 @@ public static class RimLLMSchemaBuilder
         string pointer = refToken.GetValue<string>();
         if (context.PointerPath.Contains(pointer))
         {
-            // 循環：截斷此分支
             return true;
         }
 
@@ -331,7 +315,6 @@ public static class RimLLMSchemaBuilder
         return true;
     }
 
-    /// <summary>循環在 CLR 型別層截斷，回傳 null 表示「此分支不應輸出」，非集合。</summary>
     #pragma warning disable S1168 // 回傳 JsonObject? 而非集合，null 代表截斷遞迴，呼叫端已處理。
     private static JsonObject? NormalizeObject(
         JsonObject node, JsonObject result, JsonTypeInfo? typeInfo, NormalizeContext context, int depth)
@@ -431,7 +414,6 @@ public static class RimLLMSchemaBuilder
         ApplyDescription(memberSchema, memberInfo?.AttributeProvider as MemberInfo);
     }
 
-    /// <summary>成員層級與類別層級的 <see cref="DescriptionAttribute"/> 共用同一套讀取邏輯。</summary>
     private static void ApplyDescription(JsonObject schema, MemberInfo? attributeSource)
     {
         if (schema == null || attributeSource == null) return;
@@ -479,7 +461,6 @@ public static class RimLLMSchemaBuilder
         {
             if (branch is not JsonObject branchObject) return null;
 
-            // "或 null" 的那一支不帶資訊，略過。
             if (IsNullOnlySchema(branchObject)) continue;
 
             if (candidate != null) return null;
@@ -488,7 +469,6 @@ public static class RimLLMSchemaBuilder
 
         if (candidate == null) return null;
 
-        // 外層若帶了 description 之類的兄弟關鍵字，合併進被選中的分支。
         var merged = (JsonObject)candidate.DeepClone();
         foreach (var sibling in node)
         {
@@ -583,9 +563,6 @@ public static class RimLLMSchemaBuilder
     }
     #pragma warning restore S1168
 
-    // ---------------------------------------------------------------------
-    // Stage C：唯一的 OpenAI 相容方言（選填成員寫成 ["T","null"] 聯集）
-    // ---------------------------------------------------------------------
 
     /// <summary>就地改寫：canonical 每次都是新產生、沒有其他持有者，不需要先複製。</summary>
     private static JsonObject ApplyOpenAiDialect(JsonObject canonical)
@@ -618,7 +595,6 @@ public static class RimLLMSchemaBuilder
             }
         }
 
-        // 白名單過濾放在最後。
         var removable = node.Where(member => !AllowedKeywords.Contains(member.Key)).Select(member => member.Key).ToList();
         foreach (string key in removable)
         {
@@ -637,9 +613,6 @@ public static class RimLLMSchemaBuilder
         }
     }
 
-    /// <summary>
-    /// 移除 <c>x-rimllm-optional</c> 標記並回傳是否為選填成員。
-    /// </summary>
     private static bool ApplyOptionalMarker(JsonObject node)
     {
         JsonNode? optionalMarker = node[OptionalMarker];
@@ -676,7 +649,6 @@ public static class RimLLMSchemaBuilder
 
         JsonNode? additional = node[SchemaAdditionalProperties];
         // additionalProperties 為 false（自訂類別）或物件（Dictionary 的 value schema）才是合法形狀；
-        // 布林 true 在 STJ 是 JsonValueKind.True（Newtonsoft 的 JTokenType.Boolean 在此一分為二）。
         if (additional != null && additional.GetValueKind() != JsonValueKind.True && additional.GetValueKind() != JsonValueKind.False)
         {
             return true;
@@ -693,9 +665,6 @@ public static class RimLLMSchemaBuilder
         return false;
     }
 
-    // ---------------------------------------------------------------------
-    // 序列化設定
-    // ---------------------------------------------------------------------
 
     /// <summary>
     /// exporter 用的序列化設定。刻意不用 static field initializer：
@@ -735,7 +704,7 @@ public static class RimLLMSchemaBuilder
     /// 否則模型會照 schema 填一個反序列化收不到的欄位。
     ///
     /// <c>[JsonIgnore]</c> 與 <c>[JsonPropertyName]</c> 由 exporter 原生支援，不需在此手動處理；
-    /// 只有「反序列化寫不進去」的成員需要剔除（等同舊實作的 CanWrite / !IsInitOnly 條件）。
+    /// 只有「反序列化寫不進去」的成員需要剔除。
     ///
     /// 已知殘餘風險：自訂 <c>[JsonConverter]</c> 會改變 wire 形狀，
     /// 而 exporter 完全看不到它。結構化輸出的型別請勿使用自訂 converter。
@@ -754,7 +723,7 @@ public static class RimLLMSchemaBuilder
                 continue;
             }
 
-            // 唯讀成員反序列化不會寫入，等同舊實作的 CanWrite / !IsInitOnly 條件。
+            // 唯讀成員反序列化不會寫入。
             if (property.Set == null)
             {
                 typeInfo.Properties.RemoveAt(index);

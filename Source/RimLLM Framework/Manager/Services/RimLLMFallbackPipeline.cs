@@ -14,7 +14,6 @@ namespace RimLLM_Framework.Manager;
 /// <summary>
 /// 負責備用鏈（Fallback Chain）維護、Provider 失敗後自動嘗試下一個備用 Provider、
 /// 備用管道執行與健康帳本 (Health Ledger) 連動等邏輯的服務元件。
-/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMFallbackPipeline
 {
@@ -49,17 +48,12 @@ public class RimLLMFallbackPipeline
     /// <summary>
     /// 解析出本次請求可用的候選，並依路由策略排序。
     /// </summary>
-    /// <remarks>
-    /// 只做「選誰、依什麼順序」的決策；實際的嘗試、重試與健康記錄由
-    /// <see cref="RimLLMFailoverChatClient"/> 負責。
-    /// </remarks>
     /// <param name="preferredModelId">指定優先使用的模型識別碼，可為 null。</param>
     /// <param name="minFallbackLevel">允許降級的最低模型等級下限，可為 null。</param>
     /// <param name="includeCoolingDown">
     /// 為 true 時不過濾冷卻中的候選。能力查詢用：冷卻會到期，查詢當下被過濾掉的候選
     /// 仍可能在稍後的請求中被路由到。
     /// </param>
-    /// <returns>已排序的可用候選名單。</returns>
     internal List<ResolvedCandidate> ResolveCandidates(string? preferredModelId, string? minFallbackLevel, bool includeCoolingDown = false)
     {
         if (!TryResolveCandidates(preferredModelId, minFallbackLevel, includeCoolingDown, out List<ResolvedCandidate>? candidates, out string? failureReason))
@@ -98,7 +92,6 @@ public class RimLLMFallbackPipeline
         var effectiveChain = new List<string>(fallbackChain);
         bool preferredFirst = MovePreferredModelToFrontIfUsable(effectiveChain, preferredModelId, apiKeyCache);
 
-        // 1. 解析所有符合資格的供應商候選
         List<ResolvedCandidate> resolved = ResolveEligible(effectiveChain, minFallbackLevel, apiKeyCache);
 
         if (resolved.Count == 0)
@@ -109,7 +102,6 @@ public class RimLLMFallbackPipeline
         }
 
         // 2. 過濾處於故障冷卻期的候選（若全部都在冷卻中，則破例放行）
-        // 全組共用同一個時間戳：逐候選各取一次 UtcNow 既浪費又讓比較基準漂移。
         DateTime now = DateTime.UtcNow;
         var activeCandidates = includeCoolingDown
             ? resolved
@@ -119,7 +111,6 @@ public class RimLLMFallbackPipeline
             activeCandidates = resolved;
         }
 
-        // 3. 套用路由與負載均衡策略
         // 呼叫端指定的模型固定在第一位、不參與排序；只有它失敗時才輪到路由策略排出的其餘候選。
         // 前面的步驟都保持順序，所以它若仍可用必定位於索引 0。
         ResolvedCandidate? pinnedPreferred = null;
@@ -154,7 +145,6 @@ public class RimLLMFallbackPipeline
         return resolved;
     }
 
-    /// <summary>依設定的路由策略就地重排候選。</summary>
     private void ApplyRoutingStrategy(List<ResolvedCandidate> activeCandidates, bool advanceRoundRobin)
     {
         switch (_settings.RoutingStrategy)
@@ -175,7 +165,6 @@ public class RimLLMFallbackPipeline
 
             case 3: // LowestCost (成本優先)
                 // 直接沿用既有的模型分級（含使用者覆寫）作為成本代理值，由低到高排序。
-                // 分級本來就是依 API 費率自動判定的，不需要另外維護一份價格表。
                 // LINQ OrderBy 保證穩定排序：同級模型維持備用鏈原順序。
                 var byCost = activeCandidates.OrderBy(c => GetModelLevel(c.Entry, c.ProviderId, c.ModelName)).ToList();
                 activeCandidates.Clear();
@@ -188,11 +177,6 @@ public class RimLLMFallbackPipeline
     }
 
 
-    /// <summary>
-    /// 健康帳本的記錄鍵。冷卻以「供應商:模型」為單位，而非只看供應商——
-    /// 同一個供應商底下常有多個模型同時掛在備用鏈上（例如三個 OpenRouter 模型），
-    /// 只以供應商為鍵會讓其中一個模型限流就把另外兩個健康的模型一起連坐冷卻。
-    /// </summary>
     internal static string HealthKey(ResolvedCandidate candidate)
     {
         return string.IsNullOrEmpty(candidate.ModelName)
@@ -200,7 +184,6 @@ public class RimLLMFallbackPipeline
             : candidate.ProviderId + ":" + candidate.ModelName;
     }
 
-    /// <summary>單次重試願意等待的上限（秒）。</summary>
     private const float MaxRetryWaitSeconds = 60f;
 
     /// <summary>
@@ -370,7 +353,6 @@ public class RimLLMFallbackPipeline
         if (!IsProviderUsable(providerId, provider, apiKeyCache))
             return false;
 
-        // 評估 MinFallbackLevel 模型分級
         int minLevel = ParseMinFallbackLevel(minFallbackLevel);
         if (minLevel > 0)
         {
@@ -399,7 +381,6 @@ public class RimLLMFallbackPipeline
             return overrideLevel;
         }
 
-        // 依據模型的 API 費率客觀判定等級
         return ModelPricing.GetModelLevel(providerId, modelName);
     }
 

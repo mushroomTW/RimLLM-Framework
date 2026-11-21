@@ -39,18 +39,13 @@ public static class RimWorldFunctionInvoker
                     return null;
                 }
 
-                // 確保工具執行調度至 Unity 主執行緒。
-                // 內層刻意不加 ConfigureAwait(false)：工具若含 await，續行必須沿著主執行緒的
-                // SynchronizationContext 回到主線程，否則後半段仍會在執行緒池碰遊戲狀態。
-                //
-                // 必須 AsTask()：InvokeAsync 回傳 ValueTask<object>，少了轉換，多載解析會選到
-                // EnqueueOnMainThreadAsync<T>(Func<T>) 且 T = ValueTask<object>，整顆 ValueTask
-                // 被裝箱成工具結果送給模型（{"isCompleted":…,"result":42}），async 工具更會在
-                // 序列化時阻塞。
+                // 內層刻意不加 ConfigureAwait(false)：工具若含 await，續行必須回到主執行緒，
+                // 否則後半段仍會在執行緒池碰遊戲狀態。
+                // 必須 AsTask()：少了轉換，多載解析會選到 EnqueueOnMainThreadAsync<T>(Func<T>)
+                // 且 T = ValueTask<object>，整顆 ValueTask 會被序列化成工具結果。
                 return await RimLLMDispatcher.EnqueueOnMainThreadAsync(
                     () =>
                     {
-                        // token 在入列後、開始呼叫工具前取消時，不應執行工具副作用。
                         cancellationToken.ThrowIfCancellationRequested();
                         return context.Function.InvokeAsync(context.Arguments, cancellationToken).AsTask();
                     },

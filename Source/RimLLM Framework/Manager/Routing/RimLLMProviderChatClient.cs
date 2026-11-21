@@ -20,7 +20,7 @@ namespace RimLLM_Framework.Manager;
 /// 候選自己承擔。
 ///
 /// 沒有內層 client，因此不是 DelegatingChatClient：實際的 provider client 在每次
-/// 呼叫時建立並以 using 釋放，與先前 pipeline 的作法一致。
+/// 呼叫時建立並以 using 釋放。
 /// </remarks>
 internal sealed class RimLLMProviderChatClient : IChatClient
 {
@@ -33,7 +33,6 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     private readonly ILLMProvider _provider;
     private readonly string _model;
     private readonly IRimLLMSettings _settings;
-    /// <summary>本次嘗試結算的 token 回呼，由路由層傳入供請求日誌附帶顯示。</summary>
     private readonly Action<UsageTokens>? _onUsage;
     /// <summary>用量帳本，由路由層傳入；為 null 時不記帳（單元測試直接建立本類別時）。</summary>
     private readonly RimLLMUsageTracker? _usageTracker;
@@ -98,7 +97,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             catch (Exception ex) when (IsNativeSchemaRejected(ex))
             {
                 // 原生 schema 被拒，降級成「以提示詞要求 JSON」重試一次。
-                // 必須直接走提示式路徑：先前這裡遞迴呼叫 GenerateAsync 本身，
+                // 必須直接走提示式路徑：遞迴呼叫 GenerateAsync 本身，
                 // options 沒變、判斷條件也沒變，服務端只要持續拒絕就會無限重打 API。
                 return await GenerateWithPromptSchemaAsync(messages, options, responseType, cancellationToken)
                     .ConfigureAwait(false);
@@ -149,7 +148,6 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
         if (serviceType == typeof(ChatClientMetadata))
         {
-            // 回報實際的候選身分，而不是框架的 "RimLLM"——這一層底下就是真正的供應商了。
             return new ChatClientMetadata(_provider.ProviderId, providerUri: null, _model);
         }
         if (serviceType == typeof(ILLMProvider)) return _provider;
@@ -191,7 +189,6 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken, cancellationToken);
 
             // 有界 channel：消費端慢時生產端在 WriteAsync 上等待，避免遠端資料被無界緩衝。
-            // FullMode.Wait 讓背壓生效（WriteAsync 只會在空間釋出時完成）。
             var channel = System.Threading.Channels.Channel.CreateBounded<ChatResponseUpdate>(
                 new System.Threading.Channels.BoundedChannelOptions(StreamBufferCapacity)
                 {
@@ -202,7 +199,6 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
             StartProducer(channel.Writer, linkedCts.Token);
 
-            // ReadAllAsync 回傳的 IAsyncEnumerable 可直接沿用。
             return new StreamUpdateEnumerator(
                 channel.Reader.ReadAllAsync(linkedCts.Token).GetAsyncEnumerator(linkedCts.Token),
                 linkedCts);
@@ -250,8 +246,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                             // 唯一的改寫：把 ModelId 換成 "供應商:模型" 複合識別，
                             // 讓呼叫端在 fallback 之後仍分辨得出實際是誰回的。
                             // 工具呼叫、FinishReason 與 UsageContent 都由 provider 的
-                            // update 自己帶著，框架不再另外合成一個收尾 update——
-                            // 那個收尾 update 過去正是 ResponseId 等欄位消失的地方。
+                            // update 自己帶著，框架不另外合成收尾 update。
                             update.ModelId = composedModelId;
                             if (toolsStripped)
                             {
@@ -325,7 +320,6 @@ internal sealed class RimLLMProviderChatClient : IChatClient
         }
     }
 
-    /// <summary>組合成 "ProviderId:ModelName" 複合識別，供呼叫端追蹤實際使用的供應商。</summary>
     internal static string ComposeModelId(string providerId, string modelName)
     {
         if (!string.IsNullOrEmpty(providerId) && !string.IsNullOrEmpty(modelName))
@@ -383,7 +377,6 @@ internal sealed class RimLLMProviderChatClient : IChatClient
         if (provider?.Capabilities?.SupportsFunctionCalling == true) return options;
         stripped = true;
 
-        // 每次請求都會觸發，受詳細日誌開關控制；呼叫端另有 WereToolsStripped 標記可判斷。
         if (RimLLMLog.Enabled)
         {
             RimLLMLog.Warning(
@@ -404,10 +397,6 @@ internal sealed class RimLLMProviderChatClient : IChatClient
     /// <summary>
     /// 供應商沒有原生結構化輸出時，改以提示詞要求模型只回傳 JSON。
     /// </summary>
-    /// <remarks>
-    /// 附加在既有系統訊息之後而不是取代它——先前這裡是直接覆寫，系統訊息若不在
-    /// 索引 0，原本的內容就會連同被換掉。
-    /// </remarks>
     private static IList<ChatMessage> ApplyJsonSchemaInstructions(IList<ChatMessage> messages, Type? responseType, ChatOptions? options)
     {
         string schemaInstructions;

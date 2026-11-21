@@ -31,7 +31,6 @@ namespace RimLLM_Framework.Compat;
 /// </remarks>
 internal static class LocalOpenAIEndpoint
 {
-    /// <summary>處理一筆請求本文，回傳同協議的回應 JSON（成功或含 <c>error</c> 的錯誤）。</summary>
     internal delegate Task<string> Handler(string payloadJson, bool chatProtocol, CancellationToken cancellationToken);
 
     private static readonly Dictionary<string, Handler> Handlers = new(StringComparer.Ordinal);
@@ -39,7 +38,6 @@ internal static class LocalOpenAIEndpoint
     private static HttpListener? _listener;
     private static int _port;
 
-    /// <summary>登錄某個 Mod 的處理器。可重複呼叫，後者覆蓋前者。</summary>
     public static void Register(string modId, Handler handler)
     {
         lock (Gate)
@@ -48,19 +46,16 @@ internal static class LocalOpenAIEndpoint
         }
     }
 
-    /// <summary>該 Mod 該寫進設定的 Base URL；必要時啟動端點。啟動失敗回傳 null。</summary>
     public static string? GetBaseUrl(string modId)
     {
         int port = EnsureStarted();
         return port == 0 ? null : string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/m/{modId}/v1");
     }
 
-    /// <summary>是否為框架自己先前寫入的位址（埠號每次啟動不同，需要更新時才認得出來）。</summary>
     public static bool IsOwnBaseUrl(string? baseUrl, string modId)
     {
         if (string.IsNullOrEmpty(baseUrl)) return false;
 
-        // 先前版本寫入的固定佔位位址，同樣視為框架自己的。
         if (string.Equals(baseUrl.TrimEnd('/'), "http://127.0.0.1:1/v1", StringComparison.OrdinalIgnoreCase)) return true;
 
         return baseUrl.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase)
@@ -140,7 +135,6 @@ internal static class LocalOpenAIEndpoint
                 return;
             }
 
-            // /m/{modId}/v1/{endpoint...}
             ArgumentNullException.ThrowIfNull(context.Request.Url);
             if (!TryParseRoute(context.Request.Url, out string? modId, out string? endpoint))
             {
@@ -193,7 +187,6 @@ internal static class LocalOpenAIEndpoint
         }
     }
 
-    /// <summary>解析 <c>/m/{modId}/v1/{endpoint...}</c>；路徑不符時回傳 false。</summary>
     private static bool TryParseRoute(Uri url, [NotNullWhen(true)] out string? modId, [NotNullWhen(true)] out string? endpoint)
     {
         modId = null;
@@ -209,7 +202,6 @@ internal static class LocalOpenAIEndpoint
         return true;
     }
 
-    /// <summary>取得該 Mod 已登錄的處理器；未登錄回傳 null。</summary>
     private static Handler? FindHandler(string modId)
     {
         lock (Gate)
@@ -225,7 +217,6 @@ internal static class LocalOpenAIEndpoint
         return await reader.ReadToEndAsync().ConfigureAwait(false);
     }
 
-    /// <summary>依回應內容決定狀態碼與輸出方式：錯誤 JSON、SSE 串流或完整 JSON。</summary>
     private static async Task WriteResultAsync(HttpListenerContext context, string json, string body, bool chat)
     {
         if (TryGetErrorStatus(json, out int status))
@@ -257,7 +248,6 @@ internal static class LocalOpenAIEndpoint
         }
     }
 
-    /// <summary>回應含 <c>error</c> 時，依錯誤類型映射成 HTTP 狀態碼，讓第三方 Mod 的重試與降級邏輯照常運作。</summary>
     internal static bool TryGetErrorStatus(string json, out int status)
     {
         status = 200;

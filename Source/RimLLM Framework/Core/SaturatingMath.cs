@@ -5,7 +5,6 @@ namespace RimLLM_Framework.Core;
 /// </summary>
 internal static class SaturatingMath
 {
-    /// <summary>回傳 <paramref name="left"/> + <paramref name="right"/>，結果超過 <see cref="long.MaxValue"/> 時回傳上限。</summary>
     internal static long Add(long left, long right)
     {
         return right > 0 && left > long.MaxValue - right ? long.MaxValue : left + right;

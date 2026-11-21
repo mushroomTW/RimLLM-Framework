@@ -16,9 +16,6 @@ namespace RimLLM_Framework.Mod;
 /// </summary>
 public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
 {
-    /// <summary>
-    /// API 供應商的 Fallback Chain 順序。
-    /// </summary>
     private List<string> _fallbackChain = [];
 
     public List<string> FallbackChain
@@ -33,9 +30,6 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         }
     }
 
-    /// <summary>
-    /// 取得備援鏈的複本。屬性不直接複製集合，複製邏輯集中在這裡，行為與原本一致。
-    /// </summary>
     private List<string> SnapshotFallbackChain()
     {
         lock (_settingsLock)
@@ -61,7 +55,6 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         set { lock (_settingsLock) { _decisionFallbackChain = SanitizeProviderChain(value); } }
     }
 
-    /// <summary>取得 Embedding 備援鏈的複本。</summary>
     private List<string> SnapshotEmbeddingFallbackChain()
     {
         lock (_settingsLock)
@@ -70,7 +63,6 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         }
     }
 
-    /// <summary>取得決策備援鏈的複本。</summary>
     private List<string> SnapshotDecisionFallbackChain()
     {
         lock (_settingsLock)
@@ -91,7 +83,6 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         return result;
     }
 
-    // 可調節項 (全域配置)
     // 全域請求配置的預設值；屬性初始值與「恢復預設」按鈕共用，避免兩處各寫一份而漂移。
     internal const float DefaultApiTimeout = 30f;
     internal const int DefaultMaxRetries = 3;
@@ -113,10 +104,8 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     /// </summary>
     public bool DetailedLogging { get; set; } = false;
 
-    /// <summary>最大並行請求數限制。</summary>
     public int MaxConcurrentRequests { get; set; } = DefaultMaxConcurrentRequests;
 
-    /// <summary>全域預設思考程度（Reasoning Effort）。</summary>
     public ReasoningEffort? DefaultReasoningEffort { get; set; } = null;
 
     // 遙測資料（對話歷史、請求日誌、用量統計）獨立存放於 JSON 檔案，不寫入設定 XML
@@ -264,9 +253,6 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         _telemetry.ClearChatHistory();
     }
 
-    /// <summary>
-    /// 標記遙測有未寫入的變更（供節流路徑呼叫）。
-    /// </summary>
     public void MarkTelemetryDirty()
     {
         _telemetry.MarkDirty();
@@ -334,8 +320,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     }
 
     /// <summary>
-    /// 內建供應商的啟用旗標與模型清單快取。兩份字典的鍵一律等同 <see cref="ProviderIds.BuiltIn"/>，
-    /// 因此直接由該清單產生 —— 先前是各自手寫一份 12 筆的字面清單，新增供應商得同步改三處。
+    /// 內建供應商的啟用旗標與模型清單快取。兩份字典的鍵一律等同 <see cref="ProviderIds.BuiltIn"/>，因此直接由該清單產生。
     /// </summary>
     private readonly Dictionary<string, bool> _enabledProviders = BuildBuiltInMap(_ => false);
 
@@ -381,10 +366,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         }
     }
 
-    /// <summary>
-    /// 多把金鑰的分隔字元。輪替與設定頁的金鑰列表必須用同一組：
-    /// 先前設定頁只認逗號，含分號的金鑰字串在畫面上是一把、實際卻被當成兩把輪替。
-    /// </summary>
+    /// <summary>多把金鑰的分隔字元；輪替與設定頁的金鑰列表必須用同一組，否則畫面上的一把金鑰實際會被當成兩把輪替。</summary>
     internal static readonly char[] ApiKeySeparators = [',', ';'];
 
     public string GetActiveApiKey(string providerId)
@@ -563,7 +545,6 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
 
     /// <summary>
     /// 將單一欄位重設為預設值。字典與清單就地覆寫（保留參考），其餘欄位直接賦值。
-    /// 僅限 <see cref="ResetAllSettingsToDefaults"/> 內部呼叫。
     /// </summary>
     private void ResetField(FieldInfo field, RimLLMFrameworkSettings defaults)
     {
@@ -590,7 +571,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         lock (_settingsLock)
         {
             if (_providerModels.TryGetValue(providerId, out List<string>? models))
-                return new List<string>(models); // 回傳複本，保證安全
+                return new List<string>(models);
             return [];
         }
     }

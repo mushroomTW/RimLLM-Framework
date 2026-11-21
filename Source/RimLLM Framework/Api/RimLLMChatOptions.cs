@@ -9,9 +9,7 @@ namespace RimLLM_Framework;
 ///
 /// 本類別的每個屬性都只是 <see cref="ChatOptions.AdditionalProperties"/> 的糖衣讀寫，
 /// 自身不持有任何欄位。框架內部一律透過 AdditionalProperties 取值，因此
-/// 呼叫端用 <see cref="RimLLMChatOptions"/> 或直接對純 ChatOptions 塞鍵，效果完全相同；
-/// 也因為沒有自有欄位，MEAI 的 base.Clone() 就能完整複製，不需要覆寫 Clone。
-/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
+/// 呼叫端用 <see cref="RimLLMChatOptions"/> 或直接對純 ChatOptions 塞鍵，效果完全相同。
 /// </summary>
 public class RimLLMChatOptions : ChatOptions
 {
@@ -21,9 +19,7 @@ public class RimLLMChatOptions : ChatOptions
     internal const string CachedContextKey = "rimllm_cached_context";
 
     /// <summary>
-    /// 結構化輸出的目標型別。由 RimLLMClientExtensions 標註，路由層據此依供應商方言
-    /// 產生原生 schema——放在 AdditionalProperties 是為了讓結構化輸出能走完整的
-    /// IChatClient 鏈，而不是繞過中介層直接呼叫 facade。
+    /// 結構化輸出的目標型別。由 RimLLMClientExtensions 標註，路由層據此依供應商方言產生原生 schema。
     /// </summary>
     internal const string ResponseTypeKey = "rimllm_response_type";
 
@@ -69,7 +65,6 @@ public class RimLLMChatOptions : ChatOptions
         return string.Equals(modelId, FallbackModelId, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>寫入框架私有欄位，必要時延遲建立 AdditionalProperties。</summary>
     private void WriteAdditional(string key, object? value)
     {
         if (AdditionalProperties == null)
@@ -79,12 +74,6 @@ public class RimLLMChatOptions : ChatOptions
         AdditionalProperties[key] = value;
     }
 
-    /// <summary>
-    /// 從 <see cref="ChatOptions.AdditionalProperties"/> 取出框架私有欄位。
-    /// 框架把這些欄位以 AdditionalProperties 轉遞給 provider（呼叫端未使用
-    /// <see cref="RimLLMChatOptions"/> 時的唯一管道），而「不存在或型別不符就用預設值」
-    /// 的三段式判斷先前散落在 executor 與各 provider，逐字重複了六次。
-    /// </summary>
     internal static T ReadAdditional<T>(ChatOptions? options, string key, T fallback)
     {
         return options?.AdditionalProperties != null &&
@@ -93,9 +82,6 @@ public class RimLLMChatOptions : ChatOptions
             ? typed
             : fallback;
     }
-
-    // 以下讀取器接受任意 ChatOptions，讓框架內部不必再對 RimLLMChatOptions 做型別轉換
-    // ——下游若直接對純 ChatOptions 塞鍵，走的是同一條路徑。
 
     internal static int GetPriority(ChatOptions? options) =>
         ReadAdditional(options, PriorityKey, 0);

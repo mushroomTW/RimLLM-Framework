@@ -38,16 +38,11 @@ public class OpenAIProvider : ILLMProvider
 
     /// <summary>
     /// 衍生 provider 是否支援 OpenAI 相容的 <c>response_format: json_schema</c> 欄位。
-    /// 預設為 true：OpenAI 官方支援 strict JSON Schema；不支援的服務端（Grok/Kimi/MiniMax/
-    /// Nvidia/Qwen/Zai/OpenAICompatible）應覆寫為 false，讓框架改走提示式 JSON fallback。
+    /// 預設為 true（OpenAI 官方支援 strict JSON Schema）；不支援的服務端應覆寫為 false，讓框架改走提示式 JSON fallback。
     /// </summary>
     protected virtual bool SupportsNativeJsonSchemaPayload => true;
 
-    /// <summary>
-    /// 能力描述在第一次存取時建立並重用：相容層每秒輪詢對每個候選都會讀一次，
-    /// 每次請求也讀兩次，逐次 new 只是白白製造 GC 壓力。延遲建立而非建構子建立，
-    /// 是因為 <see cref="SupportsNativeJsonSchemaPayload"/> 為虛擬屬性，子類覆寫在建構子期間尚不可靠。
-    /// </summary>
+    // 延遲建立：SupportsNativeJsonSchemaPayload 為虛擬屬性，子類覆寫在建構子期間尚不可靠。
     private LLMProviderCapabilities? _capabilities;
 
     public virtual LLMProviderCapabilities Capabilities => _capabilities ?? (_capabilities = new LLMProviderCapabilities
@@ -127,10 +122,7 @@ public class OpenAIProvider : ILLMProvider
         return client.AsIChatClient();
     }
 
-    /// <summary>
-    /// 讓單元測試以假的 HTTP 傳輸攔截對話請求（與 <c>RimLLMEmbeddingService.TransportOverride</c>
-    /// 同一種測試接縫）；正式環境一律 null，走 SDK 預設傳輸。
-    /// </summary>
+    /// <summary>單元測試用：以假的 HTTP 傳輸攔截對話請求；正式環境為 null，走 SDK 預設傳輸。</summary>
     internal static PipelineTransport? TransportOverride { get; set; }
 
     private static readonly char[] SlashChars = ['/'];
@@ -157,9 +149,6 @@ public class OpenAIProvider : ILLMProvider
         if (requestOptions?.AdditionalProperties != null &&
             requestOptions.AdditionalProperties.TryGetValue("strict", out object? strictVal) && strictVal is bool strictBool)
         {
-            // strict 只認 RimLLMSchemaBuilder 算出的值。此處原本還有一段以字串比對
-            // "additionalProperties": true 來推斷 strict 的 heuristic —— 那是死碼：
-            // 產生器對開放式 map 輸出的是 value schema 物件而非字面 true，比對永遠不命中。
             strict = strictBool;
             (options.AdditionalProperties ??= [])["strict"] = strictBool;
         }
@@ -175,10 +164,6 @@ public class OpenAIProvider : ILLMProvider
         ApplyReasoningAndSampling(requestOptions, model, options, responseFormatJson);
     }
 
-    /// <summary>
-    /// 組出 <c>response_format</c> 欄位的完整 JSON：有 schema 走 json_schema，
-    /// 只要求 JSON 模式時走 json_object；完全沒有 JSON 需求才回傳 null。
-    /// </summary>
     private static string? BuildResponseFormatJson(ChatOptions? requestOptions, bool strict)
     {
         if (requestOptions?.ResponseFormat is not ChatResponseFormatJson jsonFormat)
@@ -188,8 +173,7 @@ public class OpenAIProvider : ILLMProvider
 
         if (!jsonFormat.Schema.HasValue)
         {
-            // 沒有 schema 但呼叫端仍要求 JSON 模式時要送出 json_object，
-            // 否則這個選項會被靜默丟棄，模型照樣回散文而呼叫端無從察覺。
+            // 呼叫端要求 JSON 模式但沒有 schema 時仍要送 json_object，否則選項會被靜默丟棄。
             return "{\"type\":\"json_object\"}";
         }
 
@@ -213,10 +197,7 @@ public class OpenAIProvider : ILLMProvider
 
     /// <summary>
     /// 已知**不具備**思考能力的模型，對這些模型送思考參數只會白白換來一次 400。
-    ///
-    /// 刻意用否定表列而非肯定表列：肯定表列漏掉新模型會讓設定永久靜默失效（框架先前的 o1/o3 判斷就是如此），
-    /// 否定表列漏掉的模型只會被樂觀地送出參數，服務端若不接受，框架記下來重打一次即可自癒。
-    /// 換句話說，這份清單的作用只是省掉一次來回，不影響正確性。
+    /// 刻意用否定表列：漏列的模型只會被樂觀送出參數，服務端不接受時框架記下並重打一次即可自癒，清單只是省一次來回。
     /// </summary>
     protected virtual bool IsKnownNonReasoningModel(string modelName)
     {
@@ -224,10 +205,6 @@ public class OpenAIProvider : ILLMProvider
         return name.StartsWith("gpt-3.5", StringComparison.Ordinal) || name.StartsWith("gpt-4", StringComparison.Ordinal) || name.StartsWith("chatgpt-4", StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// 取出可用於前綴比對的模型名：去掉聚合服務端的 "vendor/" 前綴並轉小寫。
-    /// null 或空字串一律回傳空字串，讓呼叫端的前綴比對自然地不命中。
-    /// </summary>
     private static string NormalizeModelName(string modelName)
     {
         if (string.IsNullOrEmpty(modelName)) return string.Empty;
@@ -248,15 +225,10 @@ public class OpenAIProvider : ILLMProvider
         return null;
     }
 
-    /// <summary>
-    /// 依供應商方言送出思考強度，並一併處理 temperature 與 max_tokens 的改寫。
-    ///
-    /// 思考參數一律由 Patch 掌控而不交給 MEAI 的 <c>ChatOptions.Reasoning</c>：
-    /// 後者只會序列化成 OpenAI 的 <c>reasoning_effort</c>，表達不了其他家的方言。
-    /// </summary>
     /// <summary>掛在送出去的 ChatOptions 上，記錄這次請求實際送出的思考強度字面值（null 代表沒送）。</summary>
     private const string SentEffortLiteralKey = "rimllm_sent_effort_literal";
 
+    // 思考參數一律由 Patch 掌控，不交給 MEAI 的 ChatOptions.Reasoning：後者只會序列化成 OpenAI 的 reasoning_effort，表達不了其他家的方言。
     private void ApplyReasoningAndSampling(ChatOptions? requestOptions, string model, ChatOptions options, string? responseFormatJson)
     {
         ReasoningEffort? effort = requestOptions?.Reasoning?.Effort;
@@ -273,8 +245,7 @@ public class OpenAIProvider : ILLMProvider
             options.Temperature = null;
         }
 
-        // 對齊 raw 路徑：非 reasoning 模型走 max_tokens（OpenAI SDK 預設一律
-        // 序列化為 max_completion_tokens），以 Patch 移除後改寫。
+        // 非 reasoning 模型走 max_tokens（OpenAI SDK 預設一律序列化為 max_completion_tokens），以 Patch 移除後改寫。
         int maxTokens = requestOptions?.MaxOutputTokens ?? 0;
         // 名單漏掉的新模型系列會以 400 拒絕 max_tokens，框架記下來後改回 SDK 預設欄位（見 MarkUnsupportedParameters）。
         bool rewriteMaxTokens = maxTokens > 0 && !IsOpenAiReasoningModel(model) &&
@@ -314,9 +285,6 @@ public class OpenAIProvider : ILLMProvider
         };
     }
 
-    /// <summary>
-    /// 依方將思考強度字面值寫入 Patch。方言差異由 Patch 路徑與序列化內容區分。
-    /// </summary>
     private static void ApplyReasoningPatch(
         ChatCompletionOptions chatCompletionOptions,
         ReasoningWireFormat format,
@@ -363,10 +331,6 @@ public class OpenAIProvider : ILLMProvider
         }
     }
 
-    /// <summary>
-    /// 解析呼叫端是否要求關閉思考。RimLLMChatOptions 直接帶屬性，框架管線則以 AdditionalProperties 轉遞；
-    /// MEAI 標準的 <see cref="ReasoningEffort.None"/> 是同一個意思。
-    /// </summary>
     private static bool ResolveDisableReasoning(ChatOptions? requestOptions)
     {
         if (requestOptions?.Reasoning?.Effort == ReasoningEffort.None) return true;
@@ -376,13 +340,9 @@ public class OpenAIProvider : ILLMProvider
             : RimLLMChatOptions.ReadAdditional(requestOptions, RimLLMChatOptions.DisableReasoningKey, fallback: false);
     }
 
-    /// <summary>
-    /// 算出這次請求實際會送出的強度字面值。回傳 null 代表不干預，交給服務端自己的預設。
-    /// 組裝請求與事後判讀 400 都走這一個函式，兩邊對「送了什麼」的認知才不會分歧。
-    /// </summary>
+    /// <summary>算出這次請求實際送出的強度字面值；null 代表不干預。組裝請求與事後判讀 400 共用本函式，兩邊對「送了什麼」才不會分歧。</summary>
     private string? ResolveOutgoingEffortLiteral(ChatOptions? requestOptions, string model)
     {
-        // 服務端先前明確拒絕過思考參數的模型不再嘗試，避免每次請求都白白換來一次 400。
         bool reasoningAllowed = ReasoningFormat != ReasoningWireFormat.None &&
                                 !IsKnownNonReasoningModel(model) &&
                                 !RimLLMReasoningSupport.IsReasoningUnsupported(ProviderId, model);
@@ -401,7 +361,6 @@ public class OpenAIProvider : ILLMProvider
         return effort.HasValue ? MapEffortLiteral(effort.Value) : null;
     }
 
-    /// <summary>以 token 預算表達強度的方言（Qwen）使用的換算。</summary>
     private static int ResolveThinkingBudget(ReasoningEffort effort)
     {
         if (effort == ReasoningEffort.Low) return 1024;
@@ -429,7 +388,6 @@ public class OpenAIProvider : ILLMProvider
         update.Contents.Insert(0, new TextReasoningContent(reasoning));
     }
 
-    /// <summary>非串流版的 <see cref="PromoteReasoningField(ChatResponseUpdate)"/>。</summary>
     internal static void PromoteReasoningField(ChatResponse response)
     {
         if (response?.RawRepresentation is not ChatCompletion raw || response.Messages.Count == 0) return;
@@ -538,7 +496,6 @@ public class OpenAIProvider : ILLMProvider
         private readonly Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> _streamFactory;
         private IAsyncEnumerator<ChatResponseUpdate> _inner;
         private readonly ChatOptions? _originalOptions;
-        /// <summary>目前這次嘗試實際送出的 options，判讀 400 時要看它而不是重算。</summary>
         private ChatOptions _sentOptions;
         private readonly OpenAIProvider _provider;
         private readonly string _model;
@@ -584,7 +541,6 @@ public class OpenAIProvider : ILLMProvider
                     var mapped = LLMErrorMapper.FromClientResultException(ex);
                     if (!_hasYieldedAny && _provider.MarkUnsupportedParameters(_model, mapped, _sentOptions))
                     {
-                        // 尚未產出任何分塊且為可自癒參數（如思考強度/格式），在此請求中就地重試
                         await _inner.DisposeAsync().ConfigureAwait(false);
                         var retryOptions = _originalOptions?.Clone() ?? new ChatOptions();
                         _provider.BuildChatOptions(_originalOptions, _model, retryOptions);
@@ -603,11 +559,7 @@ public class OpenAIProvider : ILLMProvider
         }
     }
 
-    /// <summary>
-    /// 服務端明確拒絕思考參數或 temperature 時記下來，讓下一次組裝略過該參數。
-    /// 回傳 true 代表這次記到了新資訊，值得以去掉參數的請求重打一次；
-    /// 回傳 false 代表拒絕與這些參數無關（或先前已記錄過），呼叫端應直接把錯誤拋出去。
-    /// </summary>
+    /// <summary>服務端明確拒絕思考參數、temperature 或 max_tokens 時記下並回傳 true（值得去掉參數重打）；與這些參數無關或先前已記錄過回傳 false。</summary>
     private bool MarkUnsupportedParameters(string model, RimLLMException exception, ChatOptions sentOptions)
     {
         bool learned = false;
@@ -650,13 +602,8 @@ public class OpenAIProvider : ILLMProvider
     }
 
     /// <summary>
-    /// 判斷是否為 OpenAI 家的推理模型。這個判斷只用來決定「要不要清掉 temperature」——
-    /// 這些模型在思考開啟時會直接以 400 拒絕取樣參數，而不是忽略它。
-    ///
-    /// 思考強度該不該送**不再**由這裡決定：名稱前綴無法涵蓋各家與未來的模型，
-    /// 改由服務端的拒絕來判定（見 <see cref="RimLLMReasoningSupport"/>）。
-    /// 這份清單漏掉新模型時，第一次請求會收到 temperature 相關的 400，
-    /// 框架會記下來並自動重打，因此漏列的代價是一次重試而不是永久失敗。
+    /// 判斷是否為 OpenAI 家的推理模型，用來決定要不要清掉 temperature（這些模型思考開啟時以 400 拒絕取樣參數）與是否改寫 max_tokens。
+    /// 名稱前綴無法涵蓋各家與未來的模型；漏列時第一次請求收到 400，框架記下後自動重打，代價只是一次重試。
     /// </summary>
     protected static bool IsOpenAiReasoningModel(string modelName)
     {
@@ -718,7 +665,6 @@ public class OpenAIProvider : ILLMProvider
         return result;
     }
 
-    /// <summary>送一則極短訊息；只要沒有拋出就代表連線與金鑰可用。</summary>
     private async Task PingAsync(string testModel, System.Threading.CancellationToken cancellationToken)
     {
         var messages = new List<ChatMessage> { new(ChatRole.User, "ping") };
@@ -744,9 +690,6 @@ public class OpenAIProvider : ILLMProvider
         result.LatencyMs = stopwatch.ElapsedMilliseconds;
     }
 
-    /// <summary>
-    /// 備援鏈中第一個屬於 <paramref name="providerId"/> 且帶模型名稱的條目的模型；沒有時回傳空字串。
-    /// </summary>
     internal static string GetChosenModel(IRimLLMSettings settings, string providerId)
     {
         string prefix = providerId + ":";
@@ -760,19 +703,13 @@ public class OpenAIProvider : ILLMProvider
         return "";
     }
 
-    /// <summary>
-    /// 透過官方 SDK 的 /models 端點取得可用模型清單。
-    /// 端點正規化與 chat client 共用同一份邏輯，不再手動改寫 URL。
-    /// </summary>
+    /// <summary>透過官方 SDK 的 /models 端點取得可用模型清單。</summary>
     public virtual async Task<List<string>> FetchAvailableModelsAsync()
     {
         return (await FetchModelCatalogAsync().ConfigureAwait(false)).Models;
     }
 
-    /// <summary>
-    /// 取得模型清單，並順便從同一份 /models 回應讀出上下文上限。
-    /// SDK 只解析 <c>id</c>，上限欄位要從原始 JSON 取。
-    /// </summary>
+    /// <summary>取得模型清單，並從同一份 /models 回應讀出上下文上限（SDK 只解析 <c>id</c>，上限欄位要從原始 JSON 取）。</summary>
     internal virtual async Task<ModelCatalog> FetchModelCatalogAsync()
     {
         string apiKey = Settings.GetActiveApiKey(ProviderId);
@@ -833,11 +770,7 @@ public class OpenAIProvider : ILLMProvider
         return new ModelCatalog(list, contextWindows, visionSupport);
     }
 
-    /// <summary>
-    /// 從 OpenAI 相容 /models 原始 JSON 讀出「模型 id → 是否支援圖片輸入」。
-    /// 目前只有 OpenRouter 回報（<c>architecture.input_modalities</c>）；沒回報的模型不收錄，視為未知。
-    /// 格式不符時回傳空集合，不讓整個模型清單的重新整理失敗。
-    /// </summary>
+    /// <summary>從 /models 原始 JSON 讀出「模型 id → 是否支援圖片輸入」。目前只有 OpenRouter 回報（<c>architecture.input_modalities</c>）；沒回報的不收錄，格式不符回傳空集合。</summary>
     internal static Dictionary<string, bool> ParseVisionSupport(string? json)
     {
         var support = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
@@ -887,10 +820,7 @@ public class OpenAIProvider : ILLMProvider
     /// </summary>
     private static readonly string[] ContextWindowFields = ["context_length", "context_window", "max_model_len"];
 
-    /// <summary>
-    /// 從 OpenAI 相容 /models 原始 JSON 讀出「模型 id → 上下文上限」。
-    /// 上限只是附帶資訊，格式不符時回傳空集合，不讓整個模型清單的重新整理失敗。
-    /// </summary>
+    /// <summary>從 /models 原始 JSON 讀出「模型 id → 上下文上限」；格式不符時回傳空集合。</summary>
     internal static Dictionary<string, int> ParseContextWindows(string? json)
     {
         var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -946,8 +876,5 @@ public class OpenAIProvider : ILLMProvider
         return 0;
     }
 
-    /// <summary>
-    /// 本地相容伺服器未設定金鑰時使用的佔位憑證。
-    /// </summary>
     private const string PlaceholderApiKey = "not-required";
 }

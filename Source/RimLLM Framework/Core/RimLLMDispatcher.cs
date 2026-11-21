@@ -9,18 +9,14 @@ namespace RimLLM_Framework.Core;
 
 /// <summary>
 /// Unity 主線程派遣器 (Main Thread Dispatcher)。
-/// 確保所有在背景線程（如 API 請求完成）的 Callback 能夠安全地回到 Unity 主線程執行，防止 TPS 劇烈震盪與 Unity API 非線程安全崩潰。
-/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
+/// 讓背景線程（如 API 請求完成）的 Callback 安全地回到 Unity 主線程執行。
 /// </summary>
 public class RimLLMDispatcher : MonoBehaviour
 {
-    /// <summary>佇列長度上限。超過後丟棄最舊的項目，避免高 chunk 率時無限成長。</summary>
     private const int MaxQueuedActions = 4096;
 
-    /// <summary>單一幀最多執行的項目數。</summary>
     private const int MaxActionsPerFrame = 128;
 
-    /// <summary>單一幀執行的時間預算（毫秒）。</summary>
     private const long FrameBudgetMs = 2;
 
     private static RimLLMDispatcher? _instance;
@@ -29,9 +25,6 @@ public class RimLLMDispatcher : MonoBehaviour
     private static int _queuedCount;
     private static int _droppedCount;
 
-    /// <summary>
-    /// 是否已有可運作的主線程 pump（即元件已 Awake 且尚未 OnDestroy）。
-    /// </summary>
     private static volatile bool _hasPump;
 
     /// <summary>
@@ -66,8 +59,6 @@ public class RimLLMDispatcher : MonoBehaviour
             return;
         }
 
-        // 沒有可運作的 pump（單元測試、headless 反射執行，或元件尚未建立）。
-        // 此時同步執行是唯一選擇，但這是明確的分支而非以例外控制流程。
         action.Invoke();
     }
 
@@ -107,7 +98,7 @@ public class RimLLMDispatcher : MonoBehaviour
             });
         }
 
-        // Register 可能在 token 已取消時同步執行 callback。
+        // token 已取消時，Register 會同步執行 callback。
         if (Volatile.Read(ref state) == 2)
         {
             #pragma warning disable VSTHRD103, MA0042 // 同步方法回傳 tcs.Task，無法 await DisposeAsync；登記只需解除，不會阻塞
@@ -116,9 +107,8 @@ public class RimLLMDispatcher : MonoBehaviour
             return tcs.Task;
         }
 
-        // 內層刻意以 ConfigureAwait(true) 保留同步內容：本委派由 Update 在主線程上啟動，
-        // 保留 SynchronizationContext 才能讓 func 的續行回到主線程。
-        // 佇列只接受 Action；委派內已捕捉所有例外並轉交 tcs，不會有未觀察的例外。
+        // 內層刻意以 ConfigureAwait(true) 保留同步內容，func 的續行才會回到主線程。
+        // 佇列只接受 Action；委派內已捕捉所有例外並轉交 tcs。
         #pragma warning disable MA0147
         EnqueueWaitable(async () =>
         {
@@ -170,14 +160,12 @@ public class RimLLMDispatcher : MonoBehaviour
         return tcs.Task;
     }
 
-    /// <summary>在目前的同步內容執行 func，並把結果、取消或例外轉交給 tcs；不會拋出。</summary>
     private static async System.Threading.Tasks.Task CompleteFromAsync<T>(
         Func<System.Threading.Tasks.Task<T>> func,
         System.Threading.Tasks.TaskCompletionSource<T> tcs)
     {
         try
         {
-            // 保留同步內容，func 的續行才會回到主線程。
             T result = await func().ConfigureAwait(true);
             tcs.TrySetResult(result);
         }
@@ -191,10 +179,6 @@ public class RimLLMDispatcher : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 排入一個「有人在等結果」的委派。與 <see cref="EnqueueOnMainThread"/> 的差別在於：
-    /// 佇列溢位而被丟棄時會讓對應的 <paramref name="tcs"/> 失敗，避免等待端永遠掛住。
-    /// </summary>
     private static void EnqueueWaitable<T>(
         Action action,
         System.Threading.Tasks.TaskCompletionSource<T> tcs,
@@ -214,13 +198,7 @@ public class RimLLMDispatcher : MonoBehaviour
         action.Invoke();
     }
 
-    /// <summary>
-    /// 有界入列。超過上限時丟棄最舊項目並計數，回傳是否發生丟棄。
-    /// </summary>
-    /// <remarks>
-    /// 遙測寫入也是透過本派遣器排入的；丟棄最舊項目理論上可能丟掉一次遙測寫入請求。
-    /// 因為遙測本身有 15 秒節流且關閉遊戲時會強制 flush，此風險可接受。
-    /// </remarks>
+    // 取捨：超過上限時丟棄最舊項目，可能丟掉一次遙測寫入；遙測有 15 秒節流且關閉遊戲時會強制 flush，風險可接受。
     internal static bool TryEnqueueBounded(Action action)
     {
         if (action == null) return false;
@@ -251,7 +229,6 @@ public class RimLLMDispatcher : MonoBehaviour
         return !dropped;
     }
 
-    /// <summary>佇列項目：待執行的委派，以及（可選的）被丟棄時要通知的等待者。</summary>
     private struct QueuedAction
     {
         private readonly Action _run;
@@ -274,12 +251,7 @@ public class RimLLMDispatcher : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 依項目數與時間預算清空佇列，回傳實際執行的項目數。
-    /// 佇列為空時直接回傳，不啟動 Stopwatch，避免每幀一次的計時器配置。
-    /// 時間比較使用 ElapsedTicks（高解析度）：ElapsedMilliseconds 在 Windows 上粒度約 15ms，
-    /// 2ms 預算形同虛設。
-    /// </summary>
+    // 時間比較用 ElapsedTicks：ElapsedMilliseconds 在 Windows 上粒度約 15ms，2ms 預算會形同虛設。
     internal static int DrainWithBudget(int maxActions, long budgetMs)
     {
         if (ExecutionQueue.IsEmpty || maxActions <= 0 || budgetMs <= 0)
@@ -313,14 +285,11 @@ public class RimLLMDispatcher : MonoBehaviour
         return processed;
     }
 
-    /// <summary>
-    /// 測試用：清空佇列與計數。
-    /// </summary>
     internal static void ResetQueueForTests()
     {
         while (ExecutionQueue.TryDequeue(out _))
         {
-            // 刻意清空佇列，僅需出列副作用，無需額外處理。
+            // 只需出列。
         }
         Interlocked.Exchange(ref _queuedCount, 0);
         Interlocked.Exchange(ref _droppedCount, 0);
@@ -328,30 +297,20 @@ public class RimLLMDispatcher : MonoBehaviour
 
     internal static int QueuedCount => Volatile.Read(ref _queuedCount);
 
-    /// <summary>主線程 pump 是否運作中（遊戲內整合測試用）。</summary>
     internal static bool HasPump => _hasPump;
 
-    /// <summary>
-    /// 標記主線程 pump 已就緒。
-    /// </summary>
-    /// <remarks>
-    /// Unity 只會叫用執行個體形式的訊息方法，宣告成 static 就不會被呼叫，因此 Awake 必須維持執行個體方法；
-    /// 靜態欄位的寫入改由 <see cref="SetPumpActive"/> 負責，避免執行個體方法直接改動靜態狀態。
-    /// </remarks>
-    #pragma warning disable CA1822, S2325 // Awake 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
-    private static void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
+    // Waylith（遊戲的 Unity 相容層）只呼叫執行個體形式的 Unity 訊息方法；
+    // Awake／Update 宣告成 static 就不會被呼叫，主線程 pump 會失效。
+    #pragma warning disable CA1822, S2325 // Unity 訊息方法必須是執行個體方法。
+    private void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
         SetPumpActive(active: true);
     }
     #pragma warning restore CA1822, S2325
 
-    /// <summary>
-    /// 每幀清空佇列。Unity 訊息方法必須是執行個體方法，理由同 <see cref="Awake"/>。
-    /// </summary>
-    #pragma warning disable CA1822, S2325 // Update 是 Unity 訊息方法，必須是執行個體方法才會被 Unity 反射呼叫。
-    private static void Update() // NOSONAR：Unity 訊息方法必須是執行個體方法
+    #pragma warning disable CA1822, S2325 // Unity 訊息方法必須是執行個體方法。
+    private void Update() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
-        // 每幀受項目數與時間預算雙重限制，避免長回應的大量 chunk 在單一幀內全部執行造成卡頓。
         DrainWithBudget(MaxActionsPerFrame, FrameBudgetMs);
     }
     #pragma warning restore CA1822, S2325
@@ -360,7 +319,7 @@ public class RimLLMDispatcher : MonoBehaviour
     {
         SetPumpActive(active: false);
 
-        // 先把剩餘項目排乾，避免關閉時遺失遙測寫入等重要回呼。
+        // 先排乾剩餘項目，避免遺失遙測寫入等重要回呼。
         int drained = DrainWithBudget(int.MaxValue, long.MaxValue);
         if (drained > 0)
         {
@@ -370,19 +329,12 @@ public class RimLLMDispatcher : MonoBehaviour
         ReleaseInstance(this);
     }
 
-    /// <summary>
-    /// 切換主線程 pump 狀態；<see cref="EnqueueOnMainThread"/> 等靜態入口會據此決定要排入佇列或同步執行。
-    /// </summary>
-    /// <param name="active">true 表示元件已就緒，false 表示正在關閉或尚未建立。</param>
     private static void SetPumpActive(bool active)
     {
         _hasPump = active;
     }
 
-    /// <summary>
-    /// 僅當目前單例就是 <paramref name="dispatcher"/> 時才清除，避免誤清關機期間已重建的新實例。
-    /// </summary>
-    /// <param name="dispatcher">正在銷毀的派遣器實例。</param>
+    // 僅當單例就是正在銷毀的實例時才清除，避免誤清關機期間已重建的新實例。
     private static void ReleaseInstance(RimLLMDispatcher dispatcher)
     {
         if (_instance == dispatcher)

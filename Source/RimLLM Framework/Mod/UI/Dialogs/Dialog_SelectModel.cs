@@ -6,7 +6,7 @@ using Verse;
 namespace RimLLM_Framework.Mod;
 
 /// <summary>
-/// 自訂模型選擇視窗，支援關鍵字過濾搜尋與滾動列表，以解決模型選項過多導致 UI 混亂的問題。
+/// 自訂模型選擇視窗，支援關鍵字過濾與滾動列表。
 /// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class Dialog_SelectModel : Window
@@ -17,13 +17,12 @@ public class Dialog_SelectModel : Window
     private string _filter = "";
     private Vector2 _scrollPosition = Vector2.zero;
 
-    /// <summary>過濾結果快取：清單在視窗生命週期內固定，只有過濾字串變了才需要重算。</summary>
     private string? _cachedFilter;
     private List<string>? _cachedFiltered;
 
     public override Vector2 InitialSize => new(550f, 650f);
 
-    /// <summary>直連供應商的廠商鍵；讓「google」這類廠商名也篩得到不帶前綴的模型 ID。</summary>
+    // 讓「google」這類廠商名也篩得到不帶前綴的模型 ID。
     private readonly string? _vendor;
 
     public Dialog_SelectModel(List<string> models, Action<string> onSelected)
@@ -45,18 +44,14 @@ public class Dialog_SelectModel : Window
 
     public override void DoWindowContents(Rect inRect)
     {
-        // 1. 標題
         Text.Font = GameFont.Medium;
         Widgets.Label(new Rect(0f, 0f, inRect.width, 35f), "RimLLM_SelectModelTitle".Translate());
         Text.Font = GameFont.Small;
 
-        // 2. 搜尋框與清空按鈕
         DrawSearchBar(inRect);
 
-        // 快捷過濾標籤 Chip
         DrawQuickFilters(inRect);
 
-        // 3. 過濾模型清單（與供應商設定頁共用同一份比對規則，避免兩處各自漂移）
         if (_cachedFiltered == null || !string.Equals(_cachedFilter, _filter, StringComparison.Ordinal))
         {
             _cachedFilter = _filter;
@@ -64,7 +59,6 @@ public class Dialog_SelectModel : Window
         }
         List<string> filteredModels = _cachedFiltered;
 
-        // 4. 滾動清單區
         DrawModelList(inRect, filteredModels);
     }
 
@@ -85,7 +79,6 @@ public class Dialog_SelectModel : Window
         if (!string.Equals(newFilter, _filter, StringComparison.Ordinal))
         {
             _filter = newFilter;
-            // 文字已變動代表使用者正在輸入，維持焦點在搜尋框。
             GUI.FocusControl(SearchControlName);
         }
 
@@ -133,7 +126,7 @@ public class Dialog_SelectModel : Window
     private void DrawModelList(Rect inRect, List<string> filteredModels)
     {
         float topOffset = 108f;
-        float bottomOffset = 55f; // 為關閉按鈕留空間
+        float bottomOffset = 55f;
         Rect listRect = new(0f, topOffset, inRect.width, inRect.height - topOffset - bottomOffset);
         Widgets.DrawMenuSection(listRect);
 
@@ -160,7 +153,6 @@ public class Dialog_SelectModel : Window
 
             Widgets.BeginScrollView(listRect, ref _scrollPosition, viewRect);
 
-            // 只畫可視範圍內的列，數百筆模型不必每幀全部畫一遍。
             RimLLMUIStyle.GetVisibleRowRange(_scrollPosition.y, listRect.height, rowHeight, 4f, filteredModels.Count, out int firstRow, out int endRow);
             for (int i = firstRow; i < endRow; i++)
             {

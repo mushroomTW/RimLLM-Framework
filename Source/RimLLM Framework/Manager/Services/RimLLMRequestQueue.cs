@@ -24,16 +24,13 @@ internal sealed class RimLLMRequestQueue
     private int _activeRequests;
     private long _enqueueSequence;
 
-    /// <summary>
-    /// 佇列實體定義。
-    /// </summary>
     private sealed class QueueEntry : IComparable<QueueEntry>
     {
         public int Priority { get; set; }
         public required TaskCompletionSource<IDisposable> Tcs { get; set; }
 
         /// <summary>
-        /// 入列序號。先前以 DateTime.UtcNow 判先後，同一個時鐘刻度內入列的請求鍵值相等，
+        /// 入列序號。不用時間戳判先後：同一個時鐘刻度內入列的請求鍵值相等，
         /// BinarySearch 命中後會插在既有項目前面，突發時同優先級變成後進先出。
         /// </summary>
         public long Sequence { get; set; }
@@ -41,18 +38,15 @@ internal sealed class RimLLMRequestQueue
         public int CompareTo(QueueEntry? other)
         {
             ArgumentNullException.ThrowIfNull(other);
-            // 優先級高（數值大）的排在前面
             int cmp = other.Priority.CompareTo(this.Priority);
             if (cmp == 0)
             {
-                // 優先級相同時，先入列的排在前面（FIFO）
                 return this.Sequence.CompareTo(other.Sequence);
             }
             return cmp;
         }
     }
 
-    /// <summary>釋放時歸還名額並重新抽取佇列。</summary>
     private sealed class Slot : IDisposable
     {
         private RimLLMRequestQueue? _queue;

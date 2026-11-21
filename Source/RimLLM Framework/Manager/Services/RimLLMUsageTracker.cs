@@ -18,7 +18,6 @@ namespace RimLLM_Framework.Manager;
 /// </summary>
 public class RimLLMUsageTracker
 {
-    /// <summary>日誌保留上限。與 Trim 邏輯共用，避免魔法數字散落。</summary>
     internal const int MaxRetainedLogs = 30;
 
     /// <summary>
@@ -30,16 +29,13 @@ public class RimLLMUsageTracker
     /// <summary>遙測寫檔節流間隔：成功請求的用量最多每這麼久寫一次檔，失敗日誌則立即寫。</summary>
     private static readonly TimeSpan TelemetrySaveInterval = TimeSpan.FromSeconds(15);
 
-    /// <summary>預算超限應對策略：只警告並照常送出（<c>BudgetPolicy = 1</c>）。</summary>
     private const int BudgetPolicyWarnOnly = 1;
 
-    /// <summary>沒有翻譯資料時（單元測試、headless）使用的英文字串，同時也是日誌內容。</summary>
     private const string BudgetWarnOnlyFallbackText =
         "Daily budget limit exceeded. Requests are still being sent because the exceeded policy " +
         "is set to 'warn only'. Raise the budget or switch the policy to 'block requests and " +
         "warn' in RimLLM settings -> Budget & Safety.";
 
-    /// <summary>HardBlock 超限警告的英文字串（無翻譯資料時使用，同時也是日誌內容）。</summary>
     private const string BudgetHardBlockFallbackText =
         "Daily budget limit exceeded. RimLLM is blocking AI requests until the budget resets tomorrow. " +
         "Raise the budget or switch the policy to 'warn only' in RimLLM settings -> Budget & Safety.";
@@ -48,7 +44,6 @@ public class RimLLMUsageTracker
 
     /// <summary>保護日誌、遙測排程與設定快照；需要同時持有兩把鎖時一律先取這把。</summary>
     private readonly Lock _logLock = new();
-    /// <summary>保護用量累計與預算預留。</summary>
     private readonly Lock _usageLock = new();
 
     private DateTime _lastTelemetrySaveTime = DateTime.MinValue;
@@ -58,7 +53,6 @@ public class RimLLMUsageTracker
     /// <summary>每筆 reservation 在整個 logical request（含 fallback/retry）結束前都保留一份估算額度。</summary>
     private long _reservedBudgetTokens;
 
-    /// <summary>最後一次發出超限警告的重置基準日，讓超限警告每天只吵一次。</summary>
     private string _budgetWarnedDate = "";
 
     /// <summary>
@@ -68,13 +62,11 @@ public class RimLLMUsageTracker
     private int _logCount;
     private long _unpricedUsageCount;
 
-    /// <summary>存放最近 API 呼叫歷史的執行緒安全佇列。</summary>
     private readonly ConcurrentQueue<RimLLMManager.RequestLogEntry> _requestLogs = new();
 
     private readonly ConcurrentDictionary<string, ProviderStats> _providerStatistics =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>本次遊戲實際送出過請求的 modId（值不使用，僅當集合）。</summary>
     private readonly ConcurrentDictionary<string, byte> _callerModIds =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -124,30 +116,52 @@ public class RimLLMUsageTracker
         public int TotalCount => SuccessCount + FailureCount;
         public float SuccessRate => TotalCount > 0 ? (float)SuccessCount / TotalCount : 1f;
 
-        public long TotalPromptTokens => Interlocked.Read(ref _totalPromptTokens);
-        public long CachedPromptTokens => Interlocked.Read(ref _cachedPromptTokens);
-        public float ContextCacheHitRate => TotalPromptTokens > 0 ? (float)CachedPromptTokens / TotalPromptTokens : 0f;
+        public long TotalPromptTokens
+        {
+            get { lock (_tokenLock) return _totalPromptTokens; }
+        }
+
+        public long CachedPromptTokens
+        {
+            get { lock (_tokenLock) return _cachedPromptTokens; }
+        }
+
+        // 兩個計數要在同一把鎖下讀，否則分別讀到不同時間點，命中率會偏離。
+        internal (long Total, long Cached) PromptTokenSnapshot
+        {
+            get { lock (_tokenLock) return (_totalPromptTokens, _cachedPromptTokens); }
+        }
+
+        public float ContextCacheHitRate
+        {
+            get
+            {
+                lock (_tokenLock)
+                {
+                    return _totalPromptTokens > 0 ? (float)_cachedPromptTokens / _totalPromptTokens : 0f;
+                }
+            }
+        }
 
         internal void IncrementSuccess() => Interlocked.Increment(ref _successCount);
         internal void IncrementFailure() => Interlocked.Increment(ref _failureCount);
 
-        /// <summary>累加此供應商的 prompt token 與 API 端快取命中 token；兩者同鎖更新，命中率不會讀到半套。</summary>
+        /// <summary>累加此供應商的 prompt token 與 API 端快取命中 token。</summary>
         internal void AddTokenCounts(long promptTokens, long cachedPromptTokens)
         {
             lock (_tokenLock)
             {
-                Interlocked.Add(ref _totalPromptTokens, promptTokens);
-                Interlocked.Add(ref _cachedPromptTokens, cachedPromptTokens);
+                _totalPromptTokens += promptTokens;
+                _cachedPromptTokens += cachedPromptTokens;
             }
         }
 
-        /// <summary>清除此供應商的 token 統計。</summary>
         internal void ResetTokenCounts()
         {
             lock (_tokenLock)
             {
-                Interlocked.Exchange(ref _totalPromptTokens, 0);
-                Interlocked.Exchange(ref _cachedPromptTokens, 0);
+                _totalPromptTokens = 0;
+                _cachedPromptTokens = 0;
             }
         }
     }
@@ -188,7 +202,6 @@ public class RimLLMUsageTracker
         RunTelemetrySaveSchedule(schedule);
     }
 
-    /// <summary>將一次請求結果計入該供應商的成功／失敗計數。</summary>
     private void CountOutcome(string? provider, bool success)
     {
         var stats = _providerStatistics.GetOrAdd(provider ?? "Unknown", _ => new ProviderStats());
@@ -294,7 +307,6 @@ public class RimLLMUsageTracker
         }
     }
 
-    /// <summary>以計數器為準修剪多餘日誌，避免 ConcurrentQueue.Count 的加鎖列舉。</summary>
     private void TrimLogs()
     {
         while (Volatile.Read(ref _logCount) > MaxRetainedLogs)
@@ -423,17 +435,11 @@ public class RimLLMUsageTracker
         return TryReserveBudget(estimatedTokens, out reservation, out _);
     }
 
-    /// <summary>
-    /// 嘗試預留指定數量的每日 Token 預算。
-    /// </summary>
-    /// <param name="estimatedTokens">預估消耗的 Token 數量。</param>
-    /// <param name="reservation">成功預留時傳回的預留物件憑據，失敗時為 null。</param>
     /// <param name="contended">
     /// true 代表擋下的原因只是剩餘額度暫時被在途請求預留，並非真的超限。
     /// 這種情況不發超限警告：預留釋放後請求就能通過，而超限警告每天只發一次，
     /// 誤報會把當天真正超限時的警告吃掉。
     /// </param>
-    /// <returns>若成功預留額度則傳回 true，否則傳回 false。</returns>
     internal bool TryReserveBudget(long estimatedTokens, [NotNullWhen(true)] out BudgetReservation? reservation, out bool contended)
     {
         CheckDailyReset();
@@ -505,7 +511,6 @@ public class RimLLMUsageTracker
         return new BudgetReservation(this, reservedTokens);
     }
 
-    /// <summary>已結算的用量是否真的達到上限。</summary>
     private bool IsBudgetExceededLocked()
     {
         long limit = _settings.DailyTokenBudgetLimit;
@@ -615,9 +620,6 @@ public class RimLLMUsageTracker
         RimLLMDispatcher.EnqueueOnMainThread(() => ShowBudgetExceededMessage(translationKey, fallbackText));
     }
 
-    /// <summary>
-    /// 判斷這次超限是否該再次警告，並記下已警告的基準日。
-    /// </summary>
     /// <remarks>
     /// 以重置基準日為去重鍵：跨日後自然會再警告一次。當日手動重置不會重新允許警告，
     /// 因為重置後預算已不再超限，沒有再吵一次的道理。

@@ -14,10 +14,6 @@ namespace RimLLM_Framework.Manager;
 /// 前置守衛：防濫用節流在先、每日預算在後，通過才放行到下游。
 /// 排在佇列之前：被守衛擋下的請求不該佔用併發名額。
 /// </summary>
-/// <remarks>
-/// modId 在建立 client 時就綁定，不是逐次請求帶進來的，因此這一層是 per-mod 實例；
-/// 節流狀態則放在所有實例共用的 <see cref="RimLLMThrottleStore"/>。
-/// </remarks>
 internal sealed class RimLLMGuardChatClient : DelegatingChatClient
 {
     private readonly IRimLLMSettings _settings;

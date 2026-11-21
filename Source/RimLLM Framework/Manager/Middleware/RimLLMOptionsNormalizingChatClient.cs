@@ -9,9 +9,6 @@ namespace RimLLM_Framework.Manager;
 /// <summary>
 /// 把玩家在設定中指定的預設思考強度套進未指定的請求。
 /// </summary>
-/// <remarks>
-/// 這一層是整條堆疊的最外層，下游各層看到的都是已套用預設值的選項。
-/// </remarks>
 internal sealed class RimLLMOptionsNormalizingChatClient : DelegatingChatClient
 {
     private readonly IRimLLMSettings _settings;

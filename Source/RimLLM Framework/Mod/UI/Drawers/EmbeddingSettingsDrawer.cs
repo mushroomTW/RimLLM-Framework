@@ -11,10 +11,7 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 負責「Embedding 向量」設定分頁的 UI 渲染。
-/// 採用與「API 供應商」完全一致的 3 欄式設計（中欄供應商選單 + 右欄各供應商詳細設定與模型管理）。
-/// </summary>
+/// <summary>「Embedding 向量」設定分頁，版面與「API 供應商」分頁一致（中欄供應商選單 + 右欄詳細設定）。</summary>
 public static class EmbeddingSettingsDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
@@ -27,10 +24,8 @@ public static class EmbeddingSettingsDrawer
     private const string ColorTagOpen = "<color=";
     private const string ColorTagClose = "</color>";
 
-    /// <summary>
-    /// 中欄選單項目：後備顯示名稱與供應商代號。
+    // 中欄選單的後備顯示名稱；實際顯示走 RimLLM_EmbeddingProvider_{id} 語系鍵，後備名稱只在語系未載入（單元測試）時使用。
     /// 實際顯示走 <c>RimLLM_EmbeddingProvider_{id}</c> 語系鍵，後備名稱只在語系未載入（單元測試）時使用。
-    /// </summary>
     private static readonly List<KeyValuePair<string, string>> MenuEntries =
     [
         new KeyValuePair<string, string>("Google Gemini", ProviderGoogle),
@@ -43,12 +38,10 @@ public static class EmbeddingSettingsDrawer
     private const float SubButtonHeight = 46f;
     private const float SubButtonGap = 4f;
 
-    /// <summary>目前選中的 Embedding 供應商子分頁。</summary>
     public static string ActiveEmbeddingSubTab { get; set; } = ProviderGoogle;
 
     private static Vector2 _midScrollPosition = Vector2.zero;
 
-    // 狀態與快取字典（各供應商獨立，避免切換子分頁時互相干擾）
     private static readonly Dictionary<string, bool> Fetching = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, string> FetchStatus = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, bool> Testing = new(StringComparer.Ordinal);
@@ -60,9 +53,6 @@ public static class EmbeddingSettingsDrawer
     private static readonly Dictionary<string, bool> Detecting = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, string> DetectStatus = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// 取得供應商的友善顯示名稱。
-    /// </summary>
     public static string GetProviderDisplayName(string providerId)
     {
         string? fallback = null;
@@ -100,14 +90,10 @@ public static class EmbeddingSettingsDrawer
         string providerId = ActiveEmbeddingSubTab;
         int modelCount = Settings.GetModelCount(RimLLMEmbeddingService.GetModelListKey(providerId));
         float modelSectionHeight = modelCount > 0 ? 280f : 70f;
-        // 本機服務多一排自動探測按鈕；其餘供應商不畫端點欄，省下那一段高度
         float endpointHeight = IsLocalProvider(providerId) ? 40f : -70f;
         return 460f + ProviderFallbackChainControls.Height + modelSectionHeight + endpointHeight;
     }
 
-    /// <summary>
-    /// 繪製中欄的 Embedding 供應商選單。
-    /// </summary>
     public static void DrawMiddleEmbeddingMenu(Rect rect)
     {
         Rect contentRect = rect.ContractedBy(6f);
@@ -199,35 +185,26 @@ public static class EmbeddingSettingsDrawer
         return !string.IsNullOrEmpty(Settings.GetApiKey(mainProvider));
     }
 
-    /// <summary>
-    /// 繪製右欄的 Embedding 供應商詳細設定內容。
-    /// </summary>
     public static void DrawRightDetailContent(Listing_Standard listing)
     {
         string providerId = ActiveEmbeddingSubTab;
 
-        // 1. 啟用核取方塊
         DrawActiveToggle(listing, providerId);
 
-        // 2. 簡介說明與備援鏈
         DrawExplanationAndFallback(listing, providerId);
 
-        // 3. API 金鑰設定
         DrawApiKeySection(listing, providerId);
 
-        // 4. 端點設定
         // 官方服務的端點已固定，只有本機服務才開放自訂
         if (IsLocalProvider(providerId))
         {
             DrawEndpointSection(listing, providerId);
         }
 
-        // 5. 模型名稱與可用模型清單
         DrawModelSection(listing, providerId);
 
         listing.Gap(8f);
 
-        // 6. 連線與向量生成測試
         DrawConnectionTest(listing, providerId);
 
         listing.GapLine(4f);
@@ -249,7 +226,6 @@ public static class EmbeddingSettingsDrawer
             chain => { Settings.EmbeddingFallbackChain = chain; Settings.Write(); });
     }
 
-    /// <summary>簡介說明與備援鏈控制項。</summary>
     private static void DrawExplanationAndFallback(Listing_Standard listing, string providerId)
     {
         Rect expRect = listing.GetRect(32f);
@@ -262,7 +238,6 @@ public static class EmbeddingSettingsDrawer
         }
         listing.Gap(6f);
 
-        // 2.5 備援鏈
         ProviderFallbackChainControls.Draw(
             listing,
             providerId,
@@ -278,9 +253,6 @@ public static class EmbeddingSettingsDrawer
         listing.Gap(6f);
     }
 
-    /// <summary>
-    /// 繪製 API 金鑰欄位與繼承提示。
-    /// </summary>
     private static void DrawApiKeySection(Listing_Standard listing, string providerId)
     {
         if (ProviderNeedsApiKey(providerId))
@@ -335,9 +307,6 @@ public static class EmbeddingSettingsDrawer
         listing.Gap(8f);
     }
 
-    /// <summary>
-    /// 繪製端點輸入框（本地服務提供自動探測按鈕）。
-    /// </summary>
     private static void DrawEndpointSection(Listing_Standard listing, string providerId)
     {
         bool isLocal = IsLocalProvider(providerId);
@@ -387,10 +356,7 @@ public static class EmbeddingSettingsDrawer
         }
     }
 
-    /// <summary>
-    /// 依供應商決定探測順序：Ollama 分頁只找 Ollama；OpenAI 相容分頁先找 LM Studio 等通用伺服器，
-    /// 最後才退回 Ollama 的 /v1。否則 Ollama 分頁會被機器上恰好在跑的 LM Studio 搶走端點。
-    /// </summary>
+    /// <summary>依供應商決定探測順序：Ollama 分頁只找 Ollama；OpenAI 相容分頁先找通用伺服器、最後才退回 Ollama 的 /v1，否則 Ollama 分頁會被恰好在跑的 LM Studio 搶走端點。</summary>
     private static LocalEndpointProbe.Target[] GetDetectTargets(string providerId)
     {
         var ollama = new LocalEndpointProbe.Target { Name = "Ollama", BaseUrl = LocalEndpointProbe.OllamaBaseUrl, TestUrl = LocalEndpointProbe.OllamaV1ModelsUrl };
@@ -430,16 +396,12 @@ public static class EmbeddingSettingsDrawer
             });
     }
 
-    /// <summary>
-    /// 繪製模型名稱輸入框與可用模型清單晶片網格。
-    /// </summary>
     private static void DrawModelSection(Listing_Standard listing, string providerId)
     {
         DrawModelInputField(listing, providerId);
 
         listing.Label("RimLLM_AvailableModelsTitle".Translate());
         string modelListKey = RimLLMEmbeddingService.GetModelListKey(providerId);
-        // 沒有預設模型清單：只顯示從伺服器抓回的模型。
         if (Settings.GetModelCount(modelListKey) == 0)
         {
             listing.Label("RimLLM_EmbeddingNoModelList".Translate());
@@ -448,7 +410,6 @@ public static class EmbeddingSettingsDrawer
         {
             ModelChipGrid.DrawFilterBar(listing, "RimLLM_EmbeddingFetchedModelsHint", ModelFilters, providerId);
 
-            // 過濾結果與清單複製都走快取：只有模型清單版本或過濾字串變了才重算。
             List<string> visibleModels = RimLLMUIStyle.FilterModelsCached(
                 "embedding:" + providerId,
                 Settings.ModelListVersion,
@@ -477,7 +438,6 @@ public static class EmbeddingSettingsDrawer
 
         listing.Gap(6f);
 
-        // 抓取模型按鈕列
         GenericProviderSubTabDrawer.DrawBusyActionRow(
             listing,
             Fetching.TryGetValue(providerId, out bool isF) && isF,
@@ -550,9 +510,6 @@ public static class EmbeddingSettingsDrawer
         });
     }
 
-    /// <summary>
-    /// 繪製連線與向量生成測試區塊。
-    /// </summary>
     private static void DrawConnectionTest(Listing_Standard listing, string providerId)
     {
         GenericProviderSubTabDrawer.DrawBusyActionRow(
@@ -602,9 +559,7 @@ public static class EmbeddingSettingsDrawer
         });
     }
 
-    /// <summary>
-    /// 向下相容既有呼叫。
-    /// </summary>
+    /// <summary>向下相容既有呼叫。</summary>
     public static void DrawEmbeddingSettings(Listing_Standard listing)
     {
         DrawRightDetailContent(listing);

@@ -20,7 +20,6 @@ namespace RimLLM_Framework.Manager;
 /// <summary>
 /// Embedding 向量運算服務。線上供應商一律透過 OpenAI SDK 呼叫
 /// （Google 走官方 OpenAI 相容端點，Ollama 與自架服務走 OpenAI 相容的 EmbeddingClient）。
-/// 類別名稱保留 RimLLM 品牌名，不重新命名為 RimLlm，以避免破壞品牌識別與下游 Mod 相容性。
 /// </summary>
 public class RimLLMEmbeddingService
 {
@@ -29,9 +28,6 @@ public class RimLLMEmbeddingService
     /// </summary>
     public const string DisabledProviderId = "Disabled";
 
-    /// <summary>
-    /// Google Gemini 經官方 OpenAI 相容端點存取時的預設服務根位址。
-    /// </summary>
     private const string GoogleOpenAiCompatibleEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai";
 
     /// <summary>
@@ -40,12 +36,10 @@ public class RimLLMEmbeddingService
     /// </summary>
     private const string PlaceholderApiKey = "not-required";
 
-    /// <summary>OpenRouter 的 Embedding 供應商識別碼（同時是設定檔與語系鍵的一部分）。</summary>
     internal const string OpenRouterProvider = "OpenRouter";
 
     /// <summary>
     /// 各 Embedding 供應商的 OpenAI 相容預設服務根位址。
-    /// 模型清單與向量運算兩條路徑共用同一張表，新增供應商時只改一處。
     /// </summary>
     private static readonly Dictionary<string, string> OpenAiCompatibleDefaultEndpoints =
         new(StringComparer.Ordinal)
@@ -57,10 +51,6 @@ public class RimLLMEmbeddingService
             { "LocalAPI_OpenAI", "http://localhost:1234/v1" },
         };
 
-    /// <summary>
-    /// 查表取得供應商的預設服務根位址；不支援的供應商直接擲回例外，
-    /// 呼叫端不再各自寫 switch 分派。
-    /// </summary>
     internal static string ResolveDefaultEndpoint(string? provider)
     {
         string? defaultEndpoint;
@@ -127,7 +117,7 @@ public class RimLLMEmbeddingService
 
     /// <summary>
     /// 批次計算多筆文字的 embedding 向量。同一批文字合成一次 API 呼叫（超過
-    /// <see cref="MaxEmbeddingBatchSize"/> 時分批），先前逐筆序列呼叫讓 N 筆文字變成 N 次 HTTP 來回。
+    /// <see cref="MaxEmbeddingBatchSize"/> 時分批）。
     /// 供應商回報的用量是整批的總和，這裡平均分攤到每一筆，加總後仍等於供應商回報的值。
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="texts"/> 為 null。</exception>
@@ -185,7 +175,6 @@ public class RimLLMEmbeddingService
         string model = !string.IsNullOrWhiteSpace(generationOptions?.ModelId)
             ? generationOptions.ModelId
             : _settings.EmbeddingModel;
-        // 沒有預設模型：玩家沒選就不送出請求。
         if (string.IsNullOrWhiteSpace(model))
         {
             throw new RimLLMException(
@@ -198,7 +187,7 @@ public class RimLLMEmbeddingService
         string endpoint = _settings.EmbeddingEndpoint;
         string defaultEndpoint = ResolveDefaultEndpoint(provider);
 
-        // 以 ApiTimeout 建立逾時來源，並與呼叫端的取消 Token 連動。逾時以整批為單位。
+        // 逾時以單一批次（一次 API 呼叫）為單位，在 ComputeBatchAsync 建立。
         float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
         var primaryContext = new EmbeddingBatchContext(model, provider, apiKey, endpoint, defaultEndpoint, timeoutSeconds, generationOptions?.Clone());
 
@@ -255,10 +244,6 @@ public class RimLLMEmbeddingService
             options);
     }
 
-    /// <summary>
-    /// 將備援鏈中尚可用的供應商轉成 EmbeddingBatchContext 加入清單。
-    /// 模型不明、需要金鑰卻沒有、或已不被支援的供應商會被略過。
-    /// </summary>
     private void AddBackupContexts(
         List<EmbeddingBatchContext> contexts,
         List<string> candidates,
@@ -445,7 +430,6 @@ public class RimLLMEmbeddingService
         }
     }
 
-    /// <summary>依供應商選擇能分辨 embedding 模型的清單端點。</summary>
     private static async Task<RimLLMEmbeddingModelList> FetchModelsForProviderAsync(
         string provider, string root, string apiKey, CancellationToken cancellationToken)
     {
@@ -506,7 +490,6 @@ public class RimLLMEmbeddingService
 
     /// <summary>
     /// 逐頁列舉 Google 原生 <c>/models</c> 的每個模型，供 embedding 模型過濾與 Gemini 上下文上限共用。
-    /// <paramref name="compatRoot"/> 是 OpenAI 相容根位址，去掉結尾的 <c>/openai</c> 即為原生 API 根位址。
     /// 回傳 false 代表回應沒有 <c>models</c> 陣列，也就是自訂端點不是 Google 本身（例如相容代理）。
     /// </summary>
     internal static async Task<bool> ForEachGoogleNativeModelAsync(
@@ -617,7 +600,6 @@ public class RimLLMEmbeddingService
     /// <summary>Ollama 模型清單最多探測的模型數，避免異常大的本地模型庫造成連線尖峰。超過時只取前 N 個並寫警告日誌。</summary>
     internal const int MaxOllamaModelsToProbe = 128;
 
-    /// <summary>Ollama <c>/api/show</c> 探測的同時並行數上限。</summary>
     internal const int MaxOllamaProbeConcurrency = 8;
 
     /// <summary>
@@ -814,9 +796,6 @@ public class RimLLMEmbeddingService
         return "Embedding:" + (embeddingProvider ?? string.Empty);
     }
 
-    /// <summary>
-    /// 建立 OpenAI 相容端點的連線參數：端點正規化、套用預設值、補上佔位金鑰。
-    /// </summary>
     private static void BuildOpenAiCompatibleClientArgs(
         string apiKey, string? endpoint, string defaultEndpoint,
         out ApiKeyCredential credential, out OpenAIClientOptions options)
@@ -824,7 +803,7 @@ public class RimLLMEmbeddingService
         options = new OpenAIClientOptions
         {
             Endpoint = new Uri(NormalizeEmbeddingEndpoint(endpoint) ?? defaultEndpoint, UriKind.Absolute),
-            // 與對話路徑（OpenAIProvider.CreateOpenAiChatClient）同一理由：換家由備援鏈負責。
+            // 換家由備援鏈負責，不靠 SDK 重試。
             // SDK 預設的 3 次重試會在 ApiTimeout 內退避等待，429 可能被耗到逾時而回報成 Timeout，
             // 也延後切換到備援供應商。
             RetryPolicy = new ClientRetryPolicy(0)
@@ -840,10 +819,6 @@ public class RimLLMEmbeddingService
         credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
     }
 
-    /// <summary>
-    /// 讓單元測試以假的 HTTP 傳輸攔截 embedding 請求（與 <c>EncryptionUtility.SecureKeyPathResolver</c>
-    /// 同一種測試接縫）；正式環境一律 null，走 SDK 預設傳輸。
-    /// </summary>
     internal static System.ClientModel.Primitives.PipelineTransport? TransportOverride { get; set; }
 
     /// <summary>
@@ -908,8 +883,6 @@ public class RimLLMEmbeddingService
     /// <summary>
     /// 一批文字一次 API 呼叫。usage 掛在整個集合上（不分筆），因此平均分攤到每一筆：
     /// 各筆的 <see cref="RimLLMEmbeddingResult.InputTokenCount"/> 加總即為供應商回報的總量。
-    /// <paramref name="model"/> 與 <paramref name="providerId"/> 是請求開始時捕捉的實際
-    /// 供應商身分，帶進每一筆結果供呼叫端標記向量與記帳，避免 await 之後設定被改。
     /// </summary>
     private static async Task<List<RimLLMEmbeddingResult>> ComputeOpenAiCompatibleEmbeddingsAsync(
         EmbeddingBatchContext ctx,
@@ -988,8 +961,6 @@ public class RimLLMEmbeddingService
     /// <summary>
     /// 將 Embedding 服務識別碼轉換為對話主要供應商的識別碼（用於沿用金鑰與用量統計）。
     /// </summary>
-    /// <param name="embeddingProvider">Embedding 供應商識別碼。</param>
-    /// <returns>對應的對話供應商識別碼。</returns>
     public static string GetMainProviderIdForEmbedding(string? embeddingProvider)
     {
         return embeddingProvider switch

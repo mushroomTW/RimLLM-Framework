@@ -6,26 +6,11 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// Embedding 與決策設定頁共用的備援鏈控制項：目前選取的供應商可勾選「加入備援鏈」，
-/// 並用上下箭頭調整嘗試順序；上方一行摘要顯示整條鏈。
-/// 兩個頁面的供應商清單來源不同，但備援鏈都只是「供應商識別碼的有序清單」，所以共用同一份繪製。
-/// </summary>
+/// <summary>Embedding 與決策設定頁共用的備援鏈控制項；備援鏈只是「供應商識別碼的有序清單」，兩頁共用同一份繪製。</summary>
 internal static class ProviderFallbackChainControls
 {
-    /// <summary>控制項固定佔用的高度，供頁面的 GetHeight 預留。</summary>
     internal const float Height = 78f;
 
-    /// <summary>
-    /// 繪製備援鏈控制項。
-    /// </summary>
-    /// <param name="listing">目前的版面。</param>
-    /// <param name="selectedProviderId">中欄目前選取的供應商。</param>
-    /// <param name="activeProviderId">啟用中的供應商；停用時為 <paramref name="disabledId"/>。</param>
-    /// <param name="disabledId">代表停用的識別碼。</param>
-    /// <param name="chain">目前的備援鏈（複本）。</param>
-    /// <param name="save">備援鏈變更後的儲存回呼，接收整份新清單。</param>
-    /// <param name="displayName">供應商識別碼轉顯示名稱。</param>
     internal static void Draw(
         Listing_Standard listing,
         string selectedProviderId,
@@ -45,7 +30,6 @@ internal static class ProviderFallbackChainControls
             chain = [.. chain.Where(id => !string.Equals(id, activeProviderId, StringComparison.Ordinal))];
         }
 
-        // 摘要列：啟用中的供應商 → 備援 1 → 備援 2…
         Rect summaryRect = listing.GetRect(34f);
         using (RimLLMUIStyle.With(font: GameFont.Tiny))
         {
@@ -80,7 +64,6 @@ internal static class ProviderFallbackChainControls
 
         if (!inChain) return;
 
-        // 順位與調整按鈕只在已加入時出現。
         Rect upRect = new(rowRect.xMax - 64f, rowRect.y, 30f, rowRect.height);
         Rect downRect = new(rowRect.xMax - 30f, rowRect.y, 30f, rowRect.height);
         Widgets.Label(
@@ -121,17 +104,7 @@ internal static class ProviderFallbackChainControls
         return "RimLLM_FallbackChainSummary".Translate(path);
     }
 
-    /// <summary>
-    /// 「啟用此供應商」核取方塊與啟用徽章。啟用中的供應商是鏈的第一環，啟用時一併移出備援清單。
-    /// 標籤鍵依 <paramref name="kind"/> 組成：RimLLM_Enable{kind}Provider、RimLLM_{kind}ActiveBadge。
-    /// </summary>
-    /// <param name="listing">目前的版面。</param>
-    /// <param name="providerId">中欄目前選取的供應商。</param>
-    /// <param name="isActive">此供應商目前是否為啟用中的供應商。</param>
-    /// <param name="kind">設定分頁類別，例如 Decision、Embedding。</param>
-    /// <param name="setActive">切換時呼叫：true 表示啟用此供應商，false 表示停用。</param>
-    /// <param name="getChain">讀取備援鏈（複本）。</param>
-    /// <param name="setChain">寫回備援鏈。</param>
+/// <summary>「啟用此供應商」核取方塊與徽章；啟用時一併移出備援清單。標籤鍵為 RimLLM_Enable{kind}Provider、RimLLM_{kind}ActiveBadge。</summary>
     internal static void DrawActiveToggle(
         Listing_Standard listing,
         string providerId,

@@ -6,7 +6,6 @@ namespace RimLLM_Framework;
 
 /// <summary>
 /// 內建供應商識別碼常數。
-/// 集中定義以避免魔法字串散落各處；第三方 Mod 亦可引用。
 /// </summary>
 public static class ProviderIds
 {
@@ -72,7 +71,7 @@ public static class ProviderIds
 
     /// <summary>
     /// 端點可由玩家自訂的供應商（OpenAICompatible 的本地／第三方位址、Player2 的本機／雲端切換）。
-    /// 設定頁據此顯示端點欄位，取代各處散落的 <c>== OpenAICompatible || == Player2</c> 特判。
+    /// 設定頁據此顯示端點欄位。
     /// </summary>
     public static bool HasCustomEndpoint(string providerId)
     {
@@ -102,7 +101,6 @@ public static class ProviderIds
     /// <summary>
     /// 把 "ProviderId:ModelName" 拆成供應商與模型。冒號前後都有內容才算指定了模型；
     /// "ProviderId" 與 "ProviderId:" 都是純供應商條目，回傳 false。
-    /// 所有解析這個格式的地方都應走這裡，避免各處的邊界規則不一致。
     /// </summary>
     /// <param name="entry">備援鏈條目或複合模型識別碼。</param>
     /// <param name="providerId">供應商識別碼（規則同 <see cref="ParseProviderId"/>）；空字串時為 null。</param>

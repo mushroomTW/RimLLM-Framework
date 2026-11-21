@@ -14,24 +14,16 @@ using Verse;
 
 namespace RimLLM_Framework.Mod;
 
-/// <summary>
-/// 負責偵錯面板（Debug）分頁的 UI 渲染與呼叫日誌、診斷匯出管理。
-/// </summary>
+/// <summary>偵錯面板（Debug）分頁：呼叫日誌與診斷匯出。</summary>
 public static class DebugSettingsDrawer
 {
     private static RimLLMFrameworkSettings Settings => RimLLMFrameworkMod.Settings;
 
-    // 偵錯面板專屬的 UI 暫存狀態
     private static Vector2 debugScrollPosition = Vector2.zero;
     private static string schemaSelfTestStatus = string.Empty;
     private static bool schemaSelfTestRunning;
 
-    /// <summary>
-    /// 結構化輸出自我檢查用的型別。
-    /// 刻意包含 <c>Nullable&lt;T&gt;</c>、清單與列舉：這三者正是各供應商 schema 方言差異最大的地方，
-    /// 只用純量成員的話兩種方言會產出相同的 schema，測不出方言接線是否正確。
-    /// 屬性透過系統文字 JSON 反序列化器賦值，靜態分析無法偵測。
-    /// </summary>
+    // 刻意包含 Nullable<T>、清單與列舉：這三者是各供應商 schema 方言差異最大處，只用純量成員會讓兩種方言產出相同 schema，測不出方言接線是否正確。
     #pragma warning disable S1144 // 透過 System.Text.Json 反序列化器賦值 init 存取子，靜態分析無法偵測，不可移除。
     private sealed class SchemaSelfTestPayload
     {
@@ -42,12 +34,8 @@ public static class DebugSettingsDrawer
     }
     #pragma warning restore S1144
 
-    /// <summary>
-    /// 獲取偵錯分頁詳細內容的滾動高度。
-    /// </summary>
     public static float GetHeight(float width)
     {
-        // 自我檢查按鈕，加上狀態列 —— 失敗時會多帶一段展平後的例外鏈，需要更多空間。
         float statusHeight;
         if (string.IsNullOrEmpty(schemaSelfTestStatus))
         {
@@ -64,9 +52,6 @@ public static class DebugSettingsDrawer
         return 690f + 42f + statusHeight;
     }
 
-    /// <summary>
-    /// 繪製偵錯設定與日誌。
-    /// </summary>
     public static void DrawDebugSettings(Listing_Standard listing)
     {
         listing.Label("RimLLM_TitleDebugExplanation".Translate());
@@ -75,14 +60,11 @@ public static class DebugSettingsDrawer
         DrawUsageStats(listing);
         listing.Gap(10f);
 
-        // 詳細日誌開關、匯出診斷與結構化輸出自我檢查
         DrawDebugActions(listing);
 
-        // 最近請求紀錄日誌
         DrawRecentRequests(listing);
     }
 
-    /// <summary>詳細日誌開關、匯出診斷與結構化輸出自我檢查。</summary>
     private static void DrawDebugActions(Listing_Standard listing)
     {
         bool detailedLogging = Settings.DetailedLogging;
@@ -96,7 +78,6 @@ public static class DebugSettingsDrawer
         }
         listing.Gap(8f);
 
-        // 匯出診斷按鈕
         Rect exportRect = listing.GetRect(30f);
         if (Widgets.ButtonText(exportRect, "RimLLM_ExportDiag".Translate()))
         {
@@ -104,7 +85,6 @@ public static class DebugSettingsDrawer
         }
         listing.Gap(8f);
 
-        // 結構化輸出自我檢查
         Rect schemaTestRect = listing.GetRect(30f);
         if (Widgets.ButtonText(schemaTestRect, "RimLLM_SchemaSelfTest".Translate()) && !schemaSelfTestRunning)
         {
@@ -118,7 +98,6 @@ public static class DebugSettingsDrawer
         listing.Gap(12f);
     }
 
-    /// <summary>最近請求紀錄：標題列、清除按鈕與紀錄內容。</summary>
     private static void DrawRecentRequests(Listing_Standard listing)
     {
         Rect headerRect = listing.GetRect(30f);
@@ -138,22 +117,19 @@ public static class DebugSettingsDrawer
         }
         listing.Gap(4f);
 
-        // manager 尚未初始化時（載入順序異常、或框架自身載入失敗）不能整段不畫 ——
-        // 那會讓面板變成一片空白，看起來像「請求沒有被記錄」。改為退回讀持久化的遙測資料。
+        // manager 尚未初始化時不能整段不畫（面板會一片空白，像是請求沒被記錄），改退回讀持久化的遙測資料。
         bool managerAvailable = RimLLMProvider.TryGetManager(out RimLLMManager? manager);
         List<RimLLMManager.RequestLogEntry> logs = manager != null
             ? new List<RimLLMManager.RequestLogEntry>(manager.RequestLogs)
             : [];
 
-        // 面板為空時，光看畫面分不出是「沒有紀錄」還是「讀錯來源」，因此把兩邊的筆數直接標出來。
         int persistedCount = Settings.RequestLogs != null ? Settings.RequestLogs.Count : 0;
         Text.Font = GameFont.Tiny;
         listing.Label("RimLLM_RequestsSourceCounts".Translate(
             managerAvailable ? "OK" : "NULL", logs.Count, persistedCount));
         Text.Font = GameFont.Small;
 
-        // 記憶體佇列是空的（核心未初始化，或這個 session 還沒發過請求）就退回已保存的紀錄，
-        // 免得明明跑過請求、面板卻什麼都不顯示。
+        // 記憶體佇列為空（核心未初始化或本 session 尚未發過請求）時退回已保存的紀錄。
         if (logs.Count == 0 && Settings.RequestLogs != null && Settings.RequestLogs.Count > 0)
         {
             logs = new List<RimLLMManager.RequestLogEntry>(Settings.RequestLogs);
@@ -171,7 +147,6 @@ public static class DebugSettingsDrawer
         DrawRequestLogLines(listing, logLines);
     }
 
-    /// <summary>在可捲動區塊中逐列繪製請求紀錄。</summary>
     private static void DrawRequestLogLines(Listing_Standard listing, List<string> logLines)
     {
         Rect logScrollRect = listing.GetRect(420f);
@@ -182,8 +157,7 @@ public static class DebugSettingsDrawer
         float viewHeight = Math.Max(420f, logLines.Count * logHeight + 10f);
         Rect viewRect = new(0f, 0f, contentWidth, viewHeight);
 
-        // 清除歷史後內容會從 30 筆縮回幾筆，捲動位置若留在原處，僅存的那幾列會被畫到可視範圍之外，
-        // 看起來就像「請求沒有被記錄」。內容變短時必須把捲動位置一起收回來。
+        // 清除歷史後內容變短，捲動位置須一併收回，否則僅存的幾列會被畫到可視範圍之外。
         float maxScrollY = Math.Max(0f, viewHeight - logScrollRect.height);
         if (debugScrollPosition.y > maxScrollY)
         {
@@ -237,15 +211,10 @@ public static class DebugSettingsDrawer
         }
     }
 
-    /// <summary>上一次格式化所依據的日誌快照，與格式化後的顯示列一一對應。</summary>
     private static readonly List<RimLLMManager.RequestLogEntry> _cachedLogSnapshot = [];
     private static readonly List<string> _cachedLogLines = [];
 
-    /// <summary>
-    /// 把日誌轉成顯示列。每列要做翻譯、敏感字遮罩（Regex）與時間格式化，而日誌只在有請求完成時
-    /// 才變動；設定視窗開著時每幀重算 30 列純屬浪費，因此以「同一組項目參考」判定命中，
-    /// 只有佇列內容真的變了才重新格式化。
-    /// </summary>
+    /// <summary>把日誌轉成顯示列；以「同一組項目參考」判定命中，只有佇列內容真的變了才重新格式化（翻譯、Regex 遮罩與時間格式化成本高）。</summary>
     private static List<string> ResolveLogLines(List<RimLLMManager.RequestLogEntry> logs)
     {
         logs.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
@@ -263,7 +232,6 @@ public static class DebugSettingsDrawer
         foreach (var log in logs)
         {
             string timeStr = log.Timestamp.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-            // 色碼保留在程式碼中，只有文字部分抽成翻譯鍵，避免譯者需要處理富文字標記。
             string statusText = log.Success
                 ? $"<color=#22c55e>{"RimLLM_StatusRequestSuccess".Translate(log.LatencyMs)}</color>"
                 : $"<color=#ef4444>{"RimLLM_StatusRequestFailed".Translate(RimLLMLog.SanitizeForLog(log.ErrorMessage, 160))}</color>";
@@ -276,15 +244,7 @@ public static class DebugSettingsDrawer
         return _cachedLogLines;
     }
 
-    /// <summary>
-    /// 結構化輸出自我檢查。分兩段：
-    ///
-    /// 第一段在本機完成，不發網路請求也不花錢 —— 產生 schema，藉此確認
-    /// <c>System.Text.Json</c> 的 <c>JsonSchemaExporter</c> 在 RimWorld 1.7 的遊戲載入環境可用。
-    /// 此處驗證實際載入的組件，補足獨立 .NET 10 單元測試與遊戲環境的差異。
-    ///
-    /// 第二段才真的向目前的 fallback 鏈發一次結構化請求，驗證供應商確實接受這份 schema。
-    /// </summary>
+    /// <summary>結構化輸出自我檢查：第一段在本機產生 schema，確認 JsonSchemaExporter 在 RimWorld 1.7 遊戲載入環境可用；第二段向目前 fallback 鏈發一次結構化請求，驗證供應商接受該 schema。</summary>
     private static void RunSchemaSelfTest()
     {
         schemaSelfTestRunning = true;
@@ -432,7 +392,6 @@ public static class DebugSettingsDrawer
         }
     }
 
-    /// <summary>遮罩裝置識別碼，保留頭尾各 4 字元，中間以 **** 取代。</summary>
     private static string MaskDeviceId(string rawId)
     {
         if (string.IsNullOrEmpty(rawId) || rawId.Length <= 8) return rawId;

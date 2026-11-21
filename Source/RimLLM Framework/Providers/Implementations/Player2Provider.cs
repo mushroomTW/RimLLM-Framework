@@ -9,11 +9,9 @@ namespace RimLLM_Framework.Providers;
 /// 實際模型由 App 內的 AI Selection 決定，不需 API 金鑰也不提供 <c>/models</c> 清單，
 /// 因此模型清單固定回傳單一佔位模型。雲端模式（<c>https://api.player2.game/v1</c> + p2Key）
 /// 可在設定頁把端點改掉並填入金鑰，沿用同一條 OpenAI 相容路徑。
-/// 對話、串流、工具呼叫與結構化輸出全由基底 <see cref="OpenAIProvider"/> 經 OpenAI SDK 處理。
 /// </summary>
 public class Player2Provider : OpenAIProvider
 {
-    /// <summary>本機 Player2 App 的預設服務根位址，同時是設定頁端點欄位的預設值。</summary>
     public const string LocalDefaultEndpoint = "http://127.0.0.1:4315/v1";
 
     /// <summary>

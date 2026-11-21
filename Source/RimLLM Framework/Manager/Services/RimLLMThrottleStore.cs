@@ -20,7 +20,6 @@ internal sealed class RimLLMThrottleStore
     // 共享上限防止呼叫端輪換 modId 無限消耗共用的 API 金鑰，
     // 同時保留原本每個 Mod 的獨立視窗，避免改變正常模組間的公平性。
     private const int GlobalRequestLimitMultiplier = 10;
-    /// <summary>追蹤的 modId 達到這個數量時，先清掉已過期的項目。</summary>
     internal const int MaxTrackedModIds = 1024;
     private readonly IRimLLMSettings _settings;
 
@@ -64,7 +63,6 @@ internal sealed class RimLLMThrottleStore
         CountModRequest(modId, now);
     }
 
-    /// <summary>共享 API 安全上限：所有 Mod 合計的請求數超過上限時進入全域冷卻。</summary>
     private void CheckGlobalCeiling(DateTime now)
     {
         lock (_globalLock)
@@ -99,7 +97,6 @@ internal sealed class RimLLMThrottleStore
         }
     }
 
-    /// <summary>把這次呼叫計入 per-Mod 時間視窗；超過上限時讓該 Mod 進入冷卻。</summary>
     private void CountModRequest(string modId, DateTime now)
     {
         if (_requestTimestamps.Count >= MaxTrackedModIds)
@@ -162,7 +159,6 @@ internal sealed class RimLLMThrottleStore
         return globalLimit > int.MaxValue ? int.MaxValue : (int)globalLimit;
     }
 
-    /// <summary>測試用：目前追蹤的 modId 數量。</summary>
     internal int TrackedModCount => _requestTimestamps.Count;
 
     public void ClearCooldowns()

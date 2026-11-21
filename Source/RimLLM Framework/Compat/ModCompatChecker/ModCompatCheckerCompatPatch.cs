@@ -11,30 +11,23 @@ namespace RimLLM_Framework.Compat;
 /// </summary>
 /// <remarks>
 /// 它的 AI 診斷是對自訂端點發 OpenAI Chat Completions 請求，所以端點指向
-/// <see cref="LocalOpenAIEndpoint"/> 後，所有 AI 功能自然走框架。設定欄位都是 public，
-/// 但為了在它缺席或改版時框架 DLL 仍能安全載入，一律以名稱反射存取，不在編譯期引用它。
+/// <see cref="LocalOpenAIEndpoint"/> 後，所有 AI 功能自然走框架。設定欄位都是 public。
 /// </remarks>
 internal static class ModCompatCheckerCompatPatch
 {
-    /// <summary>目標 Mod 的 packageId（不含 _steam 等後綴）。</summary>
     public const string PackageId = "modcompatchecker.main";
 
     private const string DisplayName = "Mod Compatibility Checker";
 
-    /// <summary>目標 Mod 設定類別中的成員名稱，以反射存取，避免編譯期相依於目標 Mod。</summary>
     private const string ApiEndpointMember = "APIEndpoint";
     private const string ApiKeyMember = "APIKey";
 
-    /// <summary>啟動時呼叫：登錄端點處理器，接管已開啟的話一併寫入設定。不需要 Harmony。</summary>
     public static void Apply()
     {
         CompatSeedUtil.RegisterEndpoint(ModCompatCheckerCompatPatch.PackageId, 1500, 0.3f);
         OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId) == true);
     }
 
-    /// <summary>
-    /// 玩家切換接管開關或專用模型時呼叫：開啟時把端點位址寫進它的設定，關閉時移除框架寫入的位址。
-    /// </summary>
     public static void OnTakeoverToggled(bool enabled)
     {
         if (enabled)
@@ -47,13 +40,8 @@ internal static class ModCompatCheckerCompatPatch
         }
     }
 
-    /// <summary>它的預設端點（與其設定類別的欄位預設值一致）。</summary>
     private const string DefaultEndpoint = "https://api.deepseek.com/v1/chat/completions";
 
-    /// <summary>
-    /// 接管關閉時，若端點是框架寫的，把端點、佔位金鑰與模型選擇改回它的預設值。
-    /// 框架只在玩家沒填金鑰時才寫入，所以還原不會丟掉玩家自己的設定。
-    /// </summary>
     internal static void RevertNativeConfig()
     {
         try
@@ -82,10 +70,6 @@ internal static class ModCompatCheckerCompatPatch
         }
     }
 
-    /// <summary>
-    /// 把它的設定改成指向本機端點。只改「從未設定（金鑰為空）」或「框架自己先前寫的」位址；
-    /// 玩家自己填的真實端點與金鑰一律不動。
-    /// </summary>
     internal static void SeedNativeConfig()
     {
         try
