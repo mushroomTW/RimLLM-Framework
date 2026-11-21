@@ -1,11 +1,28 @@
+<div align="right">
+
+[English](README.md) | **[繁體中文](README_zh.md)**
+
+</div>
+
+<div align="center">
+
 # RimLLM Framework
 
-[![RimWorld 1.7](https://img.shields.io/badge/RimWorld-1.7-brightgreen.svg)](http://rimworldgame.com/)
-![Languages](https://img.shields.io/badge/languages-EN%20%7C%20繁中%20%7C%20简中-orange.svg)
+<img src="About/Preview.png" alt="RimLLM Framework 預覽" width="640">
 
-[English](README.md)
+**RimWorld AI 模組的 LLM 底層框架。**
 
-`RimLLM Framework` 是一個專為 RimWorld 模組提供大型語言模型（LLM）呼叫介面與核心基礎建設的底層框架，讓其他 RimWorld AI 模組享有穩健、便捷、高效且開箱即用的 SDK，免去重造輪子的繁瑣負擔。
+專為 RimWorld 模組提供大型語言模型（LLM）呼叫介面與核心基礎建設的底層框架，穩健、便捷、高效且開箱即用，免去重造輪子的繁瑣負擔。
+
+**RimWorld 1.7** &nbsp;·&nbsp; **標準 MEAI 型別** &nbsp;·&nbsp; **.NET 10**
+
+[![RimWorld 1.7](https://img.shields.io/badge/RimWorld-1.7-10b981.svg?style=flat)](#-安裝)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512bd4.svg?style=flat)](#-安裝)
+![Languages](https://img.shields.io/badge/languages-EN%20%7C%20繁中%20%7C%20简中-orange.svg?style=flat)
+
+</div>
+
+---
 
 框架回傳的一切都是**標準的 Microsoft.Extensions.AI 型別** —— `IChatClient`、`ChatMessage`、`ChatResponse`、`IEmbeddingGenerator`，無需學習任何自訂用戶端介面。
 

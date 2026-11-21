@@ -1,11 +1,28 @@
+<div align="right">
+
+**[English](README.md)** | [繁體中文](README_zh.md)
+
+</div>
+
+<div align="center">
+
 # RimLLM Framework
 
-[![RimWorld 1.7](https://img.shields.io/badge/RimWorld-1.7-brightgreen.svg)](http://rimworldgame.com/)
-![Languages](https://img.shields.io/badge/languages-EN%20%7C%20繁中%20%7C%20简中-orange.svg)
+<img src="About/Preview.png" alt="RimLLM Framework Preview" width="640">
 
-[繁體中文說明](README_zh.md)
+**The LLM foundation for RimWorld AI mods.**
 
-`RimLLM Framework` is a foundational framework providing a Large Language Model (LLM) calling interface and core infrastructure for RimWorld mods. It gives other RimWorld AI mods a robust, convenient, efficient and ready-to-use SDK, so mod developers don't have to reinvent the wheel.
+A foundational framework providing a Large Language Model (LLM) calling interface and core infrastructure for RimWorld mods. A robust, convenient, efficient and ready-to-use SDK, so mod developers don't have to reinvent the wheel.
+
+**RimWorld 1.7** &nbsp;·&nbsp; **Standard MEAI Types** &nbsp;·&nbsp; **.NET 10**
+
+[![RimWorld 1.7](https://img.shields.io/badge/RimWorld-1.7-10b981.svg?style=flat)](#-installation)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512bd4.svg?style=flat)](#-installation)
+![Languages](https://img.shields.io/badge/languages-EN%20%7C%20繁中%20%7C%20简中-orange.svg?style=flat)
+
+</div>
+
+---
 
 Everything you get back from the framework is a **standard Microsoft.Extensions.AI type** — `IChatClient`, `ChatMessage`, `ChatResponse`, `IEmbeddingGenerator`. There is no bespoke client interface to learn.
 
