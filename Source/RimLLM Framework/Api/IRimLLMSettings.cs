@@ -254,6 +254,12 @@ public interface IRimLLMSettings
     bool? GetVisionSupport(string providerId, string modelName);
 
     /// <summary>
+    /// 查詢模型單次回覆的輸出上限（token 數）：重新整理模型清單時記下的值；沒有資料則回傳 null。
+    /// 預設實作回傳 null，既有的實作不必修改。
+    /// </summary>
+    int? GetMaxOutputTokens(string providerId, string modelName) => null;
+
+    /// <summary>
     /// 歷史請求日誌記錄清單。
     /// </summary>
     List<Manager.RimLLMManager.RequestLogEntry> RequestLogs { get; set; }

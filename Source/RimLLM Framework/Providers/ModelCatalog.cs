@@ -8,11 +8,12 @@ namespace RimLLM_Framework.Providers;
 /// </summary>
 internal sealed class ModelCatalog
 {
-    public ModelCatalog(List<string>? models, Dictionary<string, int>? contextWindows, Dictionary<string, bool>? visionSupport = null)
+    public ModelCatalog(List<string>? models, Dictionary<string, int>? contextWindows, Dictionary<string, bool>? visionSupport = null, Dictionary<string, int>? outputLimits = null)
     {
         Models = models ?? [];
         ContextWindows = contextWindows ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         VisionSupport = visionSupport ?? new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        OutputLimits = outputLimits ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>模型名稱 → 是否支援圖片輸入。只含 API 或 models.dev 有明確資料的模型。</summary>
@@ -22,4 +23,7 @@ internal sealed class ModelCatalog
 
     /// <summary>模型名稱 → 上下文上限（token 數）。只含 API 有回報的模型。</summary>
     public Dictionary<string, int> ContextWindows { get; }
+
+    /// <summary>模型名稱 → 單次回覆的輸出上限（token 數）。只含 API 或 models.dev 有明確資料的模型。</summary>
+    public Dictionary<string, int> OutputLimits { get; }
 }

@@ -85,6 +85,8 @@
     <PackageReference Include="OpenAI" Version="2.15.0" />
     <PackageReference Include="System.ClientModel" Version="1.17.0" />
     <PackageReference Include="TypeSafeAI" Version="1.0.0" />
+    <!-- 版本對齊 Microsoft.Agents.AI 1.28.0 的相依：下游 Mod 用 AF 壓縮 API 時共用這一份，不各自出貨。 -->
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
   </ItemGroup>
 
   <!-- SDK 優先的編譯期守門：禁止繞過 SDK 的底層 API，清單與理由見 BannedSymbols.txt。僅建置時使用，不隨 Mod 出貨。 -->

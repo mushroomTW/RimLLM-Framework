@@ -94,7 +94,7 @@ internal static class ModelsDevCatalog
             string body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
             using JsonDocument doc = JsonDocument.Parse(body);
             ModelPricing.SetCatalogRates(ReadAllRates(doc.RootElement));
-            return new ModelsDevData(ReadAll(doc.RootElement), ReadAllVision(doc.RootElement));
+            return new ModelsDevData(ReadAll(doc.RootElement), ReadAllVision(doc.RootElement), ReadAllOutputLimits(doc.RootElement));
         }
         catch (Exception ex)
         {
@@ -217,6 +217,38 @@ internal static class ModelsDevCatalog
         return all;
     }
 
+    /// <summary>讀出各供應商每個模型單次回覆的輸出上限：<c>limit.output</c>。沒有該欄位的模型不收錄。</summary>
+    internal static Dictionary<string, Dictionary<string, int>> ReadAllOutputLimits(JsonElement root)
+    {
+        var all = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+        if (root.ValueKind != JsonValueKind.Object) return all;
+
+        foreach (var mapping in ProviderKeys)
+        {
+            if (!root.TryGetProperty(mapping.Value, out JsonElement provider)
+                || provider.ValueKind != JsonValueKind.Object
+                || !provider.TryGetProperty("models", out JsonElement models)
+                || models.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var limits = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty model in models.EnumerateObject())
+            {
+                if (model.Value.ValueKind == JsonValueKind.Object
+                    && model.Value.TryGetProperty("limit", out JsonElement limit)
+                    && limit.ValueKind == JsonValueKind.Object)
+                {
+                    int tokens = ReadPositiveInt(limit, "output");
+                    if (tokens > 0) limits[model.Name] = tokens;
+                }
+            }
+            all[mapping.Key] = limits;
+        }
+        return all;
+    }
+
     /// <summary>把該供應商的圖片支援補進 <paramref name="support"/>，已有的值（供應商 API 回報）不覆寫。</summary>
     internal static void FillMissingVision(Dictionary<string, Dictionary<string, bool>> all, string providerId, Dictionary<string, bool> support)
     {
@@ -268,14 +300,16 @@ internal static class ModelsDevCatalog
 
     internal sealed class ModelsDevData
     {
-        public ModelsDevData(Dictionary<string, Dictionary<string, int>> windows, Dictionary<string, Dictionary<string, bool>> vision)
+        public ModelsDevData(Dictionary<string, Dictionary<string, int>> windows, Dictionary<string, Dictionary<string, bool>> vision, Dictionary<string, Dictionary<string, int>>? outputLimits = null)
         {
             Windows = windows;
             Vision = vision;
+            OutputLimits = outputLimits ?? new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
         }
 
         public Dictionary<string, Dictionary<string, int>> Windows { get; }
         public Dictionary<string, Dictionary<string, bool>> Vision { get; }
+        public Dictionary<string, Dictionary<string, int>> OutputLimits { get; }
     }
 
     private static int ReadPositiveInt(JsonElement obj, string name)

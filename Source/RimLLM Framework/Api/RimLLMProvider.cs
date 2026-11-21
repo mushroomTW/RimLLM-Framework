@@ -137,6 +137,17 @@ public static class RimLLMProvider
     }
 
     /// <summary>
+    /// 查詢指定模型單次回覆的輸出上限（token 數），可據此設定 ChatOptions.MaxOutputTokens，避免超過上限被供應商拒絕。
+    /// 資料來自玩家重新整理模型清單時記下的結果：供應商 API 有回報就用它（OpenRouter），否則取自 models.dev 資料庫。
+    /// </summary>
+    /// <param name="modelId">格式 "ProviderId:ModelName"，同 ChatOptions.ModelId。</param>
+    /// <returns>資料不明、或 <paramref name="modelId"/> 不是明確的 "ProviderId:ModelName" 時回傳 null。</returns>
+    public static int? GetMaxOutputTokens(string modelId)
+    {
+        return Manager.GetMaxOutputTokens(modelId);
+    }
+
+    /// <summary>
     /// 依目前設定解析出一個請求可能落到的所有候選，回傳它們能力的交集——
     /// 不論 fallback 最後由誰回答，這裡為 true 的能力都保證成立。
     /// Agent 端在送出帶 Tools 的請求前可據此判斷工具是否會被送達。

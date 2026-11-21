@@ -1,1 +1,4 @@
 #nullable enable
+RimLLM_Framework.IRimLLMSettings.GetMaxOutputTokens(string! providerId, string! modelName) -> int?
+RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetMaxOutputTokens(string! providerId, string! modelName) -> int?
+static RimLLM_Framework.RimLLMProvider.GetMaxOutputTokens(string! modelId) -> int?

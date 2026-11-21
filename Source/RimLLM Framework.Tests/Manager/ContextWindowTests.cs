@@ -203,6 +203,54 @@ public class ContextWindowTests
         ClassicAssert.IsNull(settings.GetVisionSupport("DeepSeek", "gpt-4o"));
     }
 
+    [Test]
+    public void ModelsDevReadsOutputLimitAndKeepsProviderValues()
+    {
+        const string json = @"{ ""deepseek"": { ""models"": {
+            ""deepseek-chat"": { ""limit"": { ""context"": 128000, ""output"": 8192 } },
+            ""reported"": { ""limit"": { ""context"": 128000, ""output"": 4096 } },
+            ""no-output"": { ""limit"": { ""context"": 1000 } }
+        } } }";
+        var limits = new Dictionary<string, int> { ["reported"] = 32000 };
+        using (var doc = JsonDocument.Parse(json))
+        {
+            ModelsDevCatalog.FillMissing(ModelsDevCatalog.ReadAllOutputLimits(doc.RootElement), ProviderIds.DeepSeek, limits);
+        }
+
+        ClassicAssert.AreEqual(8192, limits["deepseek-chat"]);
+        ClassicAssert.AreEqual(32000, limits["reported"], "供應商 API 已有的值不被 models.dev 覆寫");
+        ClassicAssert.IsFalse(limits.ContainsKey("no-output"));
+    }
+
+    [Test]
+    public void OpenRouterOutputLimitParsedFromTopProvider()
+    {
+        const string json = @"{ ""data"": [
+            { ""id"": ""a/capped"", ""top_provider"": { ""max_completion_tokens"": 16384 } },
+            { ""id"": ""a/null"", ""top_provider"": { ""max_completion_tokens"": null } },
+            { ""id"": ""a/none"" }
+        ] }";
+        var limits = OpenAIProvider.ParseOutputLimits(json);
+
+        ClassicAssert.AreEqual(16384, limits["a/capped"]);
+        ClassicAssert.IsFalse(limits.ContainsKey("a/null"));
+        ClassicAssert.IsFalse(limits.ContainsKey("a/none"));
+        CollectionAssert.IsEmpty(OpenAIProvider.ParseOutputLimits("not json"));
+    }
+
+    [Test]
+    public void SettingsOutputLimitsMergeAndSurviveSaveRoundTrip()
+    {
+        var settings = new RimLLMFrameworkSettings();
+        settings.SetProviderOutputLimits("DeepSeek", new Dictionary<string, int> { ["deepseek-chat"] = 8192 });
+        settings.SetProviderOutputLimits("DeepSeek", new Dictionary<string, int> { ["deepseek-reasoner"] = 65536 });
+
+        ClassicAssert.AreEqual(8192, settings.GetMaxOutputTokens("DeepSeek", "deepseek-chat"), "新一次重新整理沒拿到的值要保留");
+        ClassicAssert.AreEqual(65536, settings.GetMaxOutputTokens("DeepSeek", "deepseek-reasoner"));
+        ClassicAssert.IsNull(settings.GetMaxOutputTokens("DeepSeek", "unknown"));
+        ClassicAssert.IsNull(((IRimLLMSettings)new MockSettings()).GetMaxOutputTokens("DeepSeek", "deepseek-chat"), "介面預設實作回傳 null");
+    }
+
     private sealed class FilteringProvider : OpenAIProvider
     {
         public FilteringProvider(IRimLLMSettings settings)

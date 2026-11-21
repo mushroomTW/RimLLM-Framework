@@ -373,13 +373,15 @@ public class RimLLMManager
         // 供應商 API 已回報每個模型的上限與圖片支援時不等 models.dev：下載照樣完成並留在快取，但不拖慢這次重新整理
         if (modelsDevTask != null
             && (!catalog.Models.TrueForAll(catalog.ContextWindows.ContainsKey)
-                || !catalog.Models.TrueForAll(catalog.VisionSupport.ContainsKey)))
+                || !catalog.Models.TrueForAll(catalog.VisionSupport.ContainsKey)
+                || !catalog.Models.TrueForAll(catalog.OutputLimits.ContainsKey)))
         {
             ModelsDevCatalog.ModelsDevData? data = await modelsDevTask.ConfigureAwait(false);
             if (data != null)
             {
                 ModelsDevCatalog.FillMissing(data.Windows, providerId, catalog.ContextWindows);
                 ModelsDevCatalog.FillMissingVision(data.Vision, providerId, catalog.VisionSupport);
+                ModelsDevCatalog.FillMissing(data.OutputLimits, providerId, catalog.OutputLimits);
             }
         }
         return catalog;
@@ -413,6 +415,14 @@ public class RimLLMManager
     {
         return ProviderIds.TrySplitModelId(modelId, out string? providerId, out string? modelName)
             ? _settings.GetVisionSupport(providerId, modelName)
+            : null;
+    }
+
+    /// <summary>查詢 "ProviderId:ModelName" 單次回覆的輸出上限。只接受明確指定的模型；資料不明時回傳 null。</summary>
+    internal int? GetMaxOutputTokens(string modelId)
+    {
+        return ProviderIds.TrySplitModelId(modelId, out string? providerId, out string? modelName)
+            ? _settings.GetMaxOutputTokens(providerId, modelName)
             : null;
     }
 

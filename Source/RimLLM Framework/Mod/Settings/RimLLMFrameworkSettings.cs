@@ -293,6 +293,9 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     /// </summary>
     private readonly Dictionary<string, Dictionary<string, bool>> _providerVisionSupport = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>重新整理模型清單時得知的單次輸出上限（providerId → 模型名稱 → token 數）。</summary>
+    private readonly Dictionary<string, Dictionary<string, int>> _providerOutputLimits = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>玩家手動填寫的上下文上限（"Provider:Model" → token 數），優先於 API 回報的值。</summary>
     private readonly Dictionary<string, int> _contextWindowOverrides = new(StringComparer.OrdinalIgnoreCase);
 
@@ -722,6 +725,34 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
                 _providerVisionSupport[providerId] = map;
             }
             foreach (var kvp in support) map[kvp.Key] = kvp.Value;
+        }
+    }
+
+    /// <summary>併入本次重新整理得知的輸出上限，語意同 <see cref="SetProviderContextWindows"/>。</summary>
+    internal void SetProviderOutputLimits(string providerId, Dictionary<string, int>? limits)
+    {
+        if (string.IsNullOrEmpty(providerId) || limits == null) return;
+        lock (_settingsLock)
+        {
+            if (!_providerOutputLimits.TryGetValue(providerId, out var map))
+            {
+                map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                _providerOutputLimits[providerId] = map;
+            }
+            foreach (var kvp in limits.Where(k => k.Value > 0)) map[kvp.Key] = kvp.Value;
+        }
+    }
+
+    /// <summary>查詢模型單次回覆的輸出上限；沒有資料時回傳 null。</summary>
+    public int? GetMaxOutputTokens(string providerId, string modelName)
+    {
+        if (string.IsNullOrEmpty(providerId) || string.IsNullOrEmpty(modelName)) return null;
+        lock (_settingsLock)
+        {
+            return _providerOutputLimits.TryGetValue(providerId, out var map)
+                && map.TryGetValue(modelName, out int tokens)
+                ? tokens
+                : (int?)null;
         }
     }
 

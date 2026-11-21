@@ -29,6 +29,7 @@ public partial class RimLLMFrameworkSettings
         public Dictionary<string, int> ModelLevelOverrides = null!;
         public Dictionary<string, Dictionary<string, int>> ProviderContextWindows = null!;
         public Dictionary<string, Dictionary<string, bool>> ProviderVisionSupport = null!;
+        public Dictionary<string, Dictionary<string, int>> ProviderOutputLimits = null!;
         public Dictionary<string, int> ContextWindowOverrides = null!;
         public float ApiTimeout;
         public int MaxRetries;
@@ -80,6 +81,7 @@ public partial class RimLLMFrameworkSettings
             ModelLevelOverrides = new Dictionary<string, int>(this._modelLevelOverrides, StringComparer.Ordinal),
             ProviderContextWindows = this._providerContextWindows,
             ProviderVisionSupport = this._providerVisionSupport,
+            ProviderOutputLimits = this._providerOutputLimits,
             ContextWindowOverrides = new Dictionary<string, int>(this._contextWindowOverrides, StringComparer.Ordinal),
             DetailedLogging = this.DetailedLogging,
             MaxConcurrentRequests = this.MaxConcurrentRequests,
@@ -242,6 +244,14 @@ public partial class RimLLMFrameworkSettings
             foreach (var kvp in dto.ProviderVisionSupport)
             {
                 if (kvp.Value != null) SetProviderVisionSupport(kvp.Key, kvp.Value);
+            }
+        }
+        if (dto.ProviderOutputLimits != null)
+        {
+            _providerOutputLimits.Clear();
+            foreach (var kvp in dto.ProviderOutputLimits)
+            {
+                if (kvp.Value != null) SetProviderOutputLimits(kvp.Key, kvp.Value);
             }
         }
     }

@@ -732,6 +732,7 @@ public class OpenAIProvider : ILLMProvider
         var list = new List<string>();
         Dictionary<string, int> contextWindows;
         Dictionary<string, bool>? visionSupport = null;
+        Dictionary<string, int>? outputLimits = null;
         try
         {
             ClientResult<OpenAIModelCollection> result = await new OpenAIClient(credential, options)
@@ -746,6 +747,7 @@ public class OpenAIProvider : ILLMProvider
             string? rawJson = result.GetRawResponse()?.Content?.ToString();
             contextWindows = ParseContextWindows(rawJson);
             visionSupport = ParseVisionSupport(rawJson);
+            outputLimits = ParseOutputLimits(rawJson);
         }
         catch (ClientResultException ex)
         {
@@ -767,7 +769,47 @@ public class OpenAIProvider : ILLMProvider
                 LLMError.InvalidResponse,
                 $"Failed to fetch {ProviderId} models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", ex);
         }
-        return new ModelCatalog(list, contextWindows, visionSupport);
+        return new ModelCatalog(list, contextWindows, visionSupport, outputLimits);
+    }
+
+    /// <summary>從 /models 原始 JSON 讀出「模型 id → 輸出上限」。目前只有 OpenRouter 回報（<c>top_provider.max_completion_tokens</c>，可能為 null）；沒回報的不收錄，格式不符回傳空集合。</summary>
+    internal static Dictionary<string, int> ParseOutputLimits(string? json)
+    {
+        var limits = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(json)) return limits;
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("data", out JsonElement data)
+                || data.ValueKind != JsonValueKind.Array)
+            {
+                return limits;
+            }
+
+            foreach (JsonElement model in data.EnumerateArray())
+            {
+                if (model.ValueKind == JsonValueKind.Object
+                    && model.TryGetProperty("id", out JsonElement idElement)
+                    && idElement.ValueKind == JsonValueKind.String
+                    && model.TryGetProperty("top_provider", out JsonElement top)
+                    && top.ValueKind == JsonValueKind.Object
+                    && top.TryGetProperty("max_completion_tokens", out JsonElement value)
+                    && value.ValueKind == JsonValueKind.Number
+                    && value.TryGetInt32(out int tokens)
+                    && tokens > 0
+                    && !string.IsNullOrEmpty(idElement.GetString()))
+                {
+                    limits[idElement.GetString()!] = tokens;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            limits.Clear();
+        }
+        return limits;
     }
 
     /// <summary>從 /models 原始 JSON 讀出「模型 id → 是否支援圖片輸入」。目前只有 OpenRouter 回報（<c>architecture.input_modalities</c>）；沒回報的不收錄，格式不符回傳空集合。</summary>

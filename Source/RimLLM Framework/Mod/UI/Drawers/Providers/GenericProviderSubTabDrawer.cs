@@ -418,6 +418,7 @@ public static class GenericProviderSubTabDrawer
                     Settings.SetModelList(providerId, models);
                     Settings.SetProviderContextWindows(providerId, catalog.ContextWindows);
                     Settings.SetProviderVisionSupport(providerId, catalog.VisionSupport);
+                    Settings.SetProviderOutputLimits(providerId, catalog.OutputLimits);
                     Settings.Write();
                     return "RimLLM_FetchSuccessCount".Translate(models.Count);
                 };
