@@ -74,43 +74,39 @@ public static class RimLLMSettingsUI
         float height = inRect.height - 10f;
 
         Rect leftColRect = new(inRect.x, inRect.y, leftWidth, height);
-        Widgets.DrawMenuSection(leftColRect);
+        Widgets.DrawBoxSolid(leftColRect, RimLLMUIStyle.PanelFill);
         DrawLeftCategoryMenu(leftColRect);
 
         if (activeMainCategory == ProvidersCategoryId)
         {
             Rect midColRect = new(leftColRect.xMax + gap, inRect.y, midWidth, height);
-            Widgets.DrawMenuSection(midColRect);
+            Widgets.DrawBoxSolid(midColRect, RimLLMUIStyle.PanelFill);
             ProviderSettingsDrawer.DrawMiddleProviderMenu(midColRect);
 
             Rect rightColRect = new(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
-            Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
         else if (activeMainCategory == EmbeddingPageId)
         {
             Rect midColRect = new(leftColRect.xMax + gap, inRect.y, midWidth, height);
-            Widgets.DrawMenuSection(midColRect);
+            Widgets.DrawBoxSolid(midColRect, RimLLMUIStyle.PanelFill);
             EmbeddingSettingsDrawer.DrawMiddleEmbeddingMenu(midColRect);
 
             Rect rightColRect = new(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
-            Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
         else if (activeMainCategory == DecisionPageId)
         {
             Rect midColRect = new(leftColRect.xMax + gap, inRect.y, midWidth, height);
-            Widgets.DrawMenuSection(midColRect);
+            Widgets.DrawBoxSolid(midColRect, RimLLMUIStyle.PanelFill);
             DecisionSettingsDrawer.DrawMiddleDecisionMenu(midColRect);
 
             Rect rightColRect = new(midColRect.xMax + gap, inRect.y, inRect.width - leftWidth - midWidth - gap * 2f, height);
-            Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
         else
         {
             Rect rightColRect = new(leftColRect.xMax + gap, inRect.y, inRect.width - leftWidth - gap, height);
-            Widgets.DrawMenuSection(rightColRect);
             DrawRightDetailContent(rightColRect);
         }
     }
@@ -193,7 +189,7 @@ public static class RimLLMSettingsUI
         Rect btnRect = listing.GetRect(isHome ? HomeButtonHeight : CategoryButtonHeight);
         listing.Gap(CategoryButtonGap);
         bool selected = activeMainCategory == page.Id;
-        RimLLMUIStyle.DrawSelectableFrame(btnRect, selected);
+        RimLLMUIStyle.DrawNavSelection(btnRect, selected);
 
         if (Widgets.ButtonInvisible(btnRect))
         {
@@ -201,12 +197,14 @@ public static class RimLLMSettingsUI
         }
 
         string label = page.MenuLabelKey.Translate();
-        string text = selected ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
+        string text = selected
+            ? $"<color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Gold)}>{label}</color>"
+            : $"<color=silver>{label}</color>";
         if (!isHome)
         {
-            using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
             {
-                Widgets.Label(btnRect, text);
+                Widgets.Label(new Rect(btnRect.x + 10f, btnRect.y, btnRect.width - 10f, btnRect.height), text);
             }
             return;
         }
@@ -214,13 +212,13 @@ public static class RimLLMSettingsUI
         bool ready = SetupStatus.Current(out _) == SetupState.Ready;
         Color statusColor = ready ? RimLLMUIStyle.StatusGreen : RimLLMUIStyle.Danger;
         string status = (ready ? "RimLLM_MenuHomeReady" : "RimLLM_MenuHomeNotReady").Translate();
-        using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {
-            Widgets.Label(new Rect(btnRect.x, btnRect.y + 2f, btnRect.width, 24f), text);
+            Widgets.Label(new Rect(btnRect.x + 10f, btnRect.y + 2f, btnRect.width - 10f, 24f), text);
         }
-        using (RimLLMUIStyle.With(TextAnchor.MiddleCenter, GameFont.Tiny))
+        using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
         {
-            Widgets.Label(new Rect(btnRect.x, btnRect.y + 24f, btnRect.width, 18f),
+            Widgets.Label(new Rect(btnRect.x + 10f, btnRect.y + 24f, btnRect.width - 10f, 18f),
                 $"<color=#{ColorUtility.ToHtmlStringRGB(statusColor)}>● {status}</color>");
         }
     }
@@ -260,8 +258,7 @@ public static class RimLLMSettingsUI
         DetailPage? page = FindPage(activeMainCategory);
         string titleText = page != null ? page.Title() : string.Empty;
 
-        Widgets.Label(titleRect, $"<size=14><b>{titleText}</b></size>");
-        Widgets.DrawLineHorizontal(contentRect.x, titleRect.yMax + 4f, contentRect.width);
+        Widgets.Label(titleRect, $"<size=16><color=#{ColorUtility.ToHtmlStringRGB(RimLLMUIStyle.Gold)}>{titleText}</color></size>");
 
         Rect detailRect = new(contentRect.x, titleRect.yMax + 8f, contentRect.width, contentRect.height - 36f);
 

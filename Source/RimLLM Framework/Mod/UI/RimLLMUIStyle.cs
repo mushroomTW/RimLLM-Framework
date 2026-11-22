@@ -11,7 +11,11 @@ namespace RimLLM_Framework.Mod;
 public static class RimLLMUIStyle
 {
     /// <summary>選中項目的底色。</summary>
-    public static readonly Color SelectionFill = new(1f, 1f, 1f, 0.08f);
+    /// <summary>設定畫面的金色強調：選中項、段落標題；RimAgent 設定頁直接引用同一組色票。</summary>
+    public static readonly Color Gold = new(0.94f, 0.78f, 0.45f);
+    public static readonly Color SelectedFill = new(0.94f, 0.78f, 0.45f, 0.16f);
+    public static readonly Color PanelFill = new(1f, 1f, 1f, 0.03f);
+    public static readonly Color PanelBorder = new(0.4f, 0.41f, 0.43f);
 
     /// <summary>模型 chip 的底色。</summary>
     public static readonly Color ChipFill = new(1f, 1f, 1f, 0.05f);
@@ -281,14 +285,23 @@ public static class RimLLMUIStyle
     {
         if (selected)
         {
-            Widgets.DrawBoxSolid(rect, SelectionFill);
+            Widgets.DrawBoxSolid(rect, SelectedFill);
+            Color old = GUI.color;
+            GUI.color = Gold;
             Widgets.DrawBox(rect, 1);
-            Widgets.DrawBoxSolid(new Rect(rect.x, rect.y, 3f, rect.height), Success);
+            GUI.color = old;
         }
         else if (Mouse.IsOver(rect))
         {
             Widgets.DrawHighlight(rect);
         }
+    }
+
+    /// <summary>導覽清單項目的選取／滑過底色（無外框），左欄一級分頁與中欄供應商清單共用。</summary>
+    public static void DrawNavSelection(Rect rect, bool selected)
+    {
+        if (selected) Widgets.DrawBoxSolid(rect, SelectedFill);
+        else if (Mouse.IsOver(rect)) Widgets.DrawBoxSolid(rect, new Color(1f, 1f, 1f, 0.06f));
     }
 
     /// <summary>

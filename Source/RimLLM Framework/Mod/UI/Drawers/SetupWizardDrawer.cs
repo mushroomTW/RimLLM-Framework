@@ -836,7 +836,6 @@ public static class SetupWizardDrawer
     internal static void DrawOptionalRow(Listing_Standard listing, string? name, string? status, string? buttonLabel, Action? onClick)
     {
         Rect row = listing.GetRect(32f);
-        Widgets.DrawLineHorizontal(row.x, row.yMax, row.width);
         const float buttonWidth = 240f;
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
         {

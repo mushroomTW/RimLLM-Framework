@@ -2,3 +2,10 @@
 RimLLM_Framework.IRimLLMSettings.GetMaxOutputTokens(string! providerId, string! modelName) -> int?
 RimLLM_Framework.Mod.RimLLMFrameworkSettings.GetMaxOutputTokens(string! providerId, string! modelName) -> int?
 static RimLLM_Framework.RimLLMProvider.GetMaxOutputTokens(string! modelId) -> int?
+
+static readonly RimLLM_Framework.Mod.RimLLMUIStyle.Gold -> UnityEngine.Color
+static readonly RimLLM_Framework.Mod.RimLLMUIStyle.PanelFill -> UnityEngine.Color
+static readonly RimLLM_Framework.Mod.RimLLMUIStyle.SelectedFill -> UnityEngine.Color
+static readonly RimLLM_Framework.Mod.RimLLMUIStyle.PanelBorder -> UnityEngine.Color
+*REMOVED*static readonly RimLLM_Framework.Mod.RimLLMUIStyle.SelectionFill -> UnityEngine.Color
+static RimLLM_Framework.Mod.RimLLMUIStyle.DrawNavSelection(UnityEngine.Rect rect, bool selected) -> void

@@ -123,7 +123,7 @@ public static class EmbeddingSettingsDrawer
     private static void DrawEmbeddingSubButton(Listing_Standard listing, string label, string providerId)
     {
         Rect btnRect = listing.GetRect(SubButtonHeight);
-        RimLLMUIStyle.DrawSelectableFrame(btnRect, ActiveEmbeddingSubTab == providerId);
+        RimLLMUIStyle.DrawNavSelection(btnRect, ActiveEmbeddingSubTab == providerId);
 
         if (Widgets.ButtonInvisible(btnRect))
         {
@@ -133,7 +133,7 @@ public static class EmbeddingSettingsDrawer
         Rect nameRect = new(btnRect.x + 8f, btnRect.y + 3f, btnRect.width - 16f, 22f);
         Rect statusRect = new(btnRect.x + 8f, btnRect.y + 25f, btnRect.width - 16f, 18f);
         Text.Font = GameFont.Small;
-        string nameText = ActiveEmbeddingSubTab == providerId ? $"{ColorTagOpen}white><b>{label}</b>{ColorTagClose}" : $"{ColorTagOpen}silver>{label}{ColorTagClose}";
+        string nameText = ActiveEmbeddingSubTab == providerId ? $"{ColorTagOpen}#F0C773>{label}{ColorTagClose}" : $"{ColorTagOpen}silver>{label}{ColorTagClose}";
         Widgets.Label(nameRect, nameText);
 
         bool isActive = Settings.EmbeddingProvider == providerId;

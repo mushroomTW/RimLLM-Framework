@@ -100,7 +100,7 @@ public static class ProviderSettingsDrawer
     private static void DrawProviderSubButton(Listing_Standard listing, string label, string providerId)
     {
         Rect btnRect = listing.GetRect(SubButtonHeight);
-        RimLLMUIStyle.DrawSelectableFrame(btnRect, ActiveProviderSubTab == providerId);
+        RimLLMUIStyle.DrawNavSelection(btnRect, ActiveProviderSubTab == providerId);
 
         if (Widgets.ButtonInvisible(btnRect))
         {
@@ -110,7 +110,7 @@ public static class ProviderSettingsDrawer
         Rect nameRect = new(btnRect.x + 8f, btnRect.y + 3f, btnRect.width - 16f, 22f);
         Rect statusRect = new(btnRect.x + 8f, btnRect.y + 25f, btnRect.width - 16f, 18f);
         Text.Font = GameFont.Small;
-        string nameText = ActiveProviderSubTab == providerId ? $"<color=white><b>{label}</b></color>" : $"<color=silver>{label}</color>";
+        string nameText = ActiveProviderSubTab == providerId ? $"<color=#F0C773>{label}</color>" : $"<color=silver>{label}</color>";
         Widgets.Label(nameRect, nameText);
 
         bool enabled = Settings.IsProviderEnabled(providerId);

@@ -286,8 +286,8 @@
   <RimLLM_MenuAdvancedGroup>高级设置</RimLLM_MenuAdvancedGroup>
   <RimLLM_MenuHomeReady>可以用了</RimLLM_MenuHomeReady>
   <RimLLM_MenuHomeNotReady>还不能用</RimLLM_MenuHomeNotReady>
-  <RimLLM_HomeReadyTitle>AI 可以用了！</RimLLM_HomeReadyTitle>
-  <RimLLM_HomeReadyReason>直接关掉这个窗口回去玩就好。</RimLLM_HomeReadyReason>
+  <RimLLM_HomeReadyTitle>一切正常</RimLLM_HomeReadyTitle>
+  <RimLLM_HomeReadyReason>关掉窗口回去玩就行。</RimLLM_HomeReadyReason>
   <RimLLM_HomeChatBtn>跟 AI 聊聊看</RimLLM_HomeChatBtn>
   <RimLLM_HomeNotReadyTitle>AI 还不能用</RimLLM_HomeNotReadyTitle>
   <RimLLM_HomeNotConnectedReason>原因：还没连接任何 AI。</RimLLM_HomeNotConnectedReason>
@@ -300,17 +300,19 @@
   <RimLLM_HomeTodo3>③ 按「开始测试」</RimLLM_HomeTodo3>
   <RimLLM_HomeTodoDone>✓ 做好了</RimLLM_HomeTodoDone>
   <RimLLM_HomeTodoPending>✗ 还没做</RimLLM_HomeTodoPending>
-  <RimLLM_HomeTip>不知道选哪家？选 Google Gemini：免费，一把密钥可设好对话、记忆搜索、决策三种模型。</RimLLM_HomeTip>
+  <RimLLM_HomeTip>不知道选哪家？选 Google Gemini：免费，一把密钥可设好对话、嵌入模型、决策三种模型。</RimLLM_HomeTip>
   <RimLLM_HomeDefaultModel>默认模型</RimLLM_HomeDefaultModel>
-  <RimLLM_HomeCurrentlyUsing>目前使用：{0}　{1}</RimLLM_HomeCurrentlyUsing>
-  <RimLLM_HomeTodayUsage>今天用了：{0} tokens</RimLLM_HomeTodayUsage>
-  <RimLLM_HomeAddAnotherBtn>换一家或再加一家 AI</RimLLM_HomeAddAnotherBtn>
-  <RimLLM_HomeBackupTip>多加一家当备用：第一家坏掉或额度用完时，会自动改用下一家。</RimLLM_HomeBackupTip>
+  <RimLLM_HomeCardCurrent>目前使用</RimLLM_HomeCardCurrent>
+  <RimLLM_HomeCardUsage>今日用量</RimLLM_HomeCardUsage>
+  <RimLLM_HomeCardBackup>备用 AI</RimLLM_HomeCardBackup>
+  <RimLLM_HomeTokensUnit>tokens</RimLLM_HomeTokensUnit>
+  <RimLLM_HomeAddAnotherBtn>更换或新增 AI</RimLLM_HomeAddAnotherBtn>
+  <RimLLM_HomeBackupTip>再加一家当备用，故障或额度用完时自动切换。</RimLLM_HomeBackupTip>
   <RimLLM_SetupStep1>① 选 AI 公司</RimLLM_SetupStep1>
   <RimLLM_SetupStep2>② 粘贴密钥</RimLLM_SetupStep2>
   <RimLLM_SetupStep3>③ 选模型</RimLLM_SetupStep3>
   <RimLLM_SetupPickTitle>第 1 步：你想用哪一家 AI？</RimLLM_SetupPickTitle>
-  <RimLLM_SetupDesc_Gemini>免费，一把密钥可设好对话、记忆搜索、决策三种模型</RimLLM_SetupDesc_Gemini>
+  <RimLLM_SetupDesc_Gemini>免费，一把密钥可设好对话、嵌入模型、决策三种模型</RimLLM_SetupDesc_Gemini>
   <RimLLM_SetupDesc_DeepSeek>很便宜，中文很好</RimLLM_SetupDesc_DeepSeek>
   <RimLLM_SetupDesc_OpenRouter>一把密钥用很多种模型</RimLLM_SetupDesc_OpenRouter>
   <RimLLM_SetupDesc_OpenAI>OpenAI 官方服务，要付费</RimLLM_SetupDesc_OpenAI>
@@ -363,11 +365,11 @@
   <RimLLM_DailyBudgetLimitHint>每天最多用多少 tokens，0 代表不限制。怕花太多钱时才设置。</RimLLM_DailyBudgetLimitHint>
   <RimLLM_BudgetPolicyHint>超过上限之后要怎么做：直接拦下，或只提醒你。</RimLLM_BudgetPolicyHint>
   <RimLLM_EnableAntiAbuseHint>某个模组出错、疯狂一直问 AI 时自动刹车，避免账单爆掉。建议保持开启。</RimLLM_EnableAntiAbuseHint>
-  <RimLLM_SetupOptionalTitle>选用（大部分模组用不到）</RimLLM_SetupOptionalTitle>
-  <RimLLM_SetupOptionalHint>只有模组说明写到需要时才设置。没设置也不影响上面的「可以用了」。</RimLLM_SetupOptionalHint>
-  <RimLLM_ServiceEmbedding>记忆搜索（Embedding）</RimLLM_ServiceEmbedding>
+  <RimLLM_SetupOptionalTitle>附加功能</RimLLM_SetupOptionalTitle>
+  <RimLLM_SetupOptionalHint>仅在模组说明要求时才需设置，不影响上方状态。</RimLLM_SetupOptionalHint>
+  <RimLLM_ServiceEmbedding>嵌入模型</RimLLM_ServiceEmbedding>
   <RimLLM_ServiceDecision>决策模型</RimLLM_ServiceDecision>
-  <RimLLM_ServiceStatusOn>● 使用中：{0}</RimLLM_ServiceStatusOn>
+  <RimLLM_ServiceStatusOn>● 已启用：{0}</RimLLM_ServiceStatusOn>
   <RimLLM_ServiceStatusOff>○ 没有开</RimLLM_ServiceStatusOff>
   <RimLLM_SetupOptionalOpenPage>到设置页</RimLLM_SetupOptionalOpenPage>
   <RimLLM_SetupEmbeddingTesting>测试中…</RimLLM_SetupEmbeddingTesting>
@@ -392,8 +394,8 @@
   <RimLLM_TestNeedModel>请先到“模型设置”分页替这家 AI 加入一个模型，再测试连接。</RimLLM_TestNeedModel>
   <RimLLM_MsgSelectModelFirst>请先选择模型。</RimLLM_MsgSelectModelFirst>
   <RimLLM_HomeResetAllBtn>恢复默认</RimLLM_HomeResetAllBtn>
-  <RimLLM_HomeResetAllHint>把所有设置（含密钥、模型、Embedding 与决策）恢复成刚安装的状态。用量统计不受影响。</RimLLM_HomeResetAllHint>
-  <RimLLM_HomeResetAllConfirm>确定要把所有 RimLLM 设置恢复默认吗？\n\n已填的密钥、选好的模型、Embedding 与决策设置都会被清除，无法恢复。</RimLLM_HomeResetAllConfirm>
+  <RimLLM_HomeResetAllConfirm>确定要把所有 RimLLM 设置恢复默认吗？\n\n已填的密钥、选好的模型、Embedding 与决策设置都会被清除，无法恢复。
+用量统计会保留。</RimLLM_HomeResetAllConfirm>
   <RimLLM_FallbackChainJoin>加入备援链</RimLLM_FallbackChainJoin>
   <RimLLM_FallbackChainPosition>第 {0} 顺位</RimLLM_FallbackChainPosition>
   <RimLLM_FallbackChainNeedsActive>备援链：请先启用一个供应商，它会成为第一环。</RimLLM_FallbackChainNeedsActive>

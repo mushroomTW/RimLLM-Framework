@@ -36,14 +36,29 @@ public static class HomeDrawer
         }
 
         DrawOptionalServices(listing);
-        DrawResetAll(listing);
+        DrawFooterButtons(listing, state);
     }
 
-    private static void DrawResetAll(Listing_Standard listing)
+    private static void DrawFooterButtons(Listing_Standard listing, SetupState state)
     {
-        listing.Gap(24f);
+        listing.Gap(20f);
         Rect row = listing.GetRect(30f);
-        if (Widgets.ButtonText(new Rect(row.x, row.y, 220f, row.height), "RimLLM_HomeResetAllBtn".Translate()))
+        float x = row.x;
+        if (state == SetupState.Ready)
+        {
+            if (Widgets.ButtonText(new Rect(x, row.y, 220f, row.height), "RimLLM_HomeAddAnotherBtn".Translate()))
+            {
+                SetupWizardDrawer.Restart();
+                RimLLMSettingsUI.OpenPage(RimLLMSettingsUI.SetupPageId);
+            }
+            x += 230f;
+        }
+
+        Color oldColor = GUI.color;
+        GUI.color = RimLLMUIStyle.Danger;
+        bool reset = Widgets.ButtonText(new Rect(x, row.y, 160f, row.height), "RimLLM_HomeResetAllBtn".Translate());
+        GUI.color = oldColor;
+        if (reset)
         {
             Find.WindowStack.Add(Dialog_MessageBox.CreateConfirmation(
                 "RimLLM_HomeResetAllConfirm".Translate(),
@@ -55,7 +70,6 @@ public static class HomeDrawer
                 },
                 destructive: true));
         }
-        RimLLMUIStyle.DrawHint(listing, "RimLLM_HomeResetAllHint".Translate());
     }
 
     private static void DrawOptionalServices(Listing_Standard listing)
@@ -183,21 +197,53 @@ public static class HomeDrawer
 
     private static void DrawReadyDetails(Listing_Standard listing, string? activeEntry)
     {
-        string model = ProviderIds.TrySplitModelId(activeEntry ?? string.Empty, out string? providerId, out string? explicitModel)
-            ? explicitModel
-            : "RimLLM_HomeDefaultModel".Translate().ToString();
-
-        listing.Label("RimLLM_HomeCurrentlyUsing".Translate(providerId, model));
-        listing.Label("RimLLM_HomeTodayUsage".Translate(Settings.DailyAccumulatedTokens.ToString("N0", CultureInfo.InvariantCulture)));
-        listing.Gap(12f);
-
-        Rect row = listing.GetRect(32f);
-        if (Widgets.ButtonText(new Rect(row.x, row.y, 220f, row.height), "RimLLM_HomeAddAnotherBtn".Translate()))
+        string provider = activeEntry ?? string.Empty;
+        string model = "RimLLM_HomeDefaultModel".Translate().ToString();
+        if (ProviderIds.TrySplitModelId(provider, out string? providerId, out string? explicitModel))
         {
-            SetupWizardDrawer.Restart();
-            RimLLMSettingsUI.OpenPage(RimLLMSettingsUI.SetupPageId);
+            provider = providerId;
+            model = explicitModel;
         }
-        listing.Gap(8f);
-        RimLLMUIStyle.DrawHint(listing, "RimLLM_HomeBackupTip".Translate());
+
+        Rect row = listing.GetRect(CardHeight);
+        const float gap = 10f;
+        float w = (row.width - gap * 2f) / 3f;
+        DrawInfoCard(new Rect(row.x, row.y, w, row.height), "RimLLM_HomeCardCurrent".Translate(), provider, model);
+        DrawInfoCard(new Rect(row.x + w + gap, row.y, w, row.height), "RimLLM_HomeCardUsage".Translate(),
+            Settings.DailyAccumulatedTokens.ToString("N0", CultureInfo.InvariantCulture), "RimLLM_HomeTokensUnit".Translate());
+        DrawInfoCard(new Rect(row.x + (w + gap) * 2f, row.y, w, row.height), "RimLLM_HomeCardBackup".Translate(),
+            null, "RimLLM_HomeBackupTip".Translate());
+    }
+
+    private static void DrawInfoCard(Rect card, string label, string? value, string sub)
+    {
+        Widgets.DrawBoxSolid(card, new Color(1f, 1f, 1f, 0.05f));
+        GUI.color = RimLLMUIStyle.PanelBorder;
+        Widgets.DrawBox(card, 1);
+        GUI.color = Color.white;
+        Rect inner = card.ContractedBy(10f);
+        using (RimLLMUIStyle.With(TextAnchor.UpperLeft, GameFont.Tiny, wordWrap: false))
+        {
+            GUI.color = RimLLMUIStyle.Muted;
+            Widgets.Label(new Rect(inner.x, inner.y, inner.width, 18f), label);
+            GUI.color = Color.white;
+        }
+
+        float subY = inner.y + 18f;
+        if (value != null)
+        {
+            using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Medium, wordWrap: false))
+            {
+                Widgets.Label(new Rect(inner.x, subY, inner.width, 30f), value);
+            }
+            subY += 30f;
+        }
+
+        using (RimLLMUIStyle.With(TextAnchor.UpperLeft, GameFont.Tiny, wordWrap: value == null))
+        {
+            GUI.color = RimLLMUIStyle.Muted;
+            Widgets.Label(new Rect(inner.x, subY, inner.width, inner.yMax - subY), sub);
+            GUI.color = Color.white;
+        }
     }
 }

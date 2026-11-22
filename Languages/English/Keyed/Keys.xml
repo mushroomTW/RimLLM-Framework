@@ -286,7 +286,7 @@
   <RimLLM_MenuAdvancedGroup>Advanced (optional)</RimLLM_MenuAdvancedGroup>
   <RimLLM_MenuHomeReady>Ready</RimLLM_MenuHomeReady>
   <RimLLM_MenuHomeNotReady>Not ready</RimLLM_MenuHomeNotReady>
-  <RimLLM_HomeReadyTitle>AI is ready!</RimLLM_HomeReadyTitle>
+  <RimLLM_HomeReadyTitle>All good</RimLLM_HomeReadyTitle>
   <RimLLM_HomeReadyReason>You can close this window and go back to playing.</RimLLM_HomeReadyReason>
   <RimLLM_HomeChatBtn>Chat with the AI</RimLLM_HomeChatBtn>
   <RimLLM_HomeNotReadyTitle>AI is not ready yet</RimLLM_HomeNotReadyTitle>
@@ -302,15 +302,17 @@
   <RimLLM_HomeTodoPending>✗ Not yet</RimLLM_HomeTodoPending>
   <RimLLM_HomeTip>Not sure which one? Pick Google Gemini: it has a free tier and needs no credit card.</RimLLM_HomeTip>
   <RimLLM_HomeDefaultModel>default model</RimLLM_HomeDefaultModel>
-  <RimLLM_HomeCurrentlyUsing>Using: {0}  {1}</RimLLM_HomeCurrentlyUsing>
-  <RimLLM_HomeTodayUsage>Used today: {0} tokens</RimLLM_HomeTodayUsage>
-  <RimLLM_HomeAddAnotherBtn>Switch or add another AI</RimLLM_HomeAddAnotherBtn>
-  <RimLLM_HomeBackupTip>Add a backup AI: if the first one breaks or runs out of quota, the next one is used automatically.</RimLLM_HomeBackupTip>
+  <RimLLM_HomeCardCurrent>In use</RimLLM_HomeCardCurrent>
+  <RimLLM_HomeCardUsage>Used today</RimLLM_HomeCardUsage>
+  <RimLLM_HomeCardBackup>Backup AI</RimLLM_HomeCardBackup>
+  <RimLLM_HomeTokensUnit>tokens</RimLLM_HomeTokensUnit>
+  <RimLLM_HomeAddAnotherBtn>Switch or add AI</RimLLM_HomeAddAnotherBtn>
+  <RimLLM_HomeBackupTip>Add a backup AI; it takes over automatically if the first one fails or runs out of quota.</RimLLM_HomeBackupTip>
   <RimLLM_SetupStep1>1. Pick AI</RimLLM_SetupStep1>
   <RimLLM_SetupStep2>2. Paste key</RimLLM_SetupStep2>
   <RimLLM_SetupStep3>③ Pick models</RimLLM_SetupStep3>
   <RimLLM_SetupPickTitle>Step 1: Which AI do you want to use?</RimLLM_SetupPickTitle>
-  <RimLLM_SetupDesc_Gemini>Free; one key sets up chat, memory search and decision models</RimLLM_SetupDesc_Gemini>
+  <RimLLM_SetupDesc_Gemini>Free; one key sets up chat, embedding model and decision models</RimLLM_SetupDesc_Gemini>
   <RimLLM_SetupDesc_DeepSeek>Very cheap</RimLLM_SetupDesc_DeepSeek>
   <RimLLM_SetupDesc_OpenRouter>One key, many models</RimLLM_SetupDesc_OpenRouter>
   <RimLLM_SetupDesc_OpenAI>Official OpenAI service, paid</RimLLM_SetupDesc_OpenAI>
@@ -363,9 +365,9 @@
   <RimLLM_DailyBudgetLimitHint>Max tokens per day, 0 means no limit. Set it only if you worry about cost.</RimLLM_DailyBudgetLimitHint>
   <RimLLM_BudgetPolicyHint>What happens after the limit: block requests, or only warn you.</RimLLM_BudgetPolicyHint>
   <RimLLM_EnableAntiAbuseHint>Brakes automatically when a buggy mod keeps asking the AI nonstop, so your bill does not explode. Best left on.</RimLLM_EnableAntiAbuseHint>
-  <RimLLM_SetupOptionalTitle>Optional (most mods do not need these)</RimLLM_SetupOptionalTitle>
-  <RimLLM_SetupOptionalHint>Set these up only if a mod's description says it needs them. They do not affect "Ready" above.</RimLLM_SetupOptionalHint>
-  <RimLLM_ServiceEmbedding>Memory search (Embedding)</RimLLM_ServiceEmbedding>
+  <RimLLM_SetupOptionalTitle>Extra features</RimLLM_SetupOptionalTitle>
+  <RimLLM_SetupOptionalHint>Only needed when a mod's description asks for them. They do not affect the status above.</RimLLM_SetupOptionalHint>
+  <RimLLM_ServiceEmbedding>Embedding model</RimLLM_ServiceEmbedding>
   <RimLLM_ServiceDecision>Decision model</RimLLM_ServiceDecision>
   <RimLLM_ServiceStatusOn>● On: {0}</RimLLM_ServiceStatusOn>
   <RimLLM_ServiceStatusOff>○ Off</RimLLM_ServiceStatusOff>
@@ -392,8 +394,8 @@
   <RimLLM_TestNeedModel>Add a model for this AI company on the Model settings tab first, then test the connection.</RimLLM_TestNeedModel>
   <RimLLM_MsgSelectModelFirst>Choose a model first.</RimLLM_MsgSelectModelFirst>
   <RimLLM_HomeResetAllBtn>Reset to defaults</RimLLM_HomeResetAllBtn>
-  <RimLLM_HomeResetAllHint>Return every setting (keys, models, Embedding and decisions included) to a fresh install. Usage stats are kept.</RimLLM_HomeResetAllHint>
-  <RimLLM_HomeResetAllConfirm>Reset all RimLLM settings to defaults?\n\nYour API keys, chosen models, Embedding and decision settings will be erased. This cannot be undone.</RimLLM_HomeResetAllConfirm>
+  <RimLLM_HomeResetAllConfirm>Reset all RimLLM settings to defaults?\n\nYour API keys, chosen models, Embedding and decision settings will be erased. This cannot be undone.
+Usage stats are kept.</RimLLM_HomeResetAllConfirm>
   <RimLLM_FallbackChainJoin>Add to fallback chain</RimLLM_FallbackChainJoin>
   <RimLLM_FallbackChainPosition>#{0}</RimLLM_FallbackChainPosition>
   <RimLLM_FallbackChainNeedsActive>Fallback chain: enable a provider first; it becomes the first link.</RimLLM_FallbackChainNeedsActive>

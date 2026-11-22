@@ -97,7 +97,7 @@ public static class DecisionSettingsDrawer
     private static void DrawDecisionSubButton(Listing_Standard listing, string label, string providerId)
     {
         Rect btnRect = listing.GetRect(SubButtonHeight);
-        RimLLMUIStyle.DrawSelectableFrame(btnRect, ActiveDecisionSubTab == providerId);
+        RimLLMUIStyle.DrawNavSelection(btnRect, ActiveDecisionSubTab == providerId);
 
         if (Widgets.ButtonInvisible(btnRect))
         {
@@ -108,7 +108,7 @@ public static class DecisionSettingsDrawer
         Rect statusRect = new(btnRect.x + 8f, btnRect.y + 25f, btnRect.width - 16f, 18f);
         Text.Font = GameFont.Small;
         string nameText = ActiveDecisionSubTab == providerId
-            ? $"{ColorTagOpen}white><b>{label}</b>{ColorTagClose}"
+            ? $"{ColorTagOpen}#F0C773>{label}{ColorTagClose}"
             : $"{ColorTagOpen}silver>{label}{ColorTagClose}";
         Widgets.Label(nameRect, nameText);
 
