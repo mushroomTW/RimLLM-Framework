@@ -27,9 +27,11 @@ internal static class ModelPricing
         public readonly float PromptPerMillion;
         public readonly float CompletionPerMillion;
         public readonly float CachedPromptPerMillion;
+        public readonly float CacheWritePerMillion;
 
-        public CostRate(float promptPerMillion, float completionPerMillion, float? cachedPromptPerMillion = null)
+        public CostRate(float promptPerMillion, float completionPerMillion, float? cachedPromptPerMillion = null, float? cacheWritePerMillion = null)
         {
+            CacheWritePerMillion = cacheWritePerMillion ?? promptPerMillion;
             PromptPerMillion = promptPerMillion;
             CompletionPerMillion = completionPerMillion;
             CachedPromptPerMillion = cachedPromptPerMillion ?? promptPerMillion * DefaultCacheReadMultiplier;
@@ -38,19 +40,19 @@ internal static class ModelPricing
 
     private static readonly Dictionary<string, CostRate> BuiltInRates = new(StringComparer.OrdinalIgnoreCase)
     {
-        { "openai:gpt-5", new CostRate(1.25f, 10.00f) },
-        { "openai:gpt-5-mini", new CostRate(0.25f, 2.00f) },
-        { "openai:gpt-5-nano", new CostRate(0.05f, 0.40f) },
-        { "openai:gpt-5.1", new CostRate(1.25f, 10.00f) },
+        { "openai:gpt-5", new CostRate(1.25f, 10.00f, 0.125f) },
+        { "openai:gpt-5-mini", new CostRate(0.25f, 2.00f, 0.025f) },
+        { "openai:gpt-5-nano", new CostRate(0.05f, 0.40f, 0.005f) },
+        { "openai:gpt-5.1", new CostRate(1.25f, 10.00f, 0.125f) },
         { "openai:gpt-4.1", new CostRate(2.00f, 8.00f) },
         { "openai:gpt-4.1-mini", new CostRate(0.40f, 1.60f) },
         { "openai:gpt-4.1-nano", new CostRate(0.10f, 0.40f) },
-        { "openai:gpt-4o", new CostRate(2.50f, 10.00f) },
-        { "openai:gpt-4o-mini", new CostRate(0.15f, 0.60f) },
-        { "openai:o1", new CostRate(15.00f, 60.00f) },
-        { "openai:o1-mini", new CostRate(1.10f, 4.40f) },
+        { "openai:gpt-4o", new CostRate(2.50f, 10.00f, 1.25f) },
+        { "openai:gpt-4o-mini", new CostRate(0.15f, 0.60f, 0.075f) },
+        { "openai:o1", new CostRate(15.00f, 60.00f, 7.50f) },
+        { "openai:o1-mini", new CostRate(1.10f, 4.40f, 0.55f) },
         { "openai:o3", new CostRate(2.00f, 8.00f) },
-        { "openai:o3-mini", new CostRate(1.10f, 4.40f) },
+        { "openai:o3-mini", new CostRate(1.10f, 4.40f, 0.55f) },
         { "openai:o3-pro", new CostRate(20.00f, 80.00f) },
         { "openai:o4-mini", new CostRate(1.10f, 4.40f) },
         { "openai:gpt-4-turbo", new CostRate(10.00f, 30.00f) },
@@ -195,7 +197,7 @@ internal static class ModelPricing
     /// 估算單次呼叫的美元成本。回傳是否找到費率，讓記帳區分未知費用與明確的零元費率。
     /// <paramref name="cachedPromptTokens"/> 由呼叫端保證已落在 [0, promptTokens] 範圍內。
     /// </summary>
-    internal static bool TryEstimateCost(string providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens, out float cost)
+    internal static bool TryEstimateCost(string providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens, out float cost, int cacheWriteTokens = 0)
     {
         if (!TryFindRate(providerId, modelName, out CostRate rate))
         {
@@ -203,9 +205,11 @@ internal static class ModelPricing
             return false;
         }
 
-        int fullRatePromptTokens = promptTokens - cachedPromptTokens;
+        int writeTokens = Math.Clamp(cacheWriteTokens, 0, promptTokens - cachedPromptTokens);
+        int fullRatePromptTokens = promptTokens - cachedPromptTokens - writeTokens;
         float promptCost = (fullRatePromptTokens / 1000000f) * rate.PromptPerMillion
-                           + (cachedPromptTokens / 1000000f) * rate.CachedPromptPerMillion;
+                           + (cachedPromptTokens / 1000000f) * rate.CachedPromptPerMillion
+                           + (writeTokens / 1000000f) * rate.CacheWritePerMillion;
         float completionCost = (completionTokens / 1000000f) * rate.CompletionPerMillion;
         cost = promptCost + completionCost;
         return true;

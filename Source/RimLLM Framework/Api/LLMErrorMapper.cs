@@ -203,8 +203,22 @@ public static class LLMErrorMapper
     /// 各家的欄位名不同（reasoning_effort、reasoning、thinking、enable_thinking、thinking_budget），
     /// 而且支援範圍細到模型層級，因此以服務端回報的欄位名判定，再由框架去掉參數重打一次。
     /// </summary>
+    /// <remarks>
+    /// 續傳類錯誤（要求送回 reasoning_content／thought_signature、加密推理無效、改用 /v1/responses）也會提到推理，
+    /// 但問題不在思考參數；誤判會讓模型整個 session 收不到思考強度，還蓋掉真正的原因。
+    /// </remarks>
     public static bool LooksLikeReasoningRejection(string message)
     {
+        if (ContainsIgnoreCase(message, "reasoning_content") ||
+            ContainsIgnoreCase(message, "reasoning_details") ||
+            ContainsIgnoreCase(message, "thought_signature") ||
+            ContainsIgnoreCase(message, "passed back") ||
+            ContainsIgnoreCase(message, "encrypted") ||
+            ContainsIgnoreCase(message, "/v1/responses"))
+        {
+            return false;
+        }
+
         return ContainsIgnoreCase(message, "reasoning") ||
                ContainsIgnoreCase(message, "thinking");
     }

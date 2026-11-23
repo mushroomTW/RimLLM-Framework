@@ -95,6 +95,11 @@ public class RimLLMChatOptions : ChatOptions
     internal static bool GetDisableReasoning(ChatOptions? options) =>
         ReadAdditional(options, DisableReasoningKey, fallback: false);
 
+    internal const string PromptCacheKeyKey = "rimllm_prompt_cache_key";
+
+    internal static string? GetPromptCacheKey(ChatOptions? options) =>
+        ReadAdditional<string?>(options, PromptCacheKeyKey, fallback: null);
+
     internal static System.Type? GetResponseType(ChatOptions? options) =>
         ReadAdditional<System.Type?>(options, ResponseTypeKey, fallback: null);
 

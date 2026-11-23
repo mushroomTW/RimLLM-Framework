@@ -41,6 +41,38 @@ public static class RimLLMReasoningSupport
         return kind + "|" + (providerId ?? string.Empty) + "|" + (model ?? string.Empty);
     }
 
+    internal static bool MarkResponsesUnsupported(string providerId, string model)
+    {
+        lock (Gate)
+        {
+            return Unsupported.Add(BuildKey("p", providerId, model));
+        }
+    }
+
+    internal static bool IsResponsesUnsupported(string providerId, string model)
+    {
+        lock (Gate)
+        {
+            return Unsupported.Contains(BuildKey("p", providerId, model));
+        }
+    }
+
+    internal static bool MarkEncryptedReasoningUnsupported(string providerId, string model)
+    {
+        lock (Gate)
+        {
+            return Unsupported.Add(BuildKey("e", providerId, model));
+        }
+    }
+
+    internal static bool IsEncryptedReasoningUnsupported(string providerId, string model)
+    {
+        lock (Gate)
+        {
+            return Unsupported.Contains(BuildKey("e", providerId, model));
+        }
+    }
+
     /// <summary>記下此模型不接受思考參數。回傳 true 代表這是新資訊（先前沒記錄過）。</summary>
     public static bool MarkReasoningUnsupported(string providerId, string model)
     {

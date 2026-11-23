@@ -21,6 +21,11 @@ public class OpenRouterProvider : OpenAIProvider
     /// </summary>
     protected override ReasoningWireFormat ReasoningFormat => ReasoningWireFormat.OpenRouterReasoning;
 
+    /// <summary>多模型備援（逗號分隔）靠 Chat Completions 的 models 陣列，留在原路徑。</summary>
+    internal override bool PrefersResponsesApi(string model) => !model.Contains(',', StringComparison.Ordinal);
+
+    internal override bool ReplaysChatReasoning => true;
+
     public OpenRouterProvider(IRimLLMSettings settings) : base(settings)
     {
     }

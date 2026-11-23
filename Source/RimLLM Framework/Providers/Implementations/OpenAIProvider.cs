@@ -13,6 +13,7 @@ using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Chat;
 using OpenAI.Models;
+using OpenAI.Responses;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
@@ -76,8 +77,29 @@ public class OpenAIProvider : ILLMProvider
         }
         string? endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
         IChatClient rawClient = CreateOpenAiChatClient(apiKey, model, endpoint);
-        return new OpenAIChatClientAdapter(rawClient, this, model);
+        IChatClient? responsesClient = PrefersResponsesApi(model)
+            ? CreateOpenAiResponsesChatClient(apiKey, model, endpoint)
+            : null;
+        return new OpenAIChatClientAdapter(rawClient, this, model, responsesClient);
     }
+
+    /// <summary>
+    /// 優先走 Responses API。OpenAI 自 GPT-5.4 起在 Chat Completions 不支援「工具＋思考」
+    /// （developers.openai.com 的 migrate-to-responses）。端點或模型不支援時由轉接層退回 Chat Completions。
+    /// </summary>
+    internal virtual bool PrefersResponsesApi(string model) => ProviderId == ProviderIds.OpenAI;
+
+    /// <summary>Chat Completions 的推理內容是否送回同一個模型。只列供應商文件要求或明載支援者，其餘端點可能拒收未知欄位。</summary>
+    internal virtual bool ReplaysChatReasoning => false;
+
+    internal virtual bool RequiresThoughtSignatures(string model) => false;
+
+    private bool UsesDefaultEndpoint => string.Equals(
+        NormalizeEndpoint(Settings.GetEndpoint(ProviderId, DefaultEndpoint)) ?? NormalizeEndpoint(DefaultEndpoint),
+        NormalizeEndpoint(DefaultEndpoint), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>同一供應商可指向不同端點，是否有 /responses 以端點為準。</summary>
+    internal string ResponsesKey => ProviderId + "@" + Settings.GetEndpoint(ProviderId, DefaultEndpoint);
 
     /// <summary>
     /// SDK 的單次請求網路逾時。實際逾時由 ApiTimeout 掌控（設定上限 120 秒），
@@ -92,21 +114,50 @@ public class OpenAIProvider : ILLMProvider
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("OpenAI model 不得為空。", nameof(model));
 
-        var options = new OpenAIClientOptions
-        {
-            // 重試由 RimLLMFailoverChatClient 統一負責。SDK 預設的 3 次內建重試會把每次嘗試
-            // 放大成 4 個請求，還會在占著併發名額時等待 Retry-After，拖慢備援切換。
-            RetryPolicy = new ClientRetryPolicy(0),
-            NetworkTimeout = SdkNetworkTimeout
-        };
-        string? normalizedEndpoint = NormalizeEndpoint(endpoint);
-        if (!string.IsNullOrEmpty(normalizedEndpoint))
-        {
-            options.Endpoint = new Uri(normalizedEndpoint, UriKind.Absolute);
-        }
+        var options = new OpenAIClientOptions();
+        if (ParseEndpoint(endpoint) is { } uri) options.Endpoint = uri;
+        ConfigurePipeline(options, options.Endpoint);
+
+        // 唯一允許的建立點：其他地方一律呼叫本方法，RetryPolicy 與逾時才不會漏設。
+#pragma warning disable RS0030
+        var client = new ChatClient(model, new ApiKeyCredential(apiKey), options);
+#pragma warning restore RS0030
+        return client.AsIChatClient();
+    }
+
+    internal static IChatClient CreateOpenAiResponsesChatClient(string apiKey, string model, string? endpoint = null)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new ArgumentException("OpenAI API key 不得為空。", nameof(apiKey));
+        if (string.IsNullOrWhiteSpace(model))
+            throw new ArgumentException("OpenAI model 不得為空。", nameof(model));
+
+        var options = new ResponsesClientOptions();
+        if (ParseEndpoint(endpoint) is { } uri) options.Endpoint = uri;
+        ConfigurePipeline(options, options.Endpoint);
+
+        // 唯一允許的建立點，理由同 CreateOpenAiChatClient。
+#pragma warning disable RS0030
+        var client = new ResponsesClient(new ApiKeyCredential(apiKey), options);
+#pragma warning restore RS0030
+        return client.AsIChatClient(model);
+    }
+
+    private static Uri? ParseEndpoint(string? endpoint)
+    {
+        string? normalized = NormalizeEndpoint(endpoint);
+        return string.IsNullOrEmpty(normalized) ? null : new Uri(normalized, UriKind.Absolute);
+    }
+
+    private static void ConfigurePipeline(ClientPipelineOptions options, Uri? endpoint)
+    {
+        // 重試由 RimLLMFailoverChatClient 統一負責。SDK 預設的 3 次內建重試會把每次嘗試
+        // 放大成 4 個請求，還會在占著併發名額時等待 Retry-After，拖慢備援切換。
+        options.RetryPolicy = new ClientRetryPolicy(0);
+        options.NetworkTimeout = SdkNetworkTimeout;
         // 依主機而非供應商類別判斷：玩家把 OpenAI 相容供應商指向 openrouter.ai 時，
         // 對話也要和 embedding／決策一樣帶上應用歸屬標頭。
-        if (OpenRouterAttributionPolicy.Targets(options.Endpoint))
+        if (OpenRouterAttributionPolicy.Targets(endpoint))
         {
             options.AddPolicy(OpenRouterAttributionPolicy.Instance, PipelinePosition.PerCall);
         }
@@ -114,12 +165,6 @@ public class OpenAIProvider : ILLMProvider
         {
             options.Transport = TransportOverride;
         }
-
-        // 唯一允許的建立點：其他地方一律呼叫本方法，RetryPolicy 與逾時才不會漏設。
-#pragma warning disable RS0030
-        var client = new ChatClient(model, new ApiKeyCredential(apiKey), options);
-#pragma warning restore RS0030
-        return client.AsIChatClient();
     }
 
     /// <summary>單元測試用：以假的 HTTP 傳輸攔截對話請求；正式環境為 null，走 SDK 預設傳輸。</summary>
@@ -162,6 +207,45 @@ public class OpenAIProvider : ILLMProvider
         string? responseFormatJson = BuildResponseFormatJson(requestOptions, strict);
 
         ApplyReasoningAndSampling(requestOptions, model, options, responseFormatJson);
+
+        // prompt_cache_key 是 OpenAI 的欄位，其他 Chat Completions 相容端點不一定接受。
+        if (ProviderId == ProviderIds.OpenAI && UsesDefaultEndpoint && RimLLMChatOptions.GetPromptCacheKey(requestOptions) is { } cacheKey)
+        {
+            options.RawRepresentationFactory = OpenAIPatchExtensions.ChainPatch(
+                options.RawRepresentationFactory,
+                chat => chat.Patch.Set(OpenAIPatchPaths.PromptCacheKey, cacheKey));
+        }
+    }
+
+    /// <summary>不存回應（store=false）：推理以加密內容續傳，對話由呼叫端完整帶上。</summary>
+    private void BuildResponsesOptions(ChatOptions? requestOptions, string model, ChatOptions options, bool includeEncryptedReasoning)
+    {
+        string? effortLiteral = ResolveOutgoingEffortLiteral(requestOptions, model);
+        (options.AdditionalProperties ??= [])[SentEffortLiteralKey] = effortLiteral;
+        options.Reasoning = null;
+        options.ConversationId = null;
+
+        if (IsOpenAiReasoningModel(model) || RimLLMReasoningSupport.IsTemperatureUnsupported(ProviderId, model))
+        {
+            options.Temperature = null;
+        }
+
+        bool include = includeEncryptedReasoning && !IsKnownNonReasoningModel(model) &&
+                       !RimLLMReasoningSupport.IsEncryptedReasoningUnsupported(ProviderId, model);
+        string? cacheKey = UsesDefaultEndpoint ? RimLLMChatOptions.GetPromptCacheKey(requestOptions) : null;
+        options.RawRepresentationFactory = _ =>
+        {
+            var responses = new CreateResponseOptions { StoredOutputEnabled = false };
+            if (include) responses.IncludedProperties.Add(IncludedResponseProperty.ReasoningEncryptedContent);
+            if (effortLiteral != null)
+            {
+                responses.Patch.Set(
+                    OpenAIPatchPaths.Reasoning,
+                    JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string>(StringComparer.Ordinal) { { "effort", effortLiteral } }));
+            }
+            if (cacheKey != null) responses.Patch.Set(OpenAIPatchPaths.PromptCacheKey, cacheKey);
+            return responses;
+        };
     }
 
     private static string? BuildResponseFormatJson(ChatOptions? requestOptions, bool strict)
@@ -396,16 +480,32 @@ public class OpenAIProvider : ILLMProvider
         response.Messages[response.Messages.Count - 1].Contents.Insert(0, new TextReasoningContent(reasoning));
     }
 
+    private static void AddCacheWriteTokens(UsageDetails? usage, ResponseResult? response)
+    {
+        if (usage != null && response?.Usage?.InputTokenDetails is { } details &&
+            details.Patch.TryGetValue("$.cache_write_tokens"u8, out int tokens) && tokens > 0)
+        {
+            (usage.AdditionalCounts ??= [])[RimLLMChatClientExecutor.CacheWriteTokensKey] = tokens;
+        }
+    }
+
     protected sealed class OpenAIChatClientAdapter : DelegatingChatClient
     {
         private readonly OpenAIProvider _provider;
         private readonly string _model;
+        private readonly IChatClient? _responsesClient;
 
         public OpenAIChatClientAdapter(IChatClient innerClient, OpenAIProvider provider, string model)
+            : this(innerClient, provider, model, responsesClient: null)
+        {
+        }
+
+        internal OpenAIChatClientAdapter(IChatClient innerClient, OpenAIProvider provider, string model, IChatClient? responsesClient)
             : base(innerClient)
         {
             _provider = provider;
             _model = model;
+            _responsesClient = responsesClient;
         }
 
         public override async Task<ChatResponse> GetResponseAsync(
@@ -413,40 +513,35 @@ public class OpenAIProvider : ILLMProvider
             ChatOptions? options = null,
             System.Threading.CancellationToken cancellationToken = default)
         {
-            var targetOptions = options?.Clone() ?? new ChatOptions();
-            _provider.BuildChatOptions(options, _model, targetOptions);
-
-            ChatResponse response;
-            try
+            List<ChatMessage> buffered = [.. messages];
+            var state = new AttemptState();
+            while (true)
             {
-                response = await base.GetResponseAsync(messages, targetOptions, cancellationToken).ConfigureAwait(false);
-            }
-            catch (ClientResultException ex)
-            {
-                var mapped = LLMErrorMapper.FromClientResultException(ex);
-                if (_provider.MarkUnsupportedParameters(_model, mapped, targetOptions))
+                WireAttempt attempt = Prepare(buffered, options, state);
+                try
                 {
-                    var retryOptions = options?.Clone() ?? new ChatOptions();
-                    _provider.BuildChatOptions(options, _model, retryOptions);
-                    try
+                    ChatResponse response = await attempt.Client.GetResponseAsync(attempt.Messages, attempt.Options, cancellationToken).ConfigureAwait(false);
+                    if (attempt.UsesResponses)
                     {
-                        response = await base.GetResponseAsync(messages, retryOptions, cancellationToken).ConfigureAwait(false);
+                        ThrowIfFailed(response.RawRepresentation, response.Messages.SelectMany(m => m.Contents));
+                        AddCacheWriteTokens(response.Usage, response.RawRepresentation as ResponseResult);
+                        ReasoningReplay.CaptureResponses(response.Messages.SelectMany(m => m.Contents), attempt.Origin);
                     }
-                    catch (ClientResultException retryException)
+                    else
                     {
-                        throw LLMErrorMapper.FromClientResultException(retryException);
+                        PromoteReasoningField(response);
+                        ReasoningReplay.CaptureChat(response, attempt.Origin, _provider.ReplaysChatReasoning);
                     }
+                    ConfirmFallback(state);
+                    // 用量一律由 RimLLMChatClientExecutor 集中記帳，adapter 不另外記。
+                    return response;
                 }
-                else
+                catch (ClientResultException ex)
                 {
-                    throw mapped;
+                    RimLLMException mapped = LLMErrorMapper.FromClientResultException(ex);
+                    if (!TryRecover(attempt, state, mapped)) throw mapped;
                 }
             }
-
-            PromoteReasoningField(response);
-
-            // 用量一律由 RimLLMChatClientExecutor 集中記帳，adapter 不另外記。
-            return response;
         }
 
         public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -454,70 +549,178 @@ public class OpenAIProvider : ILLMProvider
             ChatOptions? options = null,
             System.Threading.CancellationToken cancellationToken = default)
         {
-            return new OpenAiStreamEnumerable(
-                (opts, ct) => base.GetStreamingResponseAsync(messages, opts, ct),
-                options,
-                _provider,
-                _model);
+            return new OpenAiStreamEnumerable(this, [.. messages], options, cancellationToken);
+        }
+
+        internal sealed class AttemptState
+        {
+            public bool ForceChat;
+            public bool RememberFallback;
+            public bool DropEncryptedReasoning;
+        }
+
+        internal sealed record WireAttempt(
+            IChatClient Client, List<ChatMessage> Messages, ChatOptions Options, bool UsesResponses, string Origin);
+
+        internal WireAttempt Prepare(List<ChatMessage> messages, ChatOptions? options, AttemptState state)
+        {
+            var target = options?.Clone() ?? new ChatOptions();
+            if (_responsesClient != null && !state.ForceChat && !NeedsChatCompletions(options) && !RimLLMReasoningSupport.IsResponsesUnsupported(_provider.ResponsesKey, _model))
+            {
+                string responsesOrigin = ReasoningReplay.Origin(_provider.ProviderId, _model, responses: true);
+                _provider.BuildResponsesOptions(options, _model, target, !state.DropEncryptedReasoning);
+                return new WireAttempt(
+                    _responsesClient,
+                    ReasoningReplay.PrepareResponses(messages, responsesOrigin, !state.DropEncryptedReasoning),
+                    target, UsesResponses: true, responsesOrigin);
+            }
+
+            string origin = ReasoningReplay.Origin(_provider.ProviderId, _model, responses: false);
+            _provider.BuildChatOptions(options, _model, target);
+            return new WireAttempt(
+                InnerClient,
+                ReasoningReplay.PrepareChat(messages, origin, _provider.RequiresThoughtSignatures(_model)),
+                target, UsesResponses: false, origin);
+        }
+
+        /// <summary>Responses API 沒有這些欄位，MEAI 10.11.0 會無聲丟棄；呼叫端給的 factory 產生的也是 Chat 選項。</summary>
+        private static bool NeedsChatCompletions(ChatOptions? options) =>
+            options != null && (options.StopSequences is { Count: > 0 } || options.Seed != null ||
+                options.FrequencyPenalty != null || options.PresencePenalty != null || options.RawRepresentationFactory != null);
+
+        internal bool TryRecover(WireAttempt attempt, AttemptState state, RimLLMException mapped)
+        {
+            if (attempt.UsesResponses)
+            {
+                if (!state.DropEncryptedReasoning && mapped.HttpStatusCode is 400 or 404 or 422 &&
+                    LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "encrypted"))
+                {
+                    state.DropEncryptedReasoning = true;
+                    if (LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "support"))
+                    {
+                        RimLLMReasoningSupport.MarkEncryptedReasoningUnsupported(_provider.ProviderId, _model);
+                    }
+                    return true;
+                }
+            }
+            if (attempt.UsesResponses && IsResponsesRejection(mapped))
+            {
+                state.ForceChat = true;
+                state.RememberFallback = ShouldRememberFallback(mapped);
+                return true;
+            }
+            if (_provider.MarkUnsupportedParameters(_model, mapped, attempt.Options)) return true;
+            if (!attempt.UsesResponses || _provider.UsesDefaultEndpoint || mapped.Error == LLMError.ContextWindowExceeded ||
+                mapped.HttpStatusCode is not (400 or 415 or 422 or 500))
+            {
+                return false;
+            }
+            // 自訂端點的 /responses 可能只實作一半，錯誤碼不一定是 404。
+            state.ForceChat = true;
+            state.RememberFallback = mapped.HttpStatusCode != 500;
+            return true;
+        }
+
+        /// <summary>端點沒有 /responses（404、405、501），或服務端指名這個模型要走 chat/completions。</summary>
+        private static bool IsResponsesRejection(RimLLMException mapped) =>
+            mapped.HttpStatusCode is 404 or 405 or 501 ||
+            (mapped.HttpStatusCode == 400 && LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "chat/completions"));
+
+        /// <summary>官方端點都有 /responses，404 多半是模型或路由暫時找不到（OpenRouter 的 No endpoints found），只退回這一次。</summary>
+        private bool ShouldRememberFallback(RimLLMException mapped) =>
+            mapped.HttpStatusCode != 404 || !_provider.UsesDefaultEndpoint ||
+            LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "chat/completions");
+
+        /// <summary>Chat Completions 成功才記住：模型名稱打錯同樣回 404，那不代表端點不支援 Responses。</summary>
+        internal void ConfirmFallback(AttemptState state)
+        {
+            if (state.ForceChat && state.RememberFallback && RimLLMReasoningSupport.MarkResponsesUnsupported(_provider.ResponsesKey, _model))
+            {
+                RimLLMLog.Warning($"[RimLLM] Model {_model} on {_provider.ProviderId} does not support the Responses API; Chat Completions will be used for it.");
+            }
+        }
+
+        /// <summary>
+        /// Responses API 的生成失敗以 HTTP 200 回報，MEAI 10.11.0 轉成 <see cref="ErrorContent"/> 而不擲例外；
+        /// 不轉回例外的話會被當成成功而不備援。拒答（Refusal）是模型的回答，不在此列。
+        /// </summary>
+        internal static void ThrowIfFailed(object? raw, IEnumerable<AIContent> contents)
+        {
+            ResponseError? failure = raw switch
+            {
+                StreamingResponseFailedUpdate failed => failed.Response?.Error,
+                ResponseResult { Status: ResponseStatus.Failed } result => result.Error,
+                _ => null
+            };
+            ErrorContent? error = contents.OfType<ErrorContent>()
+                .FirstOrDefault(e => !string.Equals(e.ErrorCode, "Refusal", StringComparison.Ordinal));
+            if (failure == null && error == null && raw is not StreamingResponseFailedUpdate) return;
+
+            string code = failure?.Code.ToString() ?? error?.ErrorCode ?? string.Empty;
+            string message = failure?.Message ?? error?.Message ?? "The response failed.";
+            string detail = RimLLMLog.SanitizeForLog(code + " " + message, 300);
+            LLMError kind = LLMError.ProviderOffline;
+            if (LLMErrorMapper.ContainsIgnoreCase(code, "rate_limit")) kind = LLMError.RateLimit;
+            else if (LLMErrorMapper.LooksLikeContextWindowRejection(code + " " + message)) kind = LLMError.ContextWindowExceeded;
+            else if (LLMErrorMapper.ContainsIgnoreCase(code, "invalid")) kind = LLMError.InvalidResponse;
+            throw new RimLLMException(kind, "The provider failed to generate a response: " + detail);
+        }
+
+        internal bool ReplaysReasoning => _provider.ReplaysChatReasoning;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _responsesClient?.Dispose();
+            base.Dispose(disposing);
         }
     }
 
-    private sealed class OpenAiStreamEnumerable : IAsyncEnumerable<ChatResponseUpdate>
+    private sealed class OpenAiStreamEnumerable(
+        OpenAIChatClientAdapter adapter,
+        List<ChatMessage> messages,
+        ChatOptions? options,
+        System.Threading.CancellationToken requestToken) : IAsyncEnumerable<ChatResponseUpdate>
     {
-        private readonly Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> _streamFactory;
-        private readonly ChatOptions? _originalOptions;
-        private readonly OpenAIProvider _provider;
-        private readonly string _model;
-
-        public OpenAiStreamEnumerable(
-            Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> streamFactory,
-            ChatOptions? originalOptions,
-            OpenAIProvider provider,
-            string model)
-        {
-            _streamFactory = streamFactory;
-            _originalOptions = originalOptions;
-            _provider = provider;
-            _model = model;
-        }
-
         public IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
             System.Threading.CancellationToken cancellationToken = default)
         {
-            var targetOptions = _originalOptions?.Clone() ?? new ChatOptions();
-            _provider.BuildChatOptions(_originalOptions, _model, targetOptions);
-            var innerEnumerator = _streamFactory(targetOptions, cancellationToken).GetAsyncEnumerator(cancellationToken);
-            return new OpenAiStreamEnumerator(_streamFactory, innerEnumerator, _originalOptions, targetOptions, _provider, _model, cancellationToken);
+            return new OpenAiStreamEnumerator(adapter, messages, options,
+                cancellationToken.CanBeCanceled ? cancellationToken : requestToken);
         }
     }
 
     private sealed class OpenAiStreamEnumerator : IAsyncEnumerator<ChatResponseUpdate>
     {
-        private readonly Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> _streamFactory;
-        private IAsyncEnumerator<ChatResponseUpdate> _inner;
-        private readonly ChatOptions? _originalOptions;
-        private ChatOptions _sentOptions;
-        private readonly OpenAIProvider _provider;
-        private readonly string _model;
+        private readonly OpenAIChatClientAdapter _adapter;
+        private readonly List<ChatMessage> _messages;
+        private readonly ChatOptions? _options;
         private readonly System.Threading.CancellationToken _cancellationToken;
+        private readonly OpenAIChatClientAdapter.AttemptState _state = new();
+        private OpenAIChatClientAdapter.WireAttempt _attempt;
+        private IAsyncEnumerator<ChatResponseUpdate> _inner;
+        private ReasoningReplay.ChatStreamCapture _capture;
         private bool _hasYieldedAny;
 
         public OpenAiStreamEnumerator(
-            Func<ChatOptions, System.Threading.CancellationToken, IAsyncEnumerable<ChatResponseUpdate>> streamFactory,
-            IAsyncEnumerator<ChatResponseUpdate> inner,
-            ChatOptions? originalOptions,
-            ChatOptions sentOptions,
-            OpenAIProvider provider,
-            string model,
+            OpenAIChatClientAdapter adapter,
+            List<ChatMessage> messages,
+            ChatOptions? options,
             System.Threading.CancellationToken cancellationToken)
         {
-            _streamFactory = streamFactory;
-            _inner = inner;
-            _originalOptions = originalOptions;
-            _sentOptions = sentOptions;
-            _provider = provider;
-            _model = model;
+            _adapter = adapter;
+            _messages = messages;
+            _options = options;
             _cancellationToken = cancellationToken;
+            (_attempt, _inner, _capture) = Start();
+        }
+
+        private (OpenAIChatClientAdapter.WireAttempt Attempt, IAsyncEnumerator<ChatResponseUpdate> Stream, ReasoningReplay.ChatStreamCapture Capture) Start()
+        {
+            OpenAIChatClientAdapter.WireAttempt attempt = _adapter.Prepare(_messages, _options, _state);
+            return (
+                attempt,
+                attempt.Client.GetStreamingResponseAsync(attempt.Messages, attempt.Options, _cancellationToken).GetAsyncEnumerator(_cancellationToken),
+                new ReasoningReplay.ChatStreamCapture(attempt.Origin, _adapter.ReplaysReasoning));
         }
 
         public ChatResponseUpdate Current => _inner.Current;
@@ -531,26 +734,36 @@ public class OpenAIProvider : ILLMProvider
                     bool hasNext = await _inner.MoveNextAsync().ConfigureAwait(false);
                     if (hasNext)
                     {
+                        Observe(_inner.Current);
                         _hasYieldedAny = true;
-                        PromoteReasoningField(_inner.Current);
                     }
                     return hasNext;
                 }
                 catch (ClientResultException ex)
                 {
-                    var mapped = LLMErrorMapper.FromClientResultException(ex);
-                    if (!_hasYieldedAny && _provider.MarkUnsupportedParameters(_model, mapped, _sentOptions))
-                    {
-                        await _inner.DisposeAsync().ConfigureAwait(false);
-                        var retryOptions = _originalOptions?.Clone() ?? new ChatOptions();
-                        _provider.BuildChatOptions(_originalOptions, _model, retryOptions);
-                        _sentOptions = retryOptions;
-                        _inner = _streamFactory(retryOptions, _cancellationToken).GetAsyncEnumerator(_cancellationToken);
-                        continue;
-                    }
-                    throw mapped;
+                    RimLLMException mapped = LLMErrorMapper.FromClientResultException(ex);
+                    if (_hasYieldedAny || !_adapter.TryRecover(_attempt, _state, mapped)) throw mapped;
+                    await _inner.DisposeAsync().ConfigureAwait(false);
+                    (_attempt, _inner, _capture) = Start();
                 }
             }
+        }
+
+        private void Observe(ChatResponseUpdate update)
+        {
+            if (_attempt.UsesResponses)
+            {
+                OpenAIChatClientAdapter.ThrowIfFailed(update.RawRepresentation, update.Contents);
+                ReasoningReplay.CaptureResponses(update.Contents, _attempt.Origin);
+                foreach (UsageContent usage in update.Contents.OfType<UsageContent>())
+                {
+                    AddCacheWriteTokens(usage.Details, (update.RawRepresentation as StreamingResponseCompletedUpdate)?.Response);
+                }
+                return;
+            }
+            PromoteReasoningField(update);
+            _capture.Observe(update);
+            if (!_hasYieldedAny) _adapter.ConfirmFallback(_state);
         }
 
         public ValueTask DisposeAsync()

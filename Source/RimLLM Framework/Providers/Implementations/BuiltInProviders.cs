@@ -19,6 +19,14 @@ public class GeminiProvider : OpenAIProvider
     {
     }
 
+    /// <summary>Gemini 3 起，工具呼叫沒有簽章會回 400（ai.google.dev 的 thought-signatures）。</summary>
+    internal override bool RequiresThoughtSignatures(string model)
+    {
+        return model.Contains("gemini-", StringComparison.OrdinalIgnoreCase)
+            && !model.Contains("gemini-1", StringComparison.OrdinalIgnoreCase)
+            && !model.Contains("gemini-2", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// 相容端點的 /models 不回報上限，改向原生 <c>/models</c> 讀 <c>inputTokenLimit</c>。
     /// 兩個請求彼此獨立，同時發出。上限只是附帶資訊：原生端點失敗時模型清單照常回傳。
@@ -93,6 +101,8 @@ public class DeepSeekProvider : OpenAIProvider
     /// </summary>
     protected override ReasoningWireFormat ReasoningFormat => ReasoningWireFormat.ThinkingSwitch;
 
+    internal override bool ReplaysChatReasoning => true;
+
     public DeepSeekProvider(IRimLLMSettings settings)
         : base(settings, ProviderIds.DeepSeek, "https://api.deepseek.com")
     {
@@ -112,6 +122,9 @@ public class GrokProvider : OpenAIProvider
     /// 送出關閉指令只會換來 400，因此關閉請求在此靜默忽略。
     /// </summary>
     protected override bool SupportsDisablingReasoning => false;
+
+    /// <summary>xAI 把 Chat Completions 列為 legacy（docs.x.ai）。</summary>
+    internal override bool PrefersResponsesApi(string model) => true;
 
     public GrokProvider(IRimLLMSettings settings)
         : base(settings, ProviderIds.Grok, "https://api.x.ai/v1")
@@ -191,6 +204,8 @@ public class ZaiProvider : OpenAIProvider
     /// 不支援的模型會由服務端忽略或以 400 拒絕，後者交給框架的降級記憶處理。
     /// </summary>
     protected override ReasoningWireFormat ReasoningFormat => ReasoningWireFormat.ThinkingSwitch;
+
+    internal override bool ReplaysChatReasoning => true;
 
     public ZaiProvider(IRimLLMSettings settings)
         : base(settings, ProviderIds.Zai, "https://api.z.ai/api/paas/v4")

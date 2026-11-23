@@ -49,6 +49,7 @@ internal static class OpenAIPatchPaths
     public static readonly byte[] EnableThinking = System.Text.Encoding.UTF8.GetBytes("$.enable_thinking");
     public static readonly byte[] ThinkingBudget = System.Text.Encoding.UTF8.GetBytes("$.thinking_budget");
     public static readonly byte[] StreamOptions = System.Text.Encoding.UTF8.GetBytes("$.stream_options");
+    public static readonly byte[] PromptCacheKey = System.Text.Encoding.UTF8.GetBytes("$.prompt_cache_key");
     public static readonly byte[] Model = System.Text.Encoding.UTF8.GetBytes("$.model");
     public static readonly byte[] Models = System.Text.Encoding.UTF8.GetBytes("$.models");
 }

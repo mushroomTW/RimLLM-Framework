@@ -26,6 +26,9 @@ internal sealed record GenerationParams(
     /// 為 null 時（直接測試 executor）只觸發 onUsage 回呼、不記帳。
     /// </summary>
     public RimLLMUsageTracker? UsageTracker { get; init; }
+
+    /// <summary>不需要金鑰的多半是本機端點：逾時常是沒開機或連不上，不會計費，不該吃掉每日預算。</summary>
+    public bool BillsTimeouts { get; init; } = true;
 }
 
 /// <summary>以逐候選的參數（模型、schema 方言、逾時）包裝一次 MEAI IChatClient 呼叫。</summary>
@@ -66,6 +69,8 @@ internal static class RimLLMChatClientExecutor
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
+            // 逾時只是本地放棄等待，服務端多半已收下並計費輸入；不記的話反覆逾時能無聲突破每日預算。
+            if (p.BillsTimeouts) RecordUsage(p.UsageTracker, providerId, model, builtMessages, options, usage: null, 0, onUsage);
             throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} request timed out after {timeoutSeconds} seconds."), ex);
         }
 
@@ -84,7 +89,7 @@ internal static class RimLLMChatClientExecutor
             // 服務端已經計費，用量要照記。沒有回報時只有推理內容可估；什麼都沒有就不記。
             if (response?.Usage != null || hasReasoning)
             {
-                RecordUsage(p.UsageTracker, providerId, model, builtMessages, response?.Usage, EstimateCompletionRaw(contents), onUsage);
+                RecordUsage(p.UsageTracker, providerId, model, builtMessages, options, response?.Usage, EstimateCompletionRaw(contents), onUsage);
             }
             throw new RimLLMException(LLMError.InvalidResponse, hasReasoning
                 ? ReasoningOnlyMessage(providerId)
@@ -92,7 +97,7 @@ internal static class RimLLMChatClientExecutor
         }
 
         ArgumentNullException.ThrowIfNull(response);
-        RecordUsage(p.UsageTracker, providerId, model, builtMessages, response.Usage, EstimateCompletionRaw(contents), onUsage);
+        RecordUsage(p.UsageTracker, providerId, model, builtMessages, options, response.Usage, EstimateCompletionRaw(contents), onUsage);
         return response;
     }
 
@@ -143,6 +148,7 @@ internal static class RimLLMChatClientExecutor
         // provider 沒回報用量時才會用到的 completion token 估算。逐塊累加估算值，
         // 不保留文字本身。
         var streamState = new StreamTrackingState();
+        bool timedOut = false;
 
         using (var timeoutCts = new CancellationTokenSource(idleTimeout))
         using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken))
@@ -165,15 +171,16 @@ internal static class RimLLMChatClientExecutor
             }
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
+                timedOut = true;
                 throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} stream idle timeout: no new content for {timeoutSeconds} seconds."), ex);
             }
             finally
             {
                 // 串流中斷不會撤銷已收到的用量；只要有內容或 provider 用量，就在所有結束路徑結算一次。
                 // 沒有 provider 用量時 RecordUsage 會沿用已累計的 completionEstimate。
-                if (streamState.AnyOutput || streamState.LastUsage != null)
+                if (streamState.AnyOutput || streamState.LastUsage != null || (timedOut && p.BillsTimeouts))
                 {
-                    RecordUsage(p.UsageTracker, providerId, model, builtMessages, streamState.LastUsage, streamState.CompletionEstimate, onUsage);
+                    RecordUsage(p.UsageTracker, providerId, model, builtMessages, options, streamState.LastUsage, streamState.CompletionEstimate, onUsage);
                 }
             }
         }
@@ -383,6 +390,7 @@ internal static class RimLLMChatClientExecutor
         string providerId,
         string model,
         IList<ChatMessage> messages,
+        ChatOptions? options,
         UsageDetails? usage,
         double completionEstimate,
         Action<UsageTokens>? onUsage = null)
@@ -390,16 +398,17 @@ internal static class RimLLMChatClientExecutor
         int promptTokens;
         int completionTokens;
         int cachedPromptTokens = 0;
+        int cacheWriteTokens = 0;
         bool reported = usage != null && (usage.InputTokenCount.HasValue || usage.OutputTokenCount.HasValue);
         if (reported)
         {
             ReadUsage(usage, out promptTokens, out completionTokens, out cachedPromptTokens);
+            cacheWriteTokens = ReadCacheWriteTokens(usage);
         }
         else
         {
             // messages 已經是 BuildMessages 的產物，系統提示詞與 CachedContext 都在裡面。
-            double promptEstimate = messages.Where(m => m != null && !string.IsNullOrEmpty(m.Text)).Sum(m => EstimateTokensRaw(m.Text));
-            promptTokens = ToTokenCount(promptEstimate);
+            promptTokens = ToTokenCount(EstimatePromptRaw(messages, options));
             completionTokens = ToTokenCount(completionEstimate);
         }
 
@@ -425,8 +434,19 @@ internal static class RimLLMChatClientExecutor
             model,
             billedPrompt,
             billedCompletion,
-            Math.Max(0, cachedPromptTokens));
+            Math.Max(0, cachedPromptTokens),
+            cacheWriteTokens);
     }
+
+    private static int ReadCacheWriteTokens(UsageDetails? usage)
+    {
+        return usage?.AdditionalCounts != null && usage.AdditionalCounts.TryGetValue(CacheWriteTokensKey, out long count)
+            ? ToInt32(count)
+            : 0;
+    }
+
+    /// <summary>MEAI 10.11.0 的 UsageDetails 沒有快取寫入欄位，由供應商轉接層以此鍵補上。</summary>
+    internal const string CacheWriteTokensKey = "rimllm_cache_write_tokens";
 
     private static void ReadUsage(UsageDetails? usage, out int promptTokens, out int completionTokens, out int cachedPromptTokens)
     {
@@ -448,6 +468,35 @@ internal static class RimLLMChatClientExecutor
     private static int ToTokenCount(double estimate)
     {
         return (int)Math.Min(int.MaxValue, Math.Max(1, Math.Ceiling(estimate)));
+    }
+
+    private const double ImageTokenEstimate = 1000;
+
+    /// <summary>請求的輸入估算：訊息文字、推理、工具呼叫、工具結果、圖片，以及每次都會送出的工具定義。</summary>
+    internal static double EstimatePromptRaw(IEnumerable<ChatMessage>? messages, ChatOptions? options)
+    {
+        double estimate = 0;
+        foreach (AIContent content in (messages ?? []).Where(m => m?.Contents != null).SelectMany(m => m.Contents))
+        {
+            estimate += content switch
+            {
+                TextContent text => EstimateTokensRaw(text.Text),
+                TextReasoningContent reasoning => EstimateTokensRaw(reasoning.Text),
+                FunctionCallContent call => EstimateTokensRaw(call.Name) +
+                    (call.Arguments?.Sum(a => EstimateTokensRaw(a.Key) + EstimateTokensRaw(a.Value?.ToString() ?? string.Empty)) ?? 0),
+                FunctionResultContent result => EstimateTokensRaw(result.Result?.ToString() ?? string.Empty),
+                DataContent or UriContent => ImageTokenEstimate,
+                _ => 0
+            };
+        }
+
+        estimate += EstimateTokensRaw(options?.Instructions ?? string.Empty);
+        foreach (AITool tool in options?.Tools ?? [])
+        {
+            estimate += EstimateTokensRaw(tool.Name) + EstimateTokensRaw(tool.Description);
+            if (tool is AIFunctionDeclaration function) estimate += EstimateTokensRaw(function.JsonSchema.GetRawText());
+        }
+        return estimate;
     }
 
     private static double EstimateTokensRaw(string text)

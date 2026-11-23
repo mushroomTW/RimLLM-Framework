@@ -132,7 +132,8 @@ internal static class ModelsDevCatalog
                     && TryReadNonNegative(cost, "output", out float output))
                 {
                     float? cacheRead = TryReadNonNegative(cost, "cache_read", out float cached) ? cached : null;
-                    rates[model.Name] = new ModelPricing.CostRate(input, output, cacheRead);
+                    float? cacheWrite = TryReadNonNegative(cost, "cache_write", out float written) ? written : null;
+                    rates[model.Name] = new ModelPricing.CostRate(input, output, cacheRead, cacheWrite);
                 }
             }
             all[mapping.Key] = rates;

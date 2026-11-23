@@ -27,7 +27,7 @@
          NU1608: 套件相依版本範圍與實際解析版本不一致時的警告。
          MEAI001: FailoverChatClient / RoutingContext / FailoverChatClientAttempt 被 Microsoft 標記為評估用途。
          -->
-    <NoWarn>$(NoWarn);SCME0001;NU1608;MEAI001</NoWarn>
+    <NoWarn>$(NoWarn);SCME0001;OPENAI001;NU1608;MEAI001</NoWarn>
     <!-- 使用 BannedSymbols.txt 禁用的 API 直接編譯失敗。 -->
     <WarningsAsErrors>$(WarningsAsErrors);RS0030</WarningsAsErrors>
     <!-- 直接 Reference 的組件預設會連 .xml 文件檔一起複製到 Assemblies/，出貨不需要。 -->
@@ -82,8 +82,8 @@
     -->
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.11.0" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.11.0" />
-    <PackageReference Include="OpenAI" Version="2.15.0" />
-    <PackageReference Include="System.ClientModel" Version="1.17.0" />
+    <PackageReference Include="OpenAI" Version="2.14.0" />
+    <PackageReference Include="System.ClientModel" Version="1.15.0" />
     <PackageReference Include="TypeSafeAI" Version="1.0.0" />
     <!-- 版本對齊 Microsoft.Agents.AI 1.28.0 的相依：下游 Mod 用 AF 壓縮 API 時共用這一份，不各自出貨。 -->
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="3.0.0" />

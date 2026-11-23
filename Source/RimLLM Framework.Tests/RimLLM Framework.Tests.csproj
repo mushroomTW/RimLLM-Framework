@@ -3,7 +3,7 @@
     <RootNamespace>RimLLM_Framework.Tests</RootNamespace>
     <AssemblyName>RimLLM Framework.Tests</AssemblyName>
     <Deterministic>true</Deterministic>
-    <NoWarn>$(NoWarn);SCME0001;NU1608</NoWarn>
+    <NoWarn>$(NoWarn);SCME0001;OPENAI001;NU1608</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

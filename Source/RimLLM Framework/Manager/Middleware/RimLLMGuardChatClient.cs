@@ -77,14 +77,7 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
 
     private static long EstimateBudgetTokens(IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
-        long estimate = 0;
-        if (messages != null)
-        {
-            foreach (string text in messages.Where(m => !string.IsNullOrEmpty(m?.Text)).Select(m => m.Text))
-            {
-                estimate = SaturatingMath.Add(estimate, RimLLMChatClientExecutor.EstimateTokens(text));
-            }
-        }
+        long estimate = (long)RimLLMChatClientExecutor.EstimatePromptRaw(messages, options);
 
         string? cachedContext = RimLLMChatOptions.GetCachedContext(options);
         if (!string.IsNullOrEmpty(cachedContext))

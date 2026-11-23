@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -64,6 +65,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
         // 只覆寫框架真正要改的欄位：把 ModelId 換成 "供應商:模型" 複合識別，
         // 讓呼叫端在 fallback 之後仍分辨得出實際是誰回的。其餘一律原樣放行。
         response.ModelId = ComposeModelId(_provider.ProviderId, _model);
+        foreach (ChatMessage message in response.Messages) TagCandidate(message.Contents, response.ModelId);
         if (toolsStripped)
         {
             MarkToolsStripped(response.AdditionalProperties ??= []);
@@ -91,7 +93,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                         UseNativeSchema: true,
                         _provider.ProviderId,
                         _settings.ApiTimeout,
-                        cancellationToken) { UsageTracker = _usageTracker },
+                        cancellationToken) { UsageTracker = _usageTracker, BillsTimeouts = _provider.RequiresApiKey },
                     onUsage: _onUsage).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsNativeSchemaRejected(ex))
@@ -128,7 +130,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                 UseNativeSchema: false,
                 _provider.ProviderId,
                 _settings.ApiTimeout,
-                cancellationToken) { UsageTracker = _usageTracker },
+                cancellationToken) { UsageTracker = _usageTracker, BillsTimeouts = _provider.RequiresApiKey },
             onUsage: _onUsage).ConfigureAwait(false);
     }
 
@@ -240,7 +242,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                             useNativeSchema,
                             _client._provider.ProviderId,
                             _client._settings.ApiTimeout,
-                            cancellationToken) { UsageTracker = _client._usageTracker },
+                            cancellationToken) { UsageTracker = _client._usageTracker, BillsTimeouts = _client._provider.RequiresApiKey },
                         async update =>
                         {
                             // 唯一的改寫：把 ModelId 換成 "供應商:模型" 複合識別，
@@ -248,6 +250,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
                             // 工具呼叫、FinishReason 與 UsageContent 都由 provider 的
                             // update 自己帶著，框架不另外合成收尾 update。
                             update.ModelId = composedModelId;
+                            TagCandidate(update.Contents, composedModelId);
                             if (toolsStripped)
                             {
                                 MarkToolsStripped(update.AdditionalProperties ??= []);
@@ -317,6 +320,17 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             {
                 _linkedCts.Dispose();
             }
+        }
+    }
+
+    /// <summary>掛在工具呼叫上的候選識別，續輪請求靠它認出上一步由誰回應。</summary>
+    internal const string CandidateKey = "rimllm_candidate";
+
+    private static void TagCandidate(IEnumerable<AIContent> contents, string modelId)
+    {
+        foreach (FunctionCallContent call in contents.OfType<FunctionCallContent>())
+        {
+            (call.AdditionalProperties ??= [])[CandidateKey] = modelId;
         }
     }
 

@@ -42,6 +42,14 @@ public class ProviderSdkIntegrationTests
             ClassicAssert.IsNull(FindWorkspaceAssembly(file), "執行環境內建組件不得再隨 Mod 出貨：" + file);
     }
 
+    /// <summary>RimWorld 載入 Mod 時會列舉每個組件的型別；OpenAI 與 System.ClientModel 版本不合時在這裡就會失敗。</summary>
+    [Test]
+    public void OpenAiAssembliesExposeAllTypes()
+    {
+        Assert.DoesNotThrow(() => typeof(ChatClient).Assembly.GetTypes());
+        Assert.DoesNotThrow(() => typeof(OpenAIClientExtensions).Assembly.GetTypes());
+    }
+
     [Test]
     public void MicrosoftExtensionsAiAssemblyCanBeReflectedWithoutTypeLoadFailures()
     {

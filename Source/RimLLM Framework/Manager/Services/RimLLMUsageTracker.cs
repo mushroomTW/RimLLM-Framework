@@ -363,6 +363,11 @@ public class RimLLMUsageTracker
     /// </param>
     public void RecordUsage(string providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens = 0)
     {
+        RecordUsage(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, cacheWriteTokens: 0);
+    }
+
+    internal void RecordUsage(string providerId, string? modelName, int promptTokens, int completionTokens, int cachedPromptTokens, int cacheWriteTokens)
+    {
         promptTokens = Math.Max(0, promptTokens);
         completionTokens = Math.Max(0, completionTokens);
         if (promptTokens == 0 && completionTokens == 0) return;
@@ -382,7 +387,7 @@ public class RimLLMUsageTracker
                 // Token 預算不看費率：免費、本地與查無費率的請求一樣消耗 token。
                 _settings.DailyAccumulatedTokens += (long)promptTokens + completionTokens;
 
-                if (ModelPricing.TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost))
+                if (ModelPricing.TryEstimateCost(providerId, modelName, promptTokens, completionTokens, cachedPromptTokens, out float cost, cacheWriteTokens))
                 {
                     _settings.TotalEstimatedCost += cost;
                     _settings.DailyAccumulatedCost += cost;

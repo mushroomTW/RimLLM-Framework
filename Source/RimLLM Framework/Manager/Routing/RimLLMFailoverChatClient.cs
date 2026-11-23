@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -88,7 +89,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
     }
 
     /// <summary>
-    /// 組出備援路由。外面固定再包一層 <see cref="StreamingMarkerChatClient"/>：
+    /// 組出備援路由。外面固定再包一層 <see cref="RequestMarkerChatClient"/>：
     /// 候選用盡時要擲出的錯誤碼取決於串流與否，而 RoutingContext 不帶這個資訊、
     /// FailoverChatClient 又把兩個入口都 sealed 了，只能在進入路由之前先標記。
     /// </summary>
@@ -100,15 +101,35 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         string modId,
         RimLLMRequestQueue queue)
     {
-        return new StreamingMarkerChatClient(
-            new RimLLMFailoverChatClient(settings, healthLedger, usageTracker, policy, modId, queue));
+        return new RequestMarkerChatClient(
+            new RimLLMFailoverChatClient(settings, healthLedger, usageTracker, policy, modId, queue), modId);
     }
 
-    private sealed class StreamingMarkerChatClient : DelegatingChatClient
+    private sealed class RequestMarkerChatClient : DelegatingChatClient
     {
-        public StreamingMarkerChatClient(IChatClient innerClient)
+        private const int MaxCacheKeyLength = 64;
+        private readonly string _cacheKey;
+
+        public RequestMarkerChatClient(IChatClient innerClient, string modId)
             : base(innerClient)
         {
+            string key = "rimllm-" + modId;
+            _cacheKey = key.Length > MaxCacheKeyLength ? key.Substring(0, MaxCacheKeyLength) : key;
+        }
+
+        public override Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            return base.GetResponseAsync(messages, Mark(options), cancellationToken);
+        }
+
+        private ChatOptions Mark(ChatOptions? options)
+        {
+            ChatOptions marked = options?.Clone() ?? new ChatOptions();
+            (marked.AdditionalProperties ??= [])[RimLLMChatOptions.PromptCacheKeyKey] = _cacheKey;
+            return marked;
         }
 
         public override IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -116,12 +137,8 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             ChatOptions? options = null,
             CancellationToken cancellationToken = default)
         {
-            ChatOptions marked = options?.Clone() ?? new ChatOptions();
-            if (marked.AdditionalProperties == null)
-            {
-                marked.AdditionalProperties = [];
-            }
-            marked.AdditionalProperties[StreamingKey] = true;
+            ChatOptions marked = Mark(options);
+            marked.AdditionalProperties![StreamingKey] = true;
             return base.GetStreamingResponseAsync(messages, marked, cancellationToken);
         }
     }
@@ -135,7 +152,7 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         if (state.Candidates == null)
         {
             state.Candidates = _policy.ResolveCandidates(
-                context.ChatOptions?.ModelId,
+                PreferredModel(context),
                 RimLLMChatOptions.GetMinFallbackLevel(context.ChatOptions));
             state.Index = 0;
         }
@@ -167,6 +184,24 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         state.LastUsage = default;
         // 名額包在單一嘗試外面：嘗試結束（成功、失敗或串流列舉完）即歸還，退避等待不占名額。
         return _queue != null ? new RimLLMRequestQueueChatClient(candidateClient, _queue) : candidateClient;
+    }
+
+    /// <summary>
+    /// 工具迴圈的續輪沿用上一步實際回應的候選：輪替與最小延遲策略若逐步換模型，
+    /// 前綴快取與推理續傳每一步都會失效。
+    /// </summary>
+    private static string? PreferredModel(RoutingContext context)
+    {
+        string? requested = context.ChatOptions?.ModelId;
+        if (!string.IsNullOrEmpty(requested) && !RimLLMChatOptions.IsFallbackModelId(requested)) return requested;
+        if (!RimLLMGuardChatClient.IsToolLoopContinuation(context.Messages)) return requested;
+
+        object? tag = context.Messages
+            .LastOrDefault(m => m.Role == ChatRole.Assistant && m.Contents.Any(c => c is FunctionCallContent))?
+            .Contents.OfType<FunctionCallContent>()
+            .Select(c => c.AdditionalProperties?.GetValueOrDefault(RimLLMProviderChatClient.CandidateKey))
+            .FirstOrDefault(v => v != null);
+        return tag?.ToString() ?? requested;
     }
 
     /// <summary>
