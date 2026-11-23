@@ -188,7 +188,7 @@ public class RimLLMEmbeddingService
         string defaultEndpoint = ResolveDefaultEndpoint(provider);
 
         // 逾時以單一批次（一次 API 呼叫）為單位，在 ComputeBatchAsync 建立。
-        float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
+        float timeoutSeconds = ApiTimeouts.Resolve(_settings.ApiTimeout);
         var primaryContext = new EmbeddingBatchContext(model, provider, apiKey, endpoint, defaultEndpoint, timeoutSeconds, generationOptions?.Clone());
 
         // 備援鏈：主供應商失敗時整次請求改交給下一家重算。整次重來而不是逐批換家，
@@ -394,7 +394,7 @@ public class RimLLMEmbeddingService
             : apiKey;
         string root = NormalizeEmbeddingEndpoint(endpoint) ?? ResolveDefaultEndpoint(provider);
 
-        float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
+        float timeoutSeconds = ApiTimeouts.Resolve(_settings.ApiTimeout);
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
         try
@@ -755,7 +755,7 @@ public class RimLLMEmbeddingService
             ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
             : apiKey;
 
-        float timeoutSeconds = _settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30f;
+        float timeoutSeconds = ApiTimeouts.Resolve(_settings.ApiTimeout);
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
         try

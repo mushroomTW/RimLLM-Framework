@@ -177,7 +177,7 @@ public class RimLLMDecisionService
             // 沒有預設模型：只抓模型清單時模型可以是空的，送決策前由 RequireModel 擋下。
             DefaultModel = model ?? "",
             ApiKey = apiKey ?? "",
-            Timeout = TimeSpan.FromSeconds(_settings.ApiTimeout > 0 ? _settings.ApiTimeout : 30),
+            Timeout = TimeSpan.FromSeconds(ApiTimeouts.Resolve(_settings.ApiTimeout)),
             // SDK 預設會重試 2 次；框架自己有備援鏈，重試交給它，否則一次失敗會被放大成三倍等待。
             MaxRetries = 0
         };

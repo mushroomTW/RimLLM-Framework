@@ -88,7 +88,7 @@ internal static class ModelsDevCatalog
     {
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds > 0 ? timeoutSeconds : 30f));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(ApiTimeouts.Resolve(timeoutSeconds)));
             using HttpResponseMessage response = await Http.GetAsync(ApiUrl, cts.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             string body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);

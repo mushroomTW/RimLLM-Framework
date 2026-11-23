@@ -84,7 +84,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     }
 
     // 全域請求配置的預設值；屬性初始值與「恢復預設」按鈕共用，避免兩處各寫一份而漂移。
-    internal const float DefaultApiTimeout = 30f;
+    internal const float DefaultApiTimeout = ApiTimeouts.DefaultSeconds;
     internal const int DefaultMaxRetries = 3;
     internal const float DefaultRetryDelay = 3f;
     internal const int DefaultMaxConcurrentRequests = 2;

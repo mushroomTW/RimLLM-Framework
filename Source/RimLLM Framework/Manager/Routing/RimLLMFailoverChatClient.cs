@@ -333,7 +333,8 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
             throw new RimLLMException(last.Error, message, last)
             {
                 RetryAfter = last.RetryAfter,
-                HttpStatusCode = last.HttpStatusCode
+                HttpStatusCode = last.HttpStatusCode,
+                IsBalanceExhausted = last.IsBalanceExhausted
             };
         }
 

@@ -44,6 +44,37 @@ public sealed class ClientResultExceptionMappingTests
 
         ClassicAssert.AreEqual(LLMError.QuotaExceeded, mapped.Error);
         ClassicAssert.IsTrue(mapped.IsBalanceExhausted);
+        StringAssert.Contains("insufficient_quota", mapped.Message);
+        StringAssert.Contains("account balance", mapped.Message);
+    }
+
+    [Test]
+    public void PerMinuteQuotaIsNotReportedAsBalanceExhausted()
+    {
+        var response = new FakePipelineResponse(429, "{\"error\":\"You exceeded your current quota (GenerateRequestsPerMinute)\"}");
+        var exception = new ClientResultException(response);
+
+        RimLLMException mapped = LLMErrorMapper.FromClientResultException(exception);
+
+        ClassicAssert.AreEqual(LLMError.QuotaExceeded, mapped.Error);
+        ClassicAssert.IsFalse(mapped.IsBalanceExhausted);
+        StringAssert.DoesNotContain("insufficient_quota", mapped.Message);
+        StringAssert.DoesNotContain("account balance", mapped.Message);
+        StringAssert.Contains("GenerateRequestsPerMinute", mapped.Message);
+        ClassicAssert.IsTrue(RimLLM_Framework.Manager.RimLLMFallbackPipeline.IsRetryableException(mapped));
+    }
+
+    [Test]
+    public void PaymentRequiredIsBalanceExhaustedAndNotRetried()
+    {
+        var response = new FakePipelineResponse(402, "{\"error\":\"payment required\"}");
+        var exception = new ClientResultException(response);
+
+        RimLLMException mapped = LLMErrorMapper.FromClientResultException(exception);
+
+        ClassicAssert.AreEqual(LLMError.QuotaExceeded, mapped.Error);
+        ClassicAssert.IsTrue(mapped.IsBalanceExhausted);
+        ClassicAssert.IsFalse(RimLLM_Framework.Manager.RimLLMFallbackPipeline.IsRetryableException(mapped));
     }
 
     /// <summary>

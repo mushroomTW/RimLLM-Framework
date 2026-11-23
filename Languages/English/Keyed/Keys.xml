@@ -355,7 +355,7 @@
   <RimLLM_SetupFailDetail>Details (include these when reporting a problem): {0}</RimLLM_SetupFailDetail>
   <RimLLM_AdvancedDontTouch>If you are not sure, leave these alone. The defaults are fine.</RimLLM_AdvancedDontTouch>
   <RimLLM_ResetToDefaultsBtn>Reset to defaults</RimLLM_ResetToDefaultsBtn>
-  <RimLLM_ApiTimeoutHint>Give up if the AI takes too long. Raise it only for slow internet or local AI.</RimLLM_ApiTimeoutHint>
+  <RimLLM_ApiTimeoutHint>Give up if the AI takes too long. Non-streaming requests count the whole reply; streaming counts time since the last new content. Raise it only for long replies, slow internet or local AI.</RimLLM_ApiTimeoutHint>
   <RimLLM_MaxRetriesHint>How many times to retry the same model before moving to the next one.</RimLLM_MaxRetriesHint>
   <RimLLM_RetryDelayHint>Wait a bit before each retry so the AI company does not block you.</RimLLM_RetryDelayHint>
   <RimLLM_MaxConcurrentRequestsHint>How many questions can be sent at once. Higher is faster but uses free quota faster.</RimLLM_MaxConcurrentRequestsHint>

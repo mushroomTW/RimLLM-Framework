@@ -286,7 +286,9 @@ public partial class RimLLMFrameworkSettings
 
     private void ApplyGlobalPolicies(SettingsDto dto)
     {
-        this.ApiTimeout = dto.ApiTimeout <= 0f ? 30f : dto.ApiTimeout;
+        this.ApiTimeout = dto.ApiTimeout <= 0f || dto.ApiTimeout == ApiTimeouts.LegacyDefaultSeconds
+            ? RimLLMFrameworkSettings.DefaultApiTimeout
+            : dto.ApiTimeout;
         this.MaxRetries = dto.MaxRetries < 0 ? 3 : dto.MaxRetries;
         this.RetryDelay = dto.RetryDelay < 0f ? 3f : dto.RetryDelay;
         this.DetailedLogging = dto.DetailedLogging;

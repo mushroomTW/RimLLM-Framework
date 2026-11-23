@@ -849,7 +849,7 @@ public class OpenAIProvider : ILLMProvider
 
         var result = new TestResult { Provider = ProviderId };
         var stopwatch = Stopwatch.StartNew();
-        float timeoutSeconds = Settings.ApiTimeout > 0 ? Settings.ApiTimeout : 30f;
+        float timeoutSeconds = ApiTimeouts.Resolve(Settings.ApiTimeout);
         using var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
 
         try
@@ -928,7 +928,7 @@ public class OpenAIProvider : ILLMProvider
         string apiKey = Settings.GetActiveApiKey(ProviderId);
         string? endpoint = NormalizeEndpoint(
             Settings.GetEndpoint(ProviderId, DefaultEndpoint));
-        float timeoutSeconds = Settings.ApiTimeout > 0 ? Settings.ApiTimeout : 30f;
+        float timeoutSeconds = ApiTimeouts.Resolve(Settings.ApiTimeout);
         using var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
 
         // 模型清單是玩家在設定頁手動觸發，失敗直接回報比在逾時內默默重試三次清楚。

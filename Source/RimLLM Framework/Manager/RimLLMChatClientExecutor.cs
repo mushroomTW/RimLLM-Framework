@@ -290,7 +290,7 @@ internal static class RimLLMChatClientExecutor
 
     private static TimeSpan ResolveTimeout(float timeoutSeconds)
     {
-        return TimeSpan.FromSeconds(timeoutSeconds > 0f ? timeoutSeconds : 30f);
+        return TimeSpan.FromSeconds(ApiTimeouts.Resolve(timeoutSeconds));
     }
 
     /// <remarks>

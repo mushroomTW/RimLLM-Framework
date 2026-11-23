@@ -407,7 +407,7 @@ public class RimLLMFallbackPipeline
             return rimEx.Error switch
             {
                 LLMError.Timeout or LLMError.RateLimit or LLMError.ProviderOffline or LLMError.NetworkError or LLMError.Unknown => true,
-                LLMError.QuotaExceeded => rimEx.HttpStatusCode != 402 && !rimEx.IsBalanceExhausted,
+                LLMError.QuotaExceeded => !rimEx.IsBalanceExhausted,
                 // 402 與 insufficient_quota 是真的餘額用完：不會在退避的幾十秒內變出來，重試只是白等，直接換手。
                 // 但 429 訊息含 "quota" 的每分鐘限流（Gemini 免費層）也會映成 QuotaExceeded，
                 // 那種等一下就能成功，仍要重試。

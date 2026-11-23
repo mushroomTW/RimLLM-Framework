@@ -355,7 +355,7 @@
   <RimLLM_SetupFailDetail>詳細原因（回報問題時可以附上）：{0}</RimLLM_SetupFailDetail>
   <RimLLM_AdvancedDontTouch>不懂就不要改，預設值就很好。</RimLLM_AdvancedDontTouch>
   <RimLLM_ResetToDefaultsBtn>全部恢復預設</RimLLM_ResetToDefaultsBtn>
-  <RimLLM_ApiTimeoutHint>AI 太久沒回答就放棄。網路很慢或用本機 AI 時才調高。</RimLLM_ApiTimeoutHint>
+  <RimLLM_ApiTimeoutHint>非串流請求以整次回覆的總時間計算，串流則以多久沒收到新內容計算。回覆較長或網路很慢、用本機 AI 時才調高。</RimLLM_ApiTimeoutHint>
   <RimLLM_MaxRetriesHint>同一個模型失敗時再試幾次，之後才換下一個模型。</RimLLM_MaxRetriesHint>
   <RimLLM_RetryDelayHint>每次重試前先等一下，避免被 AI 公司擋下來。</RimLLM_RetryDelayHint>
   <RimLLM_MaxConcurrentRequestsHint>同時最多送出幾個問題。越大越快，但越容易超過免費額度。</RimLLM_MaxConcurrentRequestsHint>

@@ -133,8 +133,12 @@ public static class LLMErrorMapper
                     $"Invalid API key or authorization failed: {friendlyMessage}", retryAfter: null, innerException);
 
             case 402:
-                return Create(LLMError.QuotaExceeded,
+            {
+                RimLLMException payment = Create(LLMError.QuotaExceeded,
                     $"Payment required, please check your account balance: {friendlyMessage}", retryAfter: null, innerException);
+                payment.IsBalanceExhausted = true;
+                return payment;
+            }
 
             case 404:
                 return Create(LLMError.ModelNotFound,
@@ -177,11 +181,14 @@ public static class LLMErrorMapper
     {
         if (ContainsIgnoreCase(probe, "quota") || ContainsIgnoreCase(probe, "insufficient"))
         {
-            RimLLMException quota = Create(LLMError.QuotaExceeded,
-                "API insufficient quota (insufficient_quota), please check your account balance.", retryAfter, innerException);
             // 訊息只提到 "quota" 的多半是每分鐘配額（Gemini 免費層），等一下就恢復；
             // 明確寫 insufficient 的才是額度用完。
-            quota.IsBalanceExhausted = ContainsIgnoreCase(probe, "insufficient");
+            bool exhausted = ContainsIgnoreCase(probe, "insufficient");
+            string message = exhausted
+                ? $"Account quota exhausted (insufficient_quota), please check your account balance: {friendlyMessage}"
+                : $"Provider quota or rate limit reached, try again later: {friendlyMessage}";
+            RimLLMException quota = Create(LLMError.QuotaExceeded, message, retryAfter, innerException);
+            quota.IsBalanceExhausted = exhausted;
             return quota;
         }
         return Create(LLMError.RateLimit,

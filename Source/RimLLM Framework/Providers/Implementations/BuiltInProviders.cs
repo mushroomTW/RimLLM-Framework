@@ -51,7 +51,7 @@ public class GeminiProvider : OpenAIProvider
             return null;
         }
 
-        float timeoutSeconds = Settings.ApiTimeout > 0 ? Settings.ApiTimeout : 30f;
+        float timeoutSeconds = ApiTimeouts.Resolve(Settings.ApiTimeout);
         var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         try
         {

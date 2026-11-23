@@ -50,7 +50,7 @@ public class RimLLMException : Exception
     public bool IsMaxTokensRejection { get; set; }
 
     /// <summary>
-    /// 標記此 429 是否為帳戶額度用盡（<c>insufficient_quota</c>）。
+    /// 標記此 <see cref="LLMError.QuotaExceeded"/> 是否為帳戶餘額用盡（402，或 429 的 <c>insufficient_quota</c>）。
     /// 與同樣映成 QuotaExceeded 的每分鐘配額限流不同，等待不會恢復，因此不重試、直接換候選。
     /// </summary>
     public bool IsBalanceExhausted { get; set; }

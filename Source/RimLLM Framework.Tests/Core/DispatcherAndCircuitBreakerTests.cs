@@ -1094,7 +1094,7 @@ public class DispatcherAndCircuitBreakerTests
     {
         // 402：帳戶餘額不會在退避的幾十秒內變出來，重試只是白等。
         ClassicAssert.IsFalse(RimLLMFallbackPipeline.IsRetryableException(
-            new RimLLMException(LLMError.QuotaExceeded, "insufficient_quota") { HttpStatusCode = 402 }));
+            new RimLLMException(LLMError.QuotaExceeded, "insufficient_quota") { HttpStatusCode = 402, IsBalanceExhausted = true }));
         // 429 帶 "quota" 字樣的每分鐘限流（Gemini 免費層）同樣映成 QuotaExceeded，但等一下就能過，必須重試。
         ClassicAssert.IsTrue(RimLLMFallbackPipeline.IsRetryableException(
             LLMErrorMapper.CreateException(429, "You exceeded your current quota (GenerateRequestsPerMinute)")));
@@ -1118,7 +1118,7 @@ public class DispatcherAndCircuitBreakerTests
             GenerateHandler = (msgs, opts, model) =>
             {
                 brokeCalls++;
-                throw new RimLLMException(LLMError.QuotaExceeded, "insufficient_quota") { HttpStatusCode = 402 };
+                throw new RimLLMException(LLMError.QuotaExceeded, "insufficient_quota") { HttpStatusCode = 402, IsBalanceExhausted = true };
             }
         });
         manager.RegisterProvider(new MockTestProvider
@@ -1131,6 +1131,41 @@ public class DispatcherAndCircuitBreakerTests
         var messages = new List<ChatMessage> { new(ChatRole.User, "p") };
         ClassicAssert.AreEqual("ok", client.GetResponseAsync(messages).GetAwaiter().GetResult().Text);
         ClassicAssert.AreEqual(1, brokeCalls, "配額耗盡不應消耗重試次數，直接換下一個候選");
+    }
+
+    [Test]
+    public async System.Threading.Tasks.Task TestBalanceExhaustedFlagSurvivesFailoverWrapping()
+    {
+        var mockSettings = new MockSettings
+        {
+            FallbackChain = ["MockBroke:model-a"],
+            MaxRetries = 0,
+            RetryDelay = 0f
+        };
+        mockSettings.EnabledProviders["MockBroke"] = true;
+        mockSettings.ApiKeys["MockBroke"] = "k";
+        var manager = new RimLLMManager(mockSettings);
+        manager.RegisterProvider(new MockTestProvider
+        {
+            ProviderId = "MockBroke",
+            GenerateHandler = (msgs, opts, model) =>
+                throw new RimLLMException(LLMError.QuotaExceeded, "insufficient_quota") { HttpStatusCode = 402, IsBalanceExhausted = true }
+        });
+
+        IChatClient client = manager.CreateChatClient("test.quota.wrapped");
+        var messages = new List<ChatMessage> { new(ChatRole.User, "p") };
+
+        RimLLMException thrown = await Assert.ThrowsAsync<RimLLMException>(async () => await client.GetResponseAsync(messages));
+
+        ClassicAssert.AreEqual(LLMError.QuotaExceeded, thrown.Error);
+        ClassicAssert.IsTrue(thrown.IsBalanceExhausted, "候選用盡後外層例外必須保留餘額用盡旗標");
+    }
+
+    [Test]
+    public void TestApiTimeoutResolveFallsBackToDefault()
+    {
+        ClassicAssert.AreEqual(100f, ApiTimeouts.Resolve(0f));
+        ClassicAssert.AreEqual(45f, ApiTimeouts.Resolve(45f));
     }
 
     [Test]

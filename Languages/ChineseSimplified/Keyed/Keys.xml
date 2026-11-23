@@ -355,7 +355,7 @@
   <RimLLM_SetupFailDetail>详细原因（反馈问题时可以附上）：{0}</RimLLM_SetupFailDetail>
   <RimLLM_AdvancedDontTouch>不懂就不要改，默认值就很好。</RimLLM_AdvancedDontTouch>
   <RimLLM_ResetToDefaultsBtn>全部恢复默认</RimLLM_ResetToDefaultsBtn>
-  <RimLLM_ApiTimeoutHint>AI 太久没回答就放弃。网络很慢或用本地 AI 时才调高。</RimLLM_ApiTimeoutHint>
+  <RimLLM_ApiTimeoutHint>非流式请求以整次回复的总时间计算，流式则以多久没收到新内容计算。回复较长或网络很慢、用本地 AI 时才调高。</RimLLM_ApiTimeoutHint>
   <RimLLM_MaxRetriesHint>同一个模型失败时再试几次，之后才换下一个模型。</RimLLM_MaxRetriesHint>
   <RimLLM_RetryDelayHint>每次重试前先等一下，避免被 AI 公司拦下来。</RimLLM_RetryDelayHint>
   <RimLLM_MaxConcurrentRequestsHint>同时最多发出几个问题。越大越快，但越容易超过免费额度。</RimLLM_MaxConcurrentRequestsHint>
