@@ -9,3 +9,5 @@ static readonly RimLLM_Framework.Mod.RimLLMUIStyle.SelectedFill -> UnityEngine.C
 static readonly RimLLM_Framework.Mod.RimLLMUIStyle.PanelBorder -> UnityEngine.Color
 *REMOVED*static readonly RimLLM_Framework.Mod.RimLLMUIStyle.SelectionFill -> UnityEngine.Color
 static RimLLM_Framework.Mod.RimLLMUIStyle.DrawNavSelection(UnityEngine.Rect rect, bool selected) -> void
+RimLLM_Framework.RimLLMChatOptions.StrictModel.get -> bool
+RimLLM_Framework.RimLLMChatOptions.StrictModel.set -> void

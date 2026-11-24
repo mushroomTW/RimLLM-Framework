@@ -200,7 +200,9 @@ public static partial class ChatTestDrawer
             Temperature = 0.7f,
             DisableReasoning = false,
             Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null,
-            ModelId = pinnedModel
+            ModelId = pinnedModel,
+            // 測試介面選定哪個模型就只測哪個，失敗要顯示失敗，不能被備援鏈悄悄換成別的模型。
+            StrictModel = !string.IsNullOrEmpty(pinnedModel)
         };
 
         var enumerator = client.GetStreamingResponseAsync(messages, options, renderState.RequestToken).GetAsyncEnumerator(renderState.RequestToken);

@@ -153,7 +153,8 @@ internal sealed class RimLLMFailoverChatClient : FailoverChatClient
         {
             state.Candidates = _policy.ResolveCandidates(
                 PreferredModel(context),
-                RimLLMChatOptions.GetMinFallbackLevel(context.ChatOptions));
+                RimLLMChatOptions.GetMinFallbackLevel(context.ChatOptions),
+                strictPreferred: RimLLMChatOptions.GetStrictModel(context.ChatOptions));
             state.Index = 0;
         }
         else

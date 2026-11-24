@@ -44,6 +44,24 @@ public class RimLLMChatOptions : ChatOptions
         set => WriteAdditional(CachedContextKey, value);
     }
 
+    internal const string StrictModelKey = "rimllm_strict_model";
+
+    /// <summary>
+    /// 嚴格釘選 <see cref="ChatOptions.ModelId"/>：指定的模型失敗時直接擲出錯誤，不改走備援鏈的其餘候選。
+    /// 預設為 false，指定模型只是排到鏈首。只在指定了具體模型（非 <see cref="FallbackModelId"/>）時有意義；
+    /// 該模型不可用（供應商停用、無金鑰、低於最低等級）時擲出 <see cref="LLMError.ModelNotFound"/>；
+    /// 未指定具體模型（空值或 <see cref="FallbackModelId"/>）卻開啟此選項同樣擲出，不會靜默走備援鏈。
+    /// 用於連線測試這類「選定哪個就只測哪個」的場景，一般呼叫端不應開啟，否則失去備援。
+    /// </summary>
+    public bool StrictModel
+    {
+        get => GetStrictModel(this);
+        set => WriteAdditional(StrictModelKey, value);
+    }
+
+    internal static bool GetStrictModel(ChatOptions? options) =>
+        ReadAdditional(options, StrictModelKey, fallback: false);
+
     /// <summary>關閉思考（對應舊 LLMReasoningEffort.None；Auto 以不設定 Reasoning 表達）。</summary>
     public bool DisableReasoning
     {

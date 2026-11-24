@@ -1133,6 +1133,121 @@ public class DispatcherAndCircuitBreakerTests
         ClassicAssert.AreEqual(1, brokeCalls, "配額耗盡不應消耗重試次數，直接換下一個候選");
     }
 
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    public async System.Threading.Tasks.Task TestStrictModelDoesNotFallThroughToOtherCandidates(bool strict, bool expectFallback)
+    {
+        var mockSettings = new MockSettings
+        {
+            FallbackChain = ["MockPinned:model-a", "MockOther:model-b"],
+            MaxRetries = 0,
+            RetryDelay = 0f
+        };
+        mockSettings.EnabledProviders["MockPinned"] = true;
+        mockSettings.EnabledProviders["MockOther"] = true;
+        mockSettings.ApiKeys["MockPinned"] = "k";
+        mockSettings.ApiKeys["MockOther"] = "k";
+        var manager = new RimLLMManager(mockSettings);
+
+        int otherCalls = 0;
+        manager.RegisterProvider(new MockTestProvider
+        {
+            ProviderId = "MockPinned",
+            GenerateHandler = (msgs, opts, model) => throw new RimLLMException(LLMError.ProviderOffline, "overloaded")
+        });
+        manager.RegisterProvider(new MockTestProvider
+        {
+            ProviderId = "MockOther",
+            GenerateHandler = (msgs, opts, model) =>
+            {
+                otherCalls++;
+                return System.Threading.Tasks.Task.FromResult("ok");
+            }
+        });
+
+        IChatClient client = manager.CreateChatClient("test.strict.model");
+        var messages = new List<ChatMessage> { new(ChatRole.User, "p") };
+        var options = new RimLLMChatOptions { ModelId = "MockPinned:model-a", StrictModel = strict };
+
+        if (expectFallback)
+        {
+            ClassicAssert.AreEqual("ok", (await client.GetResponseAsync(messages, options)).Text);
+            ClassicAssert.AreEqual(1, otherCalls);
+        }
+        else
+        {
+            RimLLMException thrown = await Assert.ThrowsAsync<RimLLMException>(async () => await client.GetResponseAsync(messages, options));
+            StringAssert.Contains("overloaded", thrown.Message);
+            ClassicAssert.AreEqual(0, otherCalls, "嚴格釘選時指定模型失敗不得改打其他候選");
+        }
+    }
+
+    [TestCase("MockMissing:model-x")]
+    [TestCase(null)]
+    [TestCase("fallback")]
+    public async System.Threading.Tasks.Task TestStrictModelThrowsModelNotFoundInsteadOfUsingChain(string modelId)
+    {
+        var mockSettings = new MockSettings { FallbackChain = ["MockOther:model-b"], MaxRetries = 0, RetryDelay = 0f };
+        mockSettings.EnabledProviders["MockOther"] = true;
+        mockSettings.ApiKeys["MockOther"] = "k";
+        var manager = new RimLLMManager(mockSettings);
+        int otherCalls = 0;
+        manager.RegisterProvider(new MockTestProvider
+        {
+            ProviderId = "MockOther",
+            GenerateHandler = (msgs, opts, model) =>
+            {
+                otherCalls++;
+                return System.Threading.Tasks.Task.FromResult("ok");
+            }
+        });
+
+        IChatClient client = manager.CreateChatClient("test.strict.unavailable");
+        var options = new RimLLMChatOptions { ModelId = modelId, StrictModel = true };
+
+        RimLLMException thrown = await Assert.ThrowsAsync<RimLLMException>(async () =>
+            await client.GetResponseAsync([new ChatMessage(ChatRole.User, "p")], options));
+
+        ClassicAssert.AreEqual(LLMError.ModelNotFound, thrown.Error);
+        ClassicAssert.AreEqual(0, otherCalls, "嚴格釘選不得退回備援鏈");
+    }
+
+    [Test]
+    public async System.Threading.Tasks.Task TestStrictModelIgnoresCooldownOfPinnedModel()
+    {
+        var mockSettings = new MockSettings { FallbackChain = ["MockPinned:model-a", "MockOther:model-b"], MaxRetries = 0, RetryDelay = 0f };
+        mockSettings.EnabledProviders["MockPinned"] = true;
+        mockSettings.EnabledProviders["MockOther"] = true;
+        mockSettings.ApiKeys["MockPinned"] = "k";
+        mockSettings.ApiKeys["MockOther"] = "k";
+        var manager = new RimLLMManager(mockSettings);
+        int pinnedCalls = 0;
+        manager.RegisterProvider(new MockTestProvider
+        {
+            ProviderId = "MockPinned",
+            GenerateHandler = (msgs, opts, model) =>
+            {
+                // 第一次失敗讓帳本把它放進冷卻；之後恢復正常。
+                if (++pinnedCalls == 1) throw new RimLLMException(LLMError.ProviderOffline, "down");
+                return System.Threading.Tasks.Task.FromResult("pinned-ok");
+            }
+        });
+        manager.RegisterProvider(new MockTestProvider
+        {
+            ProviderId = "MockOther",
+            GenerateHandler = (msgs, opts, model) => System.Threading.Tasks.Task.FromResult("other")
+        });
+
+        IChatClient client = manager.CreateChatClient("test.strict.cooldown");
+        var messages = new List<ChatMessage> { new(ChatRole.User, "p") };
+        var pinnedOnly = new RimLLMChatOptions { ModelId = "MockPinned:model-a" };
+        ClassicAssert.AreEqual("other", (await client.GetResponseAsync(messages, pinnedOnly)).Text, "非嚴格時指定模型失敗會換手");
+
+        var strict = new RimLLMChatOptions { ModelId = "MockPinned:model-a", StrictModel = true };
+        ClassicAssert.AreEqual("pinned-ok", (await client.GetResponseAsync(messages, strict)).Text, "嚴格釘選不看冷卻");
+        ClassicAssert.AreEqual(2, pinnedCalls);
+    }
+
     [Test]
     public async System.Threading.Tasks.Task TestBalanceExhaustedFlagSurvivesFailoverWrapping()
     {

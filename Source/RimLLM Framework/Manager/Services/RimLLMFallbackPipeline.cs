@@ -54,11 +54,12 @@ public class RimLLMFallbackPipeline
     /// 為 true 時不過濾冷卻中的候選。能力查詢用：冷卻會到期，查詢當下被過濾掉的候選
     /// 仍可能在稍後的請求中被路由到。
     /// </param>
-    internal List<ResolvedCandidate> ResolveCandidates(string? preferredModelId, string? minFallbackLevel, bool includeCoolingDown = false)
+    internal List<ResolvedCandidate> ResolveCandidates(string? preferredModelId, string? minFallbackLevel, bool includeCoolingDown = false, bool strictPreferred = false)
     {
-        if (!TryResolveCandidates(preferredModelId, minFallbackLevel, includeCoolingDown, out List<ResolvedCandidate>? candidates, out string? failureReason))
+        if (!TryResolveCandidates(preferredModelId, minFallbackLevel, includeCoolingDown, out List<ResolvedCandidate>? candidates, out string? failureReason, strictPreferred: strictPreferred))
         {
-            throw new RimLLMException(LLMError.ProviderOffline, failureReason);
+            // 嚴格釘選失敗是「指定的模型用不了」，不是整體離線。
+            throw new RimLLMException(strictPreferred ? LLMError.ModelNotFound : LLMError.ProviderOffline, failureReason);
         }
 
         return candidates;
@@ -74,7 +75,8 @@ public class RimLLMFallbackPipeline
         bool includeCoolingDown,
         [NotNullWhen(true)] out List<ResolvedCandidate>? candidates,
         [NotNullWhen(false)] out string? failureReason,
-        bool advanceRoundRobin = true)
+        bool advanceRoundRobin = true,
+        bool strictPreferred = false)
     {
         var fallbackChain = GetFallbackChainSnapshot();
         if (fallbackChain == null || fallbackChain.Count == 0)
@@ -93,6 +95,31 @@ public class RimLLMFallbackPipeline
         bool preferredFirst = MovePreferredModelToFrontIfUsable(effectiveChain, preferredModelId, apiKeyCache);
 
         List<ResolvedCandidate> resolved = ResolveEligible(effectiveChain, minFallbackLevel, apiKeyCache);
+
+        // 嚴格釘選：只留下指定的模型，且不看冷卻（呼叫端明確要求測這一個）。
+        if (strictPreferred)
+        {
+            if (string.IsNullOrEmpty(preferredModelId) || RimLLMChatOptions.IsFallbackModelId(preferredModelId))
+            {
+                candidates = null;
+                failureReason = "StrictModel requires ChatOptions.ModelId to name a specific model.";
+                return false;
+            }
+
+            int pinnedIndex = preferredFirst
+                ? resolved.FindIndex(c => string.Equals(c.Entry, effectiveChain[0], StringComparison.OrdinalIgnoreCase))
+                : -1;
+            if (pinnedIndex < 0)
+            {
+                candidates = null;
+                failureReason = $"Pinned model '{preferredModelId}' is not available (provider disabled, no API key, or below the minimum level).";
+                return false;
+            }
+
+            candidates = [resolved[pinnedIndex]];
+            failureReason = null;
+            return true;
+        }
 
         if (resolved.Count == 0)
         {
