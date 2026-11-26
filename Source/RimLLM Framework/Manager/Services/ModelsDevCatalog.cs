@@ -103,6 +103,8 @@ internal static class ModelsDevCatalog
         }
     }
 
+    private const string ModelsPropertyName = "models";
+
     /// <summary>
     /// 讀出各供應商每個模型的費率（美元／每百萬 token）：<c>cost.input</c>、<c>cost.output</c>，
     /// 有 <c>cost.cache_read</c> 時一併採用。缺少輸入或輸出價的模型不收錄，查詢時退回內建費率表。
@@ -114,31 +116,45 @@ internal static class ModelsDevCatalog
 
         foreach (var mapping in ProviderKeys)
         {
-            if (!root.TryGetProperty(mapping.Value, out JsonElement provider)
-                || provider.ValueKind != JsonValueKind.Object
-                || !provider.TryGetProperty("models", out JsonElement models)
-                || models.ValueKind != JsonValueKind.Object)
+            if (TryGetProviderModels(root, mapping.Value, out JsonElement models))
             {
-                continue;
+                all[mapping.Key] = ReadProviderRates(models);
             }
-
-            var rates = new Dictionary<string, ModelPricing.CostRate>(StringComparer.OrdinalIgnoreCase);
-            foreach (JsonProperty model in models.EnumerateObject())
-            {
-                if (model.Value.ValueKind == JsonValueKind.Object
-                    && model.Value.TryGetProperty("cost", out JsonElement cost)
-                    && cost.ValueKind == JsonValueKind.Object
-                    && TryReadNonNegative(cost, "input", out float input)
-                    && TryReadNonNegative(cost, "output", out float output))
-                {
-                    float? cacheRead = TryReadNonNegative(cost, "cache_read", out float cached) ? cached : null;
-                    float? cacheWrite = TryReadNonNegative(cost, "cache_write", out float written) ? written : null;
-                    rates[model.Name] = new ModelPricing.CostRate(input, output, cacheRead, cacheWrite);
-                }
-            }
-            all[mapping.Key] = rates;
         }
         return all;
+    }
+
+    private static bool TryGetProviderModels(JsonElement root, string providerKey, out JsonElement models)
+    {
+        if (root.TryGetProperty(providerKey, out JsonElement provider)
+            && provider.ValueKind == JsonValueKind.Object
+            && provider.TryGetProperty(ModelsPropertyName, out models)
+            && models.ValueKind == JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        models = default;
+        return false;
+    }
+
+    private static Dictionary<string, ModelPricing.CostRate> ReadProviderRates(JsonElement models)
+    {
+        var rates = new Dictionary<string, ModelPricing.CostRate>(StringComparer.OrdinalIgnoreCase);
+        foreach (JsonProperty model in models.EnumerateObject())
+        {
+            if (model.Value.ValueKind == JsonValueKind.Object
+                && model.Value.TryGetProperty("cost", out JsonElement cost)
+                && cost.ValueKind == JsonValueKind.Object
+                && TryReadNonNegative(cost, "input", out float input)
+                && TryReadNonNegative(cost, "output", out float output))
+            {
+                float? cacheRead = TryReadNonNegative(cost, "cache_read", out float cached) ? cached : null;
+                float? cacheWrite = TryReadNonNegative(cost, "cache_write", out float written) ? written : null;
+                rates[model.Name] = new ModelPricing.CostRate(input, output, cacheRead, cacheWrite);
+            }
+        }
+        return rates;
     }
 
     private static bool TryReadNonNegative(JsonElement obj, string name, out float value)
@@ -168,15 +184,10 @@ internal static class ModelsDevCatalog
 
         foreach (var mapping in ProviderKeys)
         {
-            if (!root.TryGetProperty(mapping.Value, out JsonElement provider)
-                || provider.ValueKind != JsonValueKind.Object
-                || !provider.TryGetProperty("models", out JsonElement models)
-                || models.ValueKind != JsonValueKind.Object)
+            if (TryGetProviderModels(root, mapping.Value, out JsonElement models))
             {
-                continue;
+                all[mapping.Key] = ReadModelWindows(models);
             }
-
-            all[mapping.Key] = ReadModelWindows(models);
         }
         return all;
     }
@@ -192,10 +203,7 @@ internal static class ModelsDevCatalog
 
         foreach (var mapping in ProviderKeys)
         {
-            if (!root.TryGetProperty(mapping.Value, out JsonElement provider)
-                || provider.ValueKind != JsonValueKind.Object
-                || !provider.TryGetProperty("models", out JsonElement models)
-                || models.ValueKind != JsonValueKind.Object)
+            if (!TryGetProviderModels(root, mapping.Value, out JsonElement models))
             {
                 continue;
             }
@@ -226,10 +234,7 @@ internal static class ModelsDevCatalog
 
         foreach (var mapping in ProviderKeys)
         {
-            if (!root.TryGetProperty(mapping.Value, out JsonElement provider)
-                || provider.ValueKind != JsonValueKind.Object
-                || !provider.TryGetProperty("models", out JsonElement models)
-                || models.ValueKind != JsonValueKind.Object)
+            if (!TryGetProviderModels(root, mapping.Value, out JsonElement models))
             {
                 continue;
             }

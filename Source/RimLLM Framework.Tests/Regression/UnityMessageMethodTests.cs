@@ -30,7 +30,7 @@ public class UnityMessageMethodTests
             {
                 MethodInfo method = type.GetMethod(name,
                     BindingFlags.DeclaredOnly | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
-                    null, Type.EmptyTypes, null);
+                    binder: null, Type.EmptyTypes, modifiers: null);
                 if (method != null)
                 {
                     staticMessages.Add(type.FullName + "." + name);

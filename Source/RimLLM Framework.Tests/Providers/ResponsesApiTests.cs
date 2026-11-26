@@ -199,8 +199,8 @@ public class ResponsesApiTests
         await client.GetResponseAsync(User());
         await client.GetResponseAsync(User());
 
-        Assert.That(_wire.RequestUrls.Select(u => u[(u.LastIndexOf('/') + 1)..]),
-            Is.EqualTo(new[] { "responses", "completions", "completions" }));
+        string[] expected = ["responses", "completions", "completions"];
+        Assert.That(_wire.RequestUrls.Select(u => u[(u.LastIndexOf('/') + 1)..]), Is.EqualTo(expected));
     }
 
     [Test]
@@ -231,8 +231,8 @@ public class ResponsesApiTests
         await client.GetResponseAsync(User(), options);
         await client.GetResponseAsync(User(), options);
 
-        Assert.That(_wire.RequestUrls.Select(u => u[(u.LastIndexOf('/') + 1)..]),
-            Is.EqualTo(new[] { "responses", "completions", "completions" }));
+        string[] expected = ["responses", "completions", "completions"];
+        Assert.That(_wire.RequestUrls.Select(u => u[(u.LastIndexOf('/') + 1)..]), Is.EqualTo(expected));
         Assert.That(string.Concat(_wire.RequestBodies), Does.Not.Contain("prompt_cache_key"));
     }
 
@@ -440,7 +440,7 @@ public class ResponsesApiTests
         ];
 
         Assert.That(RimLLMChatClientExecutor.EstimatePromptRaw(messages, options), Is.GreaterThan(3000));
-        Assert.That(RimLLMChatClientExecutor.EstimatePromptRaw([new(ChatRole.Assistant, [new TextReasoningContent(big)])], null), Is.GreaterThan(900));
+        Assert.That(RimLLMChatClientExecutor.EstimatePromptRaw([new(ChatRole.Assistant, [new TextReasoningContent(big)])], options: null), Is.GreaterThan(900));
     }
 
     [TestCase(true, true)]
@@ -450,7 +450,7 @@ public class ResponsesApiTests
     public async Task TimeoutBeforeAnyOutputIsBilledOnlyForPaidEndpoints(bool streaming, bool bills)
     {
         long before = _settings.TotalPromptTokens;
-        var p = new GenerationParams(new HangingClient(), User(), null, "m", false, ProviderIds.OpenAI, 0.1f, default)
+        var p = new GenerationParams(new HangingClient(), User(), Options: null, "m", UseNativeSchema: false, ProviderIds.OpenAI, 0.1f, default)
         {
             UsageTracker = new RimLLMUsageTracker(_settings),
             BillsTimeouts = bills

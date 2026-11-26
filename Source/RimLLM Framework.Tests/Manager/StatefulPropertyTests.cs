@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using NUnit.Framework;
 using RimLLM_Framework.Manager;
@@ -35,7 +36,7 @@ public class StatefulPropertyTests
 
             for (int step = 0; step < StepsPerSeed; step++)
             {
-                string where = "seed " + seed + " step " + step;
+                string where = string.Create(CultureInfo.InvariantCulture, $"seed {seed} step {step}");
                 switch (random.Next(5))
                 {
                     case 0:
@@ -95,7 +96,7 @@ public class StatefulPropertyTests
 
             for (int step = 0; step < StepsPerSeed; step++)
             {
-                string where = "seed " + seed + " step " + step;
+                string where = string.Create(CultureInfo.InvariantCulture, $"seed {seed} step {step}");
                 int op = random.Next(3);
                 if (op == 0)
                 {
@@ -163,7 +164,7 @@ public class StatefulPropertyTests
 
             for (int step = 0; step < StepsPerSeed; step++)
             {
-                string where = "seed " + seed + " step " + step;
+                string where = string.Create(CultureInfo.InvariantCulture, $"seed {seed} step {step}");
                 string mod = mods[random.Next(mods.Length)];
                 bool count = random.Next(3) != 0;
 

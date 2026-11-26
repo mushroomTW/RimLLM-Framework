@@ -590,18 +590,15 @@ public class OpenAIProvider : ILLMProvider
 
         internal bool TryRecover(WireAttempt attempt, AttemptState state, RimLLMException mapped)
         {
-            if (attempt.UsesResponses)
+            if (attempt.UsesResponses && !state.DropEncryptedReasoning && mapped.HttpStatusCode is 400 or 404 or 422 &&
+                LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "encrypted"))
             {
-                if (!state.DropEncryptedReasoning && mapped.HttpStatusCode is 400 or 404 or 422 &&
-                    LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "encrypted"))
+                state.DropEncryptedReasoning = true;
+                if (LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "support"))
                 {
-                    state.DropEncryptedReasoning = true;
-                    if (LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "support"))
-                    {
-                        RimLLMReasoningSupport.MarkEncryptedReasoningUnsupported(_provider.ProviderId, _model);
-                    }
-                    return true;
+                    RimLLMReasoningSupport.MarkEncryptedReasoningUnsupported(_provider.ProviderId, _model);
                 }
+                return true;
             }
             if (attempt.UsesResponses && IsResponsesRejection(mapped))
             {
@@ -658,7 +655,7 @@ public class OpenAIProvider : ILLMProvider
 
             string code = failure?.Code.ToString() ?? error?.ErrorCode ?? string.Empty;
             string message = failure?.Message ?? error?.Message ?? "The response failed.";
-            string detail = RimLLMLog.SanitizeForLog(code + " " + message, 300);
+            string detail = RimLLMLog.SanitizeForLog(code + " " + message, 300) ?? string.Empty;
             LLMError kind = LLMError.ProviderOffline;
             if (LLMErrorMapper.ContainsIgnoreCase(code, "rate_limit")) kind = LLMError.RateLimit;
             else if (LLMErrorMapper.LooksLikeContextWindowRejection(code + " " + message)) kind = LLMError.ContextWindowExceeded;

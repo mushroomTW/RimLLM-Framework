@@ -25,10 +25,10 @@ public class ConcurrencyRegressionTests
     public void CacheHitRateIsReadFromOneSnapshot()
     {
         var stats = new RimLLMUsageTracker.ProviderStats();
-        using var stop = new CancellationTokenSource();
+        bool stop = false;
         Task writer = Task.Run(() =>
         {
-            while (!stop.IsCancellationRequested) stats.AddTokenCounts(100, 100);
+            while (!Volatile.Read(ref stop)) stats.AddTokenCounts(100, 100);
         });
 
         int torn = 0;
@@ -37,7 +37,7 @@ public class ConcurrencyRegressionTests
             float rate = stats.ContextCacheHitRate;
             if (rate > 0f && Math.Abs(rate - 1f) > 1e-6f) torn++;
         }
-        stop.Cancel();
+        Volatile.Write(ref stop, true);
         writer.Wait();
 
         Assert.That(torn, Is.Zero, "命中率應為同一時間點的快取量／總量");
@@ -48,10 +48,10 @@ public class ConcurrencyRegressionTests
     public void PromptTokenSnapshotIsReadAtOnePoint()
     {
         var stats = new RimLLMUsageTracker.ProviderStats();
-        using var stop = new CancellationTokenSource();
+        bool stop = false;
         Task writer = Task.Run(() =>
         {
-            while (!stop.IsCancellationRequested) stats.AddTokenCounts(100, 100);
+            while (!Volatile.Read(ref stop)) stats.AddTokenCounts(100, 100);
         });
 
         int torn = 0;
@@ -60,7 +60,7 @@ public class ConcurrencyRegressionTests
             (long total, long cached) = stats.PromptTokenSnapshot;
             if (total != cached) torn++;
         }
-        stop.Cancel();
+        Volatile.Write(ref stop, true);
         writer.Wait();
 
         Assert.That(torn, Is.Zero);

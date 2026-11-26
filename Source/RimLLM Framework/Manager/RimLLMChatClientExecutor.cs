@@ -70,7 +70,7 @@ internal static class RimLLMChatClientExecutor
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             // 逾時只是本地放棄等待，服務端多半已收下並計費輸入；不記的話反覆逾時能無聲突破每日預算。
-            if (p.BillsTimeouts) RecordUsage(p.UsageTracker, providerId, model, builtMessages, options, usage: null, 0, onUsage);
+            if (p.BillsTimeouts) RecordUsage(p, builtMessages, usage: null, 0, onUsage);
             throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} request timed out after {timeoutSeconds} seconds."), ex);
         }
 
@@ -89,7 +89,7 @@ internal static class RimLLMChatClientExecutor
             // 服務端已經計費，用量要照記。沒有回報時只有推理內容可估；什麼都沒有就不記。
             if (response?.Usage != null || hasReasoning)
             {
-                RecordUsage(p.UsageTracker, providerId, model, builtMessages, options, response?.Usage, EstimateCompletionRaw(contents), onUsage);
+                RecordUsage(p, builtMessages, response?.Usage, EstimateCompletionRaw(contents), onUsage);
             }
             throw new RimLLMException(LLMError.InvalidResponse, hasReasoning
                 ? ReasoningOnlyMessage(providerId)
@@ -97,7 +97,7 @@ internal static class RimLLMChatClientExecutor
         }
 
         ArgumentNullException.ThrowIfNull(response);
-        RecordUsage(p.UsageTracker, providerId, model, builtMessages, options, response.Usage, EstimateCompletionRaw(contents), onUsage);
+        RecordUsage(p, builtMessages, response.Usage, EstimateCompletionRaw(contents), onUsage);
         return response;
     }
 
@@ -180,7 +180,7 @@ internal static class RimLLMChatClientExecutor
                 // 沒有 provider 用量時 RecordUsage 會沿用已累計的 completionEstimate。
                 if (streamState.AnyOutput || streamState.LastUsage != null || (timedOut && p.BillsTimeouts))
                 {
-                    RecordUsage(p.UsageTracker, providerId, model, builtMessages, options, streamState.LastUsage, streamState.CompletionEstimate, onUsage);
+                    RecordUsage(p, builtMessages, streamState.LastUsage, streamState.CompletionEstimate, onUsage);
                 }
             }
         }
@@ -386,11 +386,8 @@ internal static class RimLLMChatClientExecutor
     /// <param name="completionEstimate">provider 沒回報用量時使用的 completion token 估算值（<see cref="EstimateTokensRaw"/> 的累計）。</param>
     /// <param name="onUsage">供應商有回報用量時的 token 回呼（數字與帳本相同）；只有估算值時不觸發，以免日誌把估算當實際值顯示。</param>
     private static void RecordUsage(
-        RimLLMUsageTracker? usageTracker,
-        string providerId,
-        string model,
+        GenerationParams p,
         IList<ChatMessage> messages,
-        ChatOptions? options,
         UsageDetails? usage,
         double completionEstimate,
         Action<UsageTokens>? onUsage = null)
@@ -408,7 +405,7 @@ internal static class RimLLMChatClientExecutor
         else
         {
             // messages 已經是 BuildMessages 的產物，系統提示詞與 CachedContext 都在裡面。
-            promptTokens = ToTokenCount(EstimatePromptRaw(messages, options));
+            promptTokens = ToTokenCount(EstimatePromptRaw(messages, p.Options));
             completionTokens = ToTokenCount(completionEstimate);
         }
 
@@ -429,9 +426,9 @@ internal static class RimLLMChatClientExecutor
         }
         // 每個已結算嘗試的實際用量都立即累計；外層 Guard 保留 logical request
         // 的 estimate buffer 到整條 fallback/retry 流程結束，供下一次嘗試使用。
-        usageTracker?.RecordUsage(
-            providerId,
-            model,
+        p.UsageTracker?.RecordUsage(
+            p.ProviderId,
+            p.Model,
             billedPrompt,
             billedCompletion,
             Math.Max(0, cachedPromptTokens),

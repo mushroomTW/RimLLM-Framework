@@ -99,26 +99,7 @@ public class RimLLMFallbackPipeline
         // 嚴格釘選：只留下指定的模型，且不看冷卻（呼叫端明確要求測這一個）。
         if (strictPreferred)
         {
-            if (string.IsNullOrEmpty(preferredModelId) || RimLLMChatOptions.IsFallbackModelId(preferredModelId))
-            {
-                candidates = null;
-                failureReason = "StrictModel requires ChatOptions.ModelId to name a specific model.";
-                return false;
-            }
-
-            int pinnedIndex = preferredFirst
-                ? resolved.FindIndex(c => string.Equals(c.Entry, effectiveChain[0], StringComparison.OrdinalIgnoreCase))
-                : -1;
-            if (pinnedIndex < 0)
-            {
-                candidates = null;
-                failureReason = $"Pinned model '{preferredModelId}' is not available (provider disabled, no API key, or below the minimum level).";
-                return false;
-            }
-
-            candidates = [resolved[pinnedIndex]];
-            failureReason = null;
-            return true;
+            return TryResolveStrictPreferred(preferredModelId, preferredFirst, effectiveChain, resolved, out candidates, out failureReason);
         }
 
         if (resolved.Count == 0)
@@ -130,13 +111,8 @@ public class RimLLMFallbackPipeline
 
         // 2. 過濾處於故障冷卻期的候選（若全部都在冷卻中，則破例放行）
         DateTime now = DateTime.UtcNow;
-        var activeCandidates = includeCoolingDown
-            ? resolved
-            : resolved.FindAll(c => !_healthLedger.IsInCooldown(HealthKey(c), now));
-        if (activeCandidates.Count == 0)
-        {
-            activeCandidates = resolved;
-        }
+        var activeCandidates = includeCoolingDown ? resolved : resolved.FindAll(c => !_healthLedger.IsInCooldown(HealthKey(c), now));
+        if (activeCandidates.Count == 0) activeCandidates = resolved;
 
         // 呼叫端指定的模型固定在第一位、不參與排序；只有它失敗時才輪到路由策略排出的其餘候選。
         // 前面的步驟都保持順序，所以它若仍可用必定位於索引 0。
@@ -148,13 +124,39 @@ public class RimLLMFallbackPipeline
         }
 
         ApplyRoutingStrategy(activeCandidates, advanceRoundRobin);
-
-        if (pinnedPreferred.HasValue)
-        {
-            activeCandidates.Insert(0, pinnedPreferred.Value);
-        }
+        if (pinnedPreferred.HasValue) activeCandidates.Insert(0, pinnedPreferred.Value);
 
         candidates = activeCandidates;
+        failureReason = null;
+        return true;
+    }
+
+    private static bool TryResolveStrictPreferred(
+        string? preferredModelId,
+        bool preferredFirst,
+        List<string> effectiveChain,
+        List<ResolvedCandidate> resolved,
+        [NotNullWhen(true)] out List<ResolvedCandidate>? candidates,
+        [NotNullWhen(false)] out string? failureReason)
+    {
+        if (string.IsNullOrEmpty(preferredModelId) || RimLLMChatOptions.IsFallbackModelId(preferredModelId))
+        {
+            candidates = null;
+            failureReason = "StrictModel requires ChatOptions.ModelId to name a specific model.";
+            return false;
+        }
+
+        int pinnedIndex = preferredFirst
+            ? resolved.FindIndex(c => string.Equals(c.Entry, effectiveChain[0], StringComparison.OrdinalIgnoreCase))
+            : -1;
+        if (pinnedIndex < 0)
+        {
+            candidates = null;
+            failureReason = $"Pinned model '{preferredModelId}' is not available (provider disabled, no API key, or below the minimum level).";
+            return false;
+        }
+
+        candidates = [resolved[pinnedIndex]];
         failureReason = null;
         return true;
     }

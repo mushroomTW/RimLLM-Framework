@@ -301,19 +301,19 @@ public class RimLLMDispatcher : MonoBehaviour
 
     // Waylith（遊戲的 Unity 相容層）只呼叫執行個體形式的 Unity 訊息方法；
     // Awake／Update 宣告成 static 就不會被呼叫，主線程 pump 會失效。
-    #pragma warning disable CA1822, S2325 // Unity 訊息方法必須是執行個體方法。
+    #pragma warning disable CA1822, S2325, MA0038 // Unity 訊息方法必須是執行個體方法。
     private void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
         SetPumpActive(active: true);
     }
-    #pragma warning restore CA1822, S2325
+    #pragma warning restore CA1822, S2325, MA0038
 
-    #pragma warning disable CA1822, S2325 // Unity 訊息方法必須是執行個體方法。
+    #pragma warning disable CA1822, S2325, MA0038 // Unity 訊息方法必須是執行個體方法。
     private void Update() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
         DrainWithBudget(MaxActionsPerFrame, FrameBudgetMs);
     }
-    #pragma warning restore CA1822, S2325
+    #pragma warning restore CA1822, S2325, MA0038
 
     private void OnDestroy()
     {

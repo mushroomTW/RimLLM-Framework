@@ -230,29 +230,22 @@ public partial class RimLLMFrameworkSettings
 
     private void ApplyContextWindowsAndVision(SettingsDto dto)
     {
-        if (dto.ProviderContextWindows != null)
+        ApplyProviderMap(dto.ProviderContextWindows, _providerContextWindows.Clear, SetProviderContextWindows);
+        ApplyProviderMap(dto.ProviderVisionSupport, _providerVisionSupport.Clear, SetProviderVisionSupport);
+        ApplyProviderMap(dto.ProviderOutputLimits, _providerOutputLimits.Clear, SetProviderOutputLimits);
+    }
+
+    private static void ApplyProviderMap<TValue>(
+        Dictionary<string, TValue>? source,
+        Action clearTarget,
+        Action<string, TValue> applyEntry)
+        where TValue : class
+    {
+        if (source == null) return;
+        clearTarget();
+        foreach (var kvp in source)
         {
-            _providerContextWindows.Clear();
-            foreach (var kvp in dto.ProviderContextWindows)
-            {
-                if (kvp.Value != null) SetProviderContextWindows(kvp.Key, kvp.Value);
-            }
-        }
-        if (dto.ProviderVisionSupport != null)
-        {
-            _providerVisionSupport.Clear();
-            foreach (var kvp in dto.ProviderVisionSupport)
-            {
-                if (kvp.Value != null) SetProviderVisionSupport(kvp.Key, kvp.Value);
-            }
-        }
-        if (dto.ProviderOutputLimits != null)
-        {
-            _providerOutputLimits.Clear();
-            foreach (var kvp in dto.ProviderOutputLimits)
-            {
-                if (kvp.Value != null) SetProviderOutputLimits(kvp.Key, kvp.Value);
-            }
+            if (kvp.Value != null) applyEntry(kvp.Key, kvp.Value);
         }
     }
 
@@ -286,7 +279,7 @@ public partial class RimLLMFrameworkSettings
 
     private void ApplyGlobalPolicies(SettingsDto dto)
     {
-        this.ApiTimeout = dto.ApiTimeout <= 0f || dto.ApiTimeout == ApiTimeouts.LegacyDefaultSeconds
+        this.ApiTimeout = dto.ApiTimeout <= 0f || Math.Abs(dto.ApiTimeout - ApiTimeouts.LegacyDefaultSeconds) < 0.001f
             ? RimLLMFrameworkSettings.DefaultApiTimeout
             : dto.ApiTimeout;
         this.MaxRetries = dto.MaxRetries < 0 ? 3 : dto.MaxRetries;

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
@@ -11,10 +12,13 @@ namespace RimLLM_Framework.Tests;
 /// 讓玩家回報的 Player.log 不受語系影響，也方便搜尋。
 /// </summary>
 [TestFixture]
-public class RimLLMLogLanguageTests
+public partial class RimLLMLogLanguageTests
 {
-    private static readonly Regex LogCall = new(@"\bRimLLMLog\.(Message|Warning|Error)\(", RegexOptions.CultureInvariant);
-    private static readonly Regex Cjk = new(@"[぀-ヿ㐀-䶿一-鿿가-힯＀-￯]", RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"\bRimLLMLog\.(?:Message|Warning|Error)\(", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture)]
+    private static partial Regex LogCall { get; }
+
+    [GeneratedRegex(@"[぀-ヿ㐀-䶿一-鿿가-힯＀-￯]", RegexOptions.CultureInvariant)]
+    private static partial Regex Cjk { get; }
 
     [Test]
     public void LogMessagesAreEnglish()
@@ -36,7 +40,7 @@ public class RimLLMLogLanguageTests
                 if (Cjk.IsMatch(arguments))
                 {
                     int line = 1 + source.Substring(0, call.Index).Split('\n').Length - 1;
-                    violations.Add(relative + ":" + line);
+                    violations.Add(string.Create(CultureInfo.InvariantCulture, $"{relative}:{line}"));
                 }
             }
         }

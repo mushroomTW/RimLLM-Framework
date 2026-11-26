@@ -212,7 +212,7 @@ public static class HomeDrawer
         DrawInfoCard(new Rect(row.x + w + gap, row.y, w, row.height), "RimLLM_HomeCardUsage".Translate(),
             Settings.DailyAccumulatedTokens.ToString("N0", CultureInfo.InvariantCulture), "RimLLM_HomeTokensUnit".Translate());
         DrawInfoCard(new Rect(row.x + (w + gap) * 2f, row.y, w, row.height), "RimLLM_HomeCardBackup".Translate(),
-            null, "RimLLM_HomeBackupTip".Translate());
+            value: null, "RimLLM_HomeBackupTip".Translate());
     }
 
     private static void DrawInfoCard(Rect card, string label, string? value, string sub)
