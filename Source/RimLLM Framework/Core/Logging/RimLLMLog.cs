@@ -65,23 +65,7 @@ public static partial class RimLLMLog
     {
         if (string.IsNullOrEmpty(value)) return value;
 
-        string sanitized;
-        if (HasPotentialSecret(value))
-        {
-            try
-            {
-                sanitized = SecretPattern.Replace(value, RedactMatch);
-            }
-            catch (RegexMatchTimeoutException)
-            {
-                sanitized = "[redacted-timeout]";
-            }
-        }
-        else
-        {
-            sanitized = value;
-        }
-
+        string sanitized = RedactSecrets(value);
         sanitized = sanitized.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
         if (sanitized.Length > maxLength)
         {
@@ -90,13 +74,29 @@ public static partial class RimLLMLog
         return sanitized;
     }
 
+    private static string RedactSecrets(string value)
+    {
+        if (string.IsNullOrEmpty(value) || !HasPotentialSecret(value)) return value ?? string.Empty;
+
+        try
+        {
+            return SecretPattern.Replace(value, RedactMatch);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return "[redacted-timeout]";
+        }
+    }
+
     /// <summary>
     /// 輸出一般資訊日誌。僅在 <see cref="Enabled"/> 為 true 時輸出至遊戲主控台。
     /// </summary>
+    /// <remarks>三個輸出方法都會先遮罩金鑰與憑證；<see cref="SanitizeForLog"/> 只在還需要跳脫換行或截斷時使用。</remarks>
     /// <param name="msg">日誌訊息內容。</param>
     public static void Message(string msg)
     {
         if (!Enabled) return;
+        msg = RedactSecrets(msg);
         try
         {
             Log.Message(msg);
@@ -114,6 +114,7 @@ public static partial class RimLLMLog
     /// </summary>
     public static void Warning(string msg)
     {
+        msg = RedactSecrets(msg);
         try
         {
             Log.Warning(msg);
@@ -129,6 +130,7 @@ public static partial class RimLLMLog
     /// </summary>
     public static void Error(string msg)
     {
+        msg = RedactSecrets(msg);
         try
         {
             Log.Error(msg);

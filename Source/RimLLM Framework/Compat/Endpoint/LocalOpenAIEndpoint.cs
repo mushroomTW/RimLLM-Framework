@@ -43,6 +43,7 @@ internal static class LocalOpenAIEndpoint
     private static readonly Dictionary<string, Handler> Handlers = new(StringComparer.Ordinal);
     private static readonly Lock Gate = new();
     private static HttpListener? _listener;
+    private static CancellationTokenSource? _shutdown;
     private static int _port;
 
     public static void Register(string modId, Handler handler)
@@ -65,8 +66,6 @@ internal static class LocalOpenAIEndpoint
     {
         if (string.IsNullOrEmpty(baseUrl)) return false;
 
-        if (string.Equals(baseUrl.TrimEnd('/'), "http://127.0.0.1:1/v1", StringComparison.OrdinalIgnoreCase)) return true;
-
         return baseUrl.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase)
             && (baseUrl.IndexOf($"/m/{modId}/v1", StringComparison.Ordinal) > 0
                 || baseUrl.IndexOf($"/m/{Uri.EscapeDataString(modId)}/v1", StringComparison.Ordinal) > 0);
@@ -75,10 +74,13 @@ internal static class LocalOpenAIEndpoint
     internal static void Stop()
     {
         HttpListener? listener;
+        CancellationTokenSource? shutdown;
         lock (Gate)
         {
             listener = _listener;
+            shutdown = _shutdown;
             _listener = null;
+            _shutdown = null;
             _port = 0;
         }
 
@@ -92,6 +94,23 @@ internal static class LocalOpenAIEndpoint
         catch (Exception)
         {
             // 關閉期間安全忽略已釋放的監聽器。
+        }
+
+        if (shutdown == null) return;
+
+        // 進行中的請求還在花玩家的 token；監聽器關閉後回應也送不出去，直接取消。
+        // 取消會同步執行下游登記的回呼，其中擲錯不能影響上面已完成的關閉。
+        try
+        {
+            shutdown.Cancel();
+        }
+        catch (AggregateException ex)
+        {
+            RimLLMLog.Warning($"[RimLLM] Local endpoint shutdown cancellation callback failed: {ex.Message}");
+        }
+        finally
+        {
+            shutdown.Dispose();
         }
     }
 
@@ -117,9 +136,11 @@ internal static class LocalOpenAIEndpoint
                     continue;
                 }
 
+                var shutdown = new CancellationTokenSource();
                 _listener = listener;
+                _shutdown = shutdown;
                 _port = port;
-                _ = Task.Run(() => AcceptLoopAsync(listener, port));
+                _ = Task.Run(() => AcceptLoopAsync(listener, port, shutdown.Token), CancellationToken.None);
                 RimLLMLog.Message(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Local OpenAI-compatible endpoint listening on 127.0.0.1:{port}"));
                 return _port;
             }
@@ -141,7 +162,7 @@ internal static class LocalOpenAIEndpoint
         }
     }
 
-    private static async Task AcceptLoopAsync(HttpListener listener, int port)
+    private static async Task AcceptLoopAsync(HttpListener listener, int port, CancellationToken shutdown)
     {
         while (listener.IsListening)
         {
@@ -154,11 +175,12 @@ internal static class LocalOpenAIEndpoint
             {
                 return; // 監聽器已關閉
             }
-            _ = Task.Run(() => HandleAsync(context, port));
+            // 已接受的連線一定要回應或中止，不能因關閉而略過不跑。
+            _ = Task.Run(() => HandleAsync(context, port, shutdown), CancellationToken.None);
         }
     }
 
-    private static async Task HandleAsync(HttpListenerContext context, int port)
+    private static async Task HandleAsync(HttpListenerContext context, int port, CancellationToken shutdown)
     {
         bool acquired = false;
         try
@@ -170,7 +192,7 @@ internal static class LocalOpenAIEndpoint
                 return;
             }
 
-            if (!await RequestConcurrencyGate.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false))
+            if (!await RequestConcurrencyGate.WaitAsync(TimeSpan.FromSeconds(2), shutdown).ConfigureAwait(false))
             {
                 await WriteJsonAsync(context, 503, ErrorBody("server_busy", "Local endpoint is busy.")).ConfigureAwait(false);
                 return;
@@ -192,8 +214,12 @@ internal static class LocalOpenAIEndpoint
                 await TryWriteErrorOrAbortAsync(context, 413, "payload_too_large", "Request body exceeds maximum allowed size.").ConfigureAwait(false);
                 return;
             }
-            string json = await handler!(body, chat, CancellationToken.None).ConfigureAwait(false);
+            string json = await handler!(body, chat, shutdown).ConfigureAwait(false);
             await WriteResultAsync(context, json, body, chat).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
+        {
+            TryAbort(context);
         }
         catch (OperationCanceledException)
         {
@@ -271,14 +297,19 @@ internal static class LocalOpenAIEndpoint
         }
         catch (Exception)
         {
-            try
-            {
-                context.Response.Abort();
-            }
-            catch (Exception)
-            {
-                // 連線已斷，忽略中止錯誤
-            }
+            TryAbort(context);
+        }
+    }
+
+    private static void TryAbort(HttpListenerContext context)
+    {
+        try
+        {
+            context.Response.Abort();
+        }
+        catch (Exception)
+        {
+            // 連線已斷，忽略中止錯誤
         }
     }
 
@@ -444,7 +475,7 @@ internal static class LocalOpenAIEndpoint
         context.Response.StatusCode = 200;
         context.Response.ContentType = "text/event-stream";
         context.Response.ContentLength64 = bytes.Length;
-        await context.Response.OutputStream.WriteAsync(bytes.AsMemory()).ConfigureAwait(false);
+        await context.Response.OutputStream.WriteAsync(bytes.AsMemory(), CancellationToken.None).ConfigureAwait(false);
         context.Response.Close();
     }
 
@@ -479,7 +510,7 @@ internal static class LocalOpenAIEndpoint
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json";
         context.Response.ContentLength64 = bytes.Length;
-        await context.Response.OutputStream.WriteAsync(bytes.AsMemory()).ConfigureAwait(false);
+        await context.Response.OutputStream.WriteAsync(bytes.AsMemory(), CancellationToken.None).ConfigureAwait(false);
         context.Response.Close();
     }
 }

@@ -28,7 +28,7 @@ public static class GlobalConfigDrawer
         bool prevJsonRepair = Settings.EnableJsonRepair;
 
         listing.Label("RimLLM_ApiTimeoutLabel".Translate(Mathf.RoundToInt(Settings.ApiTimeout)));
-        Settings.ApiTimeout = listing.Slider(Settings.ApiTimeout, 5f, 120f);
+        Settings.ApiTimeout = listing.Slider(Settings.ApiTimeout, ApiTimeouts.MinSeconds, ApiTimeouts.MaxSeconds);
         RimLLMUIStyle.DrawHint(listing, "RimLLM_ApiTimeoutHint".Translate());
 
         listing.Label("RimLLM_MaxRetriesLabel".Translate(Settings.MaxRetries));

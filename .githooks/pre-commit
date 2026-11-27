@@ -3,16 +3,51 @@
 # 同一天再次提交時最後一段加一，跨日重設為 1。
 # 這次提交已手動改過 modVersion（與 HEAD 不同）時不動；About.xml 另有未暫存的修改時只提醒，避免把它們一起暫存。
 # pre-commit 分不出 --amend：修正上一筆提交時用 KEEP_MOD_VERSION=1 git commit --amend，避免版號跳號。
+# 提交含正式專案的建置輸入時，先以 Release 重建並暫存出貨的 DLL，避免 Assemblies/ 落後原始碼（5a21d4f 曾發生）。
+# Release 建置是確定性的：原始碼的 IL 沒變時 DLL 位元組相同，不會多出變更。
 # 啟用方式（每個 clone 執行一次）：git config core.hooksPath .githooks
+
+# git commit <路徑>／--only 用暫存 index 提交，這裡 git add 的檔案進不了真正的 index，提交後會留下一筆把它改回去的暫存變更。
+partial_commit=0
+case "$(basename "${GIT_INDEX_FILE:-index}")" in
+  next-index*) partial_commit=1 ;;
+esac
+
+. "$(dirname "$0")/lib-dll.sh"
+rm -f "$dll_checked_marker"
+if [ -n "$(git diff --cached --name-only -- "$@")" ]; then
+  # 建置讀的是工作樹；未暫存或未追蹤的輸入會讓 DLL 與這次提交的原始碼不符。
+  if ! git diff --quiet -- "$@" || [ -n "$(git ls-files --others --exclude-standard -- "$@")" ]; then
+    echo "pre-commit: 建置輸入有未暫存或未追蹤的變更，無法產生對應這次提交的 DLL。請先暫存，或用 git stash --keep-index --include-untracked 移開。" >&2
+    exit 1
+  fi
+  if ! build_log=$(dotnet build "$project" -c Release -nologo -v q 2>&1); then
+    printf '%s\n' "$build_log" >&2
+    echo "pre-commit: Release 建置失敗（遊戲執行中會鎖住 DLL）。" >&2
+    exit 1
+  fi
+  # 升級套件時相依 DLL 會一起變，只暫存主 DLL 會出貨版本不一致的組件。
+  untracked=$(git ls-files --others --exclude-standard -- Assemblies/)
+  if [ -n "$untracked" ]; then
+    printf 'pre-commit: Release 建置產生了未追蹤的出貨組件，確認要出貨後 git add 再提交：\n%s\n' "$untracked" >&2
+    exit 1
+  fi
+  if ! git diff --quiet -- Assemblies/; then
+    if [ "$partial_commit" = 1 ]; then
+      echo "pre-commit: 已重建 Assemblies/，但指定路徑提交無法自動暫存；請 git add 後改用一般提交。" >&2
+      exit 1
+    fi
+    git add -u -- Assemblies/
+  fi
+fi
+index_fingerprint "$@" > "$dll_checked_marker"
 
 about=About/About.xml
 [ "${KEEP_MOD_VERSION:-}" = 1 ] && exit 0
-# git commit <路徑>／--only 用暫存 index 提交，這裡 git add 的版號進不了真正的 index，提交後會留下一筆把版號改回去的暫存變更。
-case "$(basename "${GIT_INDEX_FILE:-index}")" in
-  next-index*)
-    echo "pre-commit: 指定路徑提交，略過 modVersion 遞增。" >&2
-    exit 0 ;;
-esac
+if [ "$partial_commit" = 1 ]; then
+  echo "pre-commit: 指定路徑提交，略過 modVersion 遞增。" >&2
+  exit 0
+fi
 [ -f "$about" ] || exit 0
 
 read_version() {

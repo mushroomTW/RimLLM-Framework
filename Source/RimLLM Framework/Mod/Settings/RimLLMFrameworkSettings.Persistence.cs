@@ -279,9 +279,7 @@ public partial class RimLLMFrameworkSettings
 
     private void ApplyGlobalPolicies(SettingsDto dto)
     {
-        this.ApiTimeout = !float.IsFinite(dto.ApiTimeout) || dto.ApiTimeout <= 0f || Math.Abs(dto.ApiTimeout - ApiTimeouts.LegacyDefaultSeconds) < 0.001f
-            ? RimLLMFrameworkSettings.DefaultApiTimeout
-            : Math.Clamp(dto.ApiTimeout, 1f, 600f);
+        this.ApiTimeout = SanitizeApiTimeout(dto.ApiTimeout);
         this.MaxRetries = dto.MaxRetries < 0 ? 3 : Math.Min(dto.MaxRetries, 20);
         this.RetryDelay = !float.IsFinite(dto.RetryDelay) || dto.RetryDelay < 0f ? 3f : Math.Min(dto.RetryDelay, 120f);
         this.DetailedLogging = dto.DetailedLogging;
@@ -396,6 +394,13 @@ public partial class RimLLMFrameworkSettings
     /// 設定檔中的預算策略值正規化。未知值一律退回 HardBlock：
     /// 不得靜默變成放行，否則手動編輯過的設定會在無預警的情況下繼續燒 token。
     /// </summary>
+    internal static float SanitizeApiTimeout(float stored)
+    {
+        return !float.IsFinite(stored) || stored <= 0f
+            ? RimLLMFrameworkSettings.DefaultApiTimeout
+            : Math.Clamp(stored, ApiTimeouts.MinSeconds, ApiTimeouts.MaxSeconds);
+    }
+
     internal static int SanitizeBudgetPolicy(int stored)
     {
         return stored < 0 || stored > MaxBudgetPolicy ? 0 : stored;

@@ -1,0 +1,30 @@
+#!/bin/sh
+# rebase、cherry-pick 與 --no-verify 不執行 pre-commit（git 2.56 實測），出貨 DLL 可能落後原始碼。
+# 這些提交改在此以 Release 重建到暫存目錄比對；post-commit 擋不下提交，只能提醒。
+# 不寫入 Assemblies/：rebase 途中留下工作樹變更會讓後續 pick 失敗。
+. "$(dirname "$0")/lib-dll.sh"
+
+checked=$(cat "$dll_checked_marker" 2>/dev/null)
+rm -f "$dll_checked_marker"
+[ -n "$checked" ] && [ "$checked" = "$(head_fingerprint "$@")" ] && exit 0
+
+[ -n "$(git diff-tree --root --no-commit-id --name-only -r HEAD -- "$@")" ] || exit 0
+
+short=$(git rev-parse --short HEAD)
+if ! git diff --quiet HEAD -- "$@" || [ -n "$(git ls-files --others --exclude-standard -- "$@")" ]; then
+  echo "post-commit: 建置輸入有未提交的變更，無法驗證 $short 的 $dll。" >&2
+  exit 0
+fi
+
+tmp=$(mktemp -d)
+out=$(cygpath -w "$tmp" 2>/dev/null || printf '%s' "$tmp")
+if dotnet build "$project" -c Release -nologo -v q "-p:OutputPath=$out/" >/dev/null 2>&1; then
+  expected=$(git hash-object "$tmp/RimLLM Framework.dll")
+  actual=$(git rev-parse -q --verify "HEAD:$dll")
+  if [ "$expected" != "$actual" ]; then
+    echo "post-commit: $short 的 $dll 與原始碼不符。完成 rebase／cherry-pick 後執行 dotnet build -c Release，再以 KEEP_MOD_VERSION=1 git commit --amend 帶入。" >&2
+  fi
+else
+  echo "post-commit: Release 建置失敗，無法驗證 $short 的 $dll。" >&2
+fi
+rm -rf "$tmp"

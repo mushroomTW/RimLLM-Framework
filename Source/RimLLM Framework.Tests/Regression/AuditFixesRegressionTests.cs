@@ -47,6 +47,29 @@ public sealed class AuditFixesRegressionTests
     }
 
     [Test]
+    public void RimLLMLog_RedactsSecretsAtTheLoggerAndKeepsLongMultilineMessages()
+    {
+        TextWriter original = Console.Out;
+        using var captured = new StringWriter();
+        Console.SetOut(captured);
+        try
+        {
+            string tail = new('x', 1000);
+            RimLLMLog.Warning($"[RimLLM] failed: {new InvalidOperationException("Authorization: Bearer abcDEF1234567890ghijk")}\nline2 {tail}");
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+
+        string output = captured.ToString();
+        ClassicAssert.IsTrue(output.Contains("[RimLLM] failed:", StringComparison.Ordinal), "測試環境應走 Console 備援輸出。");
+        ClassicAssert.IsFalse(output.Contains("abcDEF1234567890", StringComparison.Ordinal));
+        ClassicAssert.IsTrue(output.Contains("\nline2", StringComparison.Ordinal), "日誌本身的換行應保留。");
+        ClassicAssert.IsTrue(output.Contains(new string('x', 1000), StringComparison.Ordinal), "日誌本身不應被截斷。");
+    }
+
+    [Test]
     public void SaturatingMath_ClampsPositiveAndNegativeOverflow()
     {
         ClassicAssert.AreEqual(long.MaxValue, SaturatingMath.Add(long.MaxValue, 10));
@@ -89,6 +112,123 @@ public sealed class AuditFixesRegressionTests
         ClassicAssert.AreEqual(HttpStatusCode.NotFound, doubleSlash.StatusCode);
         string body = doubleSlash.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         ClassicAssert.IsTrue(body.Contains("No handler registered", StringComparison.Ordinal));
+    }
+
+    [TestCase(30f, 30f)]
+    [TestCase(45f, 45f)]
+    [TestCase(1f, 5f)]
+    [TestCase(600f, 120f)]
+    [TestCase(0f, 100f)]
+    [TestCase(float.NaN, 100f)]
+    public void SanitizeApiTimeout_KeepsUserValueWithinSliderRange(float stored, float expected)
+    {
+        ClassicAssert.AreEqual(expected, RimLLMFrameworkSettings.SanitizeApiTimeout(stored));
+    }
+
+    [Test]
+    public async Task LocalOpenAIEndpoint_StopCancelsInFlightHandler()
+    {
+        const string modId = "audit.stop.test";
+        System.Reflection.PropertyInfo settingsProperty = typeof(RimLLMFrameworkMod).GetProperty(
+            "Settings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        object? previousSettings = settingsProperty.GetValue(null);
+        var settings = new RimLLMFrameworkSettings();
+        settings.SetCompatTakeoverEnabled(modId, true);
+        settingsProperty.SetValue(null, settings);
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        LocalOpenAIEndpoint.Register(modId, async (_, _, cancellationToken) =>
+        {
+            started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled.TrySetResult();
+                throw;
+            }
+            return "{}";
+        });
+
+        try
+        {
+            string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(modId) ?? string.Empty;
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            Task<HttpResponseMessage> request = http.PostAsync($"{baseUrl}/chat/completions", new StringContent("{}"));
+
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            LocalOpenAIEndpoint.Stop();
+
+            Task finished = await Task.WhenAny(cancelled.Task, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
+            ClassicAssert.AreSame(cancelled.Task, finished, "Stop() 後進行中的 handler 應收到取消。");
+            try
+            {
+                using HttpResponseMessage _ = await request.ConfigureAwait(false);
+            }
+            catch (HttpRequestException)
+            {
+                // 監聽器關閉時連線可能直接中斷。
+            }
+        }
+        finally
+        {
+            settingsProperty.SetValue(null, previousSettings);
+        }
+    }
+
+    [Test]
+    public async Task LocalOpenAIEndpoint_StopClosesListenerEvenWhenCancellationCallbackThrows()
+    {
+        const string modId = "audit.stop.throw.test";
+        System.Reflection.PropertyInfo settingsProperty = typeof(RimLLMFrameworkMod).GetProperty(
+            "Settings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        object? previousSettings = settingsProperty.GetValue(null);
+        var settings = new RimLLMFrameworkSettings();
+        settings.SetCompatTakeoverEnabled(modId, true);
+        settingsProperty.SetValue(null, settings);
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        LocalOpenAIEndpoint.Register(modId, async (_, _, cancellationToken) =>
+        {
+            cancellationToken.Register(() => throw new InvalidOperationException("callback failure"));
+            started.TrySetResult();
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return "{}";
+        });
+
+        try
+        {
+            var baseUri = new Uri(LocalOpenAIEndpoint.GetBaseUrl(modId) ?? string.Empty);
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            Task<HttpResponseMessage> request = http.PostAsync($"{baseUri}/chat/completions", new StringContent("{}"));
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            using (var before = new System.Net.Sockets.TcpClient())
+            {
+                await before.ConnectAsync(IPAddress.Loopback, baseUri.Port).ConfigureAwait(false);
+            }
+
+            LocalOpenAIEndpoint.Stop();
+
+            using var probe = new System.Net.Sockets.TcpClient();
+            await Assert.CatchAsync<System.Net.Sockets.SocketException>(
+                async () => await probe.ConnectAsync(IPAddress.Loopback, baseUri.Port).ConfigureAwait(false),
+                "取消回呼擲錯時，監聽器仍須關閉。");
+            try
+            {
+                using HttpResponseMessage _ = await request.ConfigureAwait(false);
+            }
+            catch (HttpRequestException)
+            {
+                // 監聽器關閉時連線可能直接中斷。
+            }
+        }
+        finally
+        {
+            settingsProperty.SetValue(null, previousSettings);
+        }
     }
 
     [Test]

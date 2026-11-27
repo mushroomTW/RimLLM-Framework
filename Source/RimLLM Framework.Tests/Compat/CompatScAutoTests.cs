@@ -253,7 +253,7 @@ public class CompatScAutoTests
     }
 
     [TestCase("http://127.0.0.1:5123/m/ow1r.scauto/v1", true)]
-    [TestCase("http://127.0.0.1:1/v1", true)]
+    [TestCase("http://127.0.0.1:1/v1", false)]
     [TestCase("https://api.openai.com/v1", false)]
     [TestCase("http://127.0.0.1:5123/m/other.mod/v1", false)]
     [TestCase("", false)]
