@@ -330,7 +330,7 @@ public class RimLLMDispatcher : MonoBehaviour
         {
             if (installedContext)
             {
-                SynchronizationContext.SetSynchronizationContext(null);
+                SynchronizationContext.SetSynchronizationContext(syncContext: null);
             }
         }
 
@@ -357,7 +357,7 @@ public class RimLLMDispatcher : MonoBehaviour
     #pragma warning disable CA1822, S2325, MA0038 // Unity 訊息方法必須是執行個體方法。
     private void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
-        SetShuttingDown(false);
+        SetShuttingDown(shuttingDown: false);
         SetPumpActive(active: true);
     }
     #pragma warning restore CA1822, S2325, MA0038
@@ -371,7 +371,7 @@ public class RimLLMDispatcher : MonoBehaviour
 
     private void OnDestroy()
     {
-        SetShuttingDown(true);
+        SetShuttingDown(shuttingDown: true);
         SetPumpActive(active: false);
 
         // 先排乾剩餘項目，避免遺失遙測寫入等重要回呼。

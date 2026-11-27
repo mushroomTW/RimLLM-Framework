@@ -65,7 +65,7 @@ public sealed class AuditFixesRegressionTests
         ClassicAssert.IsTrue(LocalOpenAIEndpoint.IsOwnBaseUrl(baseUrl, "audit.test"));
         ClassicAssert.IsTrue(LocalOpenAIEndpoint.IsOwnBaseUrl("http://127.0.0.1:12345/m/audit.test/v1", "audit.test"));
         ClassicAssert.IsFalse(LocalOpenAIEndpoint.IsOwnBaseUrl("http://127.0.0.1:8000/v1", "audit.test"));
-        ClassicAssert.IsFalse(LocalOpenAIEndpoint.IsOwnBaseUrl(null, "audit.test"));
+        ClassicAssert.IsFalse(LocalOpenAIEndpoint.IsOwnBaseUrl(baseUrl: null, "audit.test"));
 
         var baseUri = new Uri(baseUrl + "/");
         using var http = new HttpClient();
@@ -275,7 +275,7 @@ public sealed class AuditFixesRegressionTests
         }
 
         SynchronizationContext? previous = SynchronizationContext.Current;
-        SynchronizationContext.SetSynchronizationContext(null);
+        SynchronizationContext.SetSynchronizationContext(syncContext: null);
         try
         {
             SynchronizationContext? observedInside = null;

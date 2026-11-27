@@ -27,6 +27,7 @@ public static partial class ChatTestDrawer
 
     private const string ChatInputControlName = "RimLLM_ChatInput";
     private const string ChatAiTag = "RimLLM_ChatAi";
+    private const string ColorCloseTag = "</color>";
 
     private const string ReasoningEffortLabelKey = "RimLLM_ReasoningEffortLabel";
     private const string ReasoningEffortAutoKey = "RimLLM_ReasoningEffort_Auto";
@@ -103,7 +104,7 @@ public static partial class ChatTestDrawer
         {
             if (index < 0 || index >= chatHistory.Count) return;
             chatHistory[index] = EntryPrefix("RimLLM_ChatAiError") +
-                "<color=#ef4444>" + message + "</color>";
+                "<color=#ef4444>" + message + ColorCloseTag;
             PersistChatHistory();
             chatLoading = false;
             chatCts = null;
@@ -173,7 +174,7 @@ public static partial class ChatTestDrawer
         {
             using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
             {
-                Widgets.Label(new Rect(0f, 0f, chatContentWidth, 480f), "<color=grey>" + "RimLLM_ChatEmptyHint".Translate() + "</color>");
+                Widgets.Label(new Rect(0f, 0f, chatContentWidth, 480f), "<color=grey>" + "RimLLM_ChatEmptyHint".Translate() + ColorCloseTag);
             }
         }
         else
@@ -413,7 +414,7 @@ public static partial class ChatTestDrawer
         }
         else
         {
-            string thinkEnd = ThinkEndLabel + "</color>";
+            string thinkEnd = ThinkEndLabel + ColorCloseTag;
             int end = formatted.LastIndexOf(thinkEnd, StringComparison.Ordinal);
             if (end >= 0) answerStart = end + thinkEnd.Length;
         }
@@ -470,7 +471,7 @@ public static partial class ChatTestDrawer
 
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny, wordWrap: false))
         {
-            Widgets.Label(modelRect, "<color=#94a3b8>" + RimLLMUIStyle.TruncateCached(modelDisplay, modelRect.width) + "</color>");
+            Widgets.Label(modelRect, "<color=#94a3b8>" + RimLLMUIStyle.TruncateCached(modelDisplay, modelRect.width) + ColorCloseTag);
         }
 
         if (hovered)

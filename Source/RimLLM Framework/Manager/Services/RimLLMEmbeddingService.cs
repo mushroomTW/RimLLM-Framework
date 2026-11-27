@@ -172,24 +172,7 @@ public class RimLLMEmbeddingService
                 "No embedding provider is configured; select one in the RimLLM settings first.");
         }
 
-        string model = !string.IsNullOrWhiteSpace(generationOptions?.ModelId)
-            ? generationOptions.ModelId
-            : _settings.EmbeddingModel;
-        if (string.IsNullOrWhiteSpace(model))
-        {
-            throw new RimLLMException(
-                LLMError.Unknown,
-                "No embedding model is selected; pick one in the RimLLM Embedding settings first.");
-        }
-        string apiKey = string.IsNullOrEmpty(_settings.EmbeddingApiKey)
-            ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
-            : _settings.EmbeddingApiKey;
-        if (RequiresApiKey(provider) && string.IsNullOrEmpty(apiKey))
-        {
-            throw new RimLLMException(
-                LLMError.InvalidKey,
-                $"Embedding provider '{provider}' requires an API key.");
-        }
+        (string model, string apiKey) = ResolveModelAndApiKey(provider, generationOptions);
         string endpoint = _settings.EmbeddingEndpoint;
         string defaultEndpoint = ResolveDefaultEndpoint(provider);
 
@@ -224,6 +207,29 @@ public class RimLLMEmbeddingService
             }).ConfigureAwait(false);
     }
     #pragma warning restore VSTHRD202
+
+    private (string Model, string ApiKey) ResolveModelAndApiKey(string provider, Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions)
+    {
+        string model = !string.IsNullOrWhiteSpace(generationOptions?.ModelId)
+            ? generationOptions.ModelId
+            : _settings.EmbeddingModel;
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            throw new RimLLMException(
+                LLMError.Unknown,
+                "No embedding model is selected; pick one in the RimLLM Embedding settings first.");
+        }
+        string apiKey = string.IsNullOrEmpty(_settings.EmbeddingApiKey)
+            ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
+            : _settings.EmbeddingApiKey;
+        if (RequiresApiKey(provider) && string.IsNullOrEmpty(apiKey))
+        {
+            throw new RimLLMException(
+                LLMError.InvalidKey,
+                $"Embedding provider '{provider}' requires an API key.");
+        }
+        return (model, apiKey);
+    }
 
     /// <summary>本機供應商（LocalAPI_*）是玩家自架的服務，可以不填金鑰；雲端供應商少了金鑰就送不出去。</summary>
     private static bool RequiresApiKey(string provider)

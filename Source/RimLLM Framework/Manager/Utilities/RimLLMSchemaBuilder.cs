@@ -221,15 +221,7 @@ public static class RimLLMSchemaBuilder
 
         if (!ReferenceEquals(collapsed, node) && collapsed["$ref"] != null)
         {
-            if (!TryNormalizeRef(collapsed, typeInfo, context, depth, out JsonObject? collapsedRefResult) || collapsedRefResult == null)
-            {
-                return null;
-            }
-            if (typeInfo != null && Nullable.GetUnderlyingType(typeInfo.Type) != null)
-            {
-                collapsedRefResult[OptionalMarker] = true;
-            }
-            return collapsedRefResult;
+            return NormalizeCollapsedRef(collapsed, typeInfo, context, depth);
         }
 
         string? typeName = ExtractTypeName(collapsed);
@@ -251,11 +243,7 @@ public static class RimLLMSchemaBuilder
             typeInfo = GetTypeInfo(underlyingType);
         }
 
-        JsonNode? description = collapsed[SchemaDescription];
-        if (description != null && description.GetValueKind() == JsonValueKind.String)
-        {
-            result[SchemaDescription] = description.GetValue<string>();
-        }
+        CopyDescription(collapsed, result);
 
         if (typeName == "array")
         {
@@ -273,6 +261,30 @@ public static class RimLLMSchemaBuilder
         }
 
         return result;
+    }
+#pragma warning restore S1168
+
+    private static void CopyDescription(JsonObject source, JsonObject target)
+    {
+        JsonNode? description = source[SchemaDescription];
+        if (description != null && description.GetValueKind() == JsonValueKind.String)
+        {
+            target[SchemaDescription] = description.GetValue<string>();
+        }
+    }
+
+#pragma warning disable S1168 // null 表示 $ref 無法表達，父層需刪除成員。
+    private static JsonObject? NormalizeCollapsedRef(JsonObject collapsed, JsonTypeInfo? typeInfo, NormalizeContext context, int depth)
+    {
+        if (!TryNormalizeRef(collapsed, typeInfo, context, depth, out JsonObject? refResult) || refResult == null)
+        {
+            return null;
+        }
+        if (typeInfo != null && Nullable.GetUnderlyingType(typeInfo.Type) != null)
+        {
+            refResult[OptionalMarker] = true;
+        }
+        return refResult;
     }
 #pragma warning restore S1168
 

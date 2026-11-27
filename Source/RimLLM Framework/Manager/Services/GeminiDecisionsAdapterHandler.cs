@@ -71,6 +71,12 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
         }.Uri;
 
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return await TranslateResponseAsync(response, isEvaluate, model, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<HttpResponseMessage> TranslateResponseAsync(
+        HttpResponseMessage response, bool isEvaluate, string model, CancellationToken cancellationToken)
+    {
         try
         {
             if (!response.IsSuccessStatusCode || response.Content == null)

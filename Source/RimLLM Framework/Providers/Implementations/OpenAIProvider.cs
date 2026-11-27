@@ -242,21 +242,23 @@ public class OpenAIProvider : ILLMProvider
                        !RimLLMReasoningSupport.IsEncryptedReasoningUnsupported(ResponsesKey, model);
         string? cacheKey = ProviderId == ProviderIds.OpenAI && UsesDefaultEndpoint ? RimLLMChatOptions.GetPromptCacheKey(requestOptions) : null;
         ReasoningOutput? reasoningOutput = requestOptions?.Reasoning?.Output;
-        options.RawRepresentationFactory = _ =>
+        options.RawRepresentationFactory = _ => CreateResponseOptions(include, effortLiteral, reasoningOutput, cacheKey);
+    }
+
+    private static CreateResponseOptions CreateResponseOptions(bool include, string? effortLiteral, ReasoningOutput? reasoningOutput, string? cacheKey)
+    {
+        var responses = new CreateResponseOptions { StoredOutputEnabled = false };
+        if (include) responses.IncludedProperties.Add(IncludedResponseProperty.ReasoningEncryptedContent);
+        if (effortLiteral != null || reasoningOutput is ReasoningOutput.Summary or ReasoningOutput.Full)
         {
-            var responses = new CreateResponseOptions { StoredOutputEnabled = false };
-            if (include) responses.IncludedProperties.Add(IncludedResponseProperty.ReasoningEncryptedContent);
-            if (effortLiteral != null || reasoningOutput is ReasoningOutput.Summary or ReasoningOutput.Full)
-            {
-                var reasoningObj = new Dictionary<string, string>(StringComparer.Ordinal);
-                if (effortLiteral != null) reasoningObj["effort"] = effortLiteral;
-                if (reasoningOutput == ReasoningOutput.Summary) reasoningObj["summary"] = "concise";
-                else if (reasoningOutput == ReasoningOutput.Full) reasoningObj["summary"] = "detailed";
-                responses.Patch.Set(OpenAIPatchPaths.Reasoning, JsonSerializer.SerializeToUtf8Bytes(reasoningObj));
-            }
-            if (cacheKey != null) responses.Patch.Set(OpenAIPatchPaths.PromptCacheKey, cacheKey);
-            return responses;
-        };
+            var reasoningObj = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (effortLiteral != null) reasoningObj["effort"] = effortLiteral;
+            if (reasoningOutput == ReasoningOutput.Summary) reasoningObj["summary"] = "concise";
+            else if (reasoningOutput == ReasoningOutput.Full) reasoningObj["summary"] = "detailed";
+            responses.Patch.Set(OpenAIPatchPaths.Reasoning, JsonSerializer.SerializeToUtf8Bytes(reasoningObj));
+        }
+        if (cacheKey != null) responses.Patch.Set(OpenAIPatchPaths.PromptCacheKey, cacheKey);
+        return responses;
     }
 
     private static string? BuildResponseFormatJson(ChatOptions? requestOptions, bool strict)
@@ -977,6 +979,17 @@ public class OpenAIProvider : ILLMProvider
         return (await FetchModelCatalogAsync().ConfigureAwait(false)).Models;
     }
 
+    private static OpenAIClientOptions CreateModelListOptions(string? endpoint)
+    {
+        var options = new OpenAIClientOptions();
+        if (ParseEndpoint(endpoint) is { } uri)
+        {
+            options.Endpoint = uri;
+        }
+        ConfigurePipeline(options, options.Endpoint);
+        return options;
+    }
+
     /// <summary>取得模型清單，並從同一份 /models 回應讀出上下文上限（SDK 只解析 <c>id</c>，上限欄位要從原始 JSON 取）。</summary>
     internal virtual async Task<ModelCatalog> FetchModelCatalogAsync()
     {
@@ -991,12 +1004,7 @@ public class OpenAIProvider : ILLMProvider
         Dictionary<string, int>? outputLimits = null;
         try
         {
-            var options = new OpenAIClientOptions();
-            if (ParseEndpoint(endpoint) is { } uri)
-            {
-                options.Endpoint = uri;
-            }
-            ConfigurePipeline(options, options.Endpoint);
+            OpenAIClientOptions options = CreateModelListOptions(endpoint);
 
             // 本地相容伺服器多半不驗證金鑰，但 SDK 不接受空憑證。
             var credential = new ApiKeyCredential(

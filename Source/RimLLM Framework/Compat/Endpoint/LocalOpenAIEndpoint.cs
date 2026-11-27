@@ -163,16 +163,10 @@ internal static class LocalOpenAIEndpoint
         bool acquired = false;
         try
         {
-            if (context.Request.Headers["Origin"] != null || !IsAllowedHost(context.Request.UserHostName, port))
+            (int Status, string Body)? rejection = Preflight(context, port, out string modId, out string endpoint);
+            if (rejection is { } early)
             {
-                await WriteJsonAsync(context, 403, ErrorBody("forbidden", "Forbidden request origin or host.")).ConfigureAwait(false);
-                return;
-            }
-
-            ArgumentNullException.ThrowIfNull(context.Request.Url);
-            if (!TryParseRoute(context.Request.Url, out string? modId, out string? endpoint, out bool tokenValid))
-            {
-                await WriteJsonAsync(context, tokenValid ? 404 : 403, ErrorBody(tokenValid ? "not_found" : "forbidden", tokenValid ? "Unknown path." : "Invalid endpoint token.")).ConfigureAwait(false);
+                await WriteJsonAsync(context, early.Status, early.Body).ConfigureAwait(false);
                 return;
             }
 
@@ -183,39 +177,14 @@ internal static class LocalOpenAIEndpoint
             }
             acquired = true;
 
-            Handler? handler = FindHandler(modId);
-            if (handler == null)
+            rejection = Route(context, modId, endpoint, out Handler? handler);
+            if (rejection is { } routed)
             {
-                await WriteJsonAsync(context, 404, ErrorBody("not_found", "No handler registered for this mod.")).ConfigureAwait(false);
-                return;
-            }
-
-            RimLLMFrameworkSettings settings = RimLLMFrameworkMod.Settings;
-            if (settings == null || !settings.IsCompatTakeoverEnabled(modId))
-            {
-                // 用永久性錯誤（不含 server／network 等字樣）並回 403，讓對方不要白白重試。
-                await WriteJsonAsync(context, 403, ErrorBody("takeover_disabled", "RimLLM takeover is turned off for this mod. Set up its own API settings instead.")).ConfigureAwait(false);
-                return;
-            }
-
-            if (endpoint == "models" && context.Request.HttpMethod == "GET")
-            {
-                await WriteJsonAsync(context, 200, ModelsBody(CompatSeedUtil.ModelLabel(modId))).ConfigureAwait(false);
+                await WriteJsonAsync(context, routed.Status, routed.Body).ConfigureAwait(false);
                 return;
             }
 
             bool chat = endpoint == "chat/completions";
-            if (context.Request.HttpMethod != "POST" || (!chat && endpoint != "responses"))
-            {
-                await WriteJsonAsync(context, 404, ErrorBody("not_found", "Unsupported endpoint.")).ConfigureAwait(false);
-                return;
-            }
-
-            if (context.Request.ContentLength64 > MaxBodyBytes)
-            {
-                await WriteJsonAsync(context, 413, ErrorBody("payload_too_large", "Request body exceeds maximum allowed size.")).ConfigureAwait(false);
-                return;
-            }
 
             (string? body, bool tooLarge) = await ReadBodyAsync(context.Request.InputStream).ConfigureAwait(false);
             if (tooLarge || body == null)
@@ -223,7 +192,7 @@ internal static class LocalOpenAIEndpoint
                 await TryWriteErrorOrAbortAsync(context, 413, "payload_too_large", "Request body exceeds maximum allowed size.").ConfigureAwait(false);
                 return;
             }
-            string json = await handler(body, chat, CancellationToken.None).ConfigureAwait(false);
+            string json = await handler!(body, chat, CancellationToken.None).ConfigureAwait(false);
             await WriteResultAsync(context, json, body, chat).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -242,6 +211,56 @@ internal static class LocalOpenAIEndpoint
                 RequestConcurrencyGate.Release();
             }
         }
+    }
+
+    private static (int Status, string Body)? Preflight(HttpListenerContext context, int port, out string modId, out string endpoint)
+    {
+        modId = endpoint = "";
+        if (context.Request.Headers["Origin"] != null || !IsAllowedHost(context.Request.UserHostName, port))
+        {
+            return (403, ErrorBody("forbidden", "Forbidden request origin or host."));
+        }
+
+        ArgumentNullException.ThrowIfNull(context.Request.Url);
+        if (!TryParseRoute(context.Request.Url, out string? parsedModId, out string? parsedEndpoint, out bool tokenValid))
+        {
+            return tokenValid
+                ? (404, ErrorBody("not_found", "Unknown path."))
+                : (403, ErrorBody("forbidden", "Invalid endpoint token."));
+        }
+        modId = parsedModId;
+        endpoint = parsedEndpoint;
+        return null;
+    }
+
+    private static (int Status, string Body)? Route(HttpListenerContext context, string modId, string endpoint, out Handler? handler)
+    {
+        handler = FindHandler(modId);
+        if (handler == null)
+        {
+            return (404, ErrorBody("not_found", "No handler registered for this mod."));
+        }
+
+        RimLLMFrameworkSettings settings = RimLLMFrameworkMod.Settings;
+        if (settings == null || !settings.IsCompatTakeoverEnabled(modId))
+        {
+            // 用永久性錯誤（不含 server／network 等字樣）並回 403，讓對方不要白白重試。
+            return (403, ErrorBody("takeover_disabled", "RimLLM takeover is turned off for this mod. Set up its own API settings instead."));
+        }
+
+        if (endpoint == "models" && context.Request.HttpMethod == "GET")
+        {
+            return (200, ModelsBody(CompatSeedUtil.ModelLabel(modId)));
+        }
+
+        if (context.Request.HttpMethod != "POST" || (endpoint != "chat/completions" && endpoint != "responses"))
+        {
+            return (404, ErrorBody("not_found", "Unsupported endpoint."));
+        }
+
+        return context.Request.ContentLength64 > MaxBodyBytes
+            ? (413, ErrorBody("payload_too_large", "Request body exceeds maximum allowed size."))
+            : null;
     }
 
     private static async Task TryWriteErrorOrAbortAsync(HttpListenerContext context, int status, string type, string message)

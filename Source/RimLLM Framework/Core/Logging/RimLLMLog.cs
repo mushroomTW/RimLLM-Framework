@@ -36,6 +36,25 @@ public static partial class RimLLMLog
             || value.Contains("nvapi-", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string RedactMatch(Match match)
+    {
+        if (match.Groups["kv"].Success)
+        {
+            string text = match.Value;
+            int eqIdx = text.IndexOf('=', StringComparison.Ordinal);
+            int colonIdx = text.IndexOf(':', StringComparison.Ordinal);
+            int idx;
+            if (eqIdx < 0) idx = colonIdx;
+            else if (colonIdx < 0) idx = eqIdx;
+            else idx = Math.Min(eqIdx, colonIdx);
+            if (idx > 0)
+            {
+                return string.Concat(text.AsSpan(0, idx + 1), "[redacted]");
+            }
+        }
+        return "[redacted-secret]";
+    }
+
     /// <summary>
     /// 對字串進行日誌安全清理：遮罩 API 金鑰與敏感憑證，轉義換行符號，並限制最大長度。
     /// </summary>
@@ -51,24 +70,7 @@ public static partial class RimLLMLog
         {
             try
             {
-                sanitized = SecretPattern.Replace(value, static match =>
-                {
-                    if (match.Groups["kv"].Success)
-                    {
-                        string text = match.Value;
-                        int eqIdx = text.IndexOf('=', StringComparison.Ordinal);
-                        int colonIdx = text.IndexOf(':', StringComparison.Ordinal);
-                        int idx;
-                        if (eqIdx < 0) idx = colonIdx;
-                        else if (colonIdx < 0) idx = eqIdx;
-                        else idx = Math.Min(eqIdx, colonIdx);
-                        if (idx > 0)
-                        {
-                            return string.Concat(text.AsSpan(0, idx + 1), "[redacted]");
-                        }
-                    }
-                    return "[redacted-secret]";
-                });
+                sanitized = SecretPattern.Replace(value, RedactMatch);
             }
             catch (RegexMatchTimeoutException)
             {

@@ -16,7 +16,7 @@ namespace RimLLM_Framework.Manager;
 /// JSON 的靜態處理與格式修復輔助工具。
 /// 包含結構化資料的 JSON 補齊、Regex 修復以及 Dummy 物件生成（用於產生 schema 快取）。
 /// </summary>
-public static partial class RimLLMJsonHelper
+public static class RimLLMJsonHelper
 {
     private static readonly ConcurrentDictionary<Type, string> SampleJsonCache = new();
 
@@ -407,27 +407,10 @@ public static partial class RimLLMJsonHelper
     {
         if (string.IsNullOrEmpty(input)) return input;
 
-        int start = -1;
-        char open = '\0';
-        char close = '\0';
-        for (int i = 0; i < input.Length; i++)
-        {
-            if (input[i] == '{')
-            {
-                start = i;
-                open = '{';
-                close = '}';
-                break;
-            }
-            if (input[i] == '[')
-            {
-                start = i;
-                open = '[';
-                close = ']';
-                break;
-            }
-        }
+        int start = input.AsSpan().IndexOfAny('{', '[');
         if (start < 0) return input;
+        char open = input[start];
+        char close = open == '{' ? '}' : ']';
 
         int depth = 0;
         bool inString = false;
@@ -503,21 +486,26 @@ public static partial class RimLLMJsonHelper
         }
     }
 
+    private static readonly Dictionary<Type, object> ScalarDummies = new()
+    {
+        [typeof(string)] = "string",
+        [typeof(int)] = 0,
+        [typeof(long)] = 0L,
+        [typeof(short)] = (short)0,
+        [typeof(byte)] = (byte)0,
+        [typeof(sbyte)] = (sbyte)0,
+        [typeof(ushort)] = (ushort)0,
+        [typeof(uint)] = 0u,
+        [typeof(ulong)] = 0UL,
+        [typeof(float)] = 0f,
+        [typeof(double)] = 0.0,
+        [typeof(decimal)] = 0m,
+        [typeof(bool)] = false,
+    };
+
     private static bool TryCreateScalarDummy(Type type, out object? dummy)
     {
-        if (type == typeof(string)) { dummy = "string"; return true; }
-        if (type == typeof(int)) { dummy = 0; return true; }
-        if (type == typeof(long)) { dummy = 0L; return true; }
-        if (type == typeof(short)) { dummy = (short)0; return true; }
-        if (type == typeof(byte)) { dummy = (byte)0; return true; }
-        if (type == typeof(sbyte)) { dummy = (sbyte)0; return true; }
-        if (type == typeof(ushort)) { dummy = (ushort)0; return true; }
-        if (type == typeof(uint)) { dummy = 0u; return true; }
-        if (type == typeof(ulong)) { dummy = 0UL; return true; }
-        if (type == typeof(float)) { dummy = 0f; return true; }
-        if (type == typeof(double)) { dummy = 0.0; return true; }
-        if (type == typeof(decimal)) { dummy = 0m; return true; }
-        if (type == typeof(bool)) { dummy = false; return true; }
+        if (ScalarDummies.TryGetValue(type, out dummy)) return true;
         if (type.IsEnum)
         {
             var values = Enum.GetValues(type);
