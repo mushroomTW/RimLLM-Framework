@@ -1,7 +1,9 @@
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
@@ -27,6 +29,8 @@ public class RimLLMTelemetryStore
     private readonly System.Threading.Lock _saveQueueLock = new();
     private bool _saveRunning;
     private bool _saveRequested;
+    private long _dirtyVersion;
+    private long _savedVersion;
 
     /// <summary>檔案路徑解析器；抽為可替換委派，讓單元測試能指向暫存目錄而不依賴 Verse 的 GenFilePaths。</summary>
     internal static Func<string> FilePathResolver { get; set; } =
@@ -45,7 +49,7 @@ public class RimLLMTelemetryStore
     /// 是否有尚未寫入磁碟的變更。用量統計採節流寫入，
     /// 關閉遊戲時需依此判斷是否強制 flush，避免遺失最後一段用量。
     /// </summary>
-    public bool IsDirty { get; private set; }
+    public bool IsDirty => Interlocked.Read(ref _dirtyVersion) != Interlocked.Read(ref _savedVersion);
 
     private sealed class TelemetryDto
     {
@@ -85,7 +89,7 @@ public class RimLLMTelemetryStore
     /// <summary>標記有未寫入的變更（供節流寫入路徑呼叫）。</summary>
     public void MarkDirty()
     {
-        IsDirty = true;
+        Interlocked.Increment(ref _dirtyVersion);
     }
 
     /// <summary>
@@ -102,7 +106,7 @@ public class RimLLMTelemetryStore
 
             _undecryptableEncryptedChatHistory = null;
             _preserveBackupOnSave = false;
-            IsDirty = true;
+            MarkDirty();
         }
     }
 
@@ -151,7 +155,7 @@ public class RimLLMTelemetryStore
             bool restored = TryRestoreFromBackup(backupPath, path);
             CopyDataFrom(backup);
             _preserveBackupOnSave = !restored;
-            IsDirty = true;
+            MarkDirty();
             RimLLMLog.Warning(restored
                 ? "[RimLLM] Telemetry chat history could not be decrypted; restored from the .bak backup."
                 : "[RimLLM] Telemetry chat history could not be decrypted; loaded the .bak backup in memory while preserving it on disk.");
@@ -175,7 +179,7 @@ public class RimLLMTelemetryStore
         bool restored = TryRestoreFromBackup(backupPath, path);
         CopyDataFrom(recovered);
         _preserveBackupOnSave = !restored;
-        IsDirty = true;
+        MarkDirty();
         RimLLMLog.Warning(restored
             ? "[RimLLM] Telemetry file could not be parsed; restored from the .bak backup."
             : "[RimLLM] Telemetry file could not be parsed; loaded the .bak backup in memory while preserving it on disk.");
@@ -207,11 +211,15 @@ public class RimLLMTelemetryStore
             ChatHistory = ReadChatHistory(dto, out _undecryptableEncryptedChatHistory);
             TrimChatHistory();
             RequestLogs = dto.RequestLogs ?? [];
-            TotalPromptTokens = dto.TotalPromptTokens;
-            TotalCompletionTokens = dto.TotalCompletionTokens;
-            TotalEstimatedCost = dto.TotalEstimatedCost;
-            DailyAccumulatedCost = dto.DailyAccumulatedCost;
-            DailyAccumulatedTokens = dto.DailyAccumulatedTokens;
+            if (RequestLogs.Count > RimLLMUsageTracker.MaxRetainedLogs)
+            {
+                RequestLogs.RemoveRange(0, RequestLogs.Count - RimLLMUsageTracker.MaxRetainedLogs);
+            }
+            TotalPromptTokens = Math.Max(0L, dto.TotalPromptTokens);
+            TotalCompletionTokens = Math.Max(0L, dto.TotalCompletionTokens);
+            TotalEstimatedCost = float.IsFinite(dto.TotalEstimatedCost) ? Math.Max(0f, dto.TotalEstimatedCost) : 0f;
+            DailyAccumulatedCost = float.IsFinite(dto.DailyAccumulatedCost) ? Math.Max(0f, dto.DailyAccumulatedCost) : 0f;
+            DailyAccumulatedTokens = Math.Max(0L, dto.DailyAccumulatedTokens);
             DailyBudgetResetDate = dto.DailyBudgetResetDate ?? "";
             return true;
         }
@@ -315,13 +323,13 @@ public class RimLLMTelemetryStore
 
             try
             {
-                TrimChatHistory();
-
-                var dto = BuildSaveDto();
-                File.WriteAllText(tempPath, RimLLMJsonHelper.Serialize(dto));
+                long snapshotVersion = Interlocked.Read(ref _dirtyVersion);
+                List<string> chatSnapshot = SnapshotAndTrimChatHistory();
+                var dto = BuildSaveDto(chatSnapshot);
+                WriteTempFileRestricted(tempPath, RimLLMJsonHelper.Serialize(dto));
                 ReplaceAtomically(tempPath, path, _preserveBackupOnSave ? null : backupPath);
 
-                MarkSaved();
+                MarkSaved(snapshotVersion, hadChatSnapshot: chatSnapshot.Count > 0);
             }
             catch (Exception ex)
             {
@@ -331,12 +339,47 @@ public class RimLLMTelemetryStore
         }
     }
 
-    private TelemetryDto BuildSaveDto()
+    private List<string> SnapshotAndTrimChatHistory()
     {
+        List<string>? source = ChatHistory;
+        if (source == null || source.Count == 0) return [];
+
+        List<string> snapshot = [.. source];
+        if (snapshot.Count > MaxChatHistoryEntries)
+        {
+            snapshot.RemoveRange(0, snapshot.Count - MaxChatHistoryEntries);
+            ChatHistory = new List<string>(snapshot);
+        }
+        return snapshot;
+    }
+
+    private static void WriteTempFileRestricted(string tempPath, string content)
+    {
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.Create,
+            Access = FileAccess.Write,
+            Share = FileShare.None
+        };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+
+        using var stream = new FileStream(tempPath, options);
+        using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        writer.Write(content);
+        writer.Flush();
+        stream.Flush(flushToDisk: true);
+    }
+
+    private TelemetryDto BuildSaveDto(List<string> chatSnapshot)
+    {
+        List<RimLLMManager.RequestLogEntry> logsSnapshot = RequestLogs != null ? [.. RequestLogs] : [];
         return new TelemetryDto
         {
-            EncryptedChatHistory = BuildEncryptedChatHistory(),
-            RequestLogs = RequestLogs,
+            EncryptedChatHistory = BuildEncryptedChatHistory(chatSnapshot),
+            RequestLogs = logsSnapshot,
             TotalPromptTokens = TotalPromptTokens,
             TotalCompletionTokens = TotalCompletionTokens,
             TotalEstimatedCost = TotalEstimatedCost,
@@ -347,21 +390,21 @@ public class RimLLMTelemetryStore
     }
 
     /// <summary>產生要寫出的加密歷史；歷史為空時沿用先前解不開的密文，不可用 null 覆寫。</summary>
-    private string? BuildEncryptedChatHistory()
+    private string? BuildEncryptedChatHistory(List<string> chatSnapshot)
     {
-        if (ChatHistory != null && ChatHistory.Count > 0)
+        if (chatSnapshot.Count > 0)
         {
-            return EncryptionUtility.Encrypt(RimLLMJsonHelper.Serialize(ChatHistory));
+            return EncryptionUtility.Encrypt(RimLLMJsonHelper.Serialize(chatSnapshot));
         }
 
         // 解密失敗時不能以 null 覆寫原始歷史；若使用者新增內容，新密文則優先。
         return _undecryptableEncryptedChatHistory;
     }
 
-    private void MarkSaved()
+    private void MarkSaved(long snapshotVersion, bool hadChatSnapshot)
     {
-        IsDirty = false;
-        if (ChatHistory != null && ChatHistory.Count > 0)
+        Interlocked.Exchange(ref _savedVersion, snapshotVersion);
+        if (hadChatSnapshot)
         {
             _undecryptableEncryptedChatHistory = null;
         }
@@ -422,20 +465,19 @@ public class RimLLMTelemetryStore
         SafeDeleteFile(displacedPath);
     }
 
-    /// <summary>部分檔案系統不支援 File.Replace 時的退回方案：先備份再覆寫。</summary>
-    private static void ReplaceViaBackup(string tempPath, string path, string? backupPath)
+    /// <summary>部分檔案系統不支援 File.Replace 時的退回方案：以覆寫搬移先備份再放入新檔，失敗時保留既有 .bak。</summary>
+    private static void ReplaceViaBackup(string tempPath, string path, string backupPath)
     {
-        SafeDeleteFile(backupPath);
         TryMoveToBackup(path, backupPath);
         File.Move(tempPath, path);
     }
 
     /// <summary>把現有主檔搬到 .bak；搬不動時仍繼續覆寫，若因此覆寫不了，後續 File.Move 會拋出並由呼叫端記錄。</summary>
-    private static void TryMoveToBackup(string path, string? backupPath)
+    private static void TryMoveToBackup(string path, string backupPath)
     {
         try
         {
-            File.Move(path, backupPath ?? throw new ArgumentNullException(nameof(backupPath)));
+            File.Move(path, backupPath, overwrite: true);
         }
         catch (Exception ex)
         {

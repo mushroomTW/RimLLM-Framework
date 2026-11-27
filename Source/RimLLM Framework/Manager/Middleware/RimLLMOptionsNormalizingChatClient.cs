@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
+using RimLLM_Framework.Api;
 
 namespace RimLLM_Framework.Manager;
 
@@ -42,10 +43,11 @@ internal sealed class RimLLMOptionsNormalizingChatClient : DelegatingChatClient
     private ChatOptions? Normalize(ChatOptions? options)
     {
         if (_settings.DefaultReasoningEffort == null) return options;
+        if (RimLLMChatOptions.GetDisableReasoning(options)) return options;
         if (options?.Reasoning?.Effort != null) return options;
 
         ChatOptions clone = options?.Clone() ?? new ChatOptions();
-        clone.Reasoning = new ReasoningOptions { Effort = _settings.DefaultReasoningEffort };
+        (clone.Reasoning ??= new ReasoningOptions()).Effort = _settings.DefaultReasoningEffort;
         return clone;
     }
 }

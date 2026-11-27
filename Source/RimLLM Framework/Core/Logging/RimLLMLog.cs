@@ -1,5 +1,6 @@
 using System;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Verse;
 
 namespace RimLLM_Framework.Core;
@@ -11,8 +12,15 @@ namespace RimLLM_Framework.Core;
 /// </summary>
 public static partial class RimLLMLog
 {
+    private static readonly Lock ConsoleLock = new();
+    private static volatile bool _enabled = true;
+
     /// <summary>是否啟用一般資訊（Message）等級的日誌輸出。</summary>
-    public static bool Enabled { get; set; } = true;
+    public static bool Enabled
+    {
+        get => _enabled;
+        set => _enabled = value;
+    }
 
     // 正則前快徑：每個指標必須是 SecretPattern 對應分支的必要子字串，否則該分支會被略過而漏遮。
     private static bool HasPotentialSecret(string value)
@@ -38,19 +46,39 @@ public static partial class RimLLMLog
     {
         if (string.IsNullOrEmpty(value)) return value;
 
-        string sanitized = HasPotentialSecret(value)
-            ? SecretPattern.Replace(value, match =>
+        string sanitized;
+        if (HasPotentialSecret(value))
         {
-            string text = match.Value;
-            int idx = text.IndexOf('=', StringComparison.Ordinal);
-            if (idx < 0) idx = text.IndexOf(':', StringComparison.Ordinal);
-            if (idx > 0)
+            try
             {
-                return string.Concat(text.AsSpan(0, idx + 1), "[redacted]");
+                sanitized = SecretPattern.Replace(value, static match =>
+                {
+                    if (match.Groups["kv"].Success)
+                    {
+                        string text = match.Value;
+                        int eqIdx = text.IndexOf('=', StringComparison.Ordinal);
+                        int colonIdx = text.IndexOf(':', StringComparison.Ordinal);
+                        int idx;
+                        if (eqIdx < 0) idx = colonIdx;
+                        else if (colonIdx < 0) idx = eqIdx;
+                        else idx = Math.Min(eqIdx, colonIdx);
+                        if (idx > 0)
+                        {
+                            return string.Concat(text.AsSpan(0, idx + 1), "[redacted]");
+                        }
+                    }
+                    return "[redacted-secret]";
+                });
             }
-            return "[redacted-secret]";
-        })
-            : value;
+            catch (RegexMatchTimeoutException)
+            {
+                sanitized = "[redacted-timeout]";
+            }
+        }
+        else
+        {
+            sanitized = value;
+        }
 
         sanitized = sanitized.Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal);
         if (sanitized.Length > maxLength)
@@ -111,31 +139,34 @@ public static partial class RimLLMLog
 
     private static void WriteConsole(ConsoleColor color, string level, string msg)
     {
-        ConsoleColor original = Console.ForegroundColor;
-        Console.ForegroundColor = color;
-        try
+        lock (ConsoleLock)
         {
-            Console.WriteLine($"[{level}] {msg}");
-        }
-        finally
-        {
-            Console.ForegroundColor = original;
+            ConsoleColor original = Console.ForegroundColor;
+            Console.ForegroundColor = color;
+            try
+            {
+                Console.WriteLine($"[{level}] {msg}");
+            }
+            finally
+            {
+                Console.ForegroundColor = original;
+            }
         }
     }
 
     [GeneratedRegex(@"(?i)(" +
-        @"(?:x-goog-)?api[_\- ]?key[""']?\s*[:=]\s*[""']?[^""'\s,;}]+" +
-        @"|x-api-key[""']?\s*[:=]\s*[""']?[^""'\s,;}]+" +
-        // 需一併吃掉 "Bearer " 前綴，否則只會遮到 scheme 而讓後面的 token 露出。
-        @"|authorization[""']?\s*[:=]\s*[""']?(?:Bearer\s+)?[^""'\s,;}]+" +
-        @"|key=[^&\s]+" +
-        @"|Bearer\s+[A-Za-z0-9\-._~+/]{16,}={0,2}" +
-        @"|sk-ant-[A-Za-z0-9\-_]{16,}" +
-        @"|sk-[a-z0-9_\-]{8,}" +
-        @"|AIza[0-9A-Za-z\-_]{20,}" +
-        @"|gsk_[A-Za-z0-9]{20,}" +
-        @"|xai-[A-Za-z0-9]{20,}" +
-        @"|nvapi-[A-Za-z0-9\-_]{20,}" +
+        @"(?<kv>(?:x-goog-)?api[_\- ]?key[""']?\s*[:=]\s*[""']?[^""'\s,;}]+)" +
+        @"|(?<kv>x-api-key[""']?\s*[:=]\s*[""']?[^""'\s,;}]+)" +
+        // 需一併吃掉 "Bearer "/"Basic "/"Token "/"ApiKey " 前綴，否則只會遮到 scheme 而讓後面的憑證露出。
+        @"|(?<kv>authorization[""']?\s*[:=]\s*[""']?(?:(?:Bearer|Basic|Token|ApiKey)\s+)?[^""'\s,;}]+)" +
+        @"|(?<kv>key=[^&\s]+)" +
+        @"|(?<token>Bearer\s+[A-Za-z0-9\-._~+/]{16,}={0,2})" +
+        @"|(?<token>sk-ant-[A-Za-z0-9\-_]{16,})" +
+        @"|(?<token>sk-[a-z0-9_\-]{8,})" +
+        @"|(?<token>AIza[0-9A-Za-z\-_]{20,})" +
+        @"|(?<token>gsk_[A-Za-z0-9]{20,})" +
+        @"|(?<token>xai-[A-Za-z0-9]{20,})" +
+        @"|(?<token>nvapi-[A-Za-z0-9\-_]{20,})" +
         @")", RegexOptions.Compiled | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
     private static partial Regex SecretPattern { get; }
 }

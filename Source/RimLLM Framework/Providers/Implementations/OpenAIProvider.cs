@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -98,8 +99,9 @@ public class OpenAIProvider : ILLMProvider
         NormalizeEndpoint(Settings.GetEndpoint(ProviderId, DefaultEndpoint)) ?? NormalizeEndpoint(DefaultEndpoint),
         NormalizeEndpoint(DefaultEndpoint), StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>同一供應商可指向不同端點，是否有 /responses 以端點為準。</summary>
-    internal string ResponsesKey => ProviderId + "@" + Settings.GetEndpoint(ProviderId, DefaultEndpoint);
+    /// <summary>同一供應商可指向不同端點，是否有 /responses 與加密推理支援度以正規化端點為準。</summary>
+    internal string ResponsesKey =>
+        ProviderId + "@" + (NormalizeEndpoint(Settings.GetEndpoint(ProviderId, DefaultEndpoint)) ?? NormalizeEndpoint(DefaultEndpoint));
 
     /// <summary>
     /// SDK 的單次請求網路逾時。實際逾時由 ApiTimeout 掌控（設定上限 120 秒），
@@ -118,7 +120,7 @@ public class OpenAIProvider : ILLMProvider
         if (ParseEndpoint(endpoint) is { } uri) options.Endpoint = uri;
         ConfigurePipeline(options, options.Endpoint);
 
-        // 唯一允許的建立點：其他地方一律呼叫本方法，RetryPolicy 與逾時才不會漏設。
+        // SDK 豁免：唯一允許的建立點，確保 RetryPolicy=0 與網路逾時設定一致。
 #pragma warning disable RS0030
         var client = new ChatClient(model, new ApiKeyCredential(apiKey), options);
 #pragma warning restore RS0030
@@ -136,7 +138,7 @@ public class OpenAIProvider : ILLMProvider
         if (ParseEndpoint(endpoint) is { } uri) options.Endpoint = uri;
         ConfigurePipeline(options, options.Endpoint);
 
-        // 唯一允許的建立點，理由同 CreateOpenAiChatClient。
+        // SDK 豁免：唯一允許的建立點，理由同 CreateOpenAiChatClient。
 #pragma warning disable RS0030
         var client = new ResponsesClient(new ApiKeyCredential(apiKey), options);
 #pragma warning restore RS0030
@@ -146,7 +148,12 @@ public class OpenAIProvider : ILLMProvider
     private static Uri? ParseEndpoint(string? endpoint)
     {
         string? normalized = NormalizeEndpoint(endpoint);
-        return string.IsNullOrEmpty(normalized) ? null : new Uri(normalized, UriKind.Absolute);
+        if (string.IsNullOrEmpty(normalized)) return null;
+        if (!Uri.TryCreate(normalized, UriKind.Absolute, out Uri? uri))
+        {
+            throw new RimLLMException(LLMError.InvalidResponse, $"Invalid endpoint URL: '{RimLLMLog.SanitizeForLog(endpoint, 200)}'.");
+        }
+        return uri;
     }
 
     private static void ConfigurePipeline(ClientPipelineOptions options, Uri? endpoint)
@@ -171,17 +178,18 @@ public class OpenAIProvider : ILLMProvider
     internal static PipelineTransport? TransportOverride { get; set; }
 
     private static readonly char[] SlashChars = ['/'];
+    private static readonly string[] EndpointSuffixes = ["/chat/completions", "/responses"];
 
     public static string? NormalizeEndpoint(string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint)) return null;
         string normalized = endpoint.Trim().TrimEnd(SlashChars);
-        const string suffix = "/chat/completions";
-        if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        string? suffix = Array.Find(EndpointSuffixes, s => normalized.EndsWith(s, StringComparison.OrdinalIgnoreCase));
+        if (suffix != null)
         {
             normalized = normalized.Substring(0, normalized.Length - suffix.Length).TrimEnd(SlashChars);
         }
-        return normalized;
+        return normalized.Length == 0 ? null : normalized;
     }
 
     /// <summary>
@@ -231,17 +239,20 @@ public class OpenAIProvider : ILLMProvider
         }
 
         bool include = includeEncryptedReasoning && !IsKnownNonReasoningModel(model) &&
-                       !RimLLMReasoningSupport.IsEncryptedReasoningUnsupported(ProviderId, model);
-        string? cacheKey = UsesDefaultEndpoint ? RimLLMChatOptions.GetPromptCacheKey(requestOptions) : null;
+                       !RimLLMReasoningSupport.IsEncryptedReasoningUnsupported(ResponsesKey, model);
+        string? cacheKey = ProviderId == ProviderIds.OpenAI && UsesDefaultEndpoint ? RimLLMChatOptions.GetPromptCacheKey(requestOptions) : null;
+        ReasoningOutput? reasoningOutput = requestOptions?.Reasoning?.Output;
         options.RawRepresentationFactory = _ =>
         {
             var responses = new CreateResponseOptions { StoredOutputEnabled = false };
             if (include) responses.IncludedProperties.Add(IncludedResponseProperty.ReasoningEncryptedContent);
-            if (effortLiteral != null)
+            if (effortLiteral != null || reasoningOutput is ReasoningOutput.Summary or ReasoningOutput.Full)
             {
-                responses.Patch.Set(
-                    OpenAIPatchPaths.Reasoning,
-                    JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, string>(StringComparer.Ordinal) { { "effort", effortLiteral } }));
+                var reasoningObj = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (effortLiteral != null) reasoningObj["effort"] = effortLiteral;
+                if (reasoningOutput == ReasoningOutput.Summary) reasoningObj["summary"] = "concise";
+                else if (reasoningOutput == ReasoningOutput.Full) reasoningObj["summary"] = "detailed";
+                responses.Patch.Set(OpenAIPatchPaths.Reasoning, JsonSerializer.SerializeToUtf8Bytes(reasoningObj));
             }
             if (cacheKey != null) responses.Patch.Set(OpenAIPatchPaths.PromptCacheKey, cacheKey);
             return responses;
@@ -262,9 +273,13 @@ public class OpenAIProvider : ILLMProvider
         }
 
         string schemaJson = jsonFormat.Schema.Value.GetRawText();
-        return "{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"custom_type\"," +
-               "\"description\":\"RimLLM structured response\"," +
-               "\"strict\":" + (strict ? "true" : "false") + "," +
+        string schemaName = string.IsNullOrWhiteSpace(jsonFormat.SchemaName) ? "custom_type" : jsonFormat.SchemaName;
+        string schemaDescription = string.IsNullOrWhiteSpace(jsonFormat.SchemaDescription)
+            ? "RimLLM structured response"
+            : jsonFormat.SchemaDescription;
+        return "{\"type\":\"json_schema\",\"json_schema\":{\"name\":" + JsonSerializer.Serialize(schemaName) +
+               ",\"description\":" + JsonSerializer.Serialize(schemaDescription) +
+               ",\"strict\":" + (strict ? "true" : "false") + "," +
                "\"schema\":" + schemaJson + "}}";
     }
 
@@ -292,7 +307,9 @@ public class OpenAIProvider : ILLMProvider
     private static string NormalizeModelName(string modelName)
     {
         if (string.IsNullOrEmpty(modelName)) return string.Empty;
-        string name = modelName.Contains('/', StringComparison.Ordinal) ? modelName.Substring(modelName.LastIndexOf('/') + 1) : modelName;
+        int commaIndex = modelName.IndexOf(',', StringComparison.Ordinal);
+        string primary = (commaIndex >= 0 ? modelName.Substring(0, commaIndex) : modelName).Trim();
+        string name = primary.Contains('/', StringComparison.Ordinal) ? primary.Substring(primary.LastIndexOf('/') + 1) : primary;
         return name.ToLowerInvariant();
     }
 
@@ -311,6 +328,9 @@ public class OpenAIProvider : ILLMProvider
 
     /// <summary>掛在送出去的 ChatOptions 上，記錄這次請求實際送出的思考強度字面值（null 代表沒送）。</summary>
     private const string SentEffortLiteralKey = "rimllm_sent_effort_literal";
+
+    /// <summary>掛在送出去的 ChatOptions 上，記錄這次請求是否實際改寫並送出 max_tokens。</summary>
+    private const string SentMaxTokensRewriteKey = "rimllm_sent_max_tokens_rewrite";
 
     // 思考參數一律由 Patch 掌控，不交給 MEAI 的 ChatOptions.Reasoning：後者只會序列化成 OpenAI 的 reasoning_effort，表達不了其他家的方言。
     private void ApplyReasoningAndSampling(ChatOptions? requestOptions, string model, ChatOptions options, string? responseFormatJson)
@@ -334,6 +354,7 @@ public class OpenAIProvider : ILLMProvider
         // 名單漏掉的新模型系列會以 400 拒絕 max_tokens，框架記下來後改回 SDK 預設欄位（見 MarkUnsupportedParameters）。
         bool rewriteMaxTokens = maxTokens > 0 && !IsOpenAiReasoningModel(model) &&
                                 !RimLLMReasoningSupport.IsMaxTokensUnsupported(ProviderId, model);
+        options.AdditionalProperties[SentMaxTokensRewriteKey] = rewriteMaxTokens;
 
         ReasoningWireFormat format = ReasoningFormat;
         Func<IChatClient, object?>? baseFactory = options.RawRepresentationFactory;
@@ -590,13 +611,14 @@ public class OpenAIProvider : ILLMProvider
 
         internal bool TryRecover(WireAttempt attempt, AttemptState state, RimLLMException mapped)
         {
+            string detectionText = mapped.RawDetectionText ?? mapped.Message;
             if (attempt.UsesResponses && !state.DropEncryptedReasoning && mapped.HttpStatusCode is 400 or 404 or 422 &&
-                LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "encrypted"))
+                LLMErrorMapper.ContainsIgnoreCase(detectionText, "encrypted"))
             {
                 state.DropEncryptedReasoning = true;
-                if (LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "support"))
+                if (LLMErrorMapper.ContainsIgnoreCase(detectionText, "support"))
                 {
-                    RimLLMReasoningSupport.MarkEncryptedReasoningUnsupported(_provider.ProviderId, _model);
+                    RimLLMReasoningSupport.MarkEncryptedReasoningUnsupported(_provider.ResponsesKey, _model);
                 }
                 return true;
             }
@@ -621,12 +643,12 @@ public class OpenAIProvider : ILLMProvider
         /// <summary>端點沒有 /responses（404、405、501），或服務端指名這個模型要走 chat/completions。</summary>
         private static bool IsResponsesRejection(RimLLMException mapped) =>
             mapped.HttpStatusCode is 404 or 405 or 501 ||
-            (mapped.HttpStatusCode == 400 && LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "chat/completions"));
+            (mapped.HttpStatusCode == 400 && LLMErrorMapper.ContainsIgnoreCase(mapped.RawDetectionText ?? mapped.Message, "chat/completions"));
 
         /// <summary>官方端點都有 /responses，404 多半是模型或路由暫時找不到（OpenRouter 的 No endpoints found），只退回這一次。</summary>
         private bool ShouldRememberFallback(RimLLMException mapped) =>
             mapped.HttpStatusCode != 404 || !_provider.UsesDefaultEndpoint ||
-            LLMErrorMapper.ContainsIgnoreCase(mapped.Message, "chat/completions");
+            LLMErrorMapper.ContainsIgnoreCase(mapped.RawDetectionText ?? mapped.Message, "chat/completions");
 
         /// <summary>Chat Completions 成功才記住：模型名稱打錯同樣回 404，那不代表端點不支援 Responses。</summary>
         internal void ConfirmFallback(AttemptState state)
@@ -681,8 +703,27 @@ public class OpenAIProvider : ILLMProvider
         public IAsyncEnumerator<ChatResponseUpdate> GetAsyncEnumerator(
             System.Threading.CancellationToken cancellationToken = default)
         {
-            return new OpenAiStreamEnumerator(adapter, messages, options,
-                cancellationToken.CanBeCanceled ? cancellationToken : requestToken);
+            System.Threading.CancellationTokenSource? linkedCts = null;
+            System.Threading.CancellationToken effectiveToken;
+            if (requestToken.CanBeCanceled && cancellationToken.CanBeCanceled && requestToken != cancellationToken)
+            {
+                linkedCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(requestToken, cancellationToken);
+                effectiveToken = linkedCts.Token;
+            }
+            else
+            {
+                effectiveToken = cancellationToken.CanBeCanceled ? cancellationToken : requestToken;
+            }
+
+            try
+            {
+                return new OpenAiStreamEnumerator(adapter, messages, options, effectiveToken, linkedCts);
+            }
+            catch
+            {
+                linkedCts?.Dispose();
+                throw;
+            }
         }
     }
 
@@ -692,6 +733,7 @@ public class OpenAIProvider : ILLMProvider
         private readonly List<ChatMessage> _messages;
         private readonly ChatOptions? _options;
         private readonly System.Threading.CancellationToken _cancellationToken;
+        private readonly System.Threading.CancellationTokenSource? _linkedCts;
         private readonly OpenAIChatClientAdapter.AttemptState _state = new();
         private OpenAIChatClientAdapter.WireAttempt _attempt;
         private IAsyncEnumerator<ChatResponseUpdate> _inner;
@@ -702,12 +744,14 @@ public class OpenAIProvider : ILLMProvider
             OpenAIChatClientAdapter adapter,
             List<ChatMessage> messages,
             ChatOptions? options,
-            System.Threading.CancellationToken cancellationToken)
+            System.Threading.CancellationToken cancellationToken,
+            System.Threading.CancellationTokenSource? linkedCts = null)
         {
             _adapter = adapter;
             _messages = messages;
             _options = options;
             _cancellationToken = cancellationToken;
+            _linkedCts = linkedCts;
             (_attempt, _inner, _capture) = Start();
         }
 
@@ -763,13 +807,20 @@ public class OpenAIProvider : ILLMProvider
             if (!_hasYieldedAny) _adapter.ConfirmFallback(_state);
         }
 
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
-            return _inner.DisposeAsync();
+            try
+            {
+                await _inner.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _linkedCts?.Dispose();
+            }
         }
     }
 
-    /// <summary>服務端明確拒絕思考參數、temperature 或 max_tokens 時記下並回傳 true（值得去掉參數重打）；與這些參數無關或先前已記錄過回傳 false。</summary>
+    /// <summary>服務端明確拒絕思考參數、temperature 或 max_tokens 時記下並回傳 true（值得去掉參數重打）；與這些參數無關、未送出該參數或先前已記錄過回傳 false。</summary>
     private bool MarkUnsupportedParameters(string model, RimLLMException exception, ChatOptions sentOptions)
     {
         bool learned = false;
@@ -778,8 +829,9 @@ public class OpenAIProvider : ILLMProvider
         {
             // 送出的是「關閉」指令時，學到的只是「這個模型關不掉」，不是「不吃思考參數」——
             // 兩者混記的話，連線測試（一律要求關閉）的一次 400 就會讓該模型整個 session
-            // 都收不到玩家設定的強度。
-            if (RimLLMChatOptions.ReadAdditional<string?>(sentOptions, SentEffortLiteralKey, fallback: null) == "none")
+            // 都收不到玩家設定的強度；未送出任何思考參數時不學習。
+            string? sentEffort = RimLLMChatOptions.ReadAdditional<string?>(sentOptions, SentEffortLiteralKey, fallback: null);
+            if (sentEffort == "none")
             {
                 if (RimLLMReasoningSupport.MarkDisableUnsupported(ProviderId, model))
                 {
@@ -787,7 +839,7 @@ public class OpenAIProvider : ILLMProvider
                     learned = true;
                 }
             }
-            else if (RimLLMReasoningSupport.MarkReasoningUnsupported(ProviderId, model))
+            else if (sentEffort != null && RimLLMReasoningSupport.MarkReasoningUnsupported(ProviderId, model))
             {
                 RimLLMLog.Warning($"[RimLLM] Model {model} on {ProviderId} rejected reasoning parameters; they will no longer be sent to it.");
                 learned = true;
@@ -795,6 +847,7 @@ public class OpenAIProvider : ILLMProvider
         }
 
         if (exception.IsTemperatureRejection &&
+            sentOptions.Temperature.HasValue &&
             RimLLMReasoningSupport.MarkTemperatureUnsupported(ProviderId, model))
         {
             RimLLMLog.Warning($"[RimLLM] Model {model} on {ProviderId} rejected temperature; it will no longer be sent to it.");
@@ -802,6 +855,7 @@ public class OpenAIProvider : ILLMProvider
         }
 
         if (exception.IsMaxTokensRejection &&
+            RimLLMChatOptions.ReadAdditional(sentOptions, SentMaxTokensRewriteKey, fallback: false) &&
             RimLLMReasoningSupport.MarkMaxTokensUnsupported(ProviderId, model))
         {
             RimLLMLog.Warning($"[RimLLM] Model {model} on {ProviderId} rejected max_tokens; max_completion_tokens will be used from now on.");
@@ -863,6 +917,10 @@ public class OpenAIProvider : ILLMProvider
         {
             MarkFailed(result, stopwatch, ex.Message, ex.Error);
         }
+        catch (HttpRequestException ex)
+        {
+            MarkFailed(result, stopwatch, $"Network error: {RimLLMLog.SanitizeForLog(ex.Message, 200)}", LLMError.NetworkError);
+        }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
             MarkFailed(result, stopwatch, string.Create(CultureInfo.InvariantCulture, $"Connection test timed out after {timeoutSeconds} seconds."), LLMError.Timeout);
@@ -884,7 +942,7 @@ public class OpenAIProvider : ILLMProvider
         var options = new ChatOptions { MaxOutputTokens = 256 };
         options.AdditionalProperties = new AdditionalPropertiesDictionary
         {
-            ["rimllm_disable_reasoning"] = true
+            [RimLLMChatOptions.DisableReasoningKey] = true
         };
 
         using IChatClient client = CreateChatClient(testModel);
@@ -923,21 +981,9 @@ public class OpenAIProvider : ILLMProvider
     internal virtual async Task<ModelCatalog> FetchModelCatalogAsync()
     {
         string apiKey = Settings.GetActiveApiKey(ProviderId);
-        string? endpoint = NormalizeEndpoint(
-            Settings.GetEndpoint(ProviderId, DefaultEndpoint));
+        string? endpoint = Settings.GetEndpoint(ProviderId, DefaultEndpoint);
         float timeoutSeconds = ApiTimeouts.Resolve(Settings.ApiTimeout);
         using var timeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-
-        // 模型清單是玩家在設定頁手動觸發，失敗直接回報比在逾時內默默重試三次清楚。
-        var options = new OpenAIClientOptions { RetryPolicy = new ClientRetryPolicy(0) };
-        if (!string.IsNullOrEmpty(endpoint))
-        {
-            options.Endpoint = new Uri(endpoint, UriKind.Absolute);
-        }
-
-        // 本地相容伺服器多半不驗證金鑰，但 SDK 不接受空憑證。
-        var credential = new ApiKeyCredential(
-            string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
 
         var list = new List<string>();
         Dictionary<string, int> contextWindows;
@@ -945,7 +991,21 @@ public class OpenAIProvider : ILLMProvider
         Dictionary<string, int>? outputLimits = null;
         try
         {
+            var options = new OpenAIClientOptions();
+            if (ParseEndpoint(endpoint) is { } uri)
+            {
+                options.Endpoint = uri;
+            }
+            ConfigurePipeline(options, options.Endpoint);
+
+            // 本地相容伺服器多半不驗證金鑰，但 SDK 不接受空憑證。
+            var credential = new ApiKeyCredential(
+                string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
+
+            // SDK 豁免：僅作模型清單查詢，已透過 ConfigurePipeline 設定 RetryPolicy=0、NetworkTimeout 與 OpenRouter 歸屬。
+#pragma warning disable RS0030
             ClientResult<OpenAIModelCollection> result = await new OpenAIClient(credential, options)
+#pragma warning restore RS0030
                 .GetOpenAIModelClient()
                 .GetModelsAsync(timeoutCts.Token)
                 .ConfigureAwait(false);
@@ -959,12 +1019,13 @@ public class OpenAIProvider : ILLMProvider
             visionSupport = ParseVisionSupport(rawJson);
             outputLimits = ParseOutputLimits(rawJson);
         }
+        catch (RimLLMException)
+        {
+            throw;
+        }
         catch (ClientResultException ex)
         {
-            throw LLMErrorMapper.CreateException(
-                ex.Status,
-                $"Failed to fetch {ProviderId} models list: {RimLLMLog.SanitizeForLog(ex.Message, 200)}",
-                innerException: ex);
+            throw LLMErrorMapper.FromClientResultException(ex, $"Failed to fetch {ProviderId} models list: ");
         }
         catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
         {

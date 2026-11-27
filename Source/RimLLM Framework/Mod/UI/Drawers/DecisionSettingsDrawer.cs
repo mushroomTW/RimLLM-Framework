@@ -113,37 +113,39 @@ public static class DecisionSettingsDrawer
         Widgets.Label(nameRect, nameText);
 
         bool isActive = string.Equals(Settings.DecisionProvider, providerId, StringComparison.Ordinal);
-        string statusText;
         Color statusColor;
 
-        if (isActive)
+        using (RimLLMUIStyle.With(font: GameFont.Tiny))
         {
-            if (!RimLLMDecisionService.HasEffectiveApiKey(Settings, providerId) && !IsPlaintextEndpoint(providerId))
+            string statusText;
+            if (isActive)
             {
-                statusText = "RimLLM_StatusNoApiKey".Translate();
-                statusColor = RimLLMUIStyle.Warning;
+                if (!RimLLMDecisionService.HasEffectiveApiKey(Settings, providerId) && !IsPlaintextEndpoint(providerId))
+                {
+                    statusText = "RimLLM_StatusNoApiKey".Translate();
+                    statusColor = RimLLMUIStyle.Warning;
+                }
+                else
+                {
+                    string model = Settings.GetDecisionModel(providerId);
+                    string modelDisplay = string.IsNullOrEmpty(model)
+                        ? "Default"
+                        : RimLLMUIStyle.TruncateCached(model, Math.Max(24f, statusRect.width - 55f));
+                    statusText = "RimLLM_DecisionStatusActiveDetail".Translate(modelDisplay);
+                    statusColor = RimLLMUIStyle.Success;
+                }
             }
             else
             {
-                string model = Settings.GetDecisionModel(providerId);
-                string modelDisplay = string.IsNullOrEmpty(model) ? "Default" : model.Truncate(14);
-                statusText = "RimLLM_DecisionStatusActiveDetail".Translate(modelDisplay);
-                statusColor = RimLLMUIStyle.Success;
+                statusText = "RimLLM_DecisionStatusInactive".Translate();
+                statusColor = RimLLMUIStyle.Muted;
             }
-        }
-        else
-        {
-            statusText = "RimLLM_DecisionStatusInactive".Translate();
-            statusColor = RimLLMUIStyle.Muted;
-        }
 
-        Color oldColor = GUI.color;
-        GUI.color = statusColor;
-        using (RimLLMUIStyle.With(font: GameFont.Tiny))
-        {
+            Color oldColor = GUI.color;
+            GUI.color = statusColor;
             Widgets.Label(statusRect, statusText);
+            GUI.color = oldColor;
         }
-        GUI.color = oldColor;
     }
 
     public static void DrawRightDetailContent(Listing_Standard listing)
@@ -226,7 +228,6 @@ public static class DecisionSettingsDrawer
         if (newKey != currentKey)
         {
             Settings.SetDecisionApiKey(providerId, newKey);
-            Settings.Write();
         }
 
         // 本機端點通常不驗證金鑰，留空是正常狀態，不必提醒玩家補上。
@@ -257,7 +258,6 @@ public static class DecisionSettingsDrawer
         if (newEndpoint != currentEndpoint)
         {
             Settings.SetDecisionEndpoint(providerId, newEndpoint?.Trim());
-            Settings.Write();
         }
         listing.Gap(4f);
 
@@ -282,7 +282,6 @@ public static class DecisionSettingsDrawer
         if (newModel != currentModel)
         {
             Settings.SetDecisionModel(providerId, newModel);
-            Settings.Write();
         }
         listing.Gap(4f);
 
@@ -377,9 +376,8 @@ public static class DecisionSettingsDrawer
             }
             catch (Exception ex)
             {
-                string message = "RimLLM_FetchFailed".Translate() +
-                    " (" + RimLLMLog.SanitizeForLog(ex.Message, 220) + ")";
-                applyResult = () => message;
+                string detail = RimLLMLog.SanitizeForLog(ex.Message, 220) ?? string.Empty;
+                applyResult = () => "RimLLM_FetchFailed".Translate() + " (" + detail + ")";
             }
 
             RimLLMDispatcher.EnqueueOnMainThread(() =>
@@ -423,9 +421,8 @@ public static class DecisionSettingsDrawer
             }
             catch (Exception ex)
             {
-                string message = "RimLLM_DecisionTestFailed".Translate(
-                    RimLLMLog.SanitizeForLog(ex.Message, 200));
-                applyResult = () => message;
+                string detail = RimLLMLog.SanitizeForLog(ex.Message, 200) ?? string.Empty;
+                applyResult = () => "RimLLM_DecisionTestFailed".Translate(detail);
             }
 
             RimLLMDispatcher.EnqueueOnMainThread(() =>

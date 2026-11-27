@@ -69,42 +69,57 @@ internal sealed class OpenAiModelListAdapterHandler : DelegatingHandler
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (request.Method != HttpMethod.Get ||
-            request.RequestUri == null ||
-            !request.RequestUri.AbsolutePath.EndsWith(ModelsPath, StringComparison.OrdinalIgnoreCase) ||
-            !response.IsSuccessStatusCode ||
-            response.Content == null)
+        try
         {
-            return response;
-        }
-
-        string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        List<string>? ids = TryReadOpenAiModelIds(body);
-        if (ids == null)
-        {
-            // 不是 OpenAI 格式（多半是 Jev 原生格式）：把讀掉的內容放回去，交給 SDK 自己解析。
-            response.Content = JevWireFormat.JsonContent(body);
-            return response;
-        }
-
-        if (string.IsNullOrEmpty(request.RequestUri.Query))
-        {
-            using HttpRequestMessage decisionRequest = CloneWithQuery(request, DecisionModalityQuery);
-            using HttpResponseMessage decisionResponse =
-                await base.SendAsync(decisionRequest, cancellationToken).ConfigureAwait(false);
-            if (decisionResponse.IsSuccessStatusCode && decisionResponse.Content != null)
+            if (request.Method != HttpMethod.Get ||
+                request.RequestUri == null ||
+                !request.RequestUri.AbsolutePath.EndsWith(ModelsPath, StringComparison.OrdinalIgnoreCase) ||
+                !response.IsSuccessStatusCode ||
+                response.Content == null)
             {
-                List<string>? decisionIds = TryReadOpenAiModelIds(
-                    await decisionResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
-                if (decisionIds != null)
+                return response;
+            }
+
+            string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            List<string>? ids = TryReadOpenAiModelIds(body);
+            if (ids == null)
+            {
+                // 不是 OpenAI 格式（多半是 Jev 原生格式）：把讀掉的內容放回去，交給 SDK 自己解析。
+                ReplaceContent(response, JevWireFormat.JsonContent(body));
+                return response;
+            }
+
+            if (string.IsNullOrEmpty(request.RequestUri.Query))
+            {
+                using HttpRequestMessage decisionRequest = CloneWithQuery(request, DecisionModalityQuery);
+                using HttpResponseMessage decisionResponse =
+                    await base.SendAsync(decisionRequest, cancellationToken).ConfigureAwait(false);
+                if (decisionResponse.IsSuccessStatusCode && decisionResponse.Content != null)
                 {
-                    ids = decisionIds;
+                    List<string>? decisionIds = TryReadOpenAiModelIds(
+                        await decisionResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+                    if (decisionIds != null)
+                    {
+                        ids = decisionIds;
+                    }
                 }
             }
-        }
 
-        response.Content = JevWireFormat.JsonContent(ToJevModelList(ids));
-        return response;
+            ReplaceContent(response, JevWireFormat.JsonContent(ToJevModelList(ids)));
+            return response;
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
+
+    private static void ReplaceContent(HttpResponseMessage response, HttpContent newContent)
+    {
+        HttpContent? old = response.Content;
+        response.Content = newContent;
+        old?.Dispose();
     }
 
     #pragma warning disable S1168 // API 合約規定格式不符時回傳 null，呼叫端已區分 null 與空集合。

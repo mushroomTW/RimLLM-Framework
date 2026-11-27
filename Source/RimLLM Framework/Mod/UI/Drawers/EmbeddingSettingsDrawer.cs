@@ -137,37 +137,39 @@ public static class EmbeddingSettingsDrawer
         Widgets.Label(nameRect, nameText);
 
         bool isActive = Settings.EmbeddingProvider == providerId;
-        string statusText;
         Color statusColor;
 
-        if (isActive)
+        using (RimLLMUIStyle.With(font: GameFont.Tiny))
         {
-            if (ProviderNeedsApiKey(providerId) && !HasEffectiveApiKey(providerId))
+            string statusText;
+            if (isActive)
             {
-                statusText = "RimLLM_StatusNoApiKey".Translate();
-                statusColor = RimLLMUIStyle.Warning;
+                if (ProviderNeedsApiKey(providerId) && !HasEffectiveApiKey(providerId))
+                {
+                    statusText = "RimLLM_StatusNoApiKey".Translate();
+                    statusColor = RimLLMUIStyle.Warning;
+                }
+                else
+                {
+                    string model = Settings.GetEmbeddingModel(providerId);
+                    string modelDisplay = string.IsNullOrEmpty(model)
+                        ? "Default"
+                        : RimLLMUIStyle.TruncateCached(model, Math.Max(24f, statusRect.width - 55f));
+                    statusText = "RimLLM_EmbeddingStatusActiveDetail".Translate(modelDisplay);
+                    statusColor = RimLLMUIStyle.Success;
+                }
             }
             else
             {
-                string model = Settings.GetEmbeddingModel(providerId);
-                string modelDisplay = string.IsNullOrEmpty(model) ? "Default" : model.Truncate(12);
-                statusText = "RimLLM_EmbeddingStatusActiveDetail".Translate(modelDisplay);
-                statusColor = RimLLMUIStyle.Success;
+                statusText = "RimLLM_EmbeddingStatusInactive".Translate();
+                statusColor = RimLLMUIStyle.Muted;
             }
-        }
-        else
-        {
-            statusText = "RimLLM_EmbeddingStatusInactive".Translate();
-            statusColor = RimLLMUIStyle.Muted;
-        }
 
-        Color oldColor = GUI.color;
-        GUI.color = statusColor;
-        using (RimLLMUIStyle.With(font: GameFont.Tiny))
-        {
+            Color oldColor = GUI.color;
+            GUI.color = statusColor;
             Widgets.Label(statusRect, statusText);
+            GUI.color = oldColor;
         }
-        GUI.color = oldColor;
     }
 
     /// <summary>與服務端規則一致：本機服務以外的雲端供應商都需要金鑰。</summary>
@@ -276,7 +278,6 @@ public static class EmbeddingSettingsDrawer
         if (newKey != currentKey)
         {
             Settings.SetEmbeddingApiKey(providerId, newKey);
-            Settings.Write();
         }
 
         if (string.IsNullOrEmpty(newKey) && ProviderNeedsApiKey(providerId))
@@ -320,7 +321,6 @@ public static class EmbeddingSettingsDrawer
         if (newEndpoint != currentEndpoint)
         {
             Settings.SetEmbeddingEndpoint(providerId, newEndpoint?.Trim());
-            Settings.Write();
         }
 
         if (isLocal)
@@ -338,9 +338,10 @@ public static class EmbeddingSettingsDrawer
 
         if (Detecting.TryGetValue(providerId, out bool isD) && isD)
         {
+            Color oldColor = GUI.color;
             GUI.color = Color.gray;
-            Widgets.ButtonText(detectBtnRect, "RimLLM_DetectingLocal".Translate());
-            GUI.color = Color.white;
+            Widgets.ButtonText(detectBtnRect, "RimLLM_DetectingLocal".Translate(), active: false);
+            GUI.color = oldColor;
         }
         else
         {
@@ -379,13 +380,17 @@ public static class EmbeddingSettingsDrawer
     {
         Detecting[providerId] = true;
         DetectStatus[providerId] = "RimLLM_DetectingLocal".Translate();
+        string endpointBefore = Settings.GetEmbeddingEndpointRaw(providerId);
 
         LocalEndpointProbe.StartDetect(
             GetDetectTargets(providerId),
             hit =>
             {
-                Settings.SetEmbeddingEndpoint(providerId, hit.BaseUrl);
-                Settings.Write();
+                if (string.Equals(Settings.GetEmbeddingEndpointRaw(providerId), endpointBefore, StringComparison.Ordinal))
+                {
+                    Settings.SetEmbeddingEndpoint(providerId, hit.BaseUrl);
+                    Settings.Write();
+                }
                 Detecting[providerId] = false;
                 DetectStatus[providerId] = "RimLLM_DetectSuccess".Translate(hit.Name, hit.BaseUrl);
             },
@@ -456,7 +461,6 @@ public static class EmbeddingSettingsDrawer
         if (newModel != currentModel)
         {
             Settings.SetEmbeddingModel(providerId, newModel);
-            Settings.Write();
         }
         listing.Gap(4f);
     }
@@ -497,9 +501,8 @@ public static class EmbeddingSettingsDrawer
             }
             catch (Exception ex)
             {
-                string message = "RimLLM_FetchFailed".Translate() +
-                    " (" + RimLLMLog.SanitizeForLog(ex.Message, 220) + ")";
-                applyResult = () => message;
+                string detail = RimLLMLog.SanitizeForLog(ex.Message, 220) ?? string.Empty;
+                applyResult = () => "RimLLM_FetchFailed".Translate() + " (" + detail + ")";
             }
 
             RimLLMDispatcher.EnqueueOnMainThread(() =>
@@ -547,8 +550,8 @@ public static class EmbeddingSettingsDrawer
             catch (Exception ex)
             {
                 sw.Stop();
-                string msg = "RimLLM_EmbeddingTestFailed".Translate(RimLLMLog.SanitizeForLog(ex.Message, 200));
-                applyResult = () => msg;
+                string detail = RimLLMLog.SanitizeForLog(ex.Message, 200) ?? string.Empty;
+                applyResult = () => "RimLLM_EmbeddingTestFailed".Translate(detail);
             }
 
             RimLLMDispatcher.EnqueueOnMainThread(() =>

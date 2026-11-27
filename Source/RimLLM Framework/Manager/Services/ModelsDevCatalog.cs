@@ -41,7 +41,11 @@ internal static class ModelsDevCatalog
     // SDK 豁免：models.dev 是公開的 JSON 目錄，不屬於任何 LLM API，沒有 SDK 可用。
 #pragma warning disable RS0030
     private static readonly HttpClient Http = new(
-        new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })
+        new SocketsHttpHandler
+        {
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+        })
 #pragma warning restore RS0030
     {
         Timeout = Timeout.InfiniteTimeSpan
@@ -69,10 +73,10 @@ internal static class ModelsDevCatalog
     {
         lock (CacheLock)
         {
-            #pragma warning disable VSTHRD103 // 只在 Task 已完成時讀 Result；DownloadAsync 會捕捉所有例外，不會丟出
+            #pragma warning disable VSTHRD103 // 只在 Task 成功完成時讀 Result；DownloadAsync 會捕捉所有例外，不會丟出
             if (_cached is { } cached
                 && DateTime.UtcNow - _cachedAt < CacheDuration
-                && !(cached.IsCompleted && cached.Result == null))
+                && !(cached.IsCompleted && (!cached.IsCompletedSuccessfully || cached.Result == null)))
             {
                 return cached;
             }

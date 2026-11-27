@@ -124,10 +124,11 @@ public static class DebugSettingsDrawer
             : [];
 
         int persistedCount = Settings.RequestLogs != null ? Settings.RequestLogs.Count : 0;
-        Text.Font = GameFont.Tiny;
-        listing.Label("RimLLM_RequestsSourceCounts".Translate(
-            managerAvailable ? "OK" : "NULL", logs.Count, persistedCount));
-        Text.Font = GameFont.Small;
+        using (RimLLMUIStyle.With(font: GameFont.Tiny))
+        {
+            listing.Label("RimLLM_RequestsSourceCounts".Translate(
+                managerAvailable ? "OK" : "NULL", logs.Count, persistedCount));
+        }
 
         // 記憶體佇列為空（核心未初始化或本 session 尚未發過請求）時退回已保存的紀錄。
         if (logs.Count == 0 && Settings.RequestLogs != null && Settings.RequestLogs.Count > 0)
@@ -166,13 +167,14 @@ public static class DebugSettingsDrawer
 
         Widgets.BeginScrollView(logScrollRect, ref debugScrollPosition, viewRect);
 
-        Text.Font = GameFont.Tiny;
-        for (int i = 0; i < logLines.Count; i++)
+        using (RimLLMUIStyle.With(font: GameFont.Tiny))
         {
-            Rect lineRect = new(4f, i * logHeight + 4f, contentWidth - 8f, logHeight - 2f);
-            Widgets.Label(lineRect, logLines[i]);
+            for (int i = 0; i < logLines.Count; i++)
+            {
+                Rect lineRect = new(4f, i * logHeight + 4f, contentWidth - 8f, logHeight - 2f);
+                Widgets.Label(lineRect, logLines[i]);
+            }
         }
-        Text.Font = GameFont.Small;
         Widgets.EndScrollView();
     }
 
@@ -270,10 +272,10 @@ public static class DebugSettingsDrawer
 
         _ = Task.Run(async () =>
         {
-            string result;
+            Func<string> applyResult;
             try
             {
-                IChatClient client = RimLLMProvider.CreateChatClient(ServiceConsumerList.SchemaSelfTestModId);
+                using IChatClient client = RimLLMProvider.CreateChatClient(ServiceConsumerList.SchemaSelfTestModId);
                 SchemaSelfTestPayload payload = await client.GetResponseObjectAsync<SchemaSelfTestPayload>(
                     new List<ChatMessage>
                     {
@@ -284,19 +286,20 @@ public static class DebugSettingsDrawer
                             "OptionalScore: may be null. Tags: two or three short words.")
                     }).ConfigureAwait(false);
 
-                result = "<color=#22c55e>" + "RimLLM_SchemaSelfTestOk".Translate(
-                    RimLLMLog.SanitizeForLog(payload?.Summary ?? string.Empty, 80),
-                    (payload?.Score ?? 0).ToString(CultureInfo.InvariantCulture)) + "</color>";
+                string safeSummary = RimLLMMarkdown.EscapeUntrustedUnityTags(
+                    RimLLMLog.SanitizeForLog(payload?.Summary ?? string.Empty, 80) ?? string.Empty);
+                string scoreText = (payload?.Score ?? 0).ToString(CultureInfo.InvariantCulture);
+                applyResult = () => "<color=#22c55e>" + "RimLLM_SchemaSelfTestOk".Translate(safeSummary, scoreText) + "</color>";
             }
             catch (Exception exception)
             {
-                result = "<color=#ef4444>" + "RimLLM_SchemaSelfTestRemoteFailed".Translate(
-                    RimLLMLog.SanitizeForLog(exception.Message, 200)) + "</color>";
+                string detail = RimLLMLog.SanitizeForLog(exception.Message, 200) ?? string.Empty;
+                applyResult = () => "<color=#ef4444>" + "RimLLM_SchemaSelfTestRemoteFailed".Translate(detail) + "</color>";
             }
 
             RimLLMDispatcher.EnqueueOnMainThread(() =>
             {
-                schemaSelfTestStatus = result;
+                schemaSelfTestStatus = applyResult();
                 schemaSelfTestRunning = false;
             });
         });

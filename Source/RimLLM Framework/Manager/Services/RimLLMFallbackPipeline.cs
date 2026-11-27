@@ -79,19 +79,13 @@ public class RimLLMFallbackPipeline
         bool strictPreferred = false)
     {
         var fallbackChain = GetFallbackChainSnapshot();
-        if (fallbackChain == null || fallbackChain.Count == 0)
-        {
-            candidates = null;
-            failureReason = "No valid API provider fallback chain configured.";
-            return false;
-        }
 
         // 同一供應商常在鏈上出現多次（例如三個 OpenRouter 模型），API 金鑰在單次解析內不變，
         // 以區域快取去重，避免每個條目各拿一次設定鎖。單次解析的一致快照，語意不變。
         var apiKeyCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         // PreferredModelId（格式 "ProviderId:ModelName"）指定的話，移到 fallback chain 最前面優先嘗試
-        var effectiveChain = new List<string>(fallbackChain);
+        var effectiveChain = new List<string>(fallbackChain ?? []);
         bool preferredFirst = MovePreferredModelToFrontIfUsable(effectiveChain, preferredModelId, apiKeyCache);
 
         List<ResolvedCandidate> resolved = ResolveEligible(effectiveChain, minFallbackLevel, apiKeyCache);
@@ -100,6 +94,13 @@ public class RimLLMFallbackPipeline
         if (strictPreferred)
         {
             return TryResolveStrictPreferred(preferredModelId, preferredFirst, effectiveChain, resolved, out candidates, out failureReason);
+        }
+
+        if (effectiveChain.Count == 0)
+        {
+            candidates = null;
+            failureReason = "No valid API provider fallback chain configured.";
+            return false;
         }
 
         if (resolved.Count == 0)
@@ -270,13 +271,9 @@ public class RimLLMFallbackPipeline
         candidates.AddRange(rotated);
     }
 
-    private static readonly Random SharedRandom = new();
-    private static readonly Lock RandomLock = new();
-
-    // Random 非執行緒安全，重試抖動可能來自不同的背景執行緒；共用加鎖實例。
     private static double NextRandomDouble()
     {
-        lock (RandomLock) { return SharedRandom.NextDouble(); }
+        return Random.Shared.NextDouble();
     }
 
     /// <summary>
@@ -378,6 +375,8 @@ public class RimLLMFallbackPipeline
         provider = _providerResolver(providerId);
         if (provider == null)
             return false;
+
+        providerId = provider.ProviderId ?? providerId;
 
         if (!IsProviderUsable(providerId, provider, apiKeyCache))
             return false;

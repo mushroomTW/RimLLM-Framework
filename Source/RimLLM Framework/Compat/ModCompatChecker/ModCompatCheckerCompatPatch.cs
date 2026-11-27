@@ -25,7 +25,14 @@ internal static class ModCompatCheckerCompatPatch
     public static void Apply()
     {
         CompatSeedUtil.RegisterEndpoint(ModCompatCheckerCompatPatch.PackageId, 1500, 0.3f);
-        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId) == true);
+        if (RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ModCompatCheckerCompatPatch.PackageId) == true)
+        {
+            SeedNativeConfigCore();
+        }
+        else
+        {
+            RevertNativeConfig();
+        }
     }
 
     public static void OnTakeoverToggled(bool enabled)
@@ -74,52 +81,51 @@ internal static class ModCompatCheckerCompatPatch
     {
         try
         {
-            string? baseUrl = LocalOpenAIEndpoint.GetBaseUrl(ModCompatCheckerCompatPatch.PackageId);
-            if (baseUrl == null)
-            {
-                Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
-                return;
-            }
-
-            object? mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod");
-            object? settings = mod == null ? null : CompatSeedUtil.GetMember(mod, "Settings");
-            if (settings == null)
-            {
-                return;
-            }
-
-            string? endpoint = CompatSeedUtil.GetMember(settings, "APIEndpoint") as string;
-            string? key = CompatSeedUtil.GetMember(settings, "APIKey") as string;
-            bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(endpoint, ModCompatCheckerCompatPatch.PackageId);
-            if (!string.IsNullOrEmpty(key) && !ours)
-            {
-                CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
-                return;
-            }
-
-            CompatSeedUtil.SetMember(settings, "APIEndpoint", baseUrl + "/chat/completions");
-            // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
-            CompatSeedUtil.SetMember(settings, "CustomModelId", CompatSeedUtil.ModelLabel(ModCompatCheckerCompatPatch.PackageId));
-            if (!ours)
-            {
-                // 首次寫入才改金鑰與模型選擇；之後只更新埠號與模型名。
-                // 「自訂模型」的索引等於內建模型清單的長度（IsCustomModel 以此判定）。
-                Type modelConfig = AccessTools.TypeByName("ModCompatChecker.AI.ModelConfig");
-                object? models = modelConfig == null ? null : AccessTools.Property(modelConfig, "Models")?.GetValue(null);
-                if (models is not ICollection collection)
-                {
-                    throw new MissingMemberException("ModCompatChecker.AI.ModelConfig", "Models");
-                }
-
-                CompatSeedUtil.SetMember(settings, "APIKey", CompatSeedUtil.PlaceholderApiKey);
-                CompatSeedUtil.SetMember(settings, "SelectedModelIndex", collection.Count);
-            }
-
-            ((Verse.Mod?)mod)?.WriteSettings();
+            SeedNativeConfigCore();
         }
         catch (Exception ex)
         {
             CompatSeedUtil.WarnFailed(DisplayName, ex);
         }
+    }
+
+    private static void SeedNativeConfigCore()
+    {
+        string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(ModCompatCheckerCompatPatch.PackageId)
+            ?? throw new InvalidOperationException($"The local endpoint is not available for {DisplayName}.");
+
+        object mod = CompatSeedUtil.FindModInstance("ModCompatChecker.ModCompatMod")
+            ?? throw new InvalidOperationException($"{DisplayName} mod instance was not found.");
+        object settings = CompatSeedUtil.GetMember(mod, "Settings")
+            ?? throw new InvalidOperationException($"{DisplayName} Settings was not found.");
+
+        string? endpoint = CompatSeedUtil.GetMember(settings, "APIEndpoint") as string;
+        string? key = CompatSeedUtil.GetMember(settings, "APIKey") as string;
+        bool ours = LocalOpenAIEndpoint.IsOwnBaseUrl(endpoint, ModCompatCheckerCompatPatch.PackageId);
+        if (!string.IsNullOrEmpty(key) && !ours)
+        {
+            CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
+            return;
+        }
+
+        CompatSeedUtil.SetMember(settings, "APIEndpoint", baseUrl + "/chat/completions");
+        // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
+        CompatSeedUtil.SetMember(settings, "CustomModelId", CompatSeedUtil.ModelLabel(ModCompatCheckerCompatPatch.PackageId));
+        if (!ours)
+        {
+            // 首次寫入才改金鑰與模型選擇；之後只更新埠號與模型名。
+            // 「自訂模型」的索引等於內建模型清單的長度（IsCustomModel 以此判定）。
+            Type modelConfig = AccessTools.TypeByName("ModCompatChecker.AI.ModelConfig");
+            object? models = modelConfig == null ? null : AccessTools.Property(modelConfig, "Models")?.GetValue(null);
+            if (models is not ICollection collection)
+            {
+                throw new MissingMemberException("ModCompatChecker.AI.ModelConfig", "Models");
+            }
+
+            CompatSeedUtil.SetMember(settings, "APIKey", CompatSeedUtil.PlaceholderApiKey);
+            CompatSeedUtil.SetMember(settings, "SelectedModelIndex", collection.Count);
+        }
+
+        ((Verse.Mod)mod).WriteSettings();
     }
 }

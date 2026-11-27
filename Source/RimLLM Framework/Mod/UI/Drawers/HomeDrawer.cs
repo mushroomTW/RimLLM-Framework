@@ -217,16 +217,17 @@ public static class HomeDrawer
 
     private static void DrawInfoCard(Rect card, string label, string? value, string sub)
     {
+        Color oldColor = GUI.color;
         Widgets.DrawBoxSolid(card, new Color(1f, 1f, 1f, 0.05f));
         GUI.color = RimLLMUIStyle.PanelBorder;
         Widgets.DrawBox(card, 1);
-        GUI.color = Color.white;
+        GUI.color = oldColor;
         Rect inner = card.ContractedBy(10f);
         using (RimLLMUIStyle.With(TextAnchor.UpperLeft, GameFont.Tiny, wordWrap: false))
         {
             GUI.color = RimLLMUIStyle.Muted;
             Widgets.Label(new Rect(inner.x, inner.y, inner.width, 18f), label);
-            GUI.color = Color.white;
+            GUI.color = oldColor;
         }
 
         float subY = inner.y + 18f;
@@ -243,7 +244,7 @@ public static class HomeDrawer
         {
             GUI.color = RimLLMUIStyle.Muted;
             Widgets.Label(new Rect(inner.x, subY, inner.width, inner.yMax - subY), sub);
-            GUI.color = Color.white;
+            GUI.color = oldColor;
         }
     }
 }

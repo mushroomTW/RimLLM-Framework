@@ -1,17 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
+using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 using RimLLM_Framework.Mod;
-using Verse;
 
 namespace RimLLM_Framework.Compat;
 
@@ -21,17 +22,23 @@ namespace RimLLM_Framework.Compat;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 路徑格式：<c>/m/{modId}/v1/{chat/completions | responses | models}</c>。以 modId 區分來源，
-/// 才能套用該 Mod 的接管開關、專用模型與用量歸屬。
+/// 路徑格式：<c>/t/{sessionToken}/m/{modId}/v1/{chat/completions | responses | models}</c>。以 modId 區分來源，
+/// 才能套用該 Mod 的接管開關、專用模型與用量歸屬；sessionToken 為每次啟動隨機產生，防止本機其他程序未經授權存取。
 /// </para>
 /// <para>
-/// 只綁定 127.0.0.1 並自動挑選空閒埠；帶有 <c>Origin</c> 標頭的請求（瀏覽器網頁發出的）一律拒絕，
-/// 避免外部網頁借用玩家的金鑰額度。
+/// 只綁定 127.0.0.1 並自動挑選空閒埠；帶有 <c>Origin</c> 標頭或 <c>Host</c> 不符的請求一律拒絕，
+/// 避免外部網頁或非本機來源借用玩家的金鑰額度。
 /// </para>
 /// </remarks>
 internal static class LocalOpenAIEndpoint
 {
     internal delegate Task<string> Handler(string payloadJson, bool chatProtocol, CancellationToken cancellationToken);
+
+    private const int MaxBodyBytes = 16 * 1024 * 1024;
+    private static readonly TimeSpan BodyReadTimeout = TimeSpan.FromSeconds(30);
+    private static readonly SemaphoreSlim RequestConcurrencyGate = new(32, 32);
+    private static readonly string SessionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+    private static readonly byte[] SessionTokenBytes = Encoding.UTF8.GetBytes(SessionToken);
 
     private static readonly Dictionary<string, Handler> Handlers = new(StringComparer.Ordinal);
     private static readonly Lock Gate = new();
@@ -49,7 +56,9 @@ internal static class LocalOpenAIEndpoint
     public static string? GetBaseUrl(string modId)
     {
         int port = EnsureStarted();
-        return port == 0 ? null : string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/m/{modId}/v1");
+        return port == 0
+            ? null
+            : string.Create(CultureInfo.InvariantCulture, $"http://127.0.0.1:{port}/t/{SessionToken}/m/{Uri.EscapeDataString(modId)}/v1");
     }
 
     public static bool IsOwnBaseUrl(string? baseUrl, string modId)
@@ -59,7 +68,31 @@ internal static class LocalOpenAIEndpoint
         if (string.Equals(baseUrl.TrimEnd('/'), "http://127.0.0.1:1/v1", StringComparison.OrdinalIgnoreCase)) return true;
 
         return baseUrl.StartsWith("http://127.0.0.1:", StringComparison.OrdinalIgnoreCase)
-            && baseUrl.IndexOf($"/m/{modId}/v1", StringComparison.Ordinal) > 0;
+            && (baseUrl.IndexOf($"/m/{modId}/v1", StringComparison.Ordinal) > 0
+                || baseUrl.IndexOf($"/m/{Uri.EscapeDataString(modId)}/v1", StringComparison.Ordinal) > 0);
+    }
+
+    internal static void Stop()
+    {
+        HttpListener? listener;
+        lock (Gate)
+        {
+            listener = _listener;
+            _listener = null;
+            _port = 0;
+        }
+
+        if (listener == null) return;
+
+        try
+        {
+            listener.Stop();
+            listener.Close();
+        }
+        catch (Exception)
+        {
+            // 關閉期間安全忽略已釋放的監聽器。
+        }
     }
 
     private static int EnsureStarted()
@@ -80,14 +113,14 @@ internal static class LocalOpenAIEndpoint
                 catch (Exception ex)
                 {
                     listener.Close();
-                    Log.Warning(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Local endpoint failed to listen on port {port}: {ex.Message}"));
+                    RimLLMLog.Warning(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Local endpoint failed to listen on port {port}: {RimLLMLog.SanitizeForLog(ex.Message)}"));
                     continue;
                 }
 
                 _listener = listener;
                 _port = port;
-                _ = Task.Run(() => AcceptLoopAsync(listener));
-                Log.Message(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Local OpenAI-compatible endpoint listening on 127.0.0.1:{port}"));
+                _ = Task.Run(() => AcceptLoopAsync(listener, port));
+                RimLLMLog.Message(string.Create(CultureInfo.InvariantCulture, $"[RimLLM] Local OpenAI-compatible endpoint listening on 127.0.0.1:{port}"));
                 return _port;
             }
             return 0;
@@ -108,7 +141,7 @@ internal static class LocalOpenAIEndpoint
         }
     }
 
-    private static async Task AcceptLoopAsync(HttpListener listener)
+    private static async Task AcceptLoopAsync(HttpListener listener, int port)
     {
         while (listener.IsListening)
         {
@@ -121,26 +154,34 @@ internal static class LocalOpenAIEndpoint
             {
                 return; // 監聽器已關閉
             }
-            _ = Task.Run(() => HandleAsync(context));
+            _ = Task.Run(() => HandleAsync(context, port));
         }
     }
 
-    private static async Task HandleAsync(HttpListenerContext context)
+    private static async Task HandleAsync(HttpListenerContext context, int port)
     {
+        bool acquired = false;
         try
         {
-            if (context.Request.Headers["Origin"] != null)
+            if (context.Request.Headers["Origin"] != null || !IsAllowedHost(context.Request.UserHostName, port))
             {
-                await WriteJsonAsync(context, 403, ErrorBody("forbidden", "Browser requests are not allowed.")).ConfigureAwait(false);
+                await WriteJsonAsync(context, 403, ErrorBody("forbidden", "Forbidden request origin or host.")).ConfigureAwait(false);
                 return;
             }
 
             ArgumentNullException.ThrowIfNull(context.Request.Url);
-            if (!TryParseRoute(context.Request.Url, out string? modId, out string? endpoint))
+            if (!TryParseRoute(context.Request.Url, out string? modId, out string? endpoint, out bool tokenValid))
             {
-                await WriteJsonAsync(context, 404, ErrorBody("not_found", "Unknown path.")).ConfigureAwait(false);
+                await WriteJsonAsync(context, tokenValid ? 404 : 403, ErrorBody(tokenValid ? "not_found" : "forbidden", tokenValid ? "Unknown path." : "Invalid endpoint token.")).ConfigureAwait(false);
                 return;
             }
+
+            if (!await RequestConcurrencyGate.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false))
+            {
+                await WriteJsonAsync(context, 503, ErrorBody("server_busy", "Local endpoint is busy.")).ConfigureAwait(false);
+                return;
+            }
+            acquired = true;
 
             Handler? handler = FindHandler(modId);
             if (handler == null)
@@ -170,35 +211,91 @@ internal static class LocalOpenAIEndpoint
                 return;
             }
 
-            string body = await ReadBodyAsync(context.Request.InputStream).ConfigureAwait(false);
+            if (context.Request.ContentLength64 > MaxBodyBytes)
+            {
+                await WriteJsonAsync(context, 413, ErrorBody("payload_too_large", "Request body exceeds maximum allowed size.")).ConfigureAwait(false);
+                return;
+            }
+
+            (string? body, bool tooLarge) = await ReadBodyAsync(context.Request.InputStream).ConfigureAwait(false);
+            if (tooLarge || body == null)
+            {
+                await TryWriteErrorOrAbortAsync(context, 413, "payload_too_large", "Request body exceeds maximum allowed size.").ConfigureAwait(false);
+                return;
+            }
             string json = await handler(body, chat, CancellationToken.None).ConfigureAwait(false);
             await WriteResultAsync(context, json, body, chat).ConfigureAwait(false);
         }
+        catch (OperationCanceledException)
+        {
+            await TryWriteErrorOrAbortAsync(context, 408, "request_timeout", "Request body read timed out.").ConfigureAwait(false);
+        }
         catch (Exception ex)
         {
-            try
+            string safeMessage = RimLLMLog.SanitizeForLog(ex.Message) ?? "Internal error.";
+            await TryWriteErrorOrAbortAsync(context, 500, "server", safeMessage).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (acquired)
             {
-                await WriteJsonAsync(context, 500, ErrorBody("server", ex.Message)).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // 連線已斷，無法回覆
+                RequestConcurrencyGate.Release();
             }
         }
     }
 
-    private static bool TryParseRoute(Uri url, [NotNullWhen(true)] out string? modId, [NotNullWhen(true)] out string? endpoint)
+    private static async Task TryWriteErrorOrAbortAsync(HttpListenerContext context, int status, string type, string message)
+    {
+        try
+        {
+            await WriteJsonAsync(context, status, ErrorBody(type, message)).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            try
+            {
+                context.Response.Abort();
+            }
+            catch (Exception)
+            {
+                // 連線已斷，忽略中止錯誤
+            }
+        }
+    }
+
+    private static bool IsAllowedHost(string? host, int port)
+    {
+        if (string.IsNullOrEmpty(host)) return false;
+        return string.Equals(host, string.Create(CultureInfo.InvariantCulture, $"127.0.0.1:{port}"), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, string.Create(CultureInfo.InvariantCulture, $"localhost:{port}"), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryParseRoute(Uri url, [NotNullWhen(true)] out string? modId, [NotNullWhen(true)] out string? endpoint, out bool tokenValid)
     {
         modId = null;
         endpoint = null;
-        string[] segments = url.AbsolutePath.Trim('/').Split('/');
-        if (segments.Length < 4 || segments[0] != "m" || segments[2] != "v1")
+        tokenValid = true;
+        string[] segments = url.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length >= 4 && segments[0] == "m" && segments[2] == "v1")
+        {
+            tokenValid = false;
+            return false;
+        }
+
+        if (segments.Length < 6 || segments[0] != "t" || segments[2] != "m" || segments[4] != "v1")
         {
             return false;
         }
 
-        modId = Uri.UnescapeDataString(segments[1]);
-        endpoint = string.Join('/', segments, 3, segments.Length - 3);
+        byte[] candidateBytes = Encoding.UTF8.GetBytes(segments[1]);
+        if (!CryptographicOperations.FixedTimeEquals(candidateBytes, SessionTokenBytes))
+        {
+            tokenValid = false;
+            return false;
+        }
+
+        modId = Uri.UnescapeDataString(segments[3]);
+        endpoint = string.Join('/', segments, 5, segments.Length - 5);
         return true;
     }
 
@@ -211,10 +308,24 @@ internal static class LocalOpenAIEndpoint
         }
     }
 
-    private static async Task<string> ReadBodyAsync(Stream input)
+    private static async Task<(string? Body, bool TooLarge)> ReadBodyAsync(Stream input)
     {
-        using var reader = new StreamReader(input, Encoding.UTF8);
-        return await reader.ReadToEndAsync().ConfigureAwait(false);
+        using var cts = new CancellationTokenSource(BodyReadTimeout);
+        using var buffer = new MemoryStream();
+        byte[] chunk = new byte[8192];
+        int total = 0;
+        while (true)
+        {
+            int read = await input.ReadAsync(chunk, cts.Token).ConfigureAwait(false);
+            if (read <= 0) break;
+            total += read;
+            if (total > MaxBodyBytes)
+            {
+                return (null, true);
+            }
+            await buffer.WriteAsync(chunk.AsMemory(0, read), cts.Token).ConfigureAwait(false);
+        }
+        return (Encoding.UTF8.GetString(buffer.GetBuffer(), 0, total), false);
     }
 
     private static async Task WriteResultAsync(HttpListenerContext context, string json, string body, bool chat)

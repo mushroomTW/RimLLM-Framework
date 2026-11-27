@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ClientModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http;
 using System.Net.Http.Headers;
 
@@ -58,6 +59,7 @@ public static class LLMErrorMapper
     {
         RimLLMException exception = MapStatusCode(statusCode, friendlyMessage, retryAfter, innerException, detectionText);
         exception.HttpStatusCode = statusCode;
+        exception.RawDetectionText = detectionText;
         return exception;
     }
 
@@ -168,22 +170,32 @@ public static class LLMErrorMapper
 
     private static RimLLMException MapRejection(int? statusCode, string probe, string friendlyMessage, Exception? innerException)
     {
-        RimLLMException rejected = Create(ResolveRejectionError(statusCode, probe),
+        LLMError error = ResolveRejectionError(statusCode, probe);
+        RimLLMException rejected = Create(error,
             $"The request was rejected by the provider: {friendlyMessage}", retryAfter: null, innerException);
-        rejected.IsSchemaRejection = LooksLikeSchemaRejection(probe);
-        rejected.IsReasoningRejection = LooksLikeReasoningRejection(probe);
-        rejected.IsTemperatureRejection = LooksLikeTemperatureRejection(probe);
-        rejected.IsMaxTokensRejection = LooksLikeMaxTokensRejection(probe);
+        if (error != LLMError.ContextWindowExceeded)
+        {
+            rejected.IsSchemaRejection = LooksLikeSchemaRejection(probe);
+            rejected.IsReasoningRejection = LooksLikeReasoningRejection(probe);
+            rejected.IsTemperatureRejection = LooksLikeTemperatureRejection(probe);
+            rejected.IsMaxTokensRejection = LooksLikeMaxTokensRejection(probe);
+        }
         return rejected;
     }
 
     private static RimLLMException MapTooManyRequests(string probe, string friendlyMessage, TimeSpan? retryAfter, Exception? innerException)
     {
-        if (ContainsIgnoreCase(probe, "quota") || ContainsIgnoreCase(probe, "insufficient"))
+        bool exhausted = ContainsIgnoreCase(probe, "insufficient_quota") ||
+                         ContainsIgnoreCase(probe, "insufficient quota") ||
+                         ContainsIgnoreCase(probe, "insufficient_balance") ||
+                         ContainsIgnoreCase(probe, "insufficient balance") ||
+                         ContainsIgnoreCase(probe, "insufficient_funds") ||
+                         ContainsIgnoreCase(probe, "insufficient funds") ||
+                         ContainsIgnoreCase(probe, "insufficient credit");
+        if (exhausted || ContainsIgnoreCase(probe, "quota"))
         {
             // 訊息只提到 "quota" 的多半是每分鐘配額（Gemini 免費層），等一下就恢復；
-            // 明確寫 insufficient 的才是額度用完。
-            bool exhausted = ContainsIgnoreCase(probe, "insufficient");
+            // 明確寫 insufficient_quota／balance／funds／credit 的才是額度用完。
             string message = exhausted
                 ? $"Account quota exhausted (insufficient_quota), please check your account balance: {friendlyMessage}"
                 : $"Provider quota or rate limit reached, try again later: {friendlyMessage}";
@@ -279,16 +291,26 @@ public static class LLMErrorMapper
                ContainsIgnoreCase(message, "content policy") ||
                ContainsIgnoreCase(message, "content_filter") ||
                ContainsIgnoreCase(message, "content filter") ||
-               ContainsIgnoreCase(message, "safety") ||
+               ContainsIgnoreCase(message, "safety filter") ||
+               ContainsIgnoreCase(message, "safety_filter") ||
+               ContainsIgnoreCase(message, "safety system") ||
+               ContainsIgnoreCase(message, "safety policy") ||
+               ContainsIgnoreCase(message, "safety_policy") ||
+               ContainsIgnoreCase(message, "safety settings") ||
                ContainsIgnoreCase(message, "moderation");
     }
 
     /// <summary>
-    /// 400／413／422 的細分。可降級重打的拒絕類型維持 <see cref="LLMError.InvalidResponse"/>，
-    /// 以免影響既有的降級路徑。
+    /// 400／413／422 的細分。優先判定明確的 413 與上下文視窗超限，避免訊息中的 thinking/schema 字樣搶判。
+    /// 可降級重打的拒絕類型維持 <see cref="LLMError.InvalidResponse"/>，以免影響既有的降級路徑。
     /// </summary>
     private static LLMError ResolveRejectionError(int? statusCode, string probe)
     {
+        if (statusCode == 413 || LooksLikeContextWindowRejection(probe))
+        {
+            return LLMError.ContextWindowExceeded;
+        }
+
         if (LooksLikeSchemaRejection(probe) ||
             LooksLikeReasoningRejection(probe) ||
             LooksLikeTemperatureRejection(probe) ||
@@ -297,20 +319,16 @@ public static class LLMErrorMapper
             return LLMError.InvalidResponse;
         }
 
-        if (statusCode == 413 || LooksLikeContextWindowRejection(probe))
-        {
-            return LLMError.ContextWindowExceeded;
-        }
-
         return LooksLikeContentPolicyRejection(probe) ? LLMError.ContentFilter : LLMError.InvalidResponse;
     }
 
     /// <summary>
-    /// 檢查字串是否包含指定的子字串（不區分大小寫的序數比對）；來源字串為 null 或空時回傳 false。
+    /// 檢查字串是否包含指定的子字串（不區分大小寫的序數比對）；來源或搜尋字串為 null 或空時回傳 false。
     /// </summary>
-    public static bool ContainsIgnoreCase(string haystack, string needle)
+    public static bool ContainsIgnoreCase([AllowNull] string haystack, [AllowNull] string needle)
     {
         return !string.IsNullOrEmpty(haystack) &&
+               !string.IsNullOrEmpty(needle) &&
                haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
     }
 

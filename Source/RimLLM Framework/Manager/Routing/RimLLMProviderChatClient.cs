@@ -190,23 +190,32 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             // GetStreamingResponseAsync 與 await foreach（WithCancellation）兩邊的 token 都要生效。
             var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken, cancellationToken);
 
-            // 有界 channel：消費端慢時生產端在 WriteAsync 上等待，避免遠端資料被無界緩衝。
-            var channel = System.Threading.Channels.Channel.CreateBounded<ChatResponseUpdate>(
-                new System.Threading.Channels.BoundedChannelOptions(StreamBufferCapacity)
-                {
-                    SingleReader = true,
-                    SingleWriter = true,
-                    FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
-                });
+            try
+            {
+                // 有界 channel：消費端慢時生產端在 WriteAsync 上等待，避免遠端資料被無界緩衝。
+                var channel = System.Threading.Channels.Channel.CreateBounded<ChatResponseUpdate>(
+                    new System.Threading.Channels.BoundedChannelOptions(StreamBufferCapacity)
+                    {
+                        SingleReader = true,
+                        SingleWriter = true,
+                        FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
+                    });
 
-            StartProducer(channel.Writer, linkedCts.Token);
+                System.Threading.Tasks.Task producerTask = StartProducer(channel.Writer, linkedCts.Token);
 
-            return new StreamUpdateEnumerator(
-                channel.Reader.ReadAllAsync(linkedCts.Token).GetAsyncEnumerator(linkedCts.Token),
-                linkedCts);
+                return new StreamUpdateEnumerator(
+                    channel.Reader.ReadAllAsync(linkedCts.Token).GetAsyncEnumerator(linkedCts.Token),
+                    linkedCts,
+                    producerTask);
+            }
+            catch
+            {
+                linkedCts.Dispose();
+                throw;
+            }
         }
 
-        private void StartProducer(
+        private System.Threading.Tasks.Task StartProducer(
             System.Threading.Channels.ChannelWriter<ChatResponseUpdate> writer,
             CancellationToken cancellationToken)
         {
@@ -228,7 +237,7 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
             string composedModelId = ComposeModelId(_client._provider.ProviderId, _client._model);
 
-            _ = Task.Run(async () =>
+            return System.Threading.Tasks.Task.Run(async () =>
             {
                 try
                 {
@@ -271,19 +280,22 @@ internal sealed class RimLLMProviderChatClient : IChatClient
 
     /// <summary>
     /// 包住 channel 的列舉器，只做兩件事：解開 ChannelClosedException 還原生產端的原始例外
-    /// （呼叫端 catch 的是 RimLLMException，不能讓它變成 channel 的內部型別），以及釋放連動 CTS。
+    /// （呼叫端 catch 的是 RimLLMException，不能讓它變成 channel 的內部型別），以及等待生產者收尾並釋放連動 CTS。
     /// </summary>
     private sealed class StreamUpdateEnumerator : IAsyncEnumerator<ChatResponseUpdate>
     {
         private readonly IAsyncEnumerator<ChatResponseUpdate> _inner;
         private readonly CancellationTokenSource _linkedCts;
+        private readonly System.Threading.Tasks.Task _producerTask;
 
         public StreamUpdateEnumerator(
             IAsyncEnumerator<ChatResponseUpdate> inner,
-            CancellationTokenSource linkedCts)
+            CancellationTokenSource linkedCts,
+            System.Threading.Tasks.Task producerTask)
         {
             _inner = inner;
             _linkedCts = linkedCts;
+            _producerTask = producerTask;
         }
 
         public ChatResponseUpdate Current => _inner.Current;
@@ -318,6 +330,15 @@ internal sealed class RimLLMProviderChatClient : IChatClient
             }
             finally
             {
+                // 確保背景生產者已結束 HTTP 串流與用量記帳後，外層佇列與預算才會被歸還。
+                try
+                {
+                    await _producerTask.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // 例外已透過 channel 或取消傳遞給消費端，此處只等待其收尾完成。
+                }
                 _linkedCts.Dispose();
             }
         }

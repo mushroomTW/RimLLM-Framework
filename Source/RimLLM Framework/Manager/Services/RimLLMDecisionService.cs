@@ -327,6 +327,18 @@ public class RimLLMDecisionService
             "No API key is configured for this decision provider.");
     }
 
+    private static string NormalizePreviewEndpoint(string endpoint)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            throw new RimLLMException(
+                LLMError.Unknown,
+                "Decision endpoint URL is required.");
+        }
+
+        return NormalizeBaseEndpoint(endpoint, providerId: "");
+    }
+
     /// <summary>抓取目前啟用供應商的可用模型；模型清單查詢不消耗推論額度。</summary>
     public async Task<IReadOnlyList<ModelInfo>> FetchModelsAsync(CancellationToken cancellationToken = default)
     {
@@ -360,7 +372,7 @@ public class RimLLMDecisionService
     {
         try
         {
-            string normalizedEndpoint = NormalizeBaseEndpoint(endpoint, _settings.DecisionProvider);
+            string normalizedEndpoint = NormalizePreviewEndpoint(endpoint);
             string usableKey = EnsureUsableKey(apiKey, normalizedEndpoint);
             return await FetchModelsCoreAsync(
                     normalizedEndpoint, model, usableKey, cancellationToken)
@@ -448,7 +460,7 @@ public class RimLLMDecisionService
             var plan = new QuestionSet();
             plan.Noul("Is this request reachable?", id: "reachable");
 
-            string normalizedEndpoint = NormalizeBaseEndpoint(endpoint, _settings.DecisionProvider);
+            string normalizedEndpoint = NormalizePreviewEndpoint(endpoint);
             string usableKey = EnsureUsableKey(apiKey, normalizedEndpoint);
             HttpClient http = GetHttpClient(normalizedEndpoint);
             using var client = new TypeSafeClient(http, CreateOptions(normalizedEndpoint, model, usableKey));
@@ -493,8 +505,9 @@ public class RimLLMDecisionService
         List<string> candidates = BuildFailoverCandidates();
         if (candidates.Count <= 1)
         {
+            string targetProvider = candidates.Count == 1 ? candidates[0] : _settings.DecisionProvider;
             return await EvaluateWithProviderDetailedAsync(
-                    state, plan, _settings.DecisionProvider, model, cancellationToken)
+                    state, plan, targetProvider, model, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -555,11 +568,11 @@ public class RimLLMDecisionService
         string? model = null,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(state)) throw new ArgumentNullException(nameof(state));
+        ArgumentNullException.ThrowIfNull(plan);
+
         try
         {
-            if (string.IsNullOrWhiteSpace(state)) throw new ArgumentNullException(nameof(state));
-            ArgumentNullException.ThrowIfNull(plan);
-
             DecisionConnection connection = ResolveConnection(providerId, model);
             string selectedModel = connection.Model;
             RequireModel(selectedModel);

@@ -19,6 +19,7 @@ public class RimLLMDispatcher : MonoBehaviour
 
     private const long FrameBudgetMs = 2;
 
+    private static readonly DispatcherSynchronizationContext MainThreadSyncContext = new();
     private static RimLLMDispatcher? _instance;
     private static readonly Lock InstanceLock = new();
     private static readonly ConcurrentQueue<QueuedAction> ExecutionQueue = new();
@@ -26,13 +27,14 @@ public class RimLLMDispatcher : MonoBehaviour
     private static int _droppedCount;
 
     private static volatile bool _hasPump;
+    private static volatile bool _shuttingDown;
 
     /// <summary>
     /// 於主線程建立派遣器單例。必須由 Mod 進入點在主線程呼叫。
     /// </summary>
     public static void EnsureInitialized()
     {
-        if (_instance != null) return;
+        if (Volatile.Read(ref _instance) != null) return;
 
         lock (InstanceLock)
         {
@@ -52,6 +54,8 @@ public class RimLLMDispatcher : MonoBehaviour
     public static void EnqueueOnMainThread(Action action)
     {
         if (action == null) return;
+
+        if (_shuttingDown) return;
 
         if (_hasPump)
         {
@@ -118,14 +122,8 @@ public class RimLLMDispatcher : MonoBehaviour
                 return;
             }
 
-            try
-            {
-                await CompleteFromAsync(func, tcs).ConfigureAwait(true);
-            }
-            finally
-            {
-                registration.Dispose();
-            }
+            registration.Dispose();
+            await CompleteFromAsync(func, tcs).ConfigureAwait(true);
         }, tcs, () => registration.Dispose());
         #pragma warning restore MA0147
 
@@ -184,25 +182,54 @@ public class RimLLMDispatcher : MonoBehaviour
         System.Threading.Tasks.TaskCompletionSource<T> tcs,
         Action? onDropped = null)
     {
+        if (_shuttingDown)
+        {
+            tcs.TrySetCanceled();
+            onDropped?.Invoke();
+            return;
+        }
+
         if (_hasPump)
         {
-            TryEnqueueBounded(new QueuedAction(action, () =>
+            TryEnqueueBounded(new QueuedAction(
+                action,
+                () =>
+                {
+                    tcs.TrySetException(
+                        new InvalidOperationException($"[RimLLM] The main-thread queue is full (limit {MaxQueuedActions}); the pending main-thread work was dropped."));
+                    onDropped?.Invoke();
+                },
+                () =>
+                {
+                    tcs.TrySetCanceled();
+                    onDropped?.Invoke();
+                }));
+
+            // 若剛入列時 OnDestroy 已關機並完成最後排乾，主動通知佇列內殘留等待者避免永久掛死。
+            if (_shuttingDown)
             {
-                tcs.TrySetException(
-                    new InvalidOperationException($"[RimLLM] The main-thread queue is full (limit {MaxQueuedActions}); the pending main-thread work was dropped."));
-                onDropped?.Invoke();
-            }));
+                CancelPendingItemsOnShutdown();
+            }
             return;
         }
 
         action.Invoke();
     }
 
+    private static void CancelPendingItemsOnShutdown()
+    {
+        while (ExecutionQueue.TryDequeue(out QueuedAction discarded))
+        {
+            Interlocked.Decrement(ref _queuedCount);
+            discarded.NotifyShutdown();
+        }
+    }
+
     // 取捨：超過上限時丟棄最舊項目，可能丟掉一次遙測寫入；遙測有 15 秒節流且關閉遊戲時會強制 flush，風險可接受。
     internal static bool TryEnqueueBounded(Action action)
     {
-        if (action == null) return false;
-        return TryEnqueueBounded(new QueuedAction(action, onDropped: null));
+        if (action == null || _shuttingDown) return false;
+        return TryEnqueueBounded(new QueuedAction(action, onDropped: null, onShutdown: null));
     }
 
     private static bool TryEnqueueBounded(QueuedAction item)
@@ -233,11 +260,13 @@ public class RimLLMDispatcher : MonoBehaviour
     {
         private readonly Action _run;
         private readonly Action? _onDropped;
+        private readonly Action? _onShutdown;
 
-        public QueuedAction(Action run, Action? onDropped)
+        public QueuedAction(Action run, Action? onDropped, Action? onShutdown)
         {
             _run = run;
             _onDropped = onDropped;
+            _onShutdown = onShutdown;
         }
 
         public readonly void Run()
@@ -248,6 +277,11 @@ public class RimLLMDispatcher : MonoBehaviour
         public readonly void NotifyDropped()
         {
             _onDropped?.Invoke();
+        }
+
+        public readonly void NotifyShutdown()
+        {
+            _onShutdown?.Invoke();
         }
     }
 
@@ -265,20 +299,38 @@ public class RimLLMDispatcher : MonoBehaviour
         var stopwatch = Stopwatch.StartNew();
         int processed = 0;
 
-        while (processed < maxActions &&
-               (!checkTime || stopwatch.ElapsedTicks < budgetTicks) &&
-               ExecutionQueue.TryDequeue(out QueuedAction action))
+        // Waylith 主執行緒的 SynchronizationContext.Current 可能為 null；暫時安裝自訂 context，確保 async 工具在 await 後續行回到佇列。
+        SynchronizationContext? previousContext = SynchronizationContext.Current;
+        bool installedContext = previousContext == null;
+        if (installedContext)
         {
-            Interlocked.Decrement(ref _queuedCount);
-            processed++;
+            SynchronizationContext.SetSynchronizationContext(MainThreadSyncContext);
+        }
 
-            try
+        try
+        {
+            while (processed < maxActions &&
+                   (!checkTime || stopwatch.ElapsedTicks < budgetTicks) &&
+                   ExecutionQueue.TryDequeue(out QueuedAction action))
             {
-                action.Run();
+                Interlocked.Decrement(ref _queuedCount);
+                processed++;
+
+                try
+                {
+                    action.Run();
+                }
+                catch (Exception ex)
+                {
+                    RimLLMLog.Error($"[RimLLM] Main-thread callback failed: {RimLLMLog.SanitizeForLog(ex.Message)}\n{ex.StackTrace}");
+                }
             }
-            catch (Exception ex)
+        }
+        finally
+        {
+            if (installedContext)
             {
-                RimLLMLog.Error($"[RimLLM] Main-thread callback failed: {ex.Message}\n{ex.StackTrace}");
+                SynchronizationContext.SetSynchronizationContext(null);
             }
         }
 
@@ -293,6 +345,7 @@ public class RimLLMDispatcher : MonoBehaviour
         }
         Interlocked.Exchange(ref _queuedCount, 0);
         Interlocked.Exchange(ref _droppedCount, 0);
+        _shuttingDown = false;
     }
 
     internal static int QueuedCount => Volatile.Read(ref _queuedCount);
@@ -304,6 +357,7 @@ public class RimLLMDispatcher : MonoBehaviour
     #pragma warning disable CA1822, S2325, MA0038 // Unity 訊息方法必須是執行個體方法。
     private void Awake() // NOSONAR：Unity 訊息方法必須是執行個體方法
     {
+        SetShuttingDown(false);
         SetPumpActive(active: true);
     }
     #pragma warning restore CA1822, S2325, MA0038
@@ -317,6 +371,7 @@ public class RimLLMDispatcher : MonoBehaviour
 
     private void OnDestroy()
     {
+        SetShuttingDown(true);
         SetPumpActive(active: false);
 
         // 先排乾剩餘項目，避免遺失遙測寫入等重要回呼。
@@ -329,6 +384,11 @@ public class RimLLMDispatcher : MonoBehaviour
         ReleaseInstance(this);
     }
 
+    private static void SetShuttingDown(bool shuttingDown)
+    {
+        _shuttingDown = shuttingDown;
+    }
+
     private static void SetPumpActive(bool active)
     {
         _hasPump = active;
@@ -337,9 +397,20 @@ public class RimLLMDispatcher : MonoBehaviour
     // 僅當單例就是正在銷毀的實例時才清除，避免誤清關機期間已重建的新實例。
     private static void ReleaseInstance(RimLLMDispatcher dispatcher)
     {
-        if (_instance == dispatcher)
+        lock (InstanceLock)
         {
-            _instance = null;
+            if (_instance == dispatcher)
+            {
+                _instance = null;
+            }
+        }
+    }
+
+    private sealed class DispatcherSynchronizationContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            EnqueueOnMainThread(() => d(state));
         }
     }
 }

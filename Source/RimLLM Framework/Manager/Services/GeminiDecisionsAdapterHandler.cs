@@ -56,8 +56,10 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
         string model = "";
         if (isEvaluate && request.Content != null)
         {
-            string body = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            HttpContent oldRequestContent = request.Content;
+            string body = await oldRequestContent.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             request.Content = JevWireFormat.JsonContent(ToGeminiRequest(body, out model));
+            oldRequestContent.Dispose();
         }
 
         ArgumentNullException.ThrowIfNull(request.RequestUri);
@@ -69,26 +71,36 @@ internal sealed class GeminiDecisionsAdapterHandler : DelegatingHandler
         }.Uri;
 
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode || response.Content == null)
-        {
-            // 錯誤回應原樣交給 SDK，狀態碼照常對應到 LLMError。
-            return response;
-        }
-
-        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        string translated;
         try
         {
-            translated = isEvaluate ? ToJevResult(responseBody, model) : ToJevModelList(responseBody);
+            if (!response.IsSuccessStatusCode || response.Content == null)
+            {
+                // 錯誤回應原樣交給 SDK，狀態碼照常對應到 LLMError。
+                return response;
+            }
+
+            HttpContent oldResponseContent = response.Content;
+            string responseBody = await oldResponseContent.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            string translated;
+            try
+            {
+                translated = isEvaluate ? ToJevResult(responseBody, model) : ToJevModelList(responseBody);
+            }
+            catch (Exception ex) when (ex is JsonException || ex is InvalidOperationException)
+            {
+                // 不是預期的 JSON 物件（例如代理回的 HTML）：原樣交給 SDK，
+                // 由它擲出協議錯誤，對應到 InvalidResponse 而不是 Unknown。
+                translated = responseBody;
+            }
+            response.Content = JevWireFormat.JsonContent(translated);
+            oldResponseContent.Dispose();
+            return response;
         }
-        catch (Exception ex) when (ex is JsonException || ex is InvalidOperationException)
+        catch
         {
-            // 不是預期的 JSON 物件（例如代理回的 HTML）：原樣交給 SDK，
-            // 由它擲出協議錯誤，對應到 InvalidResponse 而不是 Unknown。
-            translated = responseBody;
+            response.Dispose();
+            throw;
         }
-        response.Content = JevWireFormat.JsonContent(translated);
-        return response;
     }
 
     internal static string ToGeminiRequest(string jevBody, out string model)

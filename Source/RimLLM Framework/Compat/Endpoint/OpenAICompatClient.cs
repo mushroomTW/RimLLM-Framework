@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using RimLLM_Framework.Api;
+using RimLLM_Framework.Core;
 using RimLLM_Framework.Manager;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
@@ -31,7 +32,8 @@ internal sealed class OpenAICompatClient
     private readonly string _packageId;
     private readonly int _defaultMaxOutputTokens;
     private readonly float? _defaultTemperature;
-    private IChatClient? _chat;
+    private readonly Lock _chatLock = new();
+    private volatile IChatClient? _chat;
 
     public OpenAICompatClient(string packageId, int defaultMaxOutputTokens, float? defaultTemperature)
     {
@@ -47,7 +49,17 @@ internal sealed class OpenAICompatClient
         _defaultMaxOutputTokens = DefaultMaxOutputTokens;
     }
 
-    private IChatClient Chat => _chat ??= CreatePinnedChatClient(_packageId);
+    private IChatClient Chat
+    {
+        get
+        {
+            if (_chat != null) return _chat;
+            lock (_chatLock)
+            {
+                return _chat ??= CreatePinnedChatClient(_packageId);
+            }
+        }
+    }
 
     /// <summary>
     /// 把該 Mod 的請求 JSON 交給 RimLLM，回傳同協議的回應 JSON（成功或錯誤）。
@@ -77,19 +89,19 @@ internal sealed class OpenAICompatClient
         }
         catch (OperationCanceledException ex)
         {
-            return BuildErrorJson("timeout", ex.Message, chatProtocol);
+            return BuildErrorJson("timeout", RimLLMLog.SanitizeForLog(ex.Message) ?? string.Empty, chatProtocol);
         }
         catch (RimLLMException ex)
         {
-            return BuildErrorJson(MapErrorType(ex.Error), $"[RimLLM:{ex.Error}] {ex.Message}", chatProtocol);
+            return BuildErrorJson(MapErrorType(ex.Error), $"[RimLLM:{ex.Error}] {RimLLMLog.SanitizeForLog(ex.Message)}", chatProtocol);
         }
         catch (Exception ex) when (ex is JsonException || ex is FormatException)
         {
-            return BuildErrorJson("parse", ex.Message, chatProtocol);
+            return BuildErrorJson("parse", RimLLMLog.SanitizeForLog(ex.Message) ?? string.Empty, chatProtocol);
         }
         catch (Exception ex)
         {
-            return BuildErrorJson("server", ex.Message, chatProtocol);
+            return BuildErrorJson("server", RimLLMLog.SanitizeForLog(ex.Message) ?? string.Empty, chatProtocol);
         }
     }
 
@@ -426,7 +438,9 @@ internal sealed class OpenAICompatClient
             return image.GetString();
         }
 
-        return image.ValueKind == JsonValueKind.Object && image.TryGetProperty("url", out JsonElement url)
+        return image.ValueKind == JsonValueKind.Object
+            && image.TryGetProperty("url", out JsonElement url)
+            && url.ValueKind == JsonValueKind.String
             ? url.GetString()
             : null;
     }
@@ -442,7 +456,14 @@ internal sealed class OpenAICompatClient
         if (split < 0) return null;
 
         string mediaType = url.Substring(prefix.Length, split - prefix.Length);
-        return new DataContent(Convert.FromBase64String(url.Substring(split + marker.Length)), mediaType);
+        try
+        {
+            return new DataContent(Convert.FromBase64String(url.Substring(split + marker.Length)), mediaType);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new FormatException("Invalid data URL media type.", ex);
+        }
     }
 
     private static int? ReadInt(JsonElement root, string name)
@@ -454,7 +475,10 @@ internal sealed class OpenAICompatClient
 
     private static float? ReadSingle(JsonElement root, string name)
     {
-        return root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out double number)
+        return root.TryGetProperty(name, out JsonElement value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetDouble(out double number)
+            && float.IsFinite((float)number)
             ? (float)number
             : (float?)null;
     }

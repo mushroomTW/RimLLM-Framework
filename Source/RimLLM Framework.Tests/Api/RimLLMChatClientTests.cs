@@ -569,7 +569,7 @@ public class RimLLMChatClientTests
             provider.WireHandler.ResponseContentType = "text/event-stream";
             provider.WireHandler.ResponseBody = "data: {\"choices\":[{\"delta\":{\"content\":\"healed\"}}]}\n\ndata: [DONE]\n\n";
 
-            using var client = provider.CreateChatClient("gpt-4o");
+            using var client = provider.CreateChatClient("some-legacy-model");
             var options = new ChatOptions
             {
                 Reasoning = new ReasoningOptions { Effort = ReasoningEffort.Medium }
@@ -596,7 +596,7 @@ public class RimLLMChatClientTests
             }
 
             ClassicAssert.AreEqual("healed", string.Concat(chunks));
-            ClassicAssert.IsTrue(RimLLM_Framework.Providers.RimLLMReasoningSupport.IsReasoningUnsupported("OpenAI", "gpt-4o"));
+            ClassicAssert.IsTrue(RimLLM_Framework.Providers.RimLLMReasoningSupport.IsReasoningUnsupported("OpenAI", "some-legacy-model"));
         }
         finally
         {

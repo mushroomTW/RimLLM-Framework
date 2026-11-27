@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Threading;
@@ -46,7 +47,7 @@ public class RimLLMUsageTracker
     private readonly Lock _logLock = new();
     private readonly Lock _usageLock = new();
 
-    private DateTime _lastTelemetrySaveTime = DateTime.MinValue;
+    private long _lastTelemetrySaveTimestamp;
     private bool _telemetrySaveDeferred;
     private long _telemetrySaveScheduleVersion;
 
@@ -114,7 +115,15 @@ public class RimLLMUsageTracker
         public int SuccessCount => Volatile.Read(ref _successCount);
         public int FailureCount => Volatile.Read(ref _failureCount);
         public int TotalCount => SuccessCount + FailureCount;
-        public float SuccessRate => TotalCount > 0 ? (float)SuccessCount / TotalCount : 1f;
+        public float SuccessRate
+        {
+            get
+            {
+                int s = SuccessCount;
+                int t = s + FailureCount;
+                return t > 0 ? (float)s / t : 1f;
+            }
+        }
 
         public long TotalPromptTokens
         {
@@ -235,14 +244,14 @@ public class RimLLMUsageTracker
     private TelemetrySaveSchedule MarkTelemetryDirtyLocked(bool immediate)
     {
         _settings.MarkTelemetryDirty();
-        DateTime now = DateTime.UtcNow;
-        TimeSpan elapsed = _lastTelemetrySaveTime == DateTime.MinValue
+        long nowTicks = Stopwatch.GetTimestamp();
+        TimeSpan elapsed = _lastTelemetrySaveTimestamp == 0
             ? TelemetrySaveInterval
-            : now - _lastTelemetrySaveTime;
+            : Stopwatch.GetElapsedTime(_lastTelemetrySaveTimestamp, nowTicks);
 
         if (immediate || elapsed >= TelemetrySaveInterval)
         {
-            _lastTelemetrySaveTime = now;
+            _lastTelemetrySaveTimestamp = nowTicks;
             _telemetrySaveDeferred = false;
             _telemetrySaveScheduleVersion++;
             return new TelemetrySaveSchedule(queueNow: true, queueLater: false, TimeSpan.Zero, _telemetrySaveScheduleVersion);
@@ -252,7 +261,9 @@ public class RimLLMUsageTracker
         {
             _telemetrySaveDeferred = true;
             long version = ++_telemetrySaveScheduleVersion;
-            return new TelemetrySaveSchedule(queueNow: false, queueLater: true, TelemetrySaveInterval - elapsed, version);
+            TimeSpan delay = TelemetrySaveInterval - elapsed;
+            if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+            return new TelemetrySaveSchedule(queueNow: false, queueLater: true, delay, version);
         }
 
         return default;
@@ -272,21 +283,35 @@ public class RimLLMUsageTracker
 
     private async Task QueueTelemetrySaveAfterDelay(TimeSpan delay, long version)
     {
-        await Task.Delay(delay).ConfigureAwait(false);
-        bool shouldQueue;
-        lock (_logLock)
+        try
         {
-            shouldQueue = _telemetrySaveDeferred && version == _telemetrySaveScheduleVersion;
+            await Task.Delay(delay).ConfigureAwait(false);
+            bool shouldQueue;
+            lock (_logLock)
+            {
+                shouldQueue = _telemetrySaveDeferred && version == _telemetrySaveScheduleVersion;
+                if (shouldQueue)
+                {
+                    _telemetrySaveDeferred = false;
+                    _lastTelemetrySaveTimestamp = Stopwatch.GetTimestamp();
+                }
+            }
+
             if (shouldQueue)
             {
-                _telemetrySaveDeferred = false;
-                _lastTelemetrySaveTime = DateTime.UtcNow;
+                _settings.QueueTelemetrySave();
             }
         }
-
-        if (shouldQueue)
+        catch (Exception ex)
         {
-            _settings.QueueTelemetrySave();
+            lock (_logLock)
+            {
+                if (version == _telemetrySaveScheduleVersion)
+                {
+                    _telemetrySaveDeferred = false;
+                }
+            }
+            RimLLMLog.Warning($"[RimLLM] Deferred telemetry save scheduling failed: {RimLLMLog.SanitizeForLog(ex.Message, 200)}");
         }
     }
 
@@ -294,7 +319,7 @@ public class RimLLMUsageTracker
     private void SaveTelemetryNowLocked(string operation)
     {
         _settings.MarkTelemetryDirty();
-        _lastTelemetrySaveTime = DateTime.UtcNow;
+        _lastTelemetrySaveTimestamp = Stopwatch.GetTimestamp();
         _telemetrySaveDeferred = false;
         _telemetrySaveScheduleVersion++;
         try

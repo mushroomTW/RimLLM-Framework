@@ -25,7 +25,14 @@ internal static class ScAutoCompatPatch
     public static void Apply()
     {
         CompatSeedUtil.RegisterEndpoint(ScAutoCompatPatch.PackageId, OpenAICompatClient.DefaultMaxOutputTokens);
-        OnTakeoverToggled(Mod.RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ScAutoCompatPatch.PackageId) == true);
+        if (Mod.RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(ScAutoCompatPatch.PackageId) == true)
+        {
+            SeedNativeConfigCore();
+        }
+        else
+        {
+            RevertNativeConfig();
+        }
     }
 
     public static void OnTakeoverToggled(bool enabled)
@@ -85,58 +92,7 @@ internal static class ScAutoCompatPatch
     {
         try
         {
-            string? endpointUrl = LocalOpenAIEndpoint.GetBaseUrl(ScAutoCompatPatch.PackageId);
-            if (endpointUrl == null)
-            {
-                Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
-                return;
-            }
-
-            Type store = AccessTools.TypeByName(Namespace + "ApiConfigurationStore");
-            MethodInfo? load = store == null ? null : AccessTools.Method(store, "LoadForEditing");
-            MethodInfo? save = load == null ? null : AccessTools.Method(store, "Save", [load.ReturnType, typeof(string), typeof(bool)]);
-            if (load == null || save == null)
-            {
-                Log.Warning("[RimLLM] Compat: ApiConfigurationStore.Save was not found (Simplified Chinese Automation: One may have changed); its settings were not pre-filled.");
-                return;
-            }
-
-            // LoadForEditing 在沒有設定檔時會回傳帶 OpenAI 預設位址的草稿，不能拿它判斷「玩家設定過」；
-            // 改用會擲錯的 Load()：能載入且位址不是框架自己寫的，才代表玩家有自己的設定。
-            bool refreshingOwnConfig = false;
-            MethodInfo strictLoad = AccessTools.Method(store, "Load", Type.EmptyTypes);
-            if (strictLoad != null)
-            {
-                try
-                {
-                    object? existing = strictLoad.Invoke(null, parameters: null);
-                    string? existingUrl = existing == null ? null : (string?)AccessTools.Property(existing.GetType(), "BaseUrl").GetValue(existing);
-                    if (!string.IsNullOrWhiteSpace(existingUrl) && !LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, ScAutoCompatPatch.PackageId))
-                    {
-                        CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
-                        return;
-                    }
-                    refreshingOwnConfig = !string.IsNullOrWhiteSpace(existingUrl);
-                }
-                catch (TargetInvocationException)
-                {
-                    // 設定檔不存在或無效：視為尚未設定。
-                }
-            }
-
-            object config = load.Invoke(null, parameters: null) ?? throw new InvalidOperationException("ApiConfigurationStore.LoadForEditing 沒有回傳設定。");
-            Type configType = config.GetType();
-
-            AccessTools.Property(configType, "BaseUrl").SetValue(config, endpointUrl);
-            // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
-            AccessTools.Property(configType, "Model").SetValue(config, CompatSeedUtil.ModelLabel(ScAutoCompatPatch.PackageId));
-            if (!refreshingOwnConfig)
-            {
-                // 首次寫入才給預設協議；之後只更新埠號與模型名，不覆蓋玩家在設定頁改過的協議。
-                AccessTools.Property(configType, "Protocol").SetValue(config, "responses");
-            }
-            save.Invoke(null, [config, string.Empty, false]);
-            RefreshNativeSettingsDraft(load);
+            SeedNativeConfigCore();
         }
         catch (Exception ex)
         {
@@ -144,12 +100,64 @@ internal static class ScAutoCompatPatch
         }
     }
 
+    private static void SeedNativeConfigCore()
+    {
+        string endpointUrl = LocalOpenAIEndpoint.GetBaseUrl(ScAutoCompatPatch.PackageId)
+            ?? throw new InvalidOperationException($"The local endpoint is not available for {DisplayName}.");
+
+        Type store = AccessTools.TypeByName(Namespace + "ApiConfigurationStore")
+            ?? throw new InvalidOperationException("ApiConfigurationStore type was not found.");
+        MethodInfo? load = AccessTools.Method(store, "LoadForEditing");
+        MethodInfo? save = load == null ? null : AccessTools.Method(store, "Save", [load.ReturnType, typeof(string), typeof(bool)]);
+        if (load == null || save == null)
+        {
+            throw new InvalidOperationException("ApiConfigurationStore.Save was not found (Simplified Chinese Automation: One may have changed).");
+        }
+
+        // LoadForEditing 在沒有設定檔時會回傳帶 OpenAI 預設位址的草稿，不能拿它判斷「玩家設定過」；
+        // 改用會擲錯的 Load()：能載入且位址不是框架自己寫的，才代表玩家有自己的設定。
+        bool refreshingOwnConfig = false;
+        MethodInfo? strictLoad = AccessTools.Method(store, "Load", Type.EmptyTypes);
+        if (strictLoad != null)
+        {
+            try
+            {
+                object? existing = strictLoad.Invoke(null, parameters: null);
+                string? existingUrl = existing == null ? null : CompatSeedUtil.GetMember(existing, "BaseUrl") as string;
+                if (!string.IsNullOrWhiteSpace(existingUrl) && !LocalOpenAIEndpoint.IsOwnBaseUrl(existingUrl, ScAutoCompatPatch.PackageId))
+                {
+                    CompatSeedUtil.WarnKeptNativeConfig(DisplayName);
+                    return;
+                }
+                refreshingOwnConfig = !string.IsNullOrWhiteSpace(existingUrl);
+            }
+            catch (TargetInvocationException)
+            {
+                // 設定檔不存在或無效：視為尚未設定。
+            }
+        }
+
+        object config = load.Invoke(null, parameters: null) ?? throw new InvalidOperationException("ApiConfigurationStore.LoadForEditing returned null.");
+
+        CompatSeedUtil.SetMember(config, "BaseUrl", endpointUrl);
+        // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
+        CompatSeedUtil.SetMember(config, "Model", CompatSeedUtil.ModelLabel(ScAutoCompatPatch.PackageId));
+        if (!refreshingOwnConfig)
+        {
+            // 首次寫入才給預設協議；之後只更新埠號與模型名，不覆蓋玩家在設定頁改過的協議。
+            CompatSeedUtil.SetMember(config, "Protocol", "responses");
+        }
+        save.Invoke(null, [config, string.Empty, false]);
+        RefreshNativeSettingsDraft(load);
+    }
+
     /// <summary>
     /// One 在建構時就把設定檔讀進私有欄位 <c>apiDraft</c> 當作設定頁的草稿，之後不會重讀。
     /// 我們晚於它才寫入檔案，所以要把草稿換成剛寫好的內容，設定頁才看得到。
     /// </summary>
-    private static void RefreshNativeSettingsDraft(MethodInfo loadForEditing)
+    private static void RefreshNativeSettingsDraft(MethodInfo? loadForEditing)
     {
+        if (loadForEditing == null) return;
         Type mod = AccessTools.TypeByName("RimTranslation.Core.RimTranslationMod");
         object? instance = mod == null ? null : AccessTools.Property(mod, "Instance")?.GetValue(null);
         FieldInfo? draft = mod == null ? null : AccessTools.Field(mod, "apiDraft");

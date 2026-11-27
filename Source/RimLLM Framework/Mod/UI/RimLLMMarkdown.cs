@@ -119,16 +119,16 @@ public static class RimLLMMarkdown
         var spans = new List<(int, int)>();
         if (markdown.IndexOf('|', StringComparison.Ordinal) < 0) return spans;
 
-        CollectTableSpans(Markdown.Parse(markdown, Pipeline), spans);
+        CollectTableSpans(Markdown.Parse(markdown, Pipeline), spans, markdown.Length);
         return spans;
     }
 
-    private static void CollectTableSpans(ContainerBlock container, List<(int Start, int End)> spans)
+    private static void CollectTableSpans(ContainerBlock container, List<(int Start, int End)> spans, int sourceLength)
     {
         foreach (Block block in container)
         {
-            if (block is Table table) spans.Add((table.Span.Start, table.Span.End));
-            if (block is ContainerBlock child) CollectTableSpans(child, spans);
+            if (block is Table table) spans.Add((table.Span.Start, Math.Min(sourceLength, table.Span.End + 1)));
+            if (block is ContainerBlock child) CollectTableSpans(child, spans, sourceLength);
         }
     }
 
@@ -199,17 +199,24 @@ public static class RimLLMMarkdown
         if (markdown == null) return null;
         if (markdown.Length == 0) return string.Empty;
 
-        string sanitized = SanitizeUnityTags(markdown, preserveTrustedColorWrapper: true);
-        string preprocessed = PreprocessMarkdown(sanitized, CollectTableSpans(sanitized)) ?? string.Empty;
-        MarkdownDocument document = Markdown.Parse(preprocessed, Pipeline);
-        var sb = new StringBuilder(preprocessed.Length + 64);
-        var renderer = new UnityRichTextRenderer(sb, preprocessed);
-        renderer.Render(document);
+        try
+        {
+            string sanitized = SanitizeUnityTags(markdown, preserveTrustedColorWrapper: true);
+            string preprocessed = PreprocessMarkdown(sanitized, CollectTableSpans(sanitized)) ?? string.Empty;
+            MarkdownDocument document = Markdown.Parse(preprocessed, Pipeline);
+            var sb = new StringBuilder(preprocessed.Length + 64);
+            var renderer = new UnityRichTextRenderer(sb, preprocessed);
+            renderer.Render(document);
 
-        return sb.ToString()
-            .Replace(BoldOpenMarker, "<b>", StringComparison.Ordinal)
-            .Replace(BoldCloseMarker, "</b>", StringComparison.Ordinal)
-            .TrimEnd('\r', '\n');
+            return sb.ToString()
+                .Replace(BoldOpenMarker, "<b>", StringComparison.Ordinal)
+                .Replace(BoldCloseMarker, "</b>", StringComparison.Ordinal)
+                .TrimEnd('\r', '\n');
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return markdown.Replace('<', '＜').Replace('>', '＞').TrimEnd('\r', '\n');
+        }
     }
 
     /// <summary>
@@ -222,8 +229,16 @@ public static class RimLLMMarkdown
     {
         if (string.IsNullOrEmpty(cellMarkdown)) return cellMarkdown ?? string.Empty;
         string raw = cellMarkdown.Trim().Replace("\\|", "|", StringComparison.Ordinal);
-        string escaped = CellLineBreak.Replace(raw.Replace('<', '＜').Replace('>', '＞'), m => m.Value[0] == '`' ? m.Value : "\n");
-        return RenderCellInlines(escaped);
+        string fallback = raw.Replace('<', '＜').Replace('>', '＞');
+        try
+        {
+            string escaped = CellLineBreak.Replace(fallback, m => m.Value[0] == '`' ? m.Value : "\n");
+            return RenderCellInlines(escaped);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return fallback;
+        }
     }
 
     /// <summary>格子裡的 &lt;br&gt;（已轉全形）；行內碼排在前面先吃掉，其內容不換行。</summary>
@@ -446,7 +461,8 @@ public static class RimLLMMarkdown
         private void RenderTableAsCode(Table table)
         {
             int lineStart = TableLineStart(table);
-            string raw = _source.Substring(lineStart, table.Span.End - lineStart).Replace("\r\n", "\n", StringComparison.Ordinal);
+            int end = Math.Min(_source.Length, table.Span.End + 1);
+            string raw = _source.Substring(lineStart, end - lineStart).Replace("\r\n", "\n", StringComparison.Ordinal);
             string[] lines = raw.Split('\n');
 
             _sb.Append(ColorTagOpen).Append(CodeColor).Append('>');

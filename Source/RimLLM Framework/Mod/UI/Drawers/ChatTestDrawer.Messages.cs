@@ -143,15 +143,23 @@ public static partial class ChatTestDrawer
 
         // 不在此記錄完整模型輸出：未經 SanitizeForLog、未截斷，且每個 chunk 都會重複輸出整段累積內容，會使 PII 或金鑰長期留存於 Player.log。
 
-        string result = ClosedThoughtTag.Replace(text, m => WrapClosedThought(m.Groups["body"].Value));
-
-        var matchUnclosedXml = UnclosedThoughtTag.Match(result);
-        if (matchUnclosedXml.Success)
+        string result;
+        try
         {
-            result = WrapTrailingThought(result, matchUnclosedXml.Index, matchUnclosedXml.Length);
-        }
+            result = ClosedThoughtTag.Replace(text, m => WrapClosedThought(m.Groups["body"].Value));
 
-        result = ThoughtFence.Replace(result, m => WrapClosedThought(m.Groups["body"].Value));
+            var matchUnclosedXml = UnclosedThoughtTag.Match(result);
+            if (matchUnclosedXml.Success)
+            {
+                result = WrapTrailingThought(result, matchUnclosedXml.Index, matchUnclosedXml.Length);
+            }
+
+            result = ThoughtFence.Replace(result, m => WrapClosedThought(m.Groups["body"].Value));
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return text.Trim();
+        }
 
         int markdownMarker = result.IndexOf(MarkdownThoughtMarker, StringComparison.Ordinal);
         if (markdownMarker >= 0)
@@ -289,9 +297,16 @@ public static partial class ChatTestDrawer
     {
         if (string.IsNullOrEmpty(text)) return text;
         var timeout = TimeSpan.FromSeconds(1);
-        string cleaned = Regex.Replace(text, @"<!--rimllm-meta:[\s\S]*?-->", "", RegexOptions.IgnoreCase, timeout);
-        cleaned = Regex.Replace(cleaned, @"</?(?:b|i|size|color|material|quad)(?:=[^>]*)?>", "", RegexOptions.IgnoreCase, timeout);
-        return Regex.Replace(cleaned, @"＜(?<tag>/?(?:b|i|size|color|material|quad)(?:=[^＞]*)?)＞", "<${tag}>", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture, timeout);
+        try
+        {
+            string cleaned = Regex.Replace(text, @"<!--rimllm-meta:[\s\S]*?-->", "", RegexOptions.IgnoreCase, timeout);
+            cleaned = Regex.Replace(cleaned, @"</?(?:b|i|size|color|material|quad)(?:=[^>]*)?>", "", RegexOptions.IgnoreCase, timeout);
+            return Regex.Replace(cleaned, @"＜(?<tag>/?(?:b|i|size|color|material|quad)(?:=[^＞]*)?)＞", "<${tag}>", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture, timeout);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return text;
+        }
     }
 
     [GeneratedRegex(@"```thought(?<body>[\s\S]*?)```", RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]

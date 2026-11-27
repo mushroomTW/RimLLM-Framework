@@ -55,6 +55,9 @@ public class RimLLMException : Exception
     /// </summary>
     public bool IsBalanceExhausted { get; set; }
 
+    /// <summary>未截斷的原始錯誤偵測文字，供轉接層在顯示訊息被截斷至 300 字元後仍能做恢復判斷。</summary>
+    internal string? RawDetectionText { get; set; }
+
     /// <summary>
     /// 使用指定的錯誤代碼與訊息初始化 <see cref="RimLLMException"/> 類別的新執行個體。
     /// </summary>

@@ -99,14 +99,12 @@ public static class RimLLMClientExtensions
         CancellationToken cancellationToken)
     {
         ChatOptions effective = (options ?? new RimLLMChatOptions()).Clone();
-        string schemaJson = RimLLMSchemaBuilder.BuildJson(typeof(T));
-        using (JsonDocument document = JsonDocument.Parse(schemaJson))
-        {
-            effective.ResponseFormat = ChatResponseFormat.ForJsonSchema(
-                document.RootElement.Clone(),
-                "custom_type",
-                "RimLLM structured response");
-        }
+        RimLLMSchemaResult schema = RimLLMSchemaBuilder.Build(typeof(T));
+        effective.ResponseFormat = ChatResponseFormat.ForJsonSchema(
+            schema.Element,
+            "custom_type",
+            "RimLLM structured response");
+        (effective.AdditionalProperties ??= [])["strict"] = schema.StrictCompatible;
 
         ChatResponse response = await client
             .GetResponseAsync(messages, effective, cancellationToken)

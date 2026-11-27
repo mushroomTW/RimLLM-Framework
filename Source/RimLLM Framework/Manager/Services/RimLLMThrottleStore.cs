@@ -102,6 +102,12 @@ internal sealed class RimLLMThrottleStore
         if (_requestTimestamps.Count >= MaxTrackedModIds)
         {
             PruneExpired(now);
+            if (_requestTimestamps.Count >= MaxTrackedModIds && !_requestTimestamps.ContainsKey(modId))
+            {
+                throw new RimLLMException(
+                    LLMError.RateLimit,
+                    "[RimLLM] Too many distinct caller modIds active in the current throttling window.");
+            }
         }
 
         var list = _requestTimestamps.GetOrAdd(modId, _ => []);
@@ -138,7 +144,7 @@ internal sealed class RimLLMThrottleStore
                 entry.Value.RemoveAll(t => t < limit);
                 if (entry.Value.Count == 0)
                 {
-                    _requestTimestamps.TryRemove(entry.Key, out _);
+                    _requestTimestamps.TryRemove(entry);
                 }
             }
         }

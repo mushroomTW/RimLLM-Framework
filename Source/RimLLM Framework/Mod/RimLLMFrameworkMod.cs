@@ -40,7 +40,7 @@ public class RimLLMFrameworkMod : Verse.Mod
 
         _ = ModelsDevCatalog.GetAllAsync(Settings.ApiTimeout);
 
-        Log.Message("[RimLLM] RimLLM Framework loaded.");
+        RimLLMLog.Message("[RimLLM] RimLLM Framework loaded.");
     }
 
     private static void RegisterShutdownFlush()
@@ -51,6 +51,7 @@ public class RimLLMFrameworkMod : Verse.Mod
 
     private static void FlushTelemetryQuietly()
     {
+        Compat.LocalOpenAIEndpoint.Stop();
         try
         {
             Settings?.FlushTelemetryIfDirty();
@@ -72,5 +73,11 @@ public class RimLLMFrameworkMod : Verse.Mod
         base.DoSettingsWindowContents(inRect);
 
         RimLLMSettingsUI.DoSettingsWindowContents(inRect);
+    }
+
+    public override void WriteSettings()
+    {
+        base.WriteSettings();
+        ChatTestDrawer.CancelActiveChatRequest();
     }
 }

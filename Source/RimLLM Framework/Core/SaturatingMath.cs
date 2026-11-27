@@ -7,6 +7,8 @@ internal static class SaturatingMath
 {
     internal static long Add(long left, long right)
     {
-        return right > 0 && left > long.MaxValue - right ? long.MaxValue : left + right;
+        if (right > 0 && left > long.MaxValue - right) return long.MaxValue;
+        if (right < 0 && left < long.MinValue - right) return long.MinValue;
+        return left + right;
     }
 }

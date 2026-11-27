@@ -10,7 +10,6 @@ namespace RimLLM_Framework.Mod;
 /// </summary>
 public static class RimLLMUIStyle
 {
-    /// <summary>選中項目的底色。</summary>
     /// <summary>設定畫面的金色強調：選中項、段落標題；RimAgent 設定頁直接引用同一組色票。</summary>
     public static readonly Color Gold = new(0.94f, 0.78f, 0.45f);
     public static readonly Color SelectedFill = new(0.94f, 0.78f, 0.45f, 0.16f);
@@ -397,6 +396,7 @@ public static class RimLLMUIStyle
             StatusDotSize, StatusDotSize);
         Rect titleRect = new(dotRect.xMax + 8f, rowRect.y, badgeRect.x - dotRect.xMax - 16f, rowRect.height);
 
+        Color oldColor = GUI.color;
         GUI.color = tint;
         Widgets.DrawBoxSolid(dotRect, statusColor * tint);
         using (With(TextAnchor.MiddleLeft, GameFont.Small, wordWrap: false))
@@ -408,7 +408,7 @@ public static class RimLLMUIStyle
             GUI.color = statusColor * tint;
             Widgets.Label(badgeRect, badge);
         }
-        GUI.color = Color.white;
+        GUI.color = oldColor;
         return hovered;
     }
 
@@ -430,11 +430,21 @@ public static class RimLLMUIStyle
         }
     }
 
+    private static bool _pendingSave;
+
     /// <summary>
-    /// 判斷當前 OnGUI 事件是否適合寫入設定至磁碟（僅在滑鼠放開或無事件時觸發，避免每幀 60 FPS 重複寫入）。
+    /// 判斷當前 OnGUI 事件是否適合寫入設定至磁碟（跨拖曳事件累計變更，於滑鼠放開或無事件時觸發）。
     /// </summary>
     public static bool ShouldSaveSettings(bool changed)
     {
-        return changed && (Event.current == null || Event.current.type == EventType.MouseUp || Event.current.rawType == EventType.MouseUp);
+        if (changed) _pendingSave = true;
+        if (!_pendingSave) return false;
+
+        if (Event.current == null || Event.current.type == EventType.MouseUp || Event.current.rawType == EventType.MouseUp)
+        {
+            _pendingSave = false;
+            return true;
+        }
+        return false;
     }
 }

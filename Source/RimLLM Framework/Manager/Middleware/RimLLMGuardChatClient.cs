@@ -54,9 +54,10 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
         List<ChatMessage> bufferedMessages = [.. messages];
 
         // 防濫用檢查維持在取得列舉器時執行。預算 reservation 延到第一次列舉，
-        // 避免呼叫端建立串流後從未列舉，永久占住每日額度。
+        // 避免呼叫端建立串流後從未列舉，永久占住每日額度；若重複列舉則重跑防濫用檢查。
         Guard(bufferedMessages);
-        return StreamWithBudgetReservationAsync(bufferedMessages, options, cancellationToken);
+        int[] guardConsumed = [0];
+        return StreamWithBudgetReservationAsync(bufferedMessages, options, guardConsumed, cancellationToken);
     }
 
     private void Guard(IEnumerable<ChatMessage> messages)
@@ -93,9 +94,15 @@ internal sealed class RimLLMGuardChatClient : DelegatingChatClient
     private async IAsyncEnumerable<ChatResponseUpdate> StreamWithBudgetReservationAsync(
         List<ChatMessage> messages,
         ChatOptions? options,
+        int[] guardConsumed,
         CancellationToken cancellationToken,
         [EnumeratorCancellation] CancellationToken enumerationCancellationToken = default)
     {
+        if (Interlocked.Exchange(ref guardConsumed[0], 1) != 0)
+        {
+            Guard(messages);
+        }
+
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, enumerationCancellationToken);
         using RimLLMUsageTracker.BudgetReservation reservation = ReserveBudget(messages, options);
         await foreach (ChatResponseUpdate update in base.GetStreamingResponseAsync(messages, options, linkedCts.Token)

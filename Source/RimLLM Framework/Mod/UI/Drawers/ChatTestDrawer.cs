@@ -48,7 +48,7 @@ public static partial class ChatTestDrawer
         return !string.IsNullOrEmpty(rawInput) && rawInput.Trim().Length > 0;
     }
 
-    private static void CancelActiveChatRequest()
+    internal static void CancelActiveChatRequest()
     {
         Interlocked.Increment(ref chatRequestGeneration);
         var cts = chatCts;
@@ -173,7 +173,7 @@ public static partial class ChatTestDrawer
         {
             using (RimLLMUIStyle.With(TextAnchor.MiddleCenter))
             {
-                Widgets.Label(new Rect(0f, 0f, chatContentWidth, 480f), "<color=grey>（目前尚無對話記錄，請在下方輸入測試訊息）</color>");
+                Widgets.Label(new Rect(0f, 0f, chatContentWidth, 480f), "<color=grey>" + "RimLLM_ChatEmptyHint".Translate() + "</color>");
             }
         }
         else
@@ -290,7 +290,7 @@ public static partial class ChatTestDrawer
             CancelActiveChatRequest();
             chatHistory.Clear();
             Settings.ClearChatHistory();
-            Settings.SaveTelemetry();
+            Settings.QueueTelemetrySave();
             chatInput = "";
         }
     }

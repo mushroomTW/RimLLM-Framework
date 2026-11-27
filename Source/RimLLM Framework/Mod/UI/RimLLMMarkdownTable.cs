@@ -62,9 +62,10 @@ public sealed class RimLLMMarkdownTable
         {
             if (block is not Table table || StartsIndented(source, table.Span.Start)) continue;
             int start = LineStart(source, table.Span.Start);
+            int end = Math.Min(source.Length, table.Span.End + 1);
             AddText(segments, source.Substring(cursor, start - cursor));
-            segments.Add(new RimLLMMarkdownSegment(source.Substring(start, table.Span.End + 1 - start), Rows(table, source)));
-            cursor = Math.Min(source.Length, table.Span.End + 1);
+            segments.Add(new RimLLMMarkdownSegment(source.Substring(start, end - start), Rows(table, source)));
+            cursor = end;
         }
         AddText(segments, source.Substring(cursor));
         return segments;
@@ -119,13 +120,15 @@ public sealed class RimLLMMarkdownTable
     public static float[] FitColumns(float[] natural, float width)
     {
         var widths = new float[natural.Length];
-        if (natural.Sum() <= width)
+        if (natural.Length == 0) return widths;
+        float clampedWidth = Math.Max(0f, width);
+        if (natural.Sum() <= clampedWidth)
         {
             Array.Copy(natural, widths, natural.Length);
             return widths;
         }
         var open = new List<int>(Enumerable.Range(0, natural.Length));
-        float remaining = width;
+        float remaining = clampedWidth;
         bool settled = false;
         while (!settled && open.Count > 0)
         {
@@ -139,7 +142,8 @@ public sealed class RimLLMMarkdownTable
                 settled = false;
             }
         }
-        foreach (int c in open) widths[c] = Mathf.Floor(remaining / open.Count);
+        float fallbackWidth = open.Count > 0 ? Mathf.Max(1f, Mathf.Floor(remaining / open.Count)) : 1f;
+        foreach (int c in open) widths[c] = fallbackWidth;
         return widths;
     }
 
@@ -155,7 +159,9 @@ public sealed class RimLLMMarkdownTable
             float x = rect.x;
             for (int c = 0; c < ColumnWidths.Length; c++)
             {
-                Widgets.Label(new Rect(x + CellPadX, y + CellPadY, ColumnWidths[c] - CellPadX * 2f, RowHeights[r] - CellPadY * 2f), Cells[r][c]);
+                float cellWidth = Mathf.Max(1f, ColumnWidths[c] - CellPadX * 2f);
+                float cellHeight = Mathf.Max(1f, RowHeights[r] - CellPadY * 2f);
+                Widgets.Label(new Rect(x + CellPadX, y + CellPadY, cellWidth, cellHeight), Cells[r][c]);
                 x += ColumnWidths[c];
             }
             y += RowHeights[r];

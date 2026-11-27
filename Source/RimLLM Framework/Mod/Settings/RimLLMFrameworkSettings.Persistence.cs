@@ -204,7 +204,7 @@ public partial class RimLLMFrameworkSettings
         }
         if (dto.ProviderModels != null)
         {
-            foreach (var kvp in dto.ProviderModels) this._providerModels[kvp.Key] = kvp.Value;
+            foreach (var kvp in dto.ProviderModels) this._providerModels[kvp.Key] = kvp.Value ?? [];
             _modelListVersion++;
         }
         if (dto.ChinaModeProviders != null)
@@ -218,7 +218,7 @@ public partial class RimLLMFrameworkSettings
         if (dto.ModelLevelOverrides != null)
         {
             _modelLevelOverrides.Clear();
-            foreach (var kvp in dto.ModelLevelOverrides) _modelLevelOverrides[kvp.Key] = kvp.Value;
+            foreach (var kvp in dto.ModelLevelOverrides) SetModelLevelOverride(kvp.Key, kvp.Value);
         }
         ApplyContextWindowsAndVision(dto);
         if (dto.ContextWindowOverrides != null)
@@ -279,21 +279,21 @@ public partial class RimLLMFrameworkSettings
 
     private void ApplyGlobalPolicies(SettingsDto dto)
     {
-        this.ApiTimeout = dto.ApiTimeout <= 0f || Math.Abs(dto.ApiTimeout - ApiTimeouts.LegacyDefaultSeconds) < 0.001f
+        this.ApiTimeout = !float.IsFinite(dto.ApiTimeout) || dto.ApiTimeout <= 0f || Math.Abs(dto.ApiTimeout - ApiTimeouts.LegacyDefaultSeconds) < 0.001f
             ? RimLLMFrameworkSettings.DefaultApiTimeout
-            : dto.ApiTimeout;
-        this.MaxRetries = dto.MaxRetries < 0 ? 3 : dto.MaxRetries;
-        this.RetryDelay = dto.RetryDelay < 0f ? 3f : dto.RetryDelay;
+            : Math.Clamp(dto.ApiTimeout, 1f, 600f);
+        this.MaxRetries = dto.MaxRetries < 0 ? 3 : Math.Min(dto.MaxRetries, 20);
+        this.RetryDelay = !float.IsFinite(dto.RetryDelay) || dto.RetryDelay < 0f ? 3f : Math.Min(dto.RetryDelay, 120f);
         this.DetailedLogging = dto.DetailedLogging;
-        this.MaxConcurrentRequests = dto.MaxConcurrentRequests <= 0 ? 2 : dto.MaxConcurrentRequests;
+        this.MaxConcurrentRequests = dto.MaxConcurrentRequests <= 0 ? 2 : Math.Min(dto.MaxConcurrentRequests, 64);
         RimLLMLog.Enabled = this.DetailedLogging;
 
         ApplyBudgetPolicies(dto);
 
         this.EnableAntiAbuse = dto.EnableAntiAbuse;
-        this.MaxRequestsPerWindow = dto.MaxRequestsPerWindow <= 0 ? 10 : dto.MaxRequestsPerWindow;
-        this.ThrottlingWindowSeconds = dto.ThrottlingWindowSeconds <= 0 ? 10 : dto.ThrottlingWindowSeconds;
-        this.CoolDownDurationSeconds = dto.CoolDownDurationSeconds < 0 ? 60 : dto.CoolDownDurationSeconds;
+        this.MaxRequestsPerWindow = dto.MaxRequestsPerWindow <= 0 ? 10 : Math.Min(dto.MaxRequestsPerWindow, 10000);
+        this.ThrottlingWindowSeconds = dto.ThrottlingWindowSeconds <= 0 ? 10 : Math.Min(dto.ThrottlingWindowSeconds, 3600);
+        this.CoolDownDurationSeconds = dto.CoolDownDurationSeconds < 0 ? 60 : Math.Min(dto.CoolDownDurationSeconds, 86400);
         this.RoutingStrategy = dto.RoutingStrategy < 0 || dto.RoutingStrategy > MaxRoutingStrategy ? 0 : dto.RoutingStrategy;
         this.EnableNativeSchema = dto.EnableNativeSchema;
         this.EnableJsonRepair = dto.EnableJsonRepair;

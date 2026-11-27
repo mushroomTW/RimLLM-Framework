@@ -240,9 +240,12 @@ internal static class ReasoningReplay
         var extras = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (FunctionCallContent call in calls)
         {
-            if (ReadExtraContent(call, origin) is { } extra) extras[call.CallId] = extra;
+            if (!string.IsNullOrEmpty(call.CallId) && ReadExtraContent(call, origin) is { } extra) extras[call.CallId] = extra;
         }
-        if (geminiSignatures && calls.Count > 0 && extras.Count == 0) extras[calls[0].CallId] = GeminiForeignCallExtraContent;
+        if (geminiSignatures && calls.Count > 0 && extras.Count == 0 && !string.IsNullOrEmpty(calls[0].CallId))
+        {
+            extras[calls[0].CallId] = GeminiForeignCallExtraContent;
+        }
         if (envelope == null && extras.Count == 0) return message;
 
         AssistantChatMessage? converted = new[] { message }.AsOpenAIChatMessages().OfType<AssistantChatMessage>().SingleOrDefault();
@@ -253,7 +256,7 @@ internal static class ReasoningReplay
         {
             if (extras.TryGetValue(call.Id, out string? extra)) call.Patch.Set("$.extra_content"u8, Encoding.UTF8.GetBytes(extra));
         }
-        return new ChatMessage(ChatRole.Assistant, message.Contents) { RawRepresentation = converted };
+        return new ChatMessage(ChatRole.Assistant, message.Contents) { AuthorName = message.AuthorName, RawRepresentation = converted };
     }
 
     private static void ApplyEnvelope(AssistantChatMessage converted, JsonObject envelope, ChatMessage message)

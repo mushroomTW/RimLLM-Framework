@@ -8,3 +8,7 @@ N:Newtonsoft.Json;schema 產生與反序列化共用 System.Text.Json 契約，�
 M:OpenAI.Responses.ResponsesClient.#ctor(System.ClientModel.ApiKeyCredential);請透過 OpenAIProvider.CreateOpenAiResponsesChatClient 建立，以確保 RetryPolicy=0 與網路逾時設定一致
 M:OpenAI.Responses.ResponsesClient.#ctor(System.ClientModel.ApiKeyCredential,OpenAI.Responses.ResponsesClientOptions);請透過 OpenAIProvider.CreateOpenAiResponsesChatClient 建立，以確保 RetryPolicy=0 與網路逾時設定一致
 M:OpenAI.Responses.ResponsesClient.#ctor(System.String);請透過 OpenAIProvider.CreateOpenAiResponsesChatClient 建立，以確保 RetryPolicy=0 與網路逾時設定一致
+M:OpenAI.OpenAIClient.#ctor(System.String);請透過 ConfigurePipeline 設定 RetryPolicy=0、網路逾時與 OpenRouter 歸屬後再建立
+M:OpenAI.OpenAIClient.#ctor(System.ClientModel.ApiKeyCredential);請透過 ConfigurePipeline 設定 RetryPolicy=0、網路逾時與 OpenRouter 歸屬後再建立
+M:OpenAI.OpenAIClient.#ctor(System.ClientModel.ApiKeyCredential,OpenAI.OpenAIClientOptions);請透過 ConfigurePipeline 設定 RetryPolicy=0、網路逾時與 OpenRouter 歸屬後再建立
+M:OpenAI.OpenAIClient.#ctor(System.ClientModel.AuthenticationTokenProvider,OpenAI.OpenAIClientOptions);請透過 ConfigurePipeline 設定 RetryPolicy=0、網路逾時與 OpenRouter 歸屬後再建立

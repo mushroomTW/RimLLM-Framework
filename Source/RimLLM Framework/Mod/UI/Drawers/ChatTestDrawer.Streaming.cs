@@ -32,17 +32,20 @@ public static partial class ChatTestDrawer
         public void RecordUsage(ChatResponseUpdate update)
         {
             if (update == null) return;
-            if (string.IsNullOrEmpty(ActualModelId) && !string.IsNullOrEmpty(update.ModelId))
+            lock (ReplyLock)
             {
-                ActualModelId = update.ModelId;
-            }
-            if (update.Contents == null) return;
-
-            foreach (var part in update.Contents)
-            {
-                if (part is UsageContent { Details: not null } usage)
+                if (string.IsNullOrEmpty(ActualModelId) && !string.IsNullOrEmpty(update.ModelId))
                 {
-                    ApplyUsageDetails(usage.Details);
+                    ActualModelId = update.ModelId;
+                }
+                if (update.Contents == null) return;
+
+                foreach (var part in update.Contents)
+                {
+                    if (part is UsageContent { Details: not null } usage)
+                    {
+                        ApplyUsageDetails(usage.Details);
+                    }
                 }
             }
         }
@@ -110,7 +113,7 @@ public static partial class ChatTestDrawer
                         LastRenderTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
                     }
                     RenderLive();
-                }, TaskScheduler.Default);
+                }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
             }
         }
 
@@ -138,6 +141,7 @@ public static partial class ChatTestDrawer
     {
         CancelActiveChatRequest();
         long requestGeneration = Interlocked.Read(ref chatRequestGeneration);
+        ReasoningEffort? reasoningEffort = chatReasoningEffort;
 
         chatHistory.Add(EntryPrefix(ChatUserPrefixKey) + userPrompt);
         chatHistory.Add(EntryPrefix(ChatAiTag));
@@ -151,12 +155,13 @@ public static partial class ChatTestDrawer
         chatCts = requestCts;
         CancellationToken requestToken = requestCts.Token;
 
-        _ = Task.Run(() => ExecuteChatStreamingAsync(userPrompt, pinnedModel, requestGeneration, aiHistoryIndex, requestCts, requestToken), CancellationToken.None);
+        _ = Task.Run(() => ExecuteChatStreamingAsync(userPrompt, pinnedModel, reasoningEffort, requestGeneration, aiHistoryIndex, requestCts, requestToken), CancellationToken.None);
     }
 
     private static async Task ExecuteChatStreamingAsync(
         string userPrompt,
         string? pinnedModel,
+        ReasoningEffort? reasoningEffort,
         long requestGeneration,
         int aiHistoryIndex,
         CancellationTokenSource requestCts,
@@ -172,7 +177,7 @@ public static partial class ChatTestDrawer
 
         try
         {
-            await StreamChatAsync(userPrompt, pinnedModel, renderState).ConfigureAwait(false);
+            await StreamChatAsync(userPrompt, pinnedModel, reasoningEffort, renderState).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (requestToken.IsCancellationRequested)
         {
@@ -190,7 +195,7 @@ public static partial class ChatTestDrawer
         }
     }
 
-    private static async Task StreamChatAsync(string userPrompt, string? pinnedModel, StreamRenderState renderState)
+    private static async Task StreamChatAsync(string userPrompt, string? pinnedModel, ReasoningEffort? reasoningEffort, StreamRenderState renderState)
     {
         using var client = RimLLMProvider.CreateChatClient(ServiceConsumerList.DebugChatModId);
         var messages = new List<ChatMessage> { new(ChatRole.User, userPrompt) };
@@ -199,7 +204,7 @@ public static partial class ChatTestDrawer
             MaxOutputTokens = 4096,
             Temperature = 0.7f,
             DisableReasoning = false,
-            Reasoning = chatReasoningEffort.HasValue ? new ReasoningOptions { Effort = chatReasoningEffort.Value } : null,
+            Reasoning = reasoningEffort.HasValue ? new ReasoningOptions { Effort = reasoningEffort.Value } : null,
             ModelId = pinnedModel,
             // 測試介面選定哪個模型就只測哪個，失敗要顯示失敗，不能被備援鏈悄悄換成別的模型。
             StrictModel = !string.IsNullOrEmpty(pinnedModel)

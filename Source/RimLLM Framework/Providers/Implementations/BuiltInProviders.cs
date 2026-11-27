@@ -33,16 +33,34 @@ public class GeminiProvider : OpenAIProvider
     /// </summary>
     internal override async Task<ModelCatalog> FetchModelCatalogAsync()
     {
-        Task<Dictionary<string, int>?> nativeTask = FetchNativeInputTokenLimitsAsync();
+        Task<(Dictionary<string, int> Windows, Dictionary<string, int> OutputLimits)?> nativeTask = FetchNativeLimitsAsync();
         ModelCatalog catalog = await base.FetchModelCatalogAsync().ConfigureAwait(false);
-        Dictionary<string, int>? windows = await nativeTask.ConfigureAwait(false);
+        var nativeLimits = await nativeTask.ConfigureAwait(false);
         // 相容端點的 /models 回傳 "models/xxx"，去掉前綴才會與 Embedding、決策模型及上限表的寫法一致
-        var models = catalog.Models.ConvertAll(name =>
-            name.StartsWith("models/", StringComparison.Ordinal) ? name.Substring("models/".Length) : name);
-        return new ModelCatalog(models, windows ?? catalog.ContextWindows);
+        var models = catalog.Models.ConvertAll(StripModelsPrefix);
+        Dictionary<string, int>? contextWindows = nativeLimits?.Windows ?? StripPrefixFromKeys(catalog.ContextWindows);
+        Dictionary<string, bool>? visionSupport = StripPrefixFromKeys(catalog.VisionSupport);
+        Dictionary<string, int>? outputLimits = nativeLimits?.OutputLimits is { Count: > 0 }
+            ? nativeLimits.Value.OutputLimits
+            : StripPrefixFromKeys(catalog.OutputLimits);
+        return new ModelCatalog(models, contextWindows, visionSupport, outputLimits);
     }
 
-    private async Task<Dictionary<string, int>?> FetchNativeInputTokenLimitsAsync()
+    private static string StripModelsPrefix(string name) =>
+        name.StartsWith("models/", StringComparison.Ordinal) ? name.Substring("models/".Length) : name;
+
+    private static Dictionary<string, TValue>? StripPrefixFromKeys<TValue>(Dictionary<string, TValue>? source)
+    {
+        if (source == null) return null;
+        var result = new Dictionary<string, TValue>(source.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in source)
+        {
+            result[StripModelsPrefix(kvp.Key)] = kvp.Value;
+        }
+        return result;
+    }
+
+    private async Task<(Dictionary<string, int> Windows, Dictionary<string, int> OutputLimits)?> FetchNativeLimitsAsync()
     {
         // 相容根位址以 /openai 結尾，去掉即為原生 API 根位址；自訂成其他代理時無從推得，略過。
         string? root = NormalizeEndpoint(Settings.GetEndpoint(ProviderId, DefaultEndpoint));
@@ -53,12 +71,13 @@ public class GeminiProvider : OpenAIProvider
 
         float timeoutSeconds = ApiTimeouts.Resolve(Settings.ApiTimeout);
         var windows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var outputLimits = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             bool isGoogle = await RimLLMEmbeddingService.ForEachGoogleNativeModelAsync(
-                root, Settings.GetActiveApiKey(ProviderId), model => ReadInputTokenLimit(model, windows), cts.Token).ConfigureAwait(false);
-            return isGoogle ? windows : null;
+                root, Settings.GetActiveApiKey(ProviderId), model => ReadNativeLimits(model, windows, outputLimits), cts.Token).ConfigureAwait(false);
+            return isGoogle ? (windows, outputLimits) : null;
         }
         catch (Exception ex)
         {
@@ -67,24 +86,39 @@ public class GeminiProvider : OpenAIProvider
         }
     }
 
-    /// <summary>把單一原生模型的 <c>inputTokenLimit</c> 寫入 <paramref name="windows"/>，名稱去掉 <c>models/</c> 前綴。</summary>
+    /// <summary>把單一原生模型的 <c>inputTokenLimit</c> 與 <c>outputTokenLimit</c> 寫入字典，名稱去掉 <c>models/</c> 前綴。</summary>
     internal static void ReadInputTokenLimit(JsonElement model, Dictionary<string, int> windows)
     {
-        const string namePrefix = "models/";
-        if (model.ValueKind == JsonValueKind.Object
-            && model.TryGetProperty("name", out JsonElement nameElement)
-            && nameElement.ValueKind == JsonValueKind.String
-            && model.TryGetProperty("inputTokenLimit", out JsonElement limit)
-            && limit.ValueKind == JsonValueKind.Number
-            && limit.TryGetInt32(out int tokens)
-            && tokens > 0)
+        ReadNativeLimits(model, windows, outputLimits: null);
+    }
+
+    private static void ReadNativeLimits(JsonElement model, Dictionary<string, int> windows, Dictionary<string, int>? outputLimits)
+    {
+        if (model.ValueKind != JsonValueKind.Object
+            || !model.TryGetProperty("name", out JsonElement nameElement)
+            || nameElement.ValueKind != JsonValueKind.String)
         {
-            string name = nameElement.GetString() ?? string.Empty;
-            if (name.StartsWith(namePrefix, StringComparison.Ordinal))
-            {
-                name = name.Substring(namePrefix.Length);
-            }
-            if (name.Length > 0) windows[name] = tokens;
+            return;
+        }
+
+        string name = StripModelsPrefix(nameElement.GetString() ?? string.Empty);
+        if (name.Length == 0) return;
+
+        if (model.TryGetProperty("inputTokenLimit", out JsonElement inputLimit)
+            && inputLimit.ValueKind == JsonValueKind.Number
+            && inputLimit.TryGetInt32(out int inputTokens)
+            && inputTokens > 0)
+        {
+            windows[name] = inputTokens;
+        }
+
+        if (outputLimits != null
+            && model.TryGetProperty("outputTokenLimit", out JsonElement outputLimit)
+            && outputLimit.ValueKind == JsonValueKind.Number
+            && outputLimit.TryGetInt32(out int outputTokens)
+            && outputTokens > 0)
+        {
+            outputLimits[name] = outputTokens;
         }
     }
 }

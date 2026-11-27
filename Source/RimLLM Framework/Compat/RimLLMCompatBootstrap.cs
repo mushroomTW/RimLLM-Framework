@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using RimLLM_Framework.Core;
 using Verse;
 
 namespace RimLLM_Framework.Compat;
@@ -49,7 +50,7 @@ internal static class RimLLMCompatBootstrap
         }
         catch (Exception ex)
         {
-            Log.Warning($"[RimLLM] Compat layer failed to initialize; third-party takeover is disabled: {ex.Message}");
+            RimLLMLog.Warning($"[RimLLM] Compat layer failed to initialize; third-party takeover is disabled: {RimLLMLog.SanitizeForLog(ex.Message)}");
         }
     }
 }

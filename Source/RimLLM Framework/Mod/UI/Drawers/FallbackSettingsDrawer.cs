@@ -77,9 +77,10 @@ public static class FallbackSettingsDrawer
     {
         if (target < 0 || target >= chain.Count)
         {
+            Color oldColor = GUI.color;
             GUI.color = Color.gray;
-            Widgets.ButtonText(rect, glyph);
-            GUI.color = Color.white;
+            Widgets.ButtonText(rect, glyph, active: false);
+            GUI.color = oldColor;
             return false;
         }
 

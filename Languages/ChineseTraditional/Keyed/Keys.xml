@@ -401,4 +401,5 @@
   <RimLLM_FallbackChainNeedsActive>備援鏈：請先啟用一個供應商，它會成為第一環。</RimLLM_FallbackChainNeedsActive>
   <RimLLM_FallbackChainEmpty>目前沒有備援：只有 {0}。選取其他供應商並加入備援鏈。</RimLLM_FallbackChainEmpty>
   <RimLLM_FallbackChainSummary>嘗試順序：{0}。其中一個失敗時改用下一個。</RimLLM_FallbackChainSummary>
+  <RimLLM_ChatEmptyHint>（目前尚無對話記錄，請在下方輸入測試訊息）</RimLLM_ChatEmptyHint>
 </LanguageData>

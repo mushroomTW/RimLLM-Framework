@@ -528,12 +528,13 @@ public static class SetupWizardDrawer
                     await FinishFetch(generation, () => FailFetch("RimLLM_SetupFail_LocalNotFound", detail: null)).ConfigureAwait(false);
                     return;
                 }
-                await FinishFetch(generation, () =>
+                bool stillCurrent = await FinishFetch(generation, () =>
                 {
                     Settings.SetEndpoint(providerId, hit.BaseUrl);
                     Settings.Write();
                     _progressKey = "RimLLM_SetupProgressFetch";
                 }).ConfigureAwait(false);
+                if (!stillCurrent) return;
             }
 
             var catalog = await manager.FetchProviderModelCatalogAsync(providerId).ConfigureAwait(false);
@@ -570,13 +571,19 @@ public static class SetupWizardDrawer
         _modelsBusy = false;
     }
 
-    /// <summary>回到主線程執行；這段期間玩家若回上一步重新抓取，就丟掉這次的結果。</summary>
-    private static Task<bool> FinishFetch(int generation, Action action)
+    /// <summary>回到主線程執行；這段期間玩家若回上一步重新抓取，就丟掉這次的結果並回傳 false。</summary>
+    private static async Task<bool> FinishFetch(int generation, Action action)
     {
-        return Finish(() =>
+        bool applied = false;
+        await Finish(() =>
         {
-            if (generation == _fetchGeneration) action();
-        });
+            if (generation == _fetchGeneration)
+            {
+                action();
+                applied = true;
+            }
+        }).ConfigureAwait(false);
+        return applied;
     }
 
     /// <summary>Embedding 金鑰留空時服務會沿用對話金鑰，所以第二步貼的金鑰就能抓清單。</summary>
@@ -653,9 +660,10 @@ public static class SetupWizardDrawer
         Rect btn = new(row.x, row.y, 220f, row.height);
         if (_busy)
         {
+            Color oldColor = GUI.color;
             GUI.color = RimLLMUIStyle.Muted;
             Widgets.ButtonText(btn, "RimLLM_SetupTestingBtn".Translate(), active: false);
-            GUI.color = Color.white;
+            GUI.color = oldColor;
             using (RimLLMUIStyle.With(TextAnchor.MiddleLeft))
             {
                 Widgets.Label(new Rect(btn.xMax + 12f, row.y, row.width - btn.width - 12f, row.height), _progressKey.Translate());
@@ -886,8 +894,12 @@ public static class SetupWizardDrawer
                     _embeddingOutcome = Outcome.Success;
                     return;
                 }
-                Settings.EmbeddingProvider = previous;
-                Settings.Write();
+                // 測試期間玩家可能已到 Embedding 頁改選別家；只有設定仍是這裡開的那一家才還原。
+                if (Settings.EmbeddingProvider == embeddingProviderId)
+                {
+                    Settings.EmbeddingProvider = previous;
+                    Settings.Write();
+                }
                 _embeddingOutcome = Outcome.Failed;
                 _embeddingFailDetail = error;
             });
@@ -898,9 +910,10 @@ public static class SetupWizardDrawer
     {
         Rect box = listing.GetRect(76f);
         Widgets.DrawBoxSolid(box, new Color(tint.r, tint.g, tint.b, 0.12f));
+        Color oldColor = GUI.color;
         GUI.color = tint;
         Widgets.DrawBox(box, 2);
-        GUI.color = Color.white;
+        GUI.color = oldColor;
 
         Rect text = new(box.x + 12f, box.y + 8f, box.width - 200f, box.height - 16f);
         using (RimLLMUIStyle.With(TextAnchor.UpperLeft, GameFont.Medium))
@@ -992,6 +1005,9 @@ public static class SetupWizardDrawer
             catch (Exception ex)
             {
                 _busy = false;
+                _modelsBusy = false;
+                _embeddingListBusy = false;
+                _decisionListBusy = false;
                 tcs.SetException(ex);
             }
         });
@@ -1021,9 +1037,10 @@ public static class SetupWizardDrawer
 
         if (nextLabel == null) return;
         Rect next = new(row.xMax - 200f, row.y, 200f, row.height);
+        Color oldColor = GUI.color;
         if (!canNext) GUI.color = RimLLMUIStyle.Muted;
         bool clicked = Widgets.ButtonText(next, nextLabel, active: canNext);
-        GUI.color = Color.white;
+        GUI.color = oldColor;
         if (clicked && canNext) onNext?.Invoke();
     }
 }

@@ -28,8 +28,10 @@ public class OpenAICompatibleProvider : OpenAIProvider
     {
         base.BuildChatOptions(requestOptions, model, options);
 
-        int maxTokens = requestOptions?.MaxOutputTokens ?? 1024;
-        bool useMaxTokens = !RimLLMReasoningSupport.IsMaxTokensUnsupported(ProviderId, model);
+        int maxTokens = requestOptions?.MaxOutputTokens ?? 0;
+        bool useMaxTokens = maxTokens > 0 &&
+                            !IsOpenAiReasoningModel(model) &&
+                            !RimLLMReasoningSupport.IsMaxTokensUnsupported(ProviderId, model);
 
         // 串接而非覆寫基底類別的 factory：直接覆寫會把思考參數的 Patch 一併丟掉。
         options.RawRepresentationFactory = OpenAIPatchExtensions.ChainPatch(

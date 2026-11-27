@@ -117,9 +117,9 @@ public static class RimLLMProvider
     /// </summary>
     /// <param name="modelId">格式 "ProviderId:ModelName"，同 ChatOptions.ModelId。</param>
     /// <returns>上限不明、或 <paramref name="modelId"/> 不是明確的 "ProviderId:ModelName" 時回傳 null。</returns>
-    public static int? GetContextWindow(string modelId)
+    public static int? GetContextWindow([AllowNull] string modelId)
     {
-        return Manager.GetContextWindow(modelId);
+        return modelId == null ? null : Manager.GetContextWindow(modelId);
     }
 
     /// <summary>
@@ -131,9 +131,9 @@ public static class RimLLMProvider
     /// true／false 表示已知支援／不支援；資料不明、或 <paramref name="modelId"/> 不是明確的
     /// "ProviderId:ModelName" 時回傳 null，呼叫端應退回玩家的手動設定。
     /// </returns>
-    public static bool? SupportsVision(string modelId)
+    public static bool? SupportsVision([AllowNull] string modelId)
     {
-        return Manager.SupportsVision(modelId);
+        return modelId == null ? null : Manager.SupportsVision(modelId);
     }
 
     /// <summary>
@@ -142,9 +142,9 @@ public static class RimLLMProvider
     /// </summary>
     /// <param name="modelId">格式 "ProviderId:ModelName"，同 ChatOptions.ModelId。</param>
     /// <returns>資料不明、或 <paramref name="modelId"/> 不是明確的 "ProviderId:ModelName" 時回傳 null。</returns>
-    public static int? GetMaxOutputTokens(string modelId)
+    public static int? GetMaxOutputTokens(string? modelId)
     {
-        return Manager.GetMaxOutputTokens(modelId);
+        return modelId == null ? null : Manager.GetMaxOutputTokens(modelId);
     }
 
     /// <summary>

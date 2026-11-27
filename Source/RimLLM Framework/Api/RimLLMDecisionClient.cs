@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -42,6 +43,9 @@ public sealed class RimLLMDecisionClient
         string? model = null,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(state)) throw new ArgumentNullException(nameof(state));
+        ArgumentNullException.ThrowIfNull(plan);
+
         _manager.UsageTracker.RecordCaller(_modId);
         _manager.CheckAntiAbuseForMod(_modId);
         RimLLMAppAttribution.Current = _attribution;
@@ -65,16 +69,19 @@ public sealed class RimLLMDecisionClient
     public async Task<QuestionSetResult> EvaluateWithProviderAsync(
         string state,
         QuestionSet plan,
-        string providerId,
+        [AllowNull] string providerId,
         string? model = null,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(state)) throw new ArgumentNullException(nameof(state));
+        ArgumentNullException.ThrowIfNull(plan);
+
         _manager.UsageTracker.RecordCaller(_modId);
         _manager.CheckAntiAbuseForMod(_modId);
         RimLLMAppAttribution.Current = _attribution;
         using RimLLMUsageTracker.BudgetReservation reservation = ReserveBudget(state, plan);
         DecisionEvaluation evaluation = await _manager.DecisionService
-            .EvaluateWithProviderDetailedAsync(state, plan, providerId, model, cancellationToken)
+            .EvaluateWithProviderDetailedAsync(state, plan, providerId ?? string.Empty, model, cancellationToken)
             .ConfigureAwait(false);
 
         return RecordUsage(evaluation, reservation);
@@ -87,7 +94,7 @@ public sealed class RimLLMDecisionClient
     /// </summary>
     #pragma warning disable VSTHRD202 // 保留 async：AsyncLocal 歸屬不可漏給呼叫端，濫用檢查的例外也要放進 Task。
     public async Task<IReadOnlyList<string>> FetchModelsAsync(
-        string providerId,
+        [AllowNull] string providerId,
         CancellationToken cancellationToken = default)
     {
         _manager.UsageTracker.RecordCaller(_modId);
@@ -95,7 +102,7 @@ public sealed class RimLLMDecisionClient
         RimLLMAppAttribution.Current = _attribution;
 
         return await _manager.DecisionService
-            .FetchDecisionModelsAsync(providerId, cancellationToken)
+            .FetchDecisionModelsAsync(providerId ?? string.Empty, cancellationToken)
             .ConfigureAwait(false);
     }
     #pragma warning restore VSTHRD202

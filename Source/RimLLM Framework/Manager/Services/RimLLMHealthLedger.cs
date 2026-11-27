@@ -24,6 +24,8 @@ public class RimLLMHealthLedger
 
     private const int MaxCircuitBackoffSteps = 4;
 
+    private const int MaxLedgerEntries = 2048;
+
     /// <summary>
     /// 未達熔斷門檻時的短暫冷卻秒數。
     /// 呼叫端已把「一次請求的所有重試」合併成一次失敗記錄，所以這裡的一次失敗
@@ -52,7 +54,8 @@ public class RimLLMHealthLedger
     {
         if (string.IsNullOrEmpty(target)) return;
 
-        var record = _ledger.GetOrAdd(target, _ => new ProviderHealthRecord());
+        ProviderHealthRecord? record = GetOrAddBounded(target);
+        if (record == null) return;
         lock (_lock)
         {
             record.ContinuousFailures = 0;
@@ -79,7 +82,8 @@ public class RimLLMHealthLedger
     {
         if (string.IsNullOrEmpty(target) || !isRetryable) return;
 
-        var record = _ledger.GetOrAdd(target, _ => new ProviderHealthRecord());
+        ProviderHealthRecord? record = GetOrAddBounded(target);
+        if (record == null) return;
         lock (_lock)
         {
             record.ContinuousFailures++;
@@ -167,6 +171,19 @@ public class RimLLMHealthLedger
             }
         }
         return 0f;
+    }
+
+    private ProviderHealthRecord? GetOrAddBounded(string target)
+    {
+        if (_ledger.TryGetValue(target, out ProviderHealthRecord? existing))
+        {
+            return existing;
+        }
+        if (_ledger.Count >= MaxLedgerEntries)
+        {
+            return null;
+        }
+        return _ledger.GetOrAdd(target, _ => new ProviderHealthRecord());
     }
 
     /// <summary>

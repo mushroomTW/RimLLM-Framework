@@ -177,9 +177,10 @@ public static class RimLLMSettingsUI
         string arrow = expanded ? "▼" : "▶";
         using (RimLLMUIStyle.With(TextAnchor.MiddleLeft, GameFont.Tiny))
         {
+            Color oldColor = GUI.color;
             GUI.color = RimLLMUIStyle.Muted;
             Widgets.Label(new Rect(rect.x + 4f, rect.y, rect.width - 4f, rect.height), $"{arrow} {"RimLLM_MenuAdvancedGroup".Translate()}");
-            GUI.color = Color.white;
+            GUI.color = oldColor;
         }
     }
 

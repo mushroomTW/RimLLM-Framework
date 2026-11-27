@@ -32,12 +32,16 @@ internal sealed class RimLLMEmbeddingClient : IEmbeddingGenerator<string, Embedd
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(values);
+        var inputValues = new List<string>(values);
+        if (inputValues.Count == 0)
+        {
+            return new GeneratedEmbeddings<Embedding<float>>();
+        }
 
         _manager.UsageTracker.RecordCaller(_modId);
         _manager.CheckAntiAbuseForMod(_modId);
         RimLLMAppAttribution.Current = _attribution;
 
-        var inputValues = new List<string>(values);
         long estimatedTokens = EstimateTotalTokens(inputValues);
 
         using RimLLMUsageTracker.BudgetReservation reservation = _manager.UsageTracker.ReserveBudgetOrThrow(estimatedTokens);

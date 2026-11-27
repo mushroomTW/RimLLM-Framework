@@ -6,23 +6,11 @@ using Verse;
 namespace RimLLM_Framework.Compat;
 
 /// <summary>
-/// 一個可被 RimLLM 強制接管 LLM 流量的第三方 Mod。
+/// 一個可被 RimLLM 接管 LLM 流量的第三方 Mod。
 /// </summary>
 /// <remarks>
-/// 型別載入防護：各目標的 <c>Apply</c> 方法是唯一允許直接參考目標 Mod
-/// 型別的地方，且只能在 <see cref="IsInstalled"/> 為 true 時被 JIT；目標 Mod 缺席時這些方法
-/// 從未被呼叫，就不會觸發 FileNotFoundException / TypeLoadException。
-/// <b>但這只保護方法本體與實例方法簽章。</b>目標 Mod 的型別不得出現在：(1) 基底類別或介面——RimWorld 載入
-/// DLL 時的 <c>Assembly.GetTypes()</c> 會解析，目標 Mod 缺席時整顆框架 DLL 被拒載、主功能一起失效；
-/// (2) 任何欄位——DevMode 啟動時 <c>StaticConstructorOnStartupUtility.ReportProbablyMissingAttributes</c>
-/// 對每個型別 <c>GetFields()</c>，執行環境會解析全部欄位型別；(3) async 方法的參數／區域變數與 lambda 捕捉的變數
-/// ——它們會被提升成狀態機／closure 的欄位，等同 (2)；(4) 靜態方法的簽章（參數與回傳型別）——Debug 動作選單
-/// （<c>DebugTabMenu_Actions.InitActions</c>）對所有靜態方法做 <c>IsDefined</c>，執行環境會解析簽章，目標 Mod 缺席時開選單即拋
-/// TypeLoadException；Harmony patch 方法請以 <c>object</c>（含 <c>ref object __result</c>）接參數並在本體轉型，
-/// 靜態輔助方法同樣以 <c>object</c> 接參數；簽章必須用到目標型別的輔助方法才做成實例方法。需要「一個目標 Mod 介面的實作」時，改為攔截目標 Mod
-/// 自己的實作類別（見 RimTalkCompatPatch 的哨兵做法）；需要 async 時用非 async 薄殼先換成中性型別
-/// （見 RimTalkCompatClient）。<c>CompatRimTalkTests.FrameworkAssembly_HasNoRimTalkTypesInBaseInterfacesOrFields</c>
-/// 與 <c>CompatAutoTranslationTests.FrameworkAssembly_HasNoCompatTargetTypesInMethodSignatures</c> 鎖住這四條。
+/// 型別載入防護：各目標已全面改由 <see cref="LocalOpenAIEndpoint"/> 與設定反射串接，不再於方法簽章或欄位引用目標 Mod 型別，
+/// 但仍保持只透過名稱反射存取目標 Mod，避免目標 Mod 缺席時觸發 FileNotFoundException / TypeLoadException。
 /// </remarks>
 internal sealed class RimLLMCompatTarget
 {
@@ -63,8 +51,8 @@ internal sealed class RimLLMCompatTarget
         catch (Exception ex)
         {
             IsPatched = false;
-            PatchError = ex.Message;
-            Log.Warning($"[RimLLM] Compat: failed to patch {DisplayName} ({ModId}); that mod stays on its native path. Reason: {ex.Message}");
+            PatchError = RimLLMLog.SanitizeForLog(ex.Message);
+            RimLLMLog.Warning($"[RimLLM] Compat: failed to patch {DisplayName} ({ModId}); that mod stays on its native path. Reason: {PatchError}");
         }
     }
 

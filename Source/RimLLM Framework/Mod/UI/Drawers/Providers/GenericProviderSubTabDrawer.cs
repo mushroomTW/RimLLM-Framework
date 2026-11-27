@@ -423,7 +423,11 @@ public static class GenericProviderSubTabDrawer
                     return "RimLLM_FetchSuccessCount".Translate(models.Count);
                 };
             },
-            ex => "RimLLM_FetchFailed".Translate() + " (" + RimLLMLog.SanitizeForLog(ex.Message, 220) + ")");
+            ex =>
+            {
+                string detail = RimLLMLog.SanitizeForLog(ex.Message, 220) ?? string.Empty;
+                return () => "RimLLM_FetchFailed".Translate() + " (" + detail + ")";
+            });
     }
 
     private static void StartTest(string providerId)
@@ -449,7 +453,11 @@ public static class GenericProviderSubTabDrawer
                     ? "RimLLM_TestStatusSuccess".Translate(result.LatencyMs, result.Model).ToString()
                     : "RimLLM_TestStatusFailed".Translate(result.ErrorMessage).ToString();
             },
-            ex => "RimLLM_TestStatusError".Translate(RimLLMLog.SanitizeForLog(ex.Message, 220)));
+            ex =>
+            {
+                string detail = RimLLMLog.SanitizeForLog(ex.Message, 220) ?? string.Empty;
+                return () => "RimLLM_TestStatusError".Translate(detail);
+            });
     }
 
     /// <summary>「抓模型清單」與「連線測試」共用的背景操作外殼；operation 於背景執行緒執行，回傳在主線程執行、產生狀態字串的委派，讓收尾能安全寫入設定。</summary>
@@ -459,7 +467,7 @@ public static class GenericProviderSubTabDrawer
         Dictionary<string, string> statusMessages,
         string busyLabel,
         Func<Task<Func<string>>> operation,
-        Func<Exception, string> describeError)
+        Func<Exception, Func<string>> describeError)
     {
         // 免金鑰的供應商不需要金鑰（本地相容介面；Player2 本機 App 模式，雲端模式仍需 p2Key，
         // 因此判斷需代入實際端點）；其餘供應商未填金鑰時不必真的送出請求。
@@ -481,8 +489,7 @@ public static class GenericProviderSubTabDrawer
             }
             catch (Exception ex)
             {
-                string message = describeError(ex);
-                applyResult = () => message;
+                applyResult = describeError(ex);
             }
 
             RimLLMDispatcher.EnqueueOnMainThread(() =>
@@ -514,9 +521,10 @@ public static class GenericProviderSubTabDrawer
 
         if (IsDetectingLocal)
         {
+            Color oldColor = GUI.color;
             GUI.color = Color.gray;
-            Widgets.ButtonText(detectBtnRect, "RimLLM_DetectingLocal".Translate());
-            GUI.color = Color.white;
+            Widgets.ButtonText(detectBtnRect, "RimLLM_DetectingLocal".Translate(), active: false);
+            GUI.color = oldColor;
         }
         else
         {
@@ -538,13 +546,17 @@ public static class GenericProviderSubTabDrawer
     {
         IsDetectingLocal = true;
         DetectStatusMsg = "RimLLM_DetectingLocal".Translate();
+        string? endpointBefore = Settings.GetEndpoint(providerId, defaultVal: null);
 
         LocalEndpointProbe.StartDetect(
             LocalTargets,
             hit =>
             {
-                Settings.SetEndpoint(providerId, hit.BaseUrl);
-                Settings.Write();
+                if (string.Equals(Settings.GetEndpoint(providerId, defaultVal: null), endpointBefore, StringComparison.Ordinal))
+                {
+                    Settings.SetEndpoint(providerId, hit.BaseUrl);
+                    Settings.Write();
+                }
                 IsDetectingLocal = false;
                 DetectStatusMsg = "RimLLM_DetectSuccess".Translate(hit.Name, hit.BaseUrl);
             },

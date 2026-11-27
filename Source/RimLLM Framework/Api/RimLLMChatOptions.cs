@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.AI;
 
 namespace RimLLM_Framework;
@@ -78,7 +79,7 @@ public class RimLLMChatOptions : ChatOptions
     public const string FallbackModelId = "fallback";
 
     /// <summary>是否為備援鏈別名（大小寫不限）。路由層據此跳過釘選，直接走整條鏈。</summary>
-    public static bool IsFallbackModelId(string modelId)
+    public static bool IsFallbackModelId([AllowNull] string modelId)
     {
         return string.Equals(modelId, FallbackModelId, StringComparison.OrdinalIgnoreCase);
     }

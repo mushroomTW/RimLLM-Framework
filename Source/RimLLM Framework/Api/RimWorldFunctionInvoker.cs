@@ -43,13 +43,27 @@ public static class RimWorldFunctionInvoker
                 // 否則後半段仍會在執行緒池碰遊戲狀態。
                 // 必須 AsTask()：少了轉換，多載解析會選到 EnqueueOnMainThreadAsync<T>(Func<T>)
                 // 且 T = ValueTask<object>，整顆 ValueTask 會被序列化成工具結果。
-                return await RimLLMDispatcher.EnqueueOnMainThreadAsync(
-                    () =>
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        return context.Function.InvokeAsync(context.Arguments, cancellationToken).AsTask();
-                    },
-                    cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return await RimLLMDispatcher.EnqueueOnMainThreadAsync(
+                        () =>
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            return context.Function.InvokeAsync(context.Arguments, cancellationToken).AsTask();
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // 刻意不附加原始例外，避免外層記錄未清洗的內部訊息。
+#pragma warning disable MA0054
+                    throw new InvalidOperationException(RimLLMLog.SanitizeForLog(ex.Message, 300) ?? "Function invocation failed.");
+#pragma warning restore MA0054
+                }
             }
         };
     }

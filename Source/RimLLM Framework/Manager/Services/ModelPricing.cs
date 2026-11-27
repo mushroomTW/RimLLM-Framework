@@ -189,7 +189,10 @@ internal static class ModelPricing
             level = ModelLevelMedium;
         }
 
-        catalog.LevelCache[cacheKey] = level;
+        if (catalog.LevelCache.Count < 2048)
+        {
+            catalog.LevelCache[cacheKey] = level;
+        }
         return level;
     }
 

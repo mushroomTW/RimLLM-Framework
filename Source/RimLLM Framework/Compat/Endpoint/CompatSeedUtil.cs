@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using RimLLM_Framework.Core;
 using Verse;
 
 namespace RimLLM_Framework.Compat;
@@ -8,7 +9,7 @@ namespace RimLLM_Framework.Compat;
 /// <summary>
 /// 把第三方 Mod 的 API 設定指向本機端點時共用的小工具。
 /// 這些 Mod 的設定類別多為 <c>internal</c> 或不能在編譯期引用，全部以名稱反射存取；
-/// 任何一步找不到都只記警告、不擲例外，不能因為對方改版而影響遊戲啟動。
+/// <c>OnTakeoverToggled</c> 互動切換只記警告、不擲例外，啟動掛載 <c>Apply</c> 則回報真實失敗狀態。
 /// </summary>
 internal static class CompatSeedUtil
 {
@@ -25,29 +26,28 @@ internal static class CompatSeedUtil
 
     internal static void RegisterEndpoint(string modId, int defaultMaxOutputTokens, float? defaultTemperature = null)
     {
-        LocalOpenAIEndpoint.Register(
-            modId,
-            (payload, chat, ct) => new OpenAICompatClient(modId, defaultMaxOutputTokens, defaultTemperature).CompleteAsync(payload, chat, ct));
+        var client = new OpenAICompatClient(modId, defaultMaxOutputTokens, defaultTemperature);
+        LocalOpenAIEndpoint.Register(modId, client.CompleteAsync);
     }
 
     internal static void LogReverted(string displayName)
     {
-        Log.Message($"[RimLLM] Compat: takeover is off, so the local endpoint address was removed from {displayName}'s settings. Set up that mod's own API to use it without RimLLM.");
+        RimLLMLog.Message($"[RimLLM] Compat: takeover is off, so the local endpoint address was removed from {displayName}'s settings. Set up that mod's own API to use it without RimLLM.");
     }
 
     internal static void WarnRevertFailed(string displayName, Exception ex)
     {
-        Log.Warning($"[RimLLM] Compat: could not remove the local endpoint address from {displayName}'s settings. Reason: {ex.GetBaseException().Message}");
+        RimLLMLog.Warning($"[RimLLM] Compat: could not remove the local endpoint address from {displayName}'s settings. Reason: {RimLLMLog.SanitizeForLog(ex.GetBaseException().Message)}");
     }
 
     internal static void WarnKeptNativeConfig(string displayName)
     {
-        Log.Warning($"[RimLLM] Compat: takeover is on, but {displayName} already has its own API settings, so they were kept and its requests still use them. Clear that mod's API address and key to let RimLLM handle its requests.");
+        RimLLMLog.Warning($"[RimLLM] Compat: takeover is on, but {displayName} already has its own API settings, so they were kept and its requests still use them. Clear that mod's API address and key to let RimLLM handle its requests.");
     }
 
     internal static void WarnFailed(string displayName, Exception ex)
     {
-        Log.Warning($"[RimLLM] Compat: could not pre-fill the native settings of {displayName}. Reason: {ex.GetBaseException().Message}");
+        RimLLMLog.Warning($"[RimLLM] Compat: could not pre-fill the native settings of {displayName}. Reason: {RimLLMLog.SanitizeForLog(ex.GetBaseException().Message)}");
     }
 
     internal static object? FindModInstance(string typeName)

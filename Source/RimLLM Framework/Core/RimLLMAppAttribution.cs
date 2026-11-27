@@ -89,7 +89,7 @@ internal sealed record RimLLMAppAttribution(string Title, string Url)
 
         string? strippedName = name?.StripTags().Trim();
         string? title = IsHeaderSafe(strippedName) ? strippedName : packageId?.Trim();
-        return IsHeaderSafe(title) ? new RimLLMAppAttribution(title, url) : Framework;
+        return IsHeaderSafe(title) ? new RimLLMAppAttribution(title, uri.AbsoluteUri) : Framework;
     }
 
     private static bool IsHeaderSafe([NotNullWhen(true)] string? value)

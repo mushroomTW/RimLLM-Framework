@@ -184,6 +184,12 @@ public class RimLLMEmbeddingService
         string apiKey = string.IsNullOrEmpty(_settings.EmbeddingApiKey)
             ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
             : _settings.EmbeddingApiKey;
+        if (RequiresApiKey(provider) && string.IsNullOrEmpty(apiKey))
+        {
+            throw new RimLLMException(
+                LLMError.InvalidKey,
+                $"Embedding provider '{provider}' requires an API key.");
+        }
         string endpoint = _settings.EmbeddingEndpoint;
         string defaultEndpoint = ResolveDefaultEndpoint(provider);
 
@@ -200,7 +206,14 @@ public class RimLLMEmbeddingService
 
         return await ServiceProviderFailover.RunAsync(
             contexts,
-            (context, isLast) => ComputeAllBatchesAsync(inputs, context, onBatchCompleted, !isLast, cancellationToken),
+            (context, isLast) =>
+            {
+                if (string.IsNullOrEmpty(context.ApiKey) && RequiresApiKey(context.Provider))
+                {
+                    context = context.WithApiKey(_settings.GetActiveApiKey(GetMainProviderIdForEmbedding(context.Provider)));
+                }
+                return ComputeAllBatchesAsync(inputs, context, onBatchCompleted, !isLast, cancellationToken);
+            },
             (context, ex) =>
             {
                 if (Core.RimLLMLog.Enabled)
@@ -224,11 +237,15 @@ public class RimLLMEmbeddingService
     /// 是針對主供應商的，備援供應商不認得，所以不沿用。
     /// </summary>
     private EmbeddingBatchContext CreateBackupContext(
-        string provider, float timeoutSeconds, Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions)
+        string provider, float timeoutSeconds, Microsoft.Extensions.AI.EmbeddingGenerationOptions? generationOptions, out bool hasKey)
     {
-        string apiKey = string.IsNullOrEmpty(_settings.GetEmbeddingApiKey(provider))
-            ? _settings.GetActiveApiKey(GetMainProviderIdForEmbedding(provider))
-            : _settings.GetEmbeddingApiKey(provider);
+        // 先以不推進輪替索引的 GetApiKey 檢查是否可用，真正切換到該備援時才呼叫 GetActiveApiKey。
+        string explicitKey = _settings.GetEmbeddingApiKey(provider);
+        string fallbackKey = string.IsNullOrEmpty(explicitKey)
+            ? _settings.GetApiKey(GetMainProviderIdForEmbedding(provider))
+            : explicitKey;
+        hasKey = !string.IsNullOrEmpty(fallbackKey);
+
         Microsoft.Extensions.AI.EmbeddingGenerationOptions? options = generationOptions?.Clone();
         if (options != null)
         {
@@ -237,7 +254,7 @@ public class RimLLMEmbeddingService
         return new EmbeddingBatchContext(
             _settings.GetEmbeddingModel(provider),
             provider,
-            apiKey,
+            explicitKey,
             _settings.GetEmbeddingEndpoint(provider),
             ResolveDefaultEndpoint(provider),
             timeoutSeconds,
@@ -256,9 +273,9 @@ public class RimLLMEmbeddingService
         {
             try
             {
-                EmbeddingBatchContext backup = CreateBackupContext(candidates[i], timeoutSeconds, generationOptions);
+                EmbeddingBatchContext backup = CreateBackupContext(candidates[i], timeoutSeconds, generationOptions, out bool hasKey);
                 if (!string.IsNullOrWhiteSpace(backup.Model) &&
-                    (!string.IsNullOrEmpty(backup.ApiKey) || !RequiresApiKey(backup.Provider)))
+                    (hasKey || !RequiresApiKey(backup.Provider)))
                 {
                     contexts.Add(backup);
                 }
@@ -324,6 +341,11 @@ public class RimLLMEmbeddingService
             DefaultEndpoint = defaultEndpoint;
             TimeoutSeconds = timeoutSeconds;
             GenerationOptions = generationOptions;
+        }
+
+        public EmbeddingBatchContext WithApiKey(string apiKey)
+        {
+            return new EmbeddingBatchContext(Model, Provider, apiKey, Endpoint, DefaultEndpoint, TimeoutSeconds, GenerationOptions);
         }
     }
 
@@ -453,11 +475,19 @@ public class RimLLMEmbeddingService
     }
 
     /// <summary>
-    /// 原生清單端點共用的 HttpClient。逾時由呼叫端的 CancellationToken 控制。
+    /// 原生清單端點共用的 HttpClient。逾時由呼叫端的 CancellationToken 控制；關閉自動轉址避免外洩自訂金鑰標頭。
     /// </summary>
     // SDK 豁免：Ollama／LM Studio 的原生 /api/... 端點不屬於 OpenAI 相容 API，OpenAI SDK 無法呼叫。
 #pragma warning disable RS0030
-    private static readonly HttpClient ModelListHttp = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private static readonly HttpClient ModelListHttp = new(
+        new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+        })
+    {
+        Timeout = Timeout.InfiniteTimeSpan
+    };
 #pragma warning restore RS0030
 
     /// <summary>
@@ -497,7 +527,9 @@ public class RimLLMEmbeddingService
     {
         string nativeRoot = TrimSuffix(compatRoot, "/openai");
         string? pageToken = null;
-        do
+        HashSet<string>? seenTokens = null;
+        const int maxPages = 100;
+        for (int page = 0; page < maxPages; page++)
         {
             string url = nativeRoot + "/models?pageSize=1000" +
                 (pageToken == null ? string.Empty : "&pageToken=" + Uri.EscapeDataString(pageToken));
@@ -516,7 +548,16 @@ public class RimLLMEmbeddingService
                 onModel(model);
             }
             pageToken = GetString(doc.RootElement, "nextPageToken");
-        } while (!string.IsNullOrEmpty(pageToken));
+            if (string.IsNullOrEmpty(pageToken))
+            {
+                break;
+            }
+            seenTokens ??= new HashSet<string>(StringComparer.Ordinal);
+            if (!seenTokens.Add(pageToken))
+            {
+                break;
+            }
+        }
 
         return true;
     }
@@ -830,15 +871,23 @@ public class RimLLMEmbeddingService
         var options = new OpenAIClientOptions
         {
             Endpoint = new Uri(root, UriKind.Absolute),
-            RetryPolicy = new ClientRetryPolicy(0)
+            RetryPolicy = new ClientRetryPolicy(0),
+            NetworkTimeout = TimeSpan.FromSeconds(180)
         };
+        if (OpenRouterAttributionPolicy.Targets(options.Endpoint))
+        {
+            options.AddPolicy(OpenRouterAttributionPolicy.Instance, PipelinePosition.PerCall);
+        }
         if (TransportOverride != null)
         {
             options.Transport = TransportOverride;
         }
         var credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? PlaceholderApiKey : apiKey);
 
+        // SDK 豁免：僅作模型清單查詢，已經設定 RetryPolicy=0 與 OpenRouterAttributionPolicy。
+#pragma warning disable RS0030
         OpenAIModelCollection models = await new OpenAIClient(credential, options)
+#pragma warning restore RS0030
             .GetOpenAIModelClient()
             .GetModelsAsync(cancellationToken)
             .ConfigureAwait(false);

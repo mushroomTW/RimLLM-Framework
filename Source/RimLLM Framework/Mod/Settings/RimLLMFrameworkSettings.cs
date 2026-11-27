@@ -221,9 +221,16 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         set => _telemetry.DailyBudgetResetDate = value ?? "";
     }
 
-    public RimLLMFrameworkSettings()
+    public RimLLMFrameworkSettings() : this(loadTelemetry: true)
     {
-        _telemetry.Load();
+    }
+
+    private RimLLMFrameworkSettings(bool loadTelemetry)
+    {
+        if (loadTelemetry)
+        {
+            _telemetry.Load();
+        }
     }
 
     /// <summary>
@@ -398,6 +405,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         lock (_settingsLock)
         {
             _apiKeys[providerId] = val;
+            _undecryptableApiKeys.Remove(providerId);
         }
     }
 
@@ -532,7 +540,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
     #pragma warning disable S3011 // 「恢復預設」需透過反射遍歷類別所有欄位並重設，故意存取 private 欄位；僅限本類別內部使用，不外漏反射結果。
     public void ResetAllSettingsToDefaults()
     {
-        var defaults = new RimLLMFrameworkSettings();
+        var defaults = new RimLLMFrameworkSettings(loadTelemetry: false);
         lock (_settingsLock)
         {
             foreach (FieldInfo field in typeof(RimLLMFrameworkSettings).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.DeclaredOnly))
@@ -543,6 +551,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
             // 模型清單已清空：讓設定頁的過濾快取失效。
             _modelListVersion++;
         }
+        Core.RimLLMLog.Enabled = DetailedLogging;
     }
     #pragma warning restore S3011
 
@@ -886,6 +895,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         lock (_settingsLock)
         {
             _embeddingApiKeys[provider] = key;
+            _undecryptableEmbeddingApiKeys.Remove(provider);
         }
     }
 
@@ -975,6 +985,7 @@ public partial class RimLLMFrameworkSettings : ModSettings, IRimLLMSettings
         lock (_settingsLock)
         {
             _decisionApiKeys[provider] = key ?? "";
+            _undecryptableDecisionApiKeys.Remove(provider);
         }
     }
 }

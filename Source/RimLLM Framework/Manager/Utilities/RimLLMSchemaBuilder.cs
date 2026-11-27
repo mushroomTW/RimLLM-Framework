@@ -168,8 +168,8 @@ public static class RimLLMSchemaBuilder
     internal static JsonObject ExportRaw(Type type)
     {
         JsonNode node = JsonSchemaExporter.GetJsonSchemaAsNode(EnsureSerializerOptions(), type);
-        // exporter 的根一律是物件 schema；若不是，轉型失敗直接拋出，不會靜默產出錯誤形狀。
-        return (JsonObject)(JsonNode.Parse(node.ToJsonString()) ?? throw new JsonException("Schema node could not be re-parsed."));
+        JsonNode parsed = JsonNode.Parse(node.ToJsonString()) ?? throw new JsonException("Schema node could not be re-parsed.");
+        return parsed as JsonObject ?? new JsonObject();
     }
 
     private sealed class NormalizeContext
@@ -219,6 +219,19 @@ public static class RimLLMSchemaBuilder
             return null;
         }
 
+        if (!ReferenceEquals(collapsed, node) && collapsed["$ref"] != null)
+        {
+            if (!TryNormalizeRef(collapsed, typeInfo, context, depth, out JsonObject? collapsedRefResult) || collapsedRefResult == null)
+            {
+                return null;
+            }
+            if (typeInfo != null && Nullable.GetUnderlyingType(typeInfo.Type) != null)
+            {
+                collapsedRefResult[OptionalMarker] = true;
+            }
+            return collapsedRefResult;
+        }
+
         string? typeName = ExtractTypeName(collapsed);
         if (typeName == null)
         {
@@ -230,10 +243,12 @@ public static class RimLLMSchemaBuilder
             ["type"] = typeName
         };
 
-        // Nullable<T> 可能是成員、陣列元素或字典值；標記型別節點本身，讓後續方言轉換一致保留 null。
-        if (typeInfo != null && Nullable.GetUnderlyingType(typeInfo.Type) != null)
+        // Nullable<T> 可能是成員、陣列元素或字典值；標記型別節點本身並解包 JsonTypeInfo，
+        // 讓內層 struct 的成員說明、巢狀可空性與循環檢查都能正確運作。
+        if (typeInfo != null && Nullable.GetUnderlyingType(typeInfo.Type) is { } underlyingType)
         {
             result[OptionalMarker] = true;
+            typeInfo = GetTypeInfo(underlyingType);
         }
 
         JsonNode? description = collapsed[SchemaDescription];
@@ -329,11 +344,12 @@ public static class RimLLMSchemaBuilder
                 context,
                 depth + 1);
 
-            if (normalizedValue != null)
+            if (normalizedValue == null)
             {
-                result[SchemaAdditionalProperties] = normalizedValue;
+                return null;
             }
 
+            result[SchemaAdditionalProperties] = normalizedValue;
             return result;
         }
 

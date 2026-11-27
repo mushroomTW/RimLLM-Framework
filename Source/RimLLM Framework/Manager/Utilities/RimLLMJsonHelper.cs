@@ -158,6 +158,21 @@ public static partial class RimLLMJsonHelper
     /// <summary>移除開頭與結尾的 Markdown 程式碼區塊標記。</summary>
     private static string StripMarkdownCodeBlocks(string json)
     {
+        if (!json.StartsWith("```", StringComparison.Ordinal) &&
+            !json.StartsWith('{') &&
+            !json.StartsWith('['))
+        {
+            int fenceStart = json.IndexOf("```", StringComparison.Ordinal);
+            if (fenceStart >= 0)
+            {
+                int lineEnd = json.IndexOf('\n', fenceStart);
+                int contentStart = lineEnd >= 0 ? lineEnd + 1 : fenceStart + 3;
+                int fenceEnd = json.IndexOf("```", contentStart, StringComparison.Ordinal);
+                json = fenceEnd >= 0 ? json.Substring(contentStart, fenceEnd - contentStart) : json.Substring(contentStart);
+                return json.Trim();
+            }
+        }
+
         if (json.StartsWith("```", StringComparison.Ordinal))
         {
             int startIndex = json.IndexOf('\n', StringComparison.Ordinal);
@@ -386,12 +401,63 @@ public static partial class RimLLMJsonHelper
     }
 
     /// <summary>
-    /// 提取字串中的 JSON 區塊（第一個匹配的 { ... } 或 [ ... ]）。
+    /// 提取字串中的 JSON 區塊（第一個完整配對的 { ... } 或 [ ... ]）。
     /// </summary>
     public static string ExtractJsonBlock(string input)
     {
-        var match = JsonBlockRegex.Match(input);
-        return match.Success ? match.Value : input;
+        if (string.IsNullOrEmpty(input)) return input;
+
+        int start = -1;
+        char open = '\0';
+        char close = '\0';
+        for (int i = 0; i < input.Length; i++)
+        {
+            if (input[i] == '{')
+            {
+                start = i;
+                open = '{';
+                close = '}';
+                break;
+            }
+            if (input[i] == '[')
+            {
+                start = i;
+                open = '[';
+                close = ']';
+                break;
+            }
+        }
+        if (start < 0) return input;
+
+        int depth = 0;
+        bool inString = false;
+        bool escapeNext = false;
+        for (int i = start; i < input.Length; i++)
+        {
+            char c = input[i];
+            if (inString)
+            {
+                StepStringState(c, ref inString, ref escapeNext);
+            }
+            else if (c == '"')
+            {
+                inString = true;
+            }
+            else if (c == open)
+            {
+                depth++;
+            }
+            else if (c == close)
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return input.Substring(start, i - start + 1);
+                }
+            }
+        }
+
+        return input.Substring(start);
     }
 
     private static object? CreateDummyInstance(Type type)
@@ -440,8 +506,17 @@ public static partial class RimLLMJsonHelper
     private static bool TryCreateScalarDummy(Type type, out object? dummy)
     {
         if (type == typeof(string)) { dummy = "string"; return true; }
-        if (type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte)) { dummy = 0; return true; }
-        if (type == typeof(float) || type == typeof(double) || type == typeof(decimal)) { dummy = 0.0; return true; }
+        if (type == typeof(int)) { dummy = 0; return true; }
+        if (type == typeof(long)) { dummy = 0L; return true; }
+        if (type == typeof(short)) { dummy = (short)0; return true; }
+        if (type == typeof(byte)) { dummy = (byte)0; return true; }
+        if (type == typeof(sbyte)) { dummy = (sbyte)0; return true; }
+        if (type == typeof(ushort)) { dummy = (ushort)0; return true; }
+        if (type == typeof(uint)) { dummy = 0u; return true; }
+        if (type == typeof(ulong)) { dummy = 0UL; return true; }
+        if (type == typeof(float)) { dummy = 0f; return true; }
+        if (type == typeof(double)) { dummy = 0.0; return true; }
+        if (type == typeof(decimal)) { dummy = 0m; return true; }
         if (type == typeof(bool)) { dummy = false; return true; }
         if (type.IsEnum)
         {
@@ -804,7 +879,4 @@ public static partial class RimLLMJsonHelper
         }
         return false;
     }
-
-    [GeneratedRegex(@"(\{.*\}|\[.*\])", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex JsonBlockRegex { get; }
 }

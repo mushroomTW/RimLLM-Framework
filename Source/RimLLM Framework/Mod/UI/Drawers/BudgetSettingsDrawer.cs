@@ -131,7 +131,7 @@ public static class BudgetSettingsDrawer
             Settings.DailyAccumulatedTokens = 0;
             Settings.DailyAccumulatedCost = 0f;
             Settings.DailyBudgetResetDate = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            Settings.SaveTelemetry();
+            Settings.QueueTelemetrySave();
             Messages.Message("RimLLM_MsgDailyCostReset".Translate(), MessageTypeDefOf.TaskCompletion, historical: false);
         }
     }

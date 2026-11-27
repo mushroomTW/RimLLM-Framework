@@ -231,14 +231,18 @@ public class RimLLMManager
     /// </summary>
     public bool IsProviderEnabled(string providerId)
     {
+        if (string.IsNullOrEmpty(providerId)) return false;
+
+        string canonicalId;
         bool isBuiltIn;
         lock (_providerLock)
         {
-            if (!_providers.ContainsKey(providerId))
+            if (!_providers.TryGetValue(providerId, out ILLMProvider? provider))
                 return false;
-            isBuiltIn = _builtInProviderIds.Contains(providerId);
+            canonicalId = provider.ProviderId ?? providerId;
+            isBuiltIn = _builtInProviderIds.Contains(canonicalId);
         }
-        return !isBuiltIn || _settings.IsProviderEnabled(providerId);
+        return !isBuiltIn || _settings.IsProviderEnabled(canonicalId);
     }
 
     private bool TryGetProvider(string providerId, [NotNullWhen(true)] out ILLMProvider? provider)

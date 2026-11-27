@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
@@ -48,8 +49,9 @@ internal static class RimLLMChatClientExecutor
         ArgumentNullException.ThrowIfNull(client);
 
         IList<ChatMessage> builtMessages = BuildMessages(messages, options);
+        float resolvedTimeout = ApiTimeouts.Resolve(timeoutSeconds);
 
-        using var timeoutCts = new CancellationTokenSource(ResolveTimeout(timeoutSeconds));
+        using var timeoutCts = new CancellationTokenSource(ResolveTimeout(resolvedTimeout));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
         ChatResponse response;
         try
@@ -71,7 +73,7 @@ internal static class RimLLMChatClientExecutor
         {
             // 逾時只是本地放棄等待，服務端多半已收下並計費輸入；不記的話反覆逾時能無聲突破每日預算。
             if (p.BillsTimeouts) RecordUsage(p, builtMessages, usage: null, 0, onUsage);
-            throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} request timed out after {timeoutSeconds} seconds."), ex);
+            throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} request timed out after {resolvedTimeout} seconds."), ex);
         }
 
         // 回應原樣交還。ResponseId、CreatedAt、ConversationId、RawRepresentation 這些
@@ -144,7 +146,8 @@ internal static class RimLLMChatClientExecutor
         ArgumentNullException.ThrowIfNull(client);
 
         IList<ChatMessage> builtMessages = BuildMessages(messages, options);
-        TimeSpan idleTimeout = ResolveTimeout(timeoutSeconds);
+        float resolvedTimeout = ApiTimeouts.Resolve(timeoutSeconds);
+        TimeSpan idleTimeout = ResolveTimeout(resolvedTimeout);
         // provider 沒回報用量時才會用到的 completion token 估算。逐塊累加估算值，
         // 不保留文字本身。
         var streamState = new StreamTrackingState();
@@ -172,7 +175,7 @@ internal static class RimLLMChatClientExecutor
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 timedOut = true;
-                throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} stream idle timeout: no new content for {timeoutSeconds} seconds."), ex);
+                throw new RimLLMException(LLMError.Timeout, string.Create(CultureInfo.InvariantCulture, $"{providerId} stream idle timeout: no new content for {resolvedTimeout} seconds."), ex);
             }
             finally
             {
@@ -252,7 +255,10 @@ internal static class RimLLMChatClientExecutor
                 if (part is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                 {
                     AnyOutput = true;
-                    AnyAnswer = true;
+                    if (!string.IsNullOrWhiteSpace(textContent.Text))
+                    {
+                        AnyAnswer = true;
+                    }
                     CompletionEstimate += EstimateTokensRaw(textContent.Text);
                 }
                 else if (part is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
@@ -266,7 +272,8 @@ internal static class RimLLMChatClientExecutor
                     AnyOutput = true;
                     AnyAnswer = true;
                 }
-                else if (part is UsageContent usageContent && usageContent.Details != null)
+                else if (part is UsageContent usageContent && usageContent.Details != null &&
+                         (usageContent.Details.InputTokenCount.HasValue || usageContent.Details.OutputTokenCount.HasValue))
                 {
                     LastUsage = usageContent.Details;
                 }
@@ -491,7 +498,10 @@ internal static class RimLLMChatClientExecutor
         foreach (AITool tool in options?.Tools ?? [])
         {
             estimate += EstimateTokensRaw(tool.Name) + EstimateTokensRaw(tool.Description);
-            if (tool is AIFunctionDeclaration function) estimate += EstimateTokensRaw(function.JsonSchema.GetRawText());
+            if (tool is AIFunctionDeclaration function && function.JsonSchema.ValueKind != JsonValueKind.Undefined)
+            {
+                estimate += EstimateTokensRaw(function.JsonSchema.GetRawText());
+            }
         }
         return estimate;
     }

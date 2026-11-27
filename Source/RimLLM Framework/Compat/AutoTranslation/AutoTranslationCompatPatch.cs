@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Reflection;
 using HarmonyLib;
+using RimLLM_Framework.Core;
 using RimLLM_Framework.Mod;
 using Verse;
 
@@ -30,7 +31,14 @@ internal static class AutoTranslationCompatPatch
     public static void Apply()
     {
         CompatSeedUtil.RegisterEndpoint(AutoTranslationCompatPatch.PackageId, 2048, 0.3f);
-        OnTakeoverToggled(RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId) == true);
+        if (RimLLMFrameworkMod.Settings?.IsCompatTakeoverEnabled(AutoTranslationCompatPatch.PackageId) == true)
+        {
+            SeedNativeConfigCore();
+        }
+        else
+        {
+            RevertNativeConfig();
+        }
     }
 
     public static void OnTakeoverToggled(bool enabled)
@@ -92,32 +100,28 @@ internal static class AutoTranslationCompatPatch
     {
         try
         {
-            string? baseUrl = LocalOpenAIEndpoint.GetBaseUrl(AutoTranslationCompatPatch.PackageId);
-            if (baseUrl == null)
-            {
-                Log.Warning($"[RimLLM] Compat: the local endpoint is not available, so {DisplayName} keeps its own settings.");
-                return;
-            }
-
-            if (!TryResolveMembers(out SettingsMembers members))
-            {
-                Log.Warning($"[RimLLM] Compat: {DisplayName} settings were not found (the mod may have changed); its settings were not pre-filled.");
-                return;
-            }
-
-            object? translator = members.GetTranslator.Invoke(null, [TranslatorName]);
-            if (translator == null)
-            {
-                Log.Warning($"[RimLLM] Compat: the '{TranslatorName}' translator of {DisplayName} was not found; its settings were not pre-filled.");
-                return;
-            }
-
-            SeedTranslator(baseUrl, translator, members);
+            SeedNativeConfigCore();
         }
         catch (Exception ex)
         {
             CompatSeedUtil.WarnFailed(DisplayName, ex);
         }
+    }
+
+    private static void SeedNativeConfigCore()
+    {
+        string baseUrl = LocalOpenAIEndpoint.GetBaseUrl(AutoTranslationCompatPatch.PackageId)
+            ?? throw new InvalidOperationException($"The local endpoint is not available for {DisplayName}.");
+
+        if (!TryResolveMembers(out SettingsMembers members))
+        {
+            throw new InvalidOperationException($"{DisplayName} settings were not found (the mod may have changed).");
+        }
+
+        object translator = members.GetTranslator.Invoke(null, [TranslatorName])
+            ?? throw new InvalidOperationException($"The '{TranslatorName}' translator of {DisplayName} was not found.");
+
+        SeedTranslator(baseUrl, translator, members);
     }
 
     private static bool TryResolveMembers(out SettingsMembers members)
@@ -142,13 +146,13 @@ internal static class AutoTranslationCompatPatch
     {
         if (members.TranslatorSettings.GetValue(null) is not IDictionary dictionary)
         {
-            throw new InvalidOperationException("AutoTranslation 翻譯器設定字典不存在。");
+            throw new InvalidOperationException("AutoTranslation TranslatorSettings dictionary is missing.");
         }
 
         object? config = CompatSeedUtil.GetMember(translator, "Settings") ?? dictionary[TranslatorName];
         if (config == null || !members.AiSettings.IsInstanceOfType(config))
         {
-            config = Activator.CreateInstance(members.AiSettings) ?? throw new InvalidOperationException("無法建立 AI 模型翻譯器設定。");
+            config = Activator.CreateInstance(members.AiSettings) ?? throw new InvalidOperationException("Failed to create AutoTranslation AI model translator settings.");
         }
 
         string? existingUrl = CompatSeedUtil.GetMember(config, UserCustomBaseUrlMember) as string;
@@ -166,19 +170,21 @@ internal static class AutoTranslationCompatPatch
             return;
         }
 
+        bool urlChanged = !string.Equals(existingUrl, baseUrl, StringComparison.Ordinal);
         CompatSeedUtil.SetMember(config, UserCustomBaseUrlMember, baseUrl);
         // 請求的模型欄位不影響路由，每次都寫入目前的專用模型名，設定頁顯示才會跟著玩家的選擇。
         CompatSeedUtil.SetMember(config, "UserSelectedModel", CompatSeedUtil.ModelLabel(AutoTranslationCompatPatch.PackageId));
-        if (!ours)
-        {
-            members.TranslatorNameField.SetValue(null, TranslatorName);
-        }
         dictionary[TranslatorName] = config;
         CompatSeedUtil.SetMember(translator, "Settings", config);
 
-        if (!ours)
+        if (!ours || urlChanged)
         {
             AccessTools.Method(translator.GetType(), "Prepare", Type.EmptyTypes)?.Invoke(translator, parameters: null);
+        }
+
+        if (!ours || !string.Equals(members.TranslatorNameField.GetValue(null) as string, TranslatorName, StringComparison.Ordinal))
+        {
+            members.TranslatorNameField.SetValue(null, TranslatorName);
             AccessTools.Field(members.ManagerType, "CurrentTranslator")?.SetValue(null, translator);
         }
 

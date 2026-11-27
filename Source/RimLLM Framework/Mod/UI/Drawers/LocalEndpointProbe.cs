@@ -47,7 +47,8 @@ internal static class LocalEndpointProbe
         {
             try
             {
-                using HttpResponseMessage response = await SharedClient.GetAsync(target.TestUrl).ConfigureAwait(false);
+                using HttpResponseMessage response = await SharedClient.GetAsync(
+                    target.TestUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
                     return target;

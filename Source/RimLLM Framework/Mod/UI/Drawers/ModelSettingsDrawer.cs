@@ -174,11 +174,11 @@ public static class ModelSettingsDrawer
             ShowProviderSelectionMenu();
         }
 
-        var models = Settings.GetModelList(addProviderId);
         string modelBtnLabel = string.IsNullOrEmpty(addModelName) ? "RimLLM_SelectModelPlaceholder".Translate().ToString() : addModelName;
 
         if (Widgets.ButtonText(addModBtn, "RimLLM_SelectModelBtn".Translate(modelBtnLabel)))
         {
+            var models = Settings.GetModelList(addProviderId);
             Find.WindowStack.Add(new Dialog_SelectModel(models, (selectedM) => addModelName = selectedM, addProviderId));
         }
 

@@ -62,14 +62,24 @@ internal sealed class OpenRouterDecisionsAdapterHandler : DelegatingHandler
         request.Headers.TryAddWithoutValidation(OpenRouterAttributionPolicy.TitleHeader, attribution.Title);
 
         HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!isEvaluate || !response.IsSuccessStatusCode || response.Content == null)
+        try
         {
+            if (!isEvaluate || !response.IsSuccessStatusCode || response.Content == null)
+            {
+                return response;
+            }
+
+            HttpContent oldResponseContent = response.Content;
+            string body = await oldResponseContent.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            response.Content = JevWireFormat.JsonContent(RemoveRefusals(body));
+            oldResponseContent.Dispose();
             return response;
         }
-
-        string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        response.Content = JevWireFormat.JsonContent(RemoveRefusals(body));
-        return response;
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
